@@ -111,9 +111,14 @@ def verify_declaration(root, event, events):
     if event["criteria"] != CRITERIA or event["version"] != VERSION:
         raise ValueError("Qualification criteria differ from the declared protocol")
     seed = event["continuation_seed"]
+    expected_manifest = source["binding"]["run_manifest_sha256"]
+    if (state.metrics or {}).get("metric_version") == "fixed-state-resolution-adoption-v1":
+        from diffeoforge.reference_resolution_adoption import source_run
+
+        expected_manifest = sha256_file(source_run(root, state) / "manifest.json")
     if (
         seed["candidate_id"] != source["candidate_id"]
-        or seed["source_manifest_sha256"] != source["binding"]["run_manifest_sha256"]
+        or seed["source_manifest_sha256"] != expected_manifest
     ):
         raise ValueError("Qualification initialization differs from source")
     for bound in seed["files"].values():

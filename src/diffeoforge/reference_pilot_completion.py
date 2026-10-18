@@ -89,6 +89,14 @@ def evidence(snapshot):
             raise ValueError("Saved-model integration decision changed")
         receipts[candidate.candidate_id] = receipt
         records[candidate.candidate_id] = event
+    from diffeoforge.reference_resolution_adoption import records as adopted
+    from diffeoforge.reference_resolution_adoption import verify
+
+    for event in adopted(events):
+        _, receipt = verify(root, event, events)
+        identifier = event["candidate_id"]
+        receipts[identifier] = receipt
+        records[identifier] = event["fixed_state_resolution"]
     return {
         identifier: dict(
             receipt=value,
@@ -133,7 +141,8 @@ def provisional_available(snapshot, identifier, *, checked=None):
     return bool(
         candidate
         and _valid(candidate, snapshot)
-        and capped(candidate)
+        and (capped(candidate) or checked.get(identifier, {}).get("receipt", {}).get("version")
+             == "fixed-state-resolution-adoption-v1")
         and identifier in checked
         and not checked[identifier]["failures"]
         and snapshot.visual_reviews.get(identifier) is not False
@@ -141,6 +150,8 @@ def provisional_available(snapshot, identifier, *, checked=None):
 
 
 def assess(snapshot, base):
+    from diffeoforge.reference_resolution_adoption import available
+
     checked = evidence(snapshot)
     rows = []
     for c in snapshot.candidates:
@@ -152,10 +163,13 @@ def assess(snapshot, base):
         if not _valid(c, snapshot):
             reasons.append("A complete, valid joint fit is required")
         if (c.metrics or {}).get("converged") is not True:
+            provisional = provisional_available(snapshot, c.candidate_id, checked=checked)
             reasons.append(
+                "Finer evaluation without refit: explicit provisional finish is available after QC"
+                if provisional and (c.metrics or {}).get("metric_version")
+                == "fixed-state-resolution-adoption-v1" else
                 "Iteration limit reached: explicit provisional finish is available after QC"
-                if provisional_available(snapshot, c.candidate_id, checked=checked)
-                else "Optimizer convergence is not established"
+                if provisional else "Optimizer convergence is not established"
             )
         if snapshot.visual_reviews.get(c.candidate_id) is not True:
             reasons.append(
@@ -163,6 +177,9 @@ def assess(snapshot, base):
                 if snapshot.visual_reviews.get(c.candidate_id) is False
                 else "Review the saved joint fit and record approval"
             )
+        finer = available(snapshot, c.candidate_id, checked=checked)
+        if finer and any(r.startswith("integration check differs") for r in reasons):
+            reasons.append(f"Finer saved evaluation available: {finer}")
         rows.append(
             CalibrationCandidateAssessment(
                 c.candidate_id, not reasons, not reasons, None, None, None, None, tuple(reasons)
@@ -352,7 +369,8 @@ def decision(snapshot, identifier):
     if snapshot.visual_reviews.get(identifier) is not True:
         raise ValueError("Review this exact saved joint fit before finishing")
     converged = candidate.metrics.get("converged") is True
-    if not converged and not capped(candidate):
+    adopted = record["receipt"]["version"] == "fixed-state-resolution-adoption-v1"
+    if not converged and not capped(candidate) and not adopted:
         raise ValueError("Only a fit stopped at its iteration cap can finish provisionally")
     return dict(
         version=VERSION,
@@ -362,6 +380,13 @@ def decision(snapshot, identifier):
         receipt=record["receipt_path"],
         receipt_sha256=record["receipt_sha256"],
         legacy_numerical_pass=record["receipt"].get("numerical_pass"),
+        **({"fixed_state_resolution": {
+            "version": "fixed-state-resolution-adoption-v1", "optimizer_executed": False,
+            "timepoints": int(
+                load_config(candidate.config_path)["model"]["deformation"]["timepoints"]
+            ),
+            "source_optimizer": candidate.metrics["source_optimizer"],
+        }} if adopted else {}),
         limitation="Pilot completion permits a new full-cohort atlas; "
         "it is not final atlas approval. "
         "A capped pilot does not establish optimizer stability or stable momenta.",
@@ -451,7 +476,8 @@ def verify_final_decision(root, plan, events):
 
 
 def verify_checks(root, plan, events):
-    if not any(e["event"] == "pilot_integration_check_finished" for e in events):
+    if not any(e["event"] == "pilot_integration_check_finished"
+               or "fixed_state_resolution" in e for e in events):
         return
     from diffeoforge.reference_stage_retention import _candidate
 

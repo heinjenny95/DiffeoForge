@@ -185,6 +185,8 @@ class PilotNextStep:
 def final_stage_next_step(
     *, selected: bool, approved: bool, reasons: Sequence[str], provisional: bool = False,
     pending: bool = False, eligible: bool = False, timepoints: int | None = None,
+    finer_evaluation: int | None = None,
+    fixed_state: bool = False,
 ) -> PilotNextStep:
     """Explain verified assessment results; this never changes an eligibility gate."""
     if pending:
@@ -199,6 +201,12 @@ def final_stage_next_step(
         return PilotNextStep("review", "Review saved fit…", "Inspect the saved joint fit and "
                              "record your decision before finishing.")
     if any(r.startswith("integration check differs") for r in reasons):
+        if finer_evaluation is not None:
+            return PilotNextStep(
+                "adopt", f"Use {finer_evaluation} time steps (no refit)",
+                "The finer evaluation already passed its first comparison. Check only the "
+                "missing grid, then review these reconstructions. No optimizer is started.", True,
+            )
         finer = 2 * timepoints - 1 if type(timepoints) is int and timepoints >= 2 else None
         return PilotNextStep(
             "finer",
@@ -211,6 +219,12 @@ def final_stage_next_step(
         return PilotNextStep("check", "Check time resolution", "Shape approved. Check its "
                              "time resolution next; the saved fit is not re-optimized.")
     if provisional:
+        if fixed_state:
+            return PilotNextStep(
+                "finish", "Finish pilot provisionally → atlas setup", "Shape and time resolution "
+                "checked. This saved field was evaluated without a new fit; optimizer convergence "
+                "at this grid remains unconfirmed.", True,
+            )
         return PilotNextStep("finish", "Finish pilot provisionally → atlas setup", "Shape and "
                              "time resolution checked. The iteration limit was reached; "
                              "finishing provisionally keeps that warning.", True)
@@ -239,12 +253,15 @@ def final_stage_check_summary(
         resolution = "not checked yet"
     elif eligible or provisional or (reasons and all(r.startswith((
         "Optimizer convergence is not established", "Iteration limit reached:",
+        "Finer evaluation without refit:",
         "Anatomical review", "Review the saved joint fit",
     )) for r in reasons)):
         resolution = "passed"
     else:
         resolution = "check needed"
-    if metrics.get("converged") is True:
+    if metrics.get("metric_version") == "fixed-state-resolution-adoption-v1":
+        optimization = "saved field; no refit at this grid; provisional finish only"
+    elif metrics.get("converged") is True:
         optimization = "convergence confirmed"
     elif metrics.get("optimizer_stop_signal") == "maximum_iterations":
         count = metrics.get("maximum_iterations")
@@ -304,7 +321,9 @@ def candidate_tradeoff_assessments(
 ) -> dict[str, tuple[CalibrationTradeoffAssessment, ...]]:
     """Explain relative automatic observations without choosing a candidate."""
 
-    complete = tuple(candidate for candidate in candidates if candidate.metrics is not None)
+    complete = tuple(candidate for candidate in candidates if candidate.metrics is not None
+                     and candidate.metrics.get("metric_version")
+                     != "fixed-state-resolution-adoption-v1")
     assessments: dict[str, list[CalibrationTradeoffAssessment]] = {
         candidate.candidate_id: [] for candidate in candidates
     }
@@ -431,6 +450,9 @@ def automatic_check_summary(metrics: Mapping[str, object]) -> tuple[bool, str]:
 
     converged = bool(metrics.get("converged", False))
     invalid_faces = int(metrics.get("invalid_face_count", 0))
+    if metrics.get("metric_version") == "fixed-state-resolution-adoption-v1":
+        return False, ("Saved field evaluated without re-optimization. Fresh shape review "
+                       "and an explicit provisional decision are required.")
     if converged and invalid_faces == 0:
         return (
             True,
@@ -453,6 +475,18 @@ def automatic_check_summary(metrics: Mapping[str, object]) -> tuple[bool, str]:
 def technical_metric_text(metrics: Mapping[str, object]) -> str:
     """Render verified technical measurements behind progressive disclosure."""
 
+    if metrics.get("metric_version") == "fixed-state-resolution-adoption-v1":
+        source = metrics["source_optimizer"]
+        return (
+            "Fixed-state evaluation; no optimizer ran at the selected time grid.\n"
+            f"Source optimizer stop: {source['optimizer_stop_signal']}\n"
+            f"Source optimizer iteration: {source['final_iteration']} "
+            f"of {source['maximum_iterations']}\n"
+            "Invalid faces in evaluated template/reconstructions: "
+            f"{metrics['invalid_face_count']}\n"
+            "Original likelihood and surface-distance metrics are not claimed at the new grid.\n"
+            "This remains a provisional pilot; a new full-cohort atlas must confirm its fit."
+        )
     return (
         "Surface-distance QC, 95th percentile: "
         f"{float(metrics['residual_p95']):.6g}\n"

@@ -22,10 +22,10 @@ def _values(config):
     }
 
 
-def _candidate(root, stage_id, candidate_id):
+def _candidate(root, stage_id, candidate_id, *, events=None):
     from diffeoforge import reference_calibration_study as study
 
-    events = study._load_events(root)
+    events = study._load_events(root) if events is None else events
     completed = next(
         (
             e

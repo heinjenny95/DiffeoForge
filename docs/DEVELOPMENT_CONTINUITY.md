@@ -1,4 +1,4 @@
-# Development continuity — v135 pilot check explanation
+# Development continuity — v136 saved resolution adoption
 
 Snapshot: 2026-10-18. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,15 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v136 adds an explicit finer saved-evaluation adoption route in Stage 4. It reuses
+two checked grids and computes only the missing nested grid without running an
+optimizer. A separate immutable evaluation candidate preserves original-field
+provenance and needs fresh human QC and explicit provisional completion. The
+full-cohort configuration retains the selected evaluated grid. No source-grid
+convergence or fit metric is relabeled as a new-grid observation. See
+[scope and separate gates](V136_RESOLUTION_ADOPTION.md). Source, tested build
+and installed states remain separate; this supersedes the pending v135 delivery.
 
 v135 separates the selected final fit's shape review, time resolution and
 optimizer status in three persistent lines. A failed time-grid check explains

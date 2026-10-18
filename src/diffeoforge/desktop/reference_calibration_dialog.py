@@ -139,16 +139,21 @@ def collect_calibration_qc_pairs(
         raise ValueError("Calibration study must contain exactly one bound template")
 
     run_directory = calibration_candidate_run_directory(candidate)
-    report = collect_run_report(run_directory)
+    if (candidate.metrics or {}).get("metric_version") == "fixed-state-resolution-adoption-v1":
+        from diffeoforge.reference_resolution_adoption import inventory
+
+        output_inventory = inventory(root, candidate)
+    else:
+        output_inventory = collect_run_report(run_directory).inventory
     from diffeoforge.reference_calibration_study import _verify_manifest
 
     manifest = _verify_manifest(root)
     original_hashes = {r["filename"]: r["sha256"] for r in manifest["inputs"]["subjects"]}
-    output_hashes = {str(r["path"]): str(r["sha256"]) for r in report.inventory}
+    output_hashes = {str(r["path"]): str(r["sha256"]) for r in output_inventory}
     output = (run_directory / "output").resolve()
     atlas_path: Path | None = None
     reconstructions: dict[str, Path] = {}
-    for record in report.inventory:
+    for record in output_inventory:
         relative = PurePosixPath(str(record["path"]))
         name = relative.name
         path = output.joinpath(*relative.parts).resolve()
@@ -237,6 +242,7 @@ class _CalibrationStageWorker(QRunnable):
         qualification_iterations: int = 100,
         strict_optimizer: bool = False,
         finer_model: bool = False,
+        adopt_resolution: bool = False,
         density_next: bool = False,
         integration_tolerances: Mapping[str, float] | None = None,
     ) -> None:
@@ -257,6 +263,7 @@ class _CalibrationStageWorker(QRunnable):
         self.qualification_iterations = qualification_iterations
         self.strict_optimizer = strict_optimizer
         self.finer_model = finer_model
+        self.adopt_resolution = adopt_resolution
         self.density_next = density_next
         self.screen_subjects = screen_subjects
         self.integration_tolerances = integration_tolerances
@@ -310,6 +317,12 @@ class _CalibrationStageWorker(QRunnable):
                 from diffeoforge.reference_control_density import run_next
 
                 result = run_next(self.runner, event_callback=emit)
+            elif self.adopt_resolution:
+                from diffeoforge.reference_resolution_adoption import run
+
+                result = run(
+                    self.runner, candidate_id=self.qualification_source, event_callback=emit,
+                )
             elif self.qualification:
                 if self.finer_model or self.strict_optimizer:
                     from diffeoforge.reference_pilot_qualification import run
@@ -2287,15 +2300,22 @@ class ReferenceCalibrationDialog(QDialog):
         provisional = bool(row and (
             "Iteration limit reached: explicit provisional finish is available after QC"
             in row.rejection_reasons
+            or "Finer evaluation without refit: explicit provisional finish is available after QC"
+            in row.rejection_reasons
         ))
         planned = next((c for c in stage.candidates if c.candidate_id == selected), None)
         timepoints = int(planned.values["timepoints"]) if planned else None
         reasons = row.rejection_reasons if row else ("Check time resolution",)
+        finer_evaluation = next((int(r.split(": ", 1)[1]) for r in reasons
+                                 if r.startswith("Finer saved evaluation available: ")), None)
         step = final_stage_next_step(
             selected=candidate is not None,
             approved=self._snapshot.visual_reviews.get(selected) is True,
             reasons=reasons, timepoints=timepoints,
             pending=pending, provisional=provisional, eligible=bool(row and row.eligible),
+            finer_evaluation=finer_evaluation,
+            fixed_state=bool(candidate and (candidate.metrics or {}).get("metric_version")
+                             == "fixed-state-resolution-adoption-v1"),
         )
         if not any(c.metrics for c in self._snapshot.candidates) and not pending:
             # Older ready stages register their verified preceding fit on this
@@ -2323,6 +2343,7 @@ class ReferenceCalibrationDialog(QDialog):
                 "choose": "Choose saved fit", "review": "Review saved fit",
                 "check": "Ready to check time resolution",
                 "finer": "Time resolution needs refinement",
+                "adopt": "Ready to use finer saved evaluation",
                 "finish": "Pilot ready to finish", "details": "Check needs attention",
             }[step.action])
             self.status.setText(step.message)
@@ -2342,6 +2363,9 @@ class ReferenceCalibrationDialog(QDialog):
             self._open_next_review()
         elif step.action == "finer":
             self._refit_selected_time_grid()
+        elif step.action == "adopt":
+            self._start_pilot(adaptive=False, adopt_resolution=True,
+                              qualification_source=self.selection_combo.currentData())
         elif step.action == "finish":
             self._advance()
         elif step.action == "details":
@@ -3174,6 +3198,7 @@ class ReferenceCalibrationDialog(QDialog):
         qualification_iterations: int = 100,
         strict_optimizer: bool = False,
         finer_model: bool = False,
+        adopt_resolution: bool = False,
         density_next: bool = False,
     ) -> None:
         if self._restoring_search:
@@ -3211,6 +3236,7 @@ class ReferenceCalibrationDialog(QDialog):
             qualification_iterations=qualification_iterations,
             strict_optimizer=strict_optimizer,
             finer_model=finer_model,
+            adopt_resolution=adopt_resolution,
             density_next=density_next,
             integration_tolerances=(
                 {k: f.value() / 100 for k, f in self.integration_fields.items()}
@@ -3492,7 +3518,8 @@ class ReferenceCalibrationDialog(QDialog):
                 (
                     c
                     for c in reversed(snapshot.candidates)
-                    if c.candidate_id.startswith("qualification-") and c.status == "completed"
+                    if c.candidate_id.startswith(("qualification-", "resolution-"))
+                    and c.status == "completed"
                 ),
                 None,
             )

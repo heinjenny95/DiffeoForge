@@ -1324,6 +1324,12 @@ def _prepared_candidates(
         )
     records = {record["candidate_id"]: record for record in prepared[0]["candidates"]}
     for event in events:
+        if (event["event"] == "candidate_completed" and "fixed_state_resolution" in event
+                and event.get("stage_id") == stage_id):
+            from diffeoforge.reference_resolution_adoption import verify
+
+            verify(root, event, events)
+            records[event["candidate_id"]] = event["fixed_state_resolution"]
         if event["event"] == "pilot_qualification_declared" and event.get("stage_id") == stage_id:
             from diffeoforge.reference_pilot_qualification import verify_declaration
 
@@ -1618,6 +1624,7 @@ def load_reference_calibration_study(
     top = not hasattr(_LOAD_CONTEXT, "snapshots")
     if top:
         _LOAD_CONTEXT.snapshots = {}
+        _LOAD_CONTEXT.resolution_checks = {}
     cache = _LOAD_CONTEXT.snapshots
     key = root, _restore_reviews
     try:
@@ -1632,6 +1639,7 @@ def load_reference_calibration_study(
     finally:
         if top:
             del _LOAD_CONTEXT.snapshots
+            del _LOAD_CONTEXT.resolution_checks
 
 
 def _load_verified_calibration_study(
@@ -1656,6 +1664,9 @@ def _load_verified_calibration_study(
     from diffeoforge.reference_pilot_qualification import overlay_plan as overlay_qualification
 
     plan = overlay_qualification(plan, events)
+    from diffeoforge.reference_resolution_adoption import overlay_plan as overlay_resolution
+
+    plan = overlay_resolution(plan, events)
     from diffeoforge.reference_pilot_completion import verify_final_decision
 
     verify_final_decision(root, plan, events)
@@ -2331,12 +2342,18 @@ def _stage_evidence(
                     metrics and metrics["converged"] and metrics.get("fit_scope") != "screening"
                 ),
                 invalid_face_count=(int(metrics["invalid_face_count"]) if metrics else 0),
-                residual_p95=(float(metrics["residual_p95"]) if metrics else None),
-                deformation_energy=(float(metrics["deformation_energy"]) if metrics else None),
-                distortion_p95=(float(metrics["distortion_p95"]) if metrics else None),
+                residual_p95=(float(metrics["residual_p95"])
+                              if metrics and metrics.get("residual_p95") is not None else None),
+                deformation_energy=(
+                    float(metrics["deformation_energy"])
+                    if metrics and metrics.get("deformation_energy") is not None else None
+                ),
+                distortion_p95=(float(metrics["distortion_p95"])
+                                if metrics and metrics.get("distortion_p95") is not None else None),
                 runtime_seconds=(float(metrics["runtime_seconds"]) if metrics else None),
                 resampling_sensitivity=(
-                    float(metrics["resampling_sensitivity"]) if metrics else None
+                    float(metrics["resampling_sensitivity"])
+                    if metrics and metrics.get("resampling_sensitivity") is not None else None
                 ),
                 numerical_atlas_rms=(comparison[0] if comparison is not None else None),
                 objective_relative_difference=(comparison[1] if comparison is not None else None),

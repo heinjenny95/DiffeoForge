@@ -45,6 +45,9 @@ def verified_tolerances(manifest, stage, candidates, events):
     expected_ids = record["candidate_ids"] + [
         e["candidate"]["candidate_id"] for e in additions
     ] + [e["candidate"]["candidate_id"] for e in declarations(events)]
+    from diffeoforge.reference_resolution_adoption import records as adopted
+
+    expected_ids += [e["candidate_id"] for e in adopted(events)]
     if [c.candidate_id for c in candidates] != expected_ids:
         raise ValueError("Numerical candidate queue differs from its declarations")
     for addition in additions:

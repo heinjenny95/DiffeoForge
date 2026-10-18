@@ -236,6 +236,10 @@ def bind_learned_seed(snapshot, center_id, destination):
 
     candidate = next(c for c in snapshot.candidates if c.candidate_id == center_id)
     run = study.calibration_candidate_run_directory(candidate)
+    if (candidate.metrics or {}).get("metric_version") == "fixed-state-resolution-adoption-v1":
+        from diffeoforge.reference_resolution_adoption import source_run
+
+        run = source_run(snapshot.study_directory, candidate)
     inputs = load_reference_momenta(run)
     manifest = study._verify_manifest(snapshot.study_directory)
     subjects = manifest["inputs"]["subjects"]

@@ -621,6 +621,17 @@
                         "receipt": {"type": "string", "minLength": 1},
                         "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                         "legacy_numerical_pass": {"type": ["boolean", "null"]},
+                        "fixed_state_resolution": {
+                          "type": "object",
+                          "required": ["version", "optimizer_executed", "timepoints", "source_optimizer"],
+                          "properties": {
+                            "version": {"const": "fixed-state-resolution-adoption-v1"},
+                            "optimizer_executed": {"const": false},
+                            "timepoints": {"type": "integer", "minimum": 2},
+                            "source_optimizer": {"type": "object"}
+                          },
+                          "additionalProperties": false
+                        },
                         "limitation": {"type": "string", "minLength": 1}
                       }
                     },

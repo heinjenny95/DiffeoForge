@@ -31,6 +31,13 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Adopt a verified finer evaluation of the same saved field without another
+  optimization: reuse checked grids, compute only the missing nested grid, bind
+  a separate immutable candidate and require fresh anatomy review plus explicit
+  provisional completion. See [v136 scope](docs/V136_RESOLUTION_ADOPTION.md).
+  Native execution, tested packaging, installation and independent first use
+  remain separate evidence gates.
+
 - [x] Explain the selected final fit with separate shape, time-resolution and
   optimizer statuses; name the next time grid on the primary button and keep
   repeated warnings folded. Preserve scientific gates and reuse the verified
