@@ -45,6 +45,7 @@ from diffeoforge.desktop.reference_calibration_presentation import (
     candidate_option_label,
     candidate_parameter_summary,
     candidate_tradeoff_assessments,
+    final_stage_check_summary,
     final_stage_next_step,
     stage_guidance,
     stage_options_rejected,
@@ -1405,6 +1406,17 @@ class ReferenceCalibrationDialog(QDialog):
         retained_layout.addWidget(self.keep_previous_button, alignment=Qt.AlignmentFlag.AlignLeft)
         footer.addWidget(self.retained_fit_panel)
         self.retained_fit_panel.hide()
+        self.final_check_summary = QLabel()
+        self.final_check_summary.setTextFormat(Qt.TextFormat.PlainText)
+        self.final_check_summary.setWordWrap(True)
+        self.final_check_summary.setMargin(8)
+        self.final_check_summary.setObjectName("card")
+        self.final_check_summary.setAccessibleName("Checks for the selected saved fit")
+        self.final_check_summary.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred,
+        )
+        footer.addWidget(self.final_check_summary)
+        self.final_check_summary.hide()
         self.cancel_button = QPushButton("Cancel safely")
         self.cancel_button.clicked.connect(self._cancel)
         self.review_next_button = QPushButton("Review next option")
@@ -1547,6 +1559,7 @@ class ReferenceCalibrationDialog(QDialog):
         self._density_hidden_visibility = {}
         self.finer_resolution_button.hide()
         self.next_step_button.hide()
+        self.final_check_summary.hide()
         self.status.show()
         self._assessment = None
         self._snapshot = snapshot or load_reference_calibration_study(self.study_directory)
@@ -2275,10 +2288,13 @@ class ReferenceCalibrationDialog(QDialog):
             "Iteration limit reached: explicit provisional finish is available after QC"
             in row.rejection_reasons
         ))
+        planned = next((c for c in stage.candidates if c.candidate_id == selected), None)
+        timepoints = int(planned.values["timepoints"]) if planned else None
+        reasons = row.rejection_reasons if row else ("Check time resolution",)
         step = final_stage_next_step(
             selected=candidate is not None,
             approved=self._snapshot.visual_reviews.get(selected) is True,
-            reasons=row.rejection_reasons if row else ("Check time resolution",),
+            reasons=reasons, timepoints=timepoints,
             pending=pending, provisional=provisional, eligible=bool(row and row.eligible),
         )
         if not any(c.metrics for c in self._snapshot.candidates) and not pending:
@@ -2288,6 +2304,13 @@ class ReferenceCalibrationDialog(QDialog):
                                          reasons=("Check time resolution",))
         self._final_next_step = step
         running = self._worker is not None or self._restoring_search
+        self.final_check_summary.setVisible(candidate is not None and not running)
+        if candidate is not None:
+            self.final_check_summary.setText(final_stage_check_summary(
+                approved=self._snapshot.visual_reviews.get(selected), reasons=reasons,
+                metrics=candidate.metrics or {}, timepoints=timepoints,
+                eligible=bool(row and row.eligible), provisional=provisional,
+            ))
         self.next_step_button.setText(step.label)
         self.next_step_button.show()
         self.next_step_button.setEnabled(not running and step.action != "choose")

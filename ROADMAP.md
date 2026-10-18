@@ -31,6 +31,12 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Explain the selected final fit with separate shape, time-resolution and
+  optimizer statuses; name the next time grid on the primary button and keep
+  repeated warnings folded. Preserve scientific gates and reuse the verified
+  assessment. See [v135 scope](docs/V135_PILOT_CHECK_EXPLANATION.md).
+  Tested build, safe installation and independent first use are separate.
+
 - [x] Keep the approved baseline and technical-screen retry visible after rejected
   options; provide one contextual Stage 4 next action and fold repeated check
   details. Preserve explicit selection, provisional warnings, fresh-fit QC and

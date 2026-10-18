@@ -206,7 +206,7 @@ def test_unstable_time_grid_has_one_visible_selected_fit_action_and_folded_detai
         dict(rms=0.1, p95=0.1, maximum=0.1)
         if a.parent.name.isdecimal() and b.parent.name.isdecimal() else dict(zero)
     ))
-    _, done, _, identifier = _checked(tmp_path, monkeypatch)
+    _, done, _, identifier = _checked(tmp_path, monkeypatch, capped=True)
     _approve_preview(done, identifier)
     before = {p: p.read_bytes() for p in done.study_directory.rglob("*") if p.is_file()}
     app = QApplication.instance() or QApplication([])
@@ -217,14 +217,25 @@ def test_unstable_time_grid_has_one_visible_selected_fit_action_and_folded_detai
     dialog.resize(850, 650)
     dialog.show()
     app.processEvents()
-    assert "time resolution is not stable" in dialog.status.text()
+    assert "good-looking reconstruction can still change" in dialog.status.text()
     assert dialog.status.objectName() == "statusWarning"
-    assert dialog.next_step_button.text() == "Recalculate fit with more time steps…"
+    planned = next(c for c in dialog.snapshot.current_stage.candidates
+                   if c.candidate_id == identifier)
+    count = int(planned.values["timepoints"])
+    assert dialog.next_step_button.text() == f"Recalculate with {2 * count - 1} time steps…"
+    assert dialog.final_check_summary.text().splitlines()[0] == "Shape review: approved"
+    assert f"needs more time steps ({count} → {2 * count - 1})" in dialog.final_check_summary.text()
+    assert ("limit reached (50 iterations); convergence unconfirmed"
+            in dialog.final_check_summary.text())
     assert dialog.next_step_button.isEnabled()
     assert dialog.start_button.isHidden() and dialog.advance_button.isHidden()
     assert dialog.review_next_button.isHidden() and dialog.qualification_button.isHidden()
     assert dialog.minimumSizeHint().height() <= 650
     _visible_in_dialog(dialog, dialog.next_step_button)
+    _visible_in_dialog(dialog, dialog.final_check_summary)
+    dialog.scroll.verticalScrollBar().setValue(dialog.scroll.verticalScrollBar().maximum())
+    app.processEvents()
+    _visible_in_dialog(dialog, dialog.final_check_summary)
     visible_labels = [w.text() for w in dialog.findChildren(QLabel) if w.isVisible()]
     assert not any("integration check differs" in t or "No option qualifies" in t
                    for t in visible_labels)
@@ -236,15 +247,64 @@ def test_unstable_time_grid_has_one_visible_selected_fit_action_and_folded_detai
     unreviewed = done.candidates[-1].candidate_id
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(unreviewed))
     assert dialog.next_step_button.text() == "Review saved fit…"
+    assert dialog.final_check_summary.text().startswith("Shape review: review needed")
     dialog.selection_combo.setCurrentIndex(0)
     assert not dialog.next_step_button.isEnabled()
+    assert dialog.final_check_summary.isHidden()
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(identifier))
     dialog._restoring_search = True
     dialog._render()
     assert not dialog.next_step_button.isEnabled()
+    assert dialog.final_check_summary.isHidden()
     dialog._restoring_search = False
     dialog._render()
     assert all(p.read_bytes() == data for p, data in before.items())
     dialog.close()
     app.setStyleSheet(old_style)
     app.processEvents()
+
+
+@pytest.mark.parametrize("reasons,approved,metrics,extra,expected", [
+    (("integration check differs for a (19->37): inspect/refine",) * 6, True,
+     {"converged": False, "optimizer_stop_signal": "maximum_iterations", "maximum_iterations": 300},
+     {}, ("approved", "needs more time steps (19 → 37)",
+          "limit reached (300 iterations); convergence unconfirmed")),
+    (("Check time resolution of this saved fit (no optimization)",), True,
+     {"converged": True}, {}, ("approved", "not checked yet", "convergence confirmed")),
+    (("Optimizer convergence is not established",), True,
+     {"converged": False}, {}, ("approved", "passed", "convergence unconfirmed")),
+    (("roundtrip check differs for a (source): inspect/refine",), True,
+     {"converged": True}, {},
+     ("approved", "could not verify the saved fit", "convergence confirmed")),
+    ((), None, {}, {}, ("review needed", "check needed", "convergence unconfirmed")),
+    ((), True, {"converged": True}, {"eligible": True},
+     ("approved", "passed", "convergence confirmed")),
+    (("Anatomical review rejected",), False, {"converged": True}, {},
+     ("rejected", "passed", "convergence confirmed")),
+    (("Unknown evidence failure",), True, {}, {},
+     ("approved", "check needed", "convergence unconfirmed")),
+])
+def test_final_check_summary_separates_anatomy_resolution_and_optimizer(
+    reasons, approved, metrics, extra, expected,
+):
+    from diffeoforge.desktop.reference_calibration_presentation import final_stage_check_summary
+
+    text = final_stage_check_summary(approved=approved, reasons=reasons, metrics=metrics,
+                                    timepoints=19, **extra)
+    lines = text.splitlines()
+    assert len(lines) == 3
+    assert lines == [f"Shape review: {expected[0]}", f"Time resolution: {expected[1]}",
+                     f"Optimization: {expected[2]}"]
+
+
+def test_next_time_grid_is_selected_count_and_never_promises_a_pass():
+    from diffeoforge.desktop.reference_calibration_presentation import final_stage_next_step
+
+    for count in (10, 19, 37):
+        step = final_stage_next_step(selected=True, approved=True, timepoints=count, reasons=(
+            "integration check differs for a (37->73): inspect/refine",
+            "Optimizer convergence is not established",
+        ))
+        assert step.label == f"Recalculate with {2 * count - 1} time steps…"
+        assert step.action == "finer" and "then review and check again" in step.message
+        assert "good-looking reconstruction" in step.message

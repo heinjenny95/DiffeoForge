@@ -1,4 +1,4 @@
-# Development continuity — v134 pilot next step
+# Development continuity — v135 pilot check explanation
 
 Snapshot: 2026-10-18. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,18 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v135 separates the selected final fit's shape review, time resolution and
+optimizer status in three persistent lines. A failed time-grid check explains
+why a good-looking reconstruction may still change with finer time steps, and
+the primary action names the next grid for that selected fit. Repeated technical
+warnings remain folded. See [scope](V135_PILOT_CHECK_EXPLANATION.md).
+The existing verified assessment is reused; no extra mesh read or check-artifact
+hashing occurs on selection. Mathematical/completion gates are unchanged.
+Source, tested build and installed states remain separate. Installed remains
+v132 until safe backed-up installation after saved normal close and finished
+video encoding. The previously uninstalled v133/v134 changes are included;
+do not install either intermediate build.
 
 v134 exposes the approved Stage 2/3 baseline in the persistent footer and makes
 it the explicit next step after all new options are rejected. Technical retries

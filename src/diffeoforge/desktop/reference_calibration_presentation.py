@@ -184,7 +184,7 @@ class PilotNextStep:
 
 def final_stage_next_step(
     *, selected: bool, approved: bool, reasons: Sequence[str], provisional: bool = False,
-    pending: bool = False, eligible: bool = False,
+    pending: bool = False, eligible: bool = False, timepoints: int | None = None,
 ) -> PilotNextStep:
     """Explain verified assessment results; this never changes an eligibility gate."""
     if pending:
@@ -199,9 +199,14 @@ def final_stage_next_step(
         return PilotNextStep("review", "Review saved fit…", "Inspect the saved joint fit and "
                              "record your decision before finishing.")
     if any(r.startswith("integration check differs") for r in reasons):
-        return PilotNextStep("finer", "Recalculate fit with more time steps…", "Shape approved; "
-                             "time resolution is not stable yet. Recalculate with more time "
-                             "steps, then review and check again.", True)
+        finer = 2 * timepoints - 1 if type(timepoints) is int and timepoints >= 2 else None
+        return PilotNextStep(
+            "finer",
+            f"Recalculate with {finer} time steps…" if finer
+            else "Recalculate fit with more time steps…",
+            "A good-looking reconstruction can still change with finer time steps. "
+            "Recalculate, then review and check again.", True,
+        )
     if any(r.startswith("Check time resolution") for r in reasons):
         return PilotNextStep("check", "Check time resolution", "Shape approved. Check its "
                              "time resolution next; the saved fit is not re-optimized.")
@@ -214,6 +219,40 @@ def final_stage_next_step(
                              "resolution checked. Finish the pilot to prepare the full atlas.")
     return PilotNextStep("details", "Inspect check details…", "This fit is not ready to finish. "
                          "Inspect the remaining check details.", True)
+
+
+def final_stage_check_summary(
+    *, approved: bool | None, reasons: Sequence[str], metrics: Mapping[str, object],
+    timepoints: int | None = None, eligible: bool = False, provisional: bool = False,
+) -> str:
+    """Keep the three independent checks visible, using the existing assessment only."""
+    anatomy = (
+        "approved" if approved is True else "rejected" if approved is False else "review needed"
+    )
+    if any(r.startswith(("Geometry", "A complete, valid", "roundtrip check")) for r in reasons):
+        resolution = "could not verify the saved fit"
+    elif any(r.startswith("integration check differs") for r in reasons):
+        resolution = "needs more time steps"
+        if type(timepoints) is int and timepoints >= 2:
+            resolution += f" ({timepoints} → {2 * timepoints - 1})"
+    elif any(r.startswith("Check time resolution") for r in reasons):
+        resolution = "not checked yet"
+    elif eligible or provisional or (reasons and all(r.startswith((
+        "Optimizer convergence is not established", "Iteration limit reached:",
+        "Anatomical review", "Review the saved joint fit",
+    )) for r in reasons)):
+        resolution = "passed"
+    else:
+        resolution = "check needed"
+    if metrics.get("converged") is True:
+        optimization = "convergence confirmed"
+    elif metrics.get("optimizer_stop_signal") == "maximum_iterations":
+        count = metrics.get("maximum_iterations")
+        budget = f" ({count} iterations)" if type(count) is int and count > 0 else ""
+        optimization = f"limit reached{budget}; convergence unconfirmed"
+    else:
+        optimization = "convergence unconfirmed"
+    return f"Shape review: {anatomy}\nTime resolution: {resolution}\nOptimization: {optimization}"
 
 
 def candidate_parameter_summary(
