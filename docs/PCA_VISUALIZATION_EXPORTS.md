@@ -65,3 +65,14 @@ it does not establish an anatomical interpretation or an installed UI change.
 Keep scripts, dependency versions, grid receipts, source immutability checks,
 measurement definitions and final hashes with the private delivery. Automatic
 generation beneath the PCA plots remains a separate open product backlog item.
+
+## Media-only sharing export
+
+For an owner-requested colleague handoff, provide a portable offline gallery with
+short English media headings and relative asset links. Include the selected
+figures/PDFs, current synchronized-view movies and an optional interactive plot.
+Keep detailed provenance, logs, scripts, checkpoints, raw meshes and identity keys
+in the private project rather than the presentation package. Numeric plot IDs
+may remain. Verify media copies, local links and every ZIP member against hashes;
+retain the verification receipt alongside the original private delivery. Creating
+the export does not authorize sending it or uploading it to a public service.
