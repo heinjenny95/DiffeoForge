@@ -221,29 +221,38 @@ def test_stage4_exposes_independent_check_and_explicit_finer_refit(tmp_path, mon
 
     app = QApplication.instance() or QApplication([])
     runner, _ = _fourth(tmp_path, monkeypatch)
-    runner.run_current_stage()
+    done = runner.run_current_stage()
+    from test_reference_calibration_study import _approve_for_test
+
+    identifier = done.candidates[-1].candidate_id
+    _approve_for_test(done.study_directory, identifier)
     dialog = ReferenceCalibrationDialog(runner.study_directory)
     dialog.show()
     app.processEvents()
     assert dialog.finer_resolution_button.isHidden()
-    assert dialog.qualification_button.isVisible()
+    assert dialog.qualification_button.isHidden()
+    assert dialog.next_step_button.isVisible()
+    assert dialog._final_next_step.action == "check"
+    assert not dialog.finer_model_button.isVisible()
+    dialog.pilot_tools.toggle_button.click()  # Optional refitting is progressively disclosed.
     assert dialog.finer_model_button.isVisible()
     calls = []
     monkeypatch.setattr(dialog, "_start_pilot", lambda **kwargs: calls.append(kwargs))
-    dialog.qualification_button.click()
+    dialog.next_step_button.click()
     dialog.finer_model_button.click()
     assert calls == [
-        {"adaptive": False, "qualification": True},
+        {},  # The contextual action uses the Stage 4 no-optimization default.
         {
             "adaptive": False,
             "qualification": True,
+            "qualification_source": identifier,
             "finer_model": True,
             "qualification_iterations": dialog.continuation_iterations.value(),
         },
     ]
     dialog._worker = object()
     dialog._render()
-    assert not dialog.qualification_button.isEnabled()
+    assert not dialog.next_step_button.isEnabled()
     assert not dialog.finer_model_button.isEnabled()
     dialog._worker = None
     dialog.close()

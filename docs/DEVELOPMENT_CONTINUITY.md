@@ -29,6 +29,10 @@ full-cohort configuration retains the selected evaluated grid. No source-grid
 convergence or fit metric is relabeled as a new-grid observation. See
 [scope and separate gates](V136_RESOLUTION_ADOPTION.md). Source, tested build
 and installed states remain separate; this supersedes the pending v135 delivery.
+84 scoped cases pass across broad regression and corrected fixture/UI-contract
+reruns; all10 adoption cases pass on the final runtime source8e0893b. Three-state
+source UI probes and Ruff pass. Corrected Windows build and installation remain
+pending; an unstarted queued check can be explicitly retired without a refit.
 
 v135 separates the selected final fit's shape review, time resolution and
 optimizer status in three persistent lines. A failed time-grid check explains

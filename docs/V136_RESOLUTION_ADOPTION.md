@@ -23,7 +23,14 @@ time grid and original-field provenance into a new full-cohort atlas. This is a
 pilot starting point, not proof of optimizer stability or biological validity.
 Optional refitting remains a separate action.
 
-Verification covers reuse of two grids with only one new Shooting call, original
+Verification: 84 scoped cases pass across the broad regression and corrected
+fixture/UI-contract reruns, including all 10 adoption cases on the final source.
+The initial broad run had 80 passes and two test failures: a missing test import
+and an outdated expectation that the old Stage 4 button remain visible. Both
+corrections pass; they require no runtime change. Source UI probes at two window
+sizes verify explicit reuse, fresh evaluated QC and the queued-refit alternative,
+with no fixture changes or native jobs. Ruff and diff checks pass.
+Coverage includes reuse of two grids with only one new Shooting call, original
 bytes and review preservation, distinct evaluated QC surfaces, provisional finish
 and reopen, changed-artifact rejection, cancellation and an individual specimen
 failure. Native execution, packaged UI, installation and independent first use
