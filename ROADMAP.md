@@ -31,6 +31,15 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Add direct, synchronized better/worse comparison of individual fits and a
+  persistent human-selected best starting point. Relative ranking guides bounded
+  new attempts without approving anatomy or carrying fields across control bases.
+  See [v131 behavior and boundaries](docs/V131_FIT_PREFERENCES.md).
+- [x] Repair recording of the separate pilot/review windows and keep early
+  landmark videos in the selected project before its config exists. Check the
+  actual workflow window constructors and decoded media, not just generic dialogs.
+  See [v131 recording repair](docs/V131_FIT_PREFERENCES.md#separate-window-recording-repair).
+
 - [x] Make the early atlas checkpoint an explicit, default-off option. Allow
   checkpoint-bound continuation without inventing anatomical approval; preserve
   old pilot approvals, recorded rejections and final full-cohort QC. Replace stale

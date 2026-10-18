@@ -220,7 +220,7 @@ class _CalibrationStageWorker(QRunnable):
         outward_safety_limits: Mapping[str, tuple[float, float]] | None = None,
         continuation: tuple[str, int] | None = None,
         specimen_fit: bool = False,
-        specimen_action: tuple[str, str, int] | None = None,
+        specimen_action: tuple[str, str, int | dict] | None = None,
         retain_previous: bool = False,
         provisional_candidate_id: str | None = None,
         finish_candidate_id: str | None = None,
@@ -1148,6 +1148,13 @@ class ReferenceCalibrationDialog(QDialog):
         fit_row.addWidget(self.denser_model_button)
         fit_row.addStretch()
         root.addLayout(fit_row)
+        self.compare_fits_button = QPushButton("Compare fits · better / worse…")
+        self.compare_fits_button.setToolTip(
+            "Compare the current fit with previous attempts and your best starting point. "
+            "Relative feedback guides one next attempt; it does not approve anatomy."
+        )
+        self.compare_fits_button.clicked.connect(self._compare_fit_preferences)
+        root.addWidget(self.compare_fits_button)
         self.keep_previous_button = QPushButton("Keep previously approved fit")
         self.keep_previous_button.setToolTip(
             "Use the unchanged, previously approved reconstruction. No new fit or repeated QC."
@@ -1972,6 +1979,14 @@ class ReferenceCalibrationDialog(QDialog):
         self.saved_searches_button.setEnabled(not running)
         self.denser_model_button.setVisible(self._individual_checkpoint())
         self.denser_model_button.setEnabled(not running)
+        self.compare_fits_button.setVisible(self._individual_checkpoint())
+        self.compare_fits_button.setEnabled(
+            not running and any(c.status == "completed" for c in self._snapshot.candidates)
+        )
+        best = (self._sequence_progress or {}).get("best")
+        self.compare_fits_button.setText(
+            "Compare fits · better / worse…" + (" · best: " + best["study"] if best else "")
+        )
         if self._individual_checkpoint():
             self.find_fit_button.setToolTip(
                 "Try the next coarse-to-fine attempt for this specimen. Saved deformations "
@@ -2871,7 +2886,7 @@ class ReferenceCalibrationDialog(QDialog):
         adaptive: bool | None = None,
         continuation: tuple[str, int] | None = None,
         specimen_fit: bool = False,
-        specimen_action: tuple[str, str, int] | None = None,
+        specimen_action: tuple[str, str, int | dict] | None = None,
         retain_previous: bool = False,
         provisional_candidate_id: str | None = None,
         finish_candidate_id: str | None = None,
@@ -3063,6 +3078,7 @@ class ReferenceCalibrationDialog(QDialog):
                 "capture": "broad shape capture",
                 "refine": "surface refinement",
                 "continue": "saved fit continuation",
+                "guided": "refinement from your best fit",
             }.get(info.get("fit_phase"), "initial probe")
             self._fit_search_stop_text = (
                 "Stopped before this step finished. Saved results remain available."
@@ -3759,6 +3775,18 @@ class ReferenceCalibrationDialog(QDialog):
     def _restore_plan_b(self) -> None:
         if self._worker is None and not self._restoring_search:
             self._start_pilot(adaptive=False, specimen_action=("restore", "", 0))
+
+    def _compare_fit_preferences(self) -> None:
+        if self._worker is not None or self._restoring_search or not self._individual_checkpoint():
+            return
+        from diffeoforge.desktop.fit_preference_dialog import FitPreferenceDialog
+
+        root = self.study_directory
+        dialog = FitPreferenceDialog(root, self)
+        dialog.exec()
+        if (dialog.decision and root == self.study_directory and self._worker is None
+                and not self._restoring_search):
+            self._start_pilot(adaptive=False, specimen_action=dialog.decision)
 
     def _compare_plan_b(self) -> None:
         if self._worker is not None or self._restoring_search:

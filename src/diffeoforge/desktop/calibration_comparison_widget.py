@@ -26,6 +26,7 @@ class CalibrationComparisonCanvas3D(QWidget):
 
     fullResolutionReadyChanged = Signal()
     originalDetailRequested = Signal()
+    cameraChanged = Signal(object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -53,6 +54,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._last_position: QPointF | None = None
         self._drag_button: Qt.MouseButton | None = None
         self._interacting = False
+        self._linked_navigation = False
         self.original_detail = QCheckBox("Load original detail (optional, slower)", self)
         self.original_detail.move(12, 38)
         self.original_detail.setToolTip(
@@ -133,7 +135,7 @@ class CalibrationComparisonCanvas3D(QWidget):
             self._show_original,
             self._show_reconstruction,
             self.original_detail.isChecked(),
-            self._interacting or self._wheel_timer.isActive(),
+            self._interacting or self._wheel_timer.isActive() or self._linked_navigation,
         )
 
     @property
@@ -182,6 +184,37 @@ class CalibrationComparisonCanvas3D(QWidget):
         self.update()
 
     def _settle_wheel(self) -> None:
+        self._emit_camera()
+        self.update()
+
+    def camera_state(self) -> tuple:
+        return (
+            self._yaw,
+            self._pitch,
+            self._zoom,
+            self._pan,
+            self._interacting or self._wheel_timer.isActive(),
+        )
+
+    def _emit_camera(self) -> None:
+        self.cameraChanged.emit(self.camera_state())
+
+    def set_linked_camera(self, state: tuple) -> None:
+        self._yaw, self._pitch, self._zoom, self._pan, self._linked_navigation = state
+        self.update()
+
+    def set_comparison_extent(self, center: np.ndarray, scale: float) -> None:
+        center = np.asarray(center, dtype=np.float64)
+        if (
+            center.shape != (3,)
+            or not np.isfinite(center).all()
+            or not math.isfinite(scale)
+            or scale <= 0
+        ):
+            raise ValueError("Comparison extent must be finite and positive")
+        self._center, self._scale = center.copy(), float(scale)
+        self._frames.clear()
+        self._presented_key = None
         self.update()
 
     def set_show_original(self, visible: bool) -> None:
@@ -197,6 +230,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._pitch = 0.30
         self._zoom = 1.0
         self._pan = (0.0, 0.0)
+        self._emit_camera()
         self.update()
 
     def set_view_preset(self, preset: str) -> None:
@@ -216,6 +250,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._yaw, self._pitch = orientations[preset]
         self._zoom = 1.0
         self._pan = (0.0, 0.0)
+        self._emit_camera()
         self.update()
 
     def _project(self, vertices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -239,6 +274,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._last_position = event.position()
         self._drag_button = event.button()
         self._interacting = True
+        self._emit_camera()
         self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
@@ -252,6 +288,7 @@ class CalibrationComparisonCanvas3D(QWidget):
             self._pitch += delta.y() * 0.009
         else:
             self._pan = (self._pan[0] + delta.x(), self._pan[1] + delta.y())
+        self._emit_camera()
         self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
@@ -261,6 +298,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._last_position = None
         self._drag_button = None
         self._interacting = False
+        self._emit_camera()
         self.setCursor(Qt.CursorShape.OpenHandCursor)
         self.update()
         event.accept()
@@ -270,6 +308,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         if delta:
             self._zoom = min(8.0, max(0.25, self._zoom * math.exp(delta / 900.0)))
             self._wheel_timer.start()
+            self._emit_camera()
             self.update()
             event.accept()
 
@@ -326,9 +365,11 @@ class CalibrationComparisonCanvas3D(QWidget):
                 )
             )
         if self._show_original:
-            layers.append(SurfaceLayer(
-                original_vertices, original_edges, wireframe=True, color=(193, 87, 42, 150)
-            ))
+            layers.append(
+                SurfaceLayer(
+                    original_vertices, original_edges, wireframe=True, color=(193, 87, 42, 150)
+                )
+            )
         scene = SurfaceScene(
             self.width(),
             self.height(),

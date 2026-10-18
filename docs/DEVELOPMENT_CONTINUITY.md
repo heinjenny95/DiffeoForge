@@ -1,4 +1,4 @@
-# Development continuity — v130 process recording
+# Development continuity — v131 relative pilot feedback
 
 Snapshot: 2026-10-18. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,16 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v131 adds synchronized side-by-side individual-fit comparisons, better/worse/equal
+feedback and a persistent best starting point. New attempts use that verified
+field, preserving it after worse feedback and across reopening. Relative ranking
+does not grant anatomical approval. See [behavior and boundaries](V131_FIT_PREFERENCES.md).
+The same version repairs recording of the actual separate pilot and nested
+review windows by assigning their application owner, retaining visible workflow
+context across external focus changes, and using a selected project directory
+for early landmark videos. Prior recordings/results are preserved. Build and
+installed states remain separate; demo removal remains an open task.
 
 v130 adds owner-authorized, remembered opt-in DiffeoForge-only process recording:
 10× active interaction, 300× long waits, and automatic MP4 export after each

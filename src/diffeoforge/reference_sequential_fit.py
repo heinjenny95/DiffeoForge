@@ -44,6 +44,7 @@ def sequence_progress(directory):
         total=len(state["order"]),
         remaining=len(state["order"]) - count,
         fallback=state.get("fallbacks", {}).get(str(count)),
+        best=state.get("best_fits", {}).get(str(count)),
         fresh_review_required=_needs_fresh_review(root, state),
     )
 
@@ -171,6 +172,9 @@ def _read(root):
         if str(record["index"]) != key or not 0 <= record["index"] < len(state["order"]):
             raise ValueError("Invalid saved Plan B specimen")
         _fallback_snapshot(root, state, record)
+    from diffeoforge.reference_fit_preferences import verify_preferences
+
+    verify_preferences(root, state)
     return state
 
 
@@ -200,6 +204,11 @@ def _next_attempt(root, state):
 
     parent = study.load_reference_calibration_study(root)
     index = len(state["approved"])
+    best = state.get("best_fits", {}).get(str(index))
+    if best:
+        from diffeoforge.reference_fit_preferences import next_from_best
+
+        return next_from_best(root, state, best)
     observations = []
     for relative in state.get("trials", []):
         child = (root / relative).resolve()
@@ -516,6 +525,12 @@ def _run_specimen_sequence(
                 _joint_seed(root, state) if len(state["approved"]) == len(state["order"]) else None
             )
             snapshot = _make_child(root, state, joint_seed=seed)
+        elif kind in {"better", "worse", "same", "starting_point"}:
+            from diffeoforge.reference_fit_preferences import record_preference
+
+            record_preference(root, state, snapshot, candidate_id, kind, iterations)
+            _save(root, state)  # Preserve the chosen starting point even if preparation fails.
+            snapshot = _make_child(root, state)
         elif kind == "maybe":
             if not np.isfinite(search.fit_key(candidate)[0]):
                 raise ValueError("Only a geometrically valid completed fit can be kept as Plan B")
@@ -542,6 +557,13 @@ def _run_specimen_sequence(
                 raise ValueError("Invalid longer-fit iteration budget")
             from diffeoforge.reference_progressive_fit import seed_request
 
+            best = state.get("best_fits", {}).get(str(info["index"]))
+            if best:
+                from diffeoforge.reference_fit_preferences import verified_fit
+
+                snapshot = verified_fit(root, state, best)
+                candidate_id = best["candidate_id"]
+                values = _values(snapshot, candidate_id)
             seed = seed_request(snapshot, candidate_id, root, values)
             from diffeoforge.reference_progressive_fit import VERSION as PROGRESSIVE_VERSION
 

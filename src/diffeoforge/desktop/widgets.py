@@ -10057,7 +10057,7 @@ class DiffeoForgeWindow(QMainWindow):
         if review_only or snapshot.status != "completed":
             try:
                 dialog = ReferenceCalibrationDialog(
-                    snapshot.study_directory, verified_snapshot=snapshot
+                    snapshot.study_directory, self, verified_snapshot=snapshot
                 )
             except (OSError, RuntimeError, TypeError, ValueError) as error:
                 self._reference_calibration_open_failed(str(error))

@@ -142,6 +142,7 @@ class ProcessRecorder(QObject):
         self._bound_indicators = weakref.WeakSet()
         self._rotation_pending = False
         self._click = None
+        self._last_capture_window = None
         self._native_dialogs_previous = QApplication.testAttribute(
             Qt.ApplicationAttribute.AA_DontUseNativeDialogs
         )
@@ -221,6 +222,9 @@ class ProcessRecorder(QObject):
             QEvent.Type.WindowActivate,
         }:
             self.last_input = time.monotonic()
+            target = watched.window()
+            if self._owned(target) and target.isVisible():
+                self._last_capture_window = weakref.ref(target)
             if kind == QEvent.Type.MouseButtonPress:
                 self._click = (self.last_input, QCursor.pos())
         return False
@@ -247,6 +251,13 @@ class ProcessRecorder(QObject):
             self.timer.stop()
 
     def _context(self):
+        # Landmarking can finish before a config exists. An explicitly selected,
+        # existing project directory already identifies its local recording home.
+        field = getattr(self.window, "project_edit", None)
+        if field is not None and not field.hasFocus() and field.text().strip():
+            selected = Path(field.text().strip()).expanduser()
+            if selected.is_dir():
+                return selected.resolve()
         for result in (
             getattr(self.window, "_result", None),
             getattr(self.window, "_review", None),
@@ -366,10 +377,29 @@ class ProcessRecorder(QObject):
         self.last_capture, self.last_mode = now, mode
         self.status.setText("Recording · 10×" if mode == "active" else "Recording · waiting 300×")
 
+    def _capture_window(self):
+        pilot = getattr(self.window, "_reference_calibration_dialog", None)
+        pilot_visible = self._owned(pilot) and pilot.isVisible()
+        for target in (QApplication.activeModalWidget(), QApplication.activeWindow()):
+            if self._owned(target) and target.isVisible():
+                if target is self.window and pilot_visible:
+                    continue
+                self._last_capture_window = weakref.ref(target)
+                return target
+        # Retain the actual owned workflow window when another application takes
+        # focus. A foreign window must never enter an application-only recording.
+        previous = self._last_capture_window() if self._last_capture_window else None
+        while self._owned(previous):
+            if previous.isVisible() and (previous is not self.window or not pilot_visible):
+                return previous
+            previous = previous.parentWidget()
+        if pilot_visible:
+            self._last_capture_window = weakref.ref(pilot)
+            return pilot
+        return self.window
+
     def _image(self, now, mode):
-        window = QApplication.activeModalWidget() or QApplication.activeWindow()
-        if not self._owned(window) or not window.isVisible():
-            window = self.window
+        window = self._capture_window()
         # QWidget.grab renders only our widget hierarchy. QScreen.grabWindow can
         # include other applications covering the window and is deliberately unused.
         pixmap = window.grab()
@@ -427,7 +457,10 @@ class ProcessRecorder(QObject):
         elapsed = int(now - self.started)
         clock = f"{elapsed // 3600:02}:{elapsed // 60 % 60:02}:{elapsed % 60:02}"
         rate = "10×" if mode == "active" else "Waiting · 300×"
-        painter.drawText(18, h - 15, f"DiffeoForge · session {clock} · {rate}")
+        title = window.windowTitle().strip() or type(window).__name__
+        caption = f"DiffeoForge · {title} · session {clock} · {rate}"
+        caption = painter.fontMetrics().elidedText(caption, Qt.TextElideMode.ElideRight, w - 36)
+        painter.drawText(18, h - 15, caption)
         painter.end()
         return image
 

@@ -11,7 +11,7 @@ pytest.importorskip("PySide6")
 pytest.importorskip("imageio_ffmpeg")
 from PySide6.QtCore import QSettings, Slot
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from diffeoforge.desktop.activity import ActivityIndicator
 from diffeoforge.desktop.process_recorder import ProcessRecorder
@@ -192,3 +192,68 @@ def test_existing_pilot_close_guard_precedes_recording_finalization(application,
     window._reference_calibration_dialog = None
     dialog.close()
     window.close()
+
+
+def test_actual_saved_pilot_open_path_has_recordable_owner(application, tmp_path, monkeypatch):
+    from test_reference_calibration_study import _review_ready_stage
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    _runner, snapshot = _review_ready_stage(tmp_path, monkeypatch)
+    window = DiffeoForgeWindow(recording_allowed=False)
+    window._pilot_open_context_key = "public-owner-fixture"
+    monkeypatch.setattr(window, "_reference_calibration_context", lambda: None)
+    monkeypatch.setattr(
+        window, "_pilot_status_context_key", lambda _context: "public-owner-fixture"
+    )
+    window.show()
+    window._reference_calibration_opened(snapshot)
+    dialog = window._reference_calibration_dialog
+    assert dialog.parentWidget() is window
+    assert window.process_recorder._owned(dialog)
+    dialog.activateWindow()
+    application.processEvents()
+    assert window.process_recorder._capture_window() is dialog
+    window.process_recorder._bind_indicators()
+    assert all(
+        indicator in window.process_recorder._bound_indicators
+        for indicator in dialog.findChildren(ActivityIndicator)
+    )
+    dialog.close()
+    application.processEvents()
+    window.close()
+    application.processEvents()
+
+
+def test_external_focus_keeps_last_owned_workflow_window(application, tmp_path, monkeypatch):
+    window, rec, _settings = setup(tmp_path)
+    dialog = QDialog(window)
+    dialog.setWindowTitle("Owned workflow fixture")
+    dialog.setStyleSheet("background: #ff0000")
+    dialog.resize(640, 400)
+    try:
+        dialog.show()
+        dialog.activateWindow()
+        application.processEvents()
+        assert rec._capture_window() is dialog
+        monkeypatch.setattr(QApplication, "activeWindow", staticmethod(lambda: None))
+        monkeypatch.setattr(QApplication, "activeModalWidget", staticmethod(lambda: None))
+        assert rec._capture_window() is dialog
+        assert rec._image(time.monotonic(), "active").pixelColor(320, 160).red() > 200
+        dialog.hide()
+        assert rec._capture_window() is window
+    finally:
+        dialog.close()
+        stop(application, window, rec)
+
+
+def test_landmark_recording_uses_selected_project_before_config_exists(application, tmp_path):
+    window, rec, _settings = setup(tmp_path)
+    window._result = None
+    destination = tmp_path / "new-project"
+    destination.mkdir()
+    window.project_edit = QLineEdit(str(destination), window)
+    assert rec._context() == destination.resolve()
+    window.project_edit.setText(str(tmp_path / "not-created"))
+    assert rec._context() is None
+    stop(application, window, rec)
