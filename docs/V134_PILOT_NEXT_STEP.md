@@ -27,3 +27,18 @@ from installation and independent first use. Installation requires a saved,
 normally closed application and idle scientific workers; existing owner work
 must never be interrupted. This version includes the previous v133 comparison
 identity guards. No installer upload was requested.
+
+Verification: 105 distinct scoped regression and package-contract cases pass,
+including actual rejection/retention, provisional completion and selected-source
+dispatch guards. Source and exact-product frozen UI checks cover rejected
+options, unstable integration and provisional finish at 850×650 and 1140×900.
+Primary actions remain visible at both scroll extremes; synthetic fixture files
+are unchanged, with no native job or QC write. The probe uses the product PYZ,
+actual runtime and four matching workers. Ruff and diff checks pass.
+
+The complete five-executable bundle, startup/worker/preparation checks, dependency
+metadata, SBOM and installer build verification pass. Tested runtime source is
+08a6f66. Installed remains v132 while the owner uses the application and its
+video encoder. Normal saved close, completed encoding, verified full backup,
+fresh idle guards and installed verification remain pending. Independent first
+use and scientific acceptance remain separate from these engineering checks.

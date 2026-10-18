@@ -26,8 +26,12 @@ it the explicit next step after all new options are rejected. Technical retries
 stay separate. Stage 4 now shows one contextual action, short status and folded
 check details; a finer refit is bound to the selected saved fit. Mathematical,
 approval and completion gates remain unchanged. See [scope](V134_PILOT_NEXT_STEP.md).
-Source/build/installed verification remain separate; installed remains v132
-while the owner works. Do not install the intermediate v133 over the active app.
+105 distinct scoped cases, actual source/exact frozen UI checks, the full
+five-executable bundle and installer verification pass. Runtime source is
+08a6f66; source/readiness and installed states remain separate. Installed stays
+v132 while the owner's application and video encoder are active. Normal saved
+close, finished encoding, full backup, fresh idle guards and installed checks
+remain pending. Do not install the intermediate v133 over the active app.
 
 v133 makes both saved/current attempt identities explicit and guards surface
 delivery against a changed selection, a different loaded current fit and
