@@ -507,6 +507,16 @@ scientific gates. Planning does not mark those gates complete.
   resume to the guided desktop workflow
 - [x] Display observed progress and explicitly labelled ETA-to-iteration-cap
 - [x] Import verified Deformetrica momenta into the shared PCA/result pipeline
+- [ ] **Automatically show PC-axis shapes with the PCA plots (owner request,
+  2026-10-18).** Generate the -2 SD and +2 SD reconstructed shapes for the
+  displayed PC axes automatically when PCA results become available, and show
+  them directly below the corresponding plots without a separate generation
+  button. Default coverage should include the existing PC1-PC3 axis views, with
+  the mean shape available for comparison and clear axis/sign/SD labels. These
+  views are a standard aid to anatomical and biological interpretation. Keep
+  generation responsive with visible progress, reuse matching verified saved
+  shapes on reopen, and preserve the source atlas, PCA and approvals. Backlog
+  only: implementation and installed-UI acceptance remain pending.
 - [ ] Add verified reference PC deformation meshes and registration-quality rendering
 - [x] Export the reference shape-space comparison as a PDF in the project folder
   in addition to the local HTML report; use a deterministic,

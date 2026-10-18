@@ -21,6 +21,13 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
 
+Owner follow-up,2026-10-18: automatically generate and show -2 SD/+2 SD PC-axis
+shapes directly below the PCA plots, without requiring a separate button. Treat
+these views as standard interpretation context, retain the existing mean/PC1-PC3
+scope and verified result binding, and reuse saved shapes on reopen. This is an
+open Results & PCA usability item in the roadmap, recorded as backlog only;
+no implementation, numerical work or installation was requested by this entry.
+
 v128 makes the ten-iteration early anatomical checkpoint optional and disabled
 for new preserved-pilot handoffs. Existing early checkpoints can explicitly
 continue without recording an anatomical approval; the decision is bound to
