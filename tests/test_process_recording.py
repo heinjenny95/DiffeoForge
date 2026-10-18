@@ -5,8 +5,12 @@ import json
 import subprocess
 import sys
 
-import numpy as np
 import pytest
+
+pytest.importorskip("numpy")
+pytest.importorskip("imageio_ffmpeg")
+
+import numpy as np
 
 from diffeoforge.process_recording import ProcessRecording, recover_recording
 

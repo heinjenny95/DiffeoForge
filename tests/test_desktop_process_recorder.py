@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 pytest.importorskip("PySide6")
+pytest.importorskip("imageio_ffmpeg")
 from PySide6.QtCore import QSettings, Slot
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QVBoxLayout, QWidget

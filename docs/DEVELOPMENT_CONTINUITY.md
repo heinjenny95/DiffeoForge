@@ -30,6 +30,11 @@ job boundaries. See [behavior and limits](V130_PROCESS_RECORDING.md). Source,
 tested build and installed version are tracked separately; no installer upload
 is implied. Demo removal below remains an open task.
 
+The v130 frozen bundle and installer are verified, including recording and native
+MP4 playback with the exact product code/runtime. The existing installation is
+still dev129 while the owner window remains open; normal close, full backup and
+fresh idle guards precede installation. See [delivery state](V130_DELIVERY.md).
+
 Owner backlog update, 18 October 2026: remove the demo/presentation mode and its
 demo-only UI entry points, shortcuts and packaged assets. The owner found it
 unhelpful. This is an open task in the roadmap, not an implemented removal;
