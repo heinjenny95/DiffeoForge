@@ -32,6 +32,9 @@ qualification claim. The established development branch remains authoritative.
   Concrete acceptance example: remove duplicate specimen/optimizer counters from
   the adjacent live-event status and cohort-initialization progress caption.
   Retain one compact summary, the phase and progress bar; keep history in logs.
+  Use the [26-item source audit](UI_TEXT_AUDIT_2026-10-19.md) as the concrete
+  checklist, covering main pages, pilot/QC, GPA/landmarking, comparisons,
+  validation and visualization. Audit findings are backlog, not implemented fixes.
 
 ## Longer-term UI customization — low priority
 

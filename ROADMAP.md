@@ -521,6 +521,12 @@ scientific gates. Planning does not mark those gates complete.
     Show the phase, one compact specimen/iteration summary and the progress bar;
     keep the event history available in logs rather than duplicating the current
     status in adjacent labels. Check other workflow phases for the same repetition.
+    The [19 October source audit](docs/UI_TEXT_AUDIT_2026-10-19.md) records 26
+    concrete open items across pages 1–7 and supporting dialogs, with source
+    locations, visibility/state, proposed reductions and checks against false
+    positives. Prioritize repeated live counters/review badges and stale pilot
+    instructions, then shorten expanded help and route diagnostics into logs.
+    Audit complete; the listed UI changes remain unimplemented.
 - [x] **Default new GUI projects to Deformetrica Reference.** Preselect the reference
   engine so the familiar guided parameter-calibration workflow is available by
   default. Keep Modern explicitly opt-in and labelled experimental; explain that
