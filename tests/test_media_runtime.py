@@ -44,6 +44,46 @@ def test_frozen_media_smoke_is_part_of_the_build_gate():
     assert "datas=schema_data + third_party_data + media_metadata" in spec
     assert '-ArgumentList "--smoke-media"' in build
     assert 'if ($mediaProcess.ExitCode -ne 0)' in build
+    assert '"backends": ["QtAgg", "Agg", "PDF", "SVG"]' in spec
+    assert spec.count("hooksconfig=matplotlib_hooks") == 5
+
+
+@pytest.mark.parametrize("missing_backend", ["pdf", "svg"])
+def test_missing_file_backend_fails_before_video_or_native_work(
+    tmp_path, monkeypatch, missing_backend,
+):
+    import importlib
+
+    from matplotlib import backend_bases
+
+    module = f"matplotlib.backends.backend_{missing_backend}"
+    original = importlib.import_module
+
+    def load(name, package=None):
+        if name == module:
+            raise ModuleNotFoundError(module)
+        return original(name, package)
+
+    # Earlier positive checks cache canvas classes; recreate a fresh process's
+    # deferred import so this exercises the missing frozen-module failure.
+    monkeypatch.setitem(backend_bases._default_backends, missing_backend, module)
+    monkeypatch.setattr(importlib, "import_module", load)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    with pytest.raises(RuntimeError, match=f"Media {missing_backend.upper()} export failed"):
+        verify_media_runtime()
+    assert not list(tmp_path.iterdir())
+
+
+def test_media_smoke_returns_failure_without_opening_a_window(monkeypatch, capsys):
+    from diffeoforge import media_runtime
+    from diffeoforge.desktop.app import main
+
+    def fail():
+        raise ModuleNotFoundError("matplotlib.backends.backend_pdf")
+
+    monkeypatch.setattr(media_runtime, "verify_media_runtime", fail)
+    assert main(["--smoke-media"]) == 1
+    assert "backend_pdf" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("cancel", [False, True])

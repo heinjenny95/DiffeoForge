@@ -22,6 +22,10 @@ third_party_data = [
 # plugin/resource hook alone does not collect that distribution metadata.
 media_metadata = copy_metadata("imageio") + copy_metadata("imageio-ffmpeg")
 
+# savefig selects file backends dynamically; scanning matplotlib.use("Agg")
+# misses PDF/SVG exports even when the interactive canvas starts successfully.
+matplotlib_hooks = {"matplotlib": {"backends": ["QtAgg", "Agg", "PDF", "SVG"]}}
+
 # The post-build SBOM and installer-plan tools run from source after the frozen
 # bundle has been verified. Their implementations and third-party builder
 # dependencies must not become part of any runtime executable merely because
@@ -84,7 +88,7 @@ desktop_analysis = Analysis(
     datas=schema_data + third_party_data + media_metadata,
     hiddenimports=hidden_imports,
     hookspath=[],
-    hooksconfig={},
+    hooksconfig=matplotlib_hooks,
     runtime_hooks=[],
     excludes=excluded_modules,
     noarchive=False,
@@ -113,7 +117,7 @@ worker_analysis = Analysis(
     datas=schema_data,
     hiddenimports=hidden_imports,
     hookspath=[],
-    hooksconfig={},
+    hooksconfig=matplotlib_hooks,
     runtime_hooks=[],
     excludes=excluded_modules,
     noarchive=False,
@@ -142,7 +146,7 @@ reference_worker_analysis = Analysis(
     datas=schema_data,
     hiddenimports=hidden_imports,
     hookspath=[],
-    hooksconfig={},
+    hooksconfig=matplotlib_hooks,
     runtime_hooks=[],
     excludes=excluded_modules,
     noarchive=False,
@@ -173,7 +177,7 @@ reference_preparation_worker_analysis = Analysis(
     datas=schema_data,
     hiddenimports=hidden_imports,
     hookspath=[],
-    hooksconfig={},
+    hooksconfig=matplotlib_hooks,
     runtime_hooks=[],
     excludes=excluded_modules,
     noarchive=False,
@@ -205,7 +209,7 @@ reference_execution_worker_analysis = Analysis(
     datas=schema_data,
     hiddenimports=hidden_imports,
     hookspath=[],
-    hooksconfig={},
+    hooksconfig=matplotlib_hooks,
     runtime_hooks=[],
     excludes=excluded_modules,
     noarchive=False,

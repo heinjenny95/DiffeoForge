@@ -1,4 +1,4 @@
-# Development continuity — v139 media runtime repair
+# Development continuity — v140 gallery backend repair
 
 Snapshot: 2026-10-19. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,13 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v140 fixes another frozen-gallery dependency: Matplotlib's PDF writer was omitted
+by automatic backend discovery. The spec explicitly includes all GUI/image/vector
+backends used by the app; media preflight now exercises PNG/JPEG/PDF/SVG and MP4.
+Thirty-three focused source cases and a complete synthetic renderer/Qt gallery probe
+pass. Frozen, installer and installed checks remain pending; installed v139 is
+unchanged. See [scope and current gates](V140_GALLERY_BACKENDS.md).
 
 v139 fixes absent imageio metadata in the Windows bundle and adds a frozen MP4
 encode/decode gate. Visualization checks media support before native work and

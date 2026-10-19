@@ -1,5 +1,12 @@
 # Private-alpha build numbering
 
+## v140 — collect and check gallery PDF/SVG backends
+
+v140 (`0.0.0.dev140`) adds explicit PDF/SVG backend collection and extends media
+preflight beyond video to PNG, JPEG, PDF and SVG. The complete synthetic gallery
+and 33 focused source cases pass. Frozen and installed checks remain separate;
+see [scope and verification](V140_GALLERY_BACKENDS.md).
+
 ## v139 — frozen imageio metadata and media runtime checks
 
 v139 (`0.0.0.dev139`) repairs missing imageio distribution metadata in the Windows

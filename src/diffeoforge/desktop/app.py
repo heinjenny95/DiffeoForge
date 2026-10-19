@@ -33,7 +33,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.smoke_media:
         from diffeoforge.media_runtime import verify_media_runtime
 
-        verify_media_runtime()
+        try:
+            verify_media_runtime()
+        except Exception as error:
+            if sys.stderr is not None:
+                print(f"Media smoke failed: {error}", file=sys.stderr)
+            return 1
         return 0
     try:
         from PySide6.QtWidgets import QApplication
