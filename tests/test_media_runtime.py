@@ -12,6 +12,7 @@ from diffeoforge.media_runtime import verify_media_runtime
 def test_media_runtime_encodes_and_decodes_all_synthetic_frames(tmp_path, monkeypatch):
     pytest.importorskip("imageio.v2")
     pytest.importorskip("imageio_ffmpeg")
+    pytest.importorskip("matplotlib")
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     verify_media_runtime()
     assert not list(tmp_path.iterdir())
@@ -54,6 +55,7 @@ def test_missing_file_backend_fails_before_video_or_native_work(
 ):
     import importlib
 
+    pytest.importorskip("matplotlib")
     from matplotlib import backend_bases
 
     module = f"matplotlib.backends.backend_{missing_backend}"

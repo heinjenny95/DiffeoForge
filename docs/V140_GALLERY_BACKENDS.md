@@ -12,7 +12,7 @@ the MP4 encode/decode check. Missing file backends now fail this build gate and
 the early preflight, before native work. Existing atlas, PCA and endpoints are
 not changed by this repair.
 
-## Verification in progress
+## Verification
 
 All 33 focused regressions pass with normal process exit, including missing
 PDF/SVG dependency injection, endpoint reuse and export integrity. A separate
@@ -25,7 +25,10 @@ The probe bound to the exact v139 product PYZ and shared runtime reproduces the
 missing PDF module. The media command now returns failure without opening an
 unhandled-exception window when a runtime check fails.
 
-Frozen-package, installer and installed verification are separate gates and
-remain pending. This source test does not establish scientific validity or
-cross-platform support. Existing standalone gallery exports are not imported
-or reassigned to another run by this packaging change.
+The exact frozen renderer/Qt probe, installer and installed-runtime checks now
+pass, including all five views and video playback for an existing completed
+result; see [delivery evidence](V140_DELIVERY.md). The
+optional Matplotlib-dependent tests skip when the desktop extra is unavailable.
+These tests do not establish scientific validity or cross-platform support.
+Existing standalone gallery exports are not imported or reassigned to another
+run by this packaging change.

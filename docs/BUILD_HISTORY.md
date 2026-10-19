@@ -4,8 +4,10 @@
 
 v140 (`0.0.0.dev140`) adds explicit PDF/SVG backend collection and extends media
 preflight beyond video to PNG, JPEG, PDF and SVG. The complete synthetic gallery
-and 33 focused source cases pass. Frozen and installed checks remain separate;
-see [scope and verification](V140_GALLERY_BACKENDS.md).
+and 33 focused source cases pass. The exact frozen package and local installer
+are verified and installed; all five existing-result gallery views and video
+playback pass the installed UI check.
+See [scope](V140_GALLERY_BACKENDS.md) and [delivery](V140_DELIVERY.md).
 
 ## v139 — frozen imageio metadata and media runtime checks
 
