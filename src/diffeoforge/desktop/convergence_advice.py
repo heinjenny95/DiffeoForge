@@ -3,7 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 
 from PySide6.QtCore import QObject, QTimer
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QHBoxLayout, QLabel
 
 from diffeoforge.convergence_advice import capped_run_advice
 
@@ -23,7 +23,15 @@ class CapAdviceController(QObject):
             label = QLabel(button.parentWidget())
             label.setWordWrap(True)
             label.hide()
-            button.parentWidget().layout().addWidget(label)
+            container = button.parentWidget()
+            layout = container.layout()
+            if isinstance(layout, QHBoxLayout):
+                # A wrapped paragraph must not become another column of the footer.
+                outer = container.parentWidget().layout()
+                outer.insertWidget(outer.indexOf(container), label)
+                label.setContentsMargins(24, 8, 24, 8)
+            else:
+                layout.addWidget(label)
             self.labels.append(label)
 
     def load(self, source):

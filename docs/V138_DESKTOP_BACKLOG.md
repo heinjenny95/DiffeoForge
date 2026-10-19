@@ -151,6 +151,6 @@ These checks do not qualify native scientific GPU cancellation, anatomy or an
 external operating system. Frozen delivery is recorded separately.
 
 The owner's additional fault/optimization review adds
-[state, export-I/O and cancellation repairs](V138_FOLLOWUP_AUDIT.md), with 28
+[state, export-I/O, layout and cancellation repairs](V138_FOLLOWUP_AUDIT.md), with 30
 focused cases passing. It also records the remaining pilot-verification profiling
 candidate without claiming an unmeasured speedup.

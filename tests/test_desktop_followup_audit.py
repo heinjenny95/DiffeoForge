@@ -141,3 +141,36 @@ def test_closing_export_view_cannot_leave_recording_in_busy_mode(qapp, monkeypat
         gate.set()
         owner.close()
         qapp.processEvents()
+
+
+@pytest.mark.parametrize("width,height", [(850, 650), (1140, 900)])
+def test_cap_advice_cannot_squeeze_qc_footer(qapp, monkeypatch, width, height):
+    from PySide6.QtWidgets import QHBoxLayout, QPushButton, QVBoxLayout, QWidget
+
+    from diffeoforge.desktop import convergence_advice as module
+
+    page, footer = QWidget(), QWidget()
+    page.resize(width, height)
+    vertical = QVBoxLayout(page)
+    vertical.addStretch()
+    row = QHBoxLayout(footer)
+    button = QPushButton("Continue +300 iterations")
+    row.addWidget(QPushButton("Back"))
+    row.addWidget(button)
+    row.addWidget(QPushButton("Open Results"))
+    vertical.addWidget(footer)
+    future = Future()
+    future.set_result((500, "Recent objective improvement is still measurable. " * 10))
+    monkeypatch.setattr(module._POOL, "submit", lambda *args: future)
+    controller = module.CapAdviceController(page, (button,))
+    controller.load(Path("synthetic-capped-run"))
+    controller._poll()
+    page.show()
+    qapp.processEvents()
+    label = controller.labels[0]
+    assert label.parentWidget() is page
+    assert label.width() >= width - 80
+    assert label.geometry().bottom() < footer.geometry().top()
+    assert footer.height() < 100
+    page.close()
+    qapp.processEvents()
