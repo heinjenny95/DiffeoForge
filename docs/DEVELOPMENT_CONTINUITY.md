@@ -6,8 +6,8 @@ triangles with detailed image glyphs. Current-view/gallery exports preserve the
 selected PCA orientation and exact scores. Existing SD/movie and comparison-method
 views are outside this change. See [scope and remaining gates](V141_MESH_VIEWS.md).
 
-The tested Windows runtime908c44c/dev141 is installed after full backup and fresh
-idle checks.38source cases, exact frozen/installed view/export probes, all bundle
+The tested Windows runtime `908c44c` / `dev141` is installed after full backup and
+fresh idle checks. All 38 source cases, exact frozen/installed view/export probes, bundle
 hashes/evidence, registry and startup/media smokes pass. Five source/frozen/
 installed images are pixel-identical; original project bytes are unchanged.
 The owner app remains closed. See [delivery verification](V141_DELIVERY.md).
