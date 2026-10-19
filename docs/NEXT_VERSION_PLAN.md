@@ -20,6 +20,16 @@ qualification claim. The established development branch remains authoritative.
   Recorded for later implementation; no runtime, iteration budget or active run
   changes are part of this backlog update.
 
+## Longer-term UI customization — low priority
+
+- [ ] Support light/dark modes and user-selected UI colors, including an arbitrary
+  replacement for the current teal accent. Persist appearance preferences, apply
+  them consistently across main and secondary windows, retain readable interaction
+  states and provide a default-theme reset. See the
+  [roadmap item](../ROADMAP.md#longer-term-ui-customization--low-priority).
+  Owner request recorded on 19 October 2026 for later, low-priority work; no
+  implementation, next-version commitment or active-run change is included.
+
 ## v129 owner-selected implementation
 
 The follow-up v130 process recorder implements saved opt-in, active 10× / waiting

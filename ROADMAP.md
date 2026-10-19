@@ -44,6 +44,17 @@ scientific gates. Planning does not mark those gates complete.
   rules and explicit user-controlled continuation; never start extra iterations
   automatically. Keep analysis off the GUI thread and retain original run evidence.
 
+## Longer-term UI customization — low priority
+
+- [ ] Add appearance settings with light/dark modes and user-selected colors.
+  In particular, let users replace the current teal accent with an arbitrary
+  color across navigation, buttons and other UI highlights. Apply the chosen
+  theme consistently to owned dialogs, save the preference between sessions,
+  and offer a reset to the default appearance. Keep text, focus, disabled controls
+  and status messages legible across themes. Owner request, 19 October 2026:
+  long-term, low-priority backlog only; no implementation or delivery date is
+  implied, and this is not a prerequisite for the current scientific workflow.
+
 ## Pilot usability follow-up
 
 - [x] Adopt a verified finer evaluation of the same saved field without another
