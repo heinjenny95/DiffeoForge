@@ -7,6 +7,7 @@ mesh views for Stage 7's 2D/3D PCA plots. Detailed image glyphs keep that select
 surface facing the reader as the PCA camera rotates; view-aware snapshots and
 gallery exports retain exact scores and preserve original results.
 See [scope and verification boundaries](V141_MESH_VIEWS.md).
+The tested Windows build is installed; see [delivery checks](V141_DELIVERY.md).
 
 ## v140 — collect and check gallery PDF/SVG backends
 
