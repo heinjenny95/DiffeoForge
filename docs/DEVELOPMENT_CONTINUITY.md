@@ -1,4 +1,10 @@
-# Development continuity — v140 gallery backend repair
+# Development continuity — v141 PCA mesh views
+
+v141 separates the Stage 7 PCA mesh view from the PCA camera, adds a large
+rotatable preview with named result-bound views and replaces coarse 3D specimen
+triangles with detailed image glyphs. Current-view/gallery exports preserve the
+selected PCA orientation and exact scores. Existing SD/movie and comparison-method
+views are outside this change. See [scope and remaining gates](V141_MESH_VIEWS.md).
 
 Snapshot: 2026-10-19. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in

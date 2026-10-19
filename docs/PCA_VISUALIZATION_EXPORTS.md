@@ -10,6 +10,11 @@ manifest and file hashes.
 
 ## Mesh plots
 
+v141 adds independent, named specimen views for Stage 7 PCA glyphs, including a
+large preview and view-aware exports. The PCA camera rotates score positions
+without turning the selected surface away. See [implementation and remaining
+media scope](V141_MESH_VIEWS.md).
+
 Place each reconstruction at its saved PCA score coordinates. Use the same mesh
 orientation, camera and world-to-image scale across specimens; do not jitter
 coordinates or resize each specimen independently. State the explained variance

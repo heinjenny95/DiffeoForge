@@ -1,5 +1,13 @@
 # Private-alpha build numbering
 
+## v141 — independent anatomical views for PCA glyphs
+
+v141 (`0.0.0.dev141`) adds a large rotatable specimen preview and named shared
+mesh views for Stage 7's 2D/3D PCA plots. Detailed image glyphs keep that selected
+surface facing the reader as the PCA camera rotates; view-aware snapshots and
+gallery exports retain exact scores and preserve original results.
+See [scope and verification boundaries](V141_MESH_VIEWS.md).
+
 ## v140 — collect and check gallery PDF/SVG backends
 
 v140 (`0.0.0.dev140`) adds explicit PDF/SVG backend collection and extends media

@@ -5,7 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
-from PySide6.QtCore import QPointF, Qt, QTimer
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
     QComboBox,
@@ -65,11 +65,13 @@ class MorphospaceCanvas(QWidget):
         self.cache = SurfaceFrameCache(self)
         self.cache.changed.connect(self.update)
         self.data = None
+        self.glyph_images = []
         self.glyph_size = 0.045
         self.selected = -1
         self.labels = []
         self.axis_prefix = "PC"
         self.method_label = ""
+        self.mesh_view_label = ""
         self.reset()
 
     def reset(self):
@@ -79,8 +81,18 @@ class MorphospaceCanvas(QWidget):
 
     def set_data(self, data, labels):
         self.data, self.labels, self.selected = data, labels, -1
+        self.glyph_images = []
         self.cache.clear()
         self.reset()
+
+    def set_images(self, images):
+        if self.data is None or len(images) != len(self.data[0]):
+            return
+        if any(image.isNull() for image in images):
+            raise ValueError("A mesh view could not be decoded")
+        self.glyph_images = [QImage(image) for image in images]
+        self.cache.clear()
+        self.update()
 
     def _scene(self):
         scores, vertices, faces, _ = self.data
@@ -95,7 +107,14 @@ class MorphospaceCanvas(QWidget):
         rotation = np.array([[cy, 0, sy], [sp * sy, cp, -sp * cy], [-cp * sy, sp, cp * cy]])
         layer = SurfaceLayer(placed.reshape(-1, 3), indices.reshape(-1, 3))
         scene = SurfaceScene(
-            self.width(), self.height(), center, scale, rotation, self.zoom, self.pan, (layer,)
+            self.width(),
+            self.height(),
+            center,
+            scale,
+            rotation,
+            self.zoom,
+            self.pan,
+            () if self.glyph_images else (layer,),
         )
         key = (
             id(self.data),
@@ -108,6 +127,21 @@ class MorphospaceCanvas(QWidget):
             self.glyph_size,
         )
         return key, scene
+
+    def _draw_glyphs(self, painter, scene):
+        # Image glyphs face the reader. Rotating the PCA camera changes positions,
+        # never the independently selected anatomical view or the saved scores.
+        scores = self.data[0]
+        xy = self._project(scores, scene)
+        depths = ((scores - scene.center) / scene.scale) @ scene.rotation[2]
+        width = self.glyph_size * min(scene.width, scene.height) * 4 * scene.zoom
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        for index in np.argsort(depths):
+            image = self.glyph_images[index]
+            height = width * image.height() / image.width()
+            x, y = xy[index]
+            painter.drawImage(QRectF(x - width / 2, y - height / 2, width, height), image)
+        self._decorate(painter, scene)
 
     @staticmethod
     def _project(points, scene):
@@ -123,11 +157,16 @@ class MorphospaceCanvas(QWidget):
     def _decorate(self, painter, scene):
         scores, _, _, ratios = self.data
         painter.setPen(QPen(QColor("#526b70"), 1))
+        label_y = 20
         if self.method_label:
             title = painter.fontMetrics().elidedText(
                 self.method_label, Qt.TextElideMode.ElideRight, self.width() - 24
             )
             painter.drawText(12, 20, title)
+            label_y += 20
+        if self.mesh_view_label:
+            painter.drawText(12, label_y, "Mesh view: " + self.mesh_view_label)
+            label_y += 20
         # One common spatial scale: equal score distances have equal lengths on all axes.
         for axis in range(3):
             a = scene.center.copy()
@@ -144,7 +183,7 @@ class MorphospaceCanvas(QWidget):
             xy = self._project(scores[self.selected : self.selected + 1], scene)[0]
             painter.setPen(QPen(QColor("#a64e18"), 2))
             painter.drawEllipse(QPointF(*xy), 12, 12)
-            painter.drawText(12, 42 if self.method_label else 24, self._label(self.selected))
+            painter.drawText(12, label_y, self._label(self.selected))
 
     def paintEvent(self, event):  # noqa: N802
         painter = QPainter(self)
@@ -155,6 +194,9 @@ class MorphospaceCanvas(QWidget):
             )
             return
         key, scene = self._scene()
+        if self.glyph_images:
+            self._draw_glyphs(painter, scene)
+            return
         image = self.cache.request(key, scene)
         if image is not None:
             painter.drawImage(0, 0, image)
@@ -166,6 +208,13 @@ class MorphospaceCanvas(QWidget):
         if self.data is None:
             raise ValueError("No 3D morphospace is available for this result.")
         key, scene = self._scene()
+        if self.glyph_images:
+            image = QImage(self.width(), self.height(), QImage.Format.Format_ARGB32)
+            image.fill(QColor("#f7f9f9"))
+            painter = QPainter(image)
+            self._draw_glyphs(painter, scene)
+            painter.end()
+            return image
         if not self.cache.ready(key):
             raise ValueError("Wait for the current camera view to finish rendering.")
         image = QImage(self.cache.request(key, scene))
@@ -185,7 +234,11 @@ class MorphospaceCanvas(QWidget):
         )
 
     def _pick(self, position):
-        scene = self.cache.image_scene
+        scene = (
+            self._scene()[1]
+            if self.data is not None and self.glyph_images
+            else self.cache.image_scene
+        )
         if self.data is None or scene is None:
             return -1
         xy = self._project(self.data[0], scene)
@@ -231,7 +284,7 @@ class Morphospace3D(QWidget):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
-        reset = QPushButton("Reset camera")
+        reset = QPushButton("Reset PCA camera")
         self.canvas = MorphospaceCanvas()
         reset.clicked.connect(self.canvas.reset)
         controls.addWidget(reset)
@@ -260,6 +313,7 @@ class Morphospace3D(QWidget):
         self.timer.setInterval(40)
         self.timer.timeout.connect(self._poll)
         self.future = None
+        self._images = None
 
     def _size(self, value):
         self.canvas.glyph_size = value / 100
@@ -269,8 +323,9 @@ class Morphospace3D(QWidget):
         self.canvas.selected = index
         self.canvas.update()
 
-    def load(self, path, labels, *, expected=None, scores=None):
+    def load(self, path, labels, *, expected=None, scores=None, images=None):
         self.clear()
+        self._images = images
         if not path.is_file():
             self.status.setText("Prepare this result's media again to add the 3D view.")
             return
@@ -285,9 +340,16 @@ class Morphospace3D(QWidget):
             self.future.cancel()
         self.future = None
         self.canvas.data = None
+        self.canvas.glyph_images = []
+        self.canvas.mesh_view_label = ""
+        self._images = None
         self.specimens.clear()
         self.canvas.cache.clear()
         self.canvas.update()
+
+    def set_images(self, images):
+        self._images = images
+        self.canvas.set_images(images)
 
     def _poll(self):
         if self.future is None or not self.future.done():
@@ -295,6 +357,8 @@ class Morphospace3D(QWidget):
         self.timer.stop()
         try:
             self.canvas.set_data(self.future.result(), self.labels)
+            if self._images is not None:
+                self.canvas.set_images(self._images)
             self.specimens.addItems(
                 [
                     self.labels[i] if i < len(self.labels) else f"Mesh {i + 1}"
@@ -302,7 +366,9 @@ class Morphospace3D(QWidget):
                 ]
             )
             self.status.setText(
-                "Drag to rotate · Right-drag to pan · Wheel to zoom · Click for scores"
+                "Rotate PCA: drag · Pan: right-drag · Zoom: wheel · Mesh view stays fixed"
+                if self._images
+                else "Drag to rotate · Right-drag to pan · Wheel to zoom · Click for scores"
             )
         except (OSError, ValueError, KeyError) as error:
             self.status.setText(str(error))

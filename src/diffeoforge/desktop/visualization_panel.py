@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.desktop.media_export import export_media
+from diffeoforge.desktop.mesh_view import MeshViewController, mesh_view_button
 from diffeoforge.desktop.morphospace_3d import Morphospace3D
 
 _EXPORTS = ThreadPoolExecutor(max_workers=1, thread_name_prefix="media-export")
@@ -100,6 +101,8 @@ class VisualizationPanel(QWidget):
         self._items = []
         self._specimen_labels = []
         self._thumbnails = {}
+        self.mesh_views = MeshViewController(self)
+        self.mesh_views.images_changed.connect(self._mesh_images_changed)
         self._records = {}
         self._export_future = None
         self._export_timer = QTimer(self)
@@ -137,15 +140,44 @@ class VisualizationPanel(QWidget):
             InfoDisclosure(
                 "Methods",
                 (
-                    'Mean and ±2 SD: native shooting. Movies: 17 native samples. '
-                    'Rendering details are saved in media.json.'
+                    "Mean and ±2 SD: native shooting. Movies: 17 native samples. "
+                    "Rendering details are saved in media.json."
                 ),
             )
         )
         self.tabs = QTabWidget()
+        self.mesh_view_controls = QWidget()
+        view_controls = QHBoxLayout(self.mesh_view_controls)
+        view_controls.setContentsMargins(0, 0, 0, 0)
+        view_controls.addWidget(
+            mesh_view_button(
+                self.mesh_views,
+                lambda: self._specimen_labels,
+                self,
+            )
+        )
+        self.mesh_view_status = QLabel("Choose which surface faces you.")
+        self.mesh_view_status.setTextFormat(Qt.TextFormat.PlainText)
+        self.mesh_views.status_changed.connect(self.mesh_view_status.setText)
+        view_controls.addWidget(self.mesh_view_status, 1)
+        self.mesh_size_label = QLabel("Mesh size")
+        view_controls.addWidget(self.mesh_size_label)
+        self.mesh_size = QSlider(Qt.Orientation.Horizontal)
+        self.mesh_size.setRange(30, 180)
+        self.mesh_size.setValue(90)
+        self.mesh_size.setMaximumWidth(130)
+        self.mesh_size.valueChanged.connect(self._show_plot)
+        view_controls.addWidget(self.mesh_size)
+        layout.addWidget(self.mesh_view_controls)
+        self.tabs.currentChanged.connect(
+            lambda index: self.mesh_view_controls.setVisible(index in (0, 4))
+        )
+        self.tabs.currentChanged.connect(lambda index: self.mesh_size.setVisible(index == 0))
+        self.tabs.currentChanged.connect(lambda index: self.mesh_size_label.setVisible(index == 0))
         layout.addWidget(self.tabs, 1)
         self.plot_combo, self.plot_view = self._picture_tab("Mesh PCA")
         self.plot_combo.addItem("PC1 / PC2", (0, 1))
+        self.plot_combo.addItem("PC1 / PC3", (0, 2))
         self.plot_combo.addItem("PC2 / PC3", (1, 2))
         self.plot_combo.currentIndexChanged.connect(self._show_plot)
         self.sd_combo, self.sd_view = self._picture_tab("±2 SD")
@@ -216,6 +248,7 @@ class VisualizationPanel(QWidget):
         self._zip_record = None
         self._items = []
         self._thumbnails.clear()
+        self.mesh_views.clear()
         self.export.setEnabled(False)
         self.export_current.setEnabled(False)
         self._records = {}
@@ -244,6 +277,7 @@ class VisualizationPanel(QWidget):
         if self._zip_record is None:
             raise ValueError("Verified sharing archive is not inventoried")
         self._items = json.loads((gallery / "mesh-pca.json").read_text())
+        full_images = []
         for item in self._items:
             image = QImage()
             import base64
@@ -251,12 +285,8 @@ class VisualizationPanel(QWidget):
             image.loadFromData(base64.b64decode(item["image"].split(",", 1)[1]))
             if image.isNull():
                 raise ValueError("Mesh PCA thumbnail could not be decoded")
-            self._thumbnails[item["id"]] = QPixmap.fromImage(image).scaled(
-                100,
-                90,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
+            full_images.append(image)
+            self._thumbnails[item["id"]] = QPixmap.fromImage(image)
         for path in sorted((gallery / "figures").glob("*.png")):
             if path.stem.endswith("-SD"):
                 self.sd_combo.addItem(path.stem.replace("-SD", " · −2 SD / Mean / +2 SD"), path)
@@ -271,13 +301,27 @@ class VisualizationPanel(QWidget):
         self.morphospace.canvas.method_label = str(metadata["pca_method"])
         if display_record is not None:
             self.morphospace.load(
-                directory / "morphospace-3d.npz", self._specimen_labels,
+                directory / "morphospace-3d.npz",
+                self._specimen_labels,
                 expected=display_record,
                 scores=[item["scores"][:3] for item in self._items],
+                images=full_images,
             )
         else:
             self.morphospace.status.setText("Prepare media again to add a verified 3D view.")
         self.status.setText("Saved PCA · mean and ±2 SD · six synchronized views")
+        self.mesh_views.load(directory, [item["scores"][:3] for item in self._items], full_images)
+
+    def _mesh_images_changed(self, images):
+        if len(images) != len(self._items):
+            raise ValueError("Mesh views do not match the saved score rows")
+        self._thumbnails = {
+            item["id"]: QPixmap.fromImage(image)
+            for item, image in zip(self._items, images, strict=True)
+        }
+        self.morphospace.set_images(images)
+        self.morphospace.canvas.mesh_view_label = self.mesh_views.label
+        self._show_plot()
 
     def _show_plot(self):
         if not self._items:
@@ -307,8 +351,16 @@ class VisualizationPanel(QWidget):
         title = scene.addSimpleText(f"PC{x + 1} / PC{y + 1}")
         title.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
         title.setPos(left + 400, top - 60)
+        caption = scene.addSimpleText("Mesh view: " + self.mesh_views.label)
+        caption.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
+        caption.setPos(left, top - 90)
         for item, (a, b) in zip(self._items, values, strict=True):
-            pixmap = self._thumbnails[item["id"]]
+            pixmap = self._thumbnails[item["id"]].scaled(
+                self.mesh_size.value(),
+                self.mesh_size.value(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
             glyph = scene.addPixmap(pixmap)
             glyph.setOffset(-pixmap.width() / 2, -pixmap.height() / 2)
             glyph.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
@@ -367,7 +419,28 @@ class VisualizationPanel(QWidget):
         target = Path(destination)
         if not target.suffix:
             target = target.with_suffix(".zip")
-        self._start_export(target, source=source, expected=self._zip_record)
+        if self.mesh_views.selected is not None:
+            import numpy as np
+
+            if self.morphospace.canvas.data is None:
+                QMessageBox.warning(
+                    self, "Export not ready", "Wait for the saved PCA axes to load."
+                )
+                return
+            self._start_export(
+                target,
+                source=source,
+                expected=self._zip_record,
+                mesh_view={
+                    "items": self._items,
+                    "images": list(self.mesh_views.images),
+                    "ratios": np.array(self.morphospace.canvas.data[3]),
+                    "rotation": self.mesh_views.rotation.copy(),
+                    "name": self.mesh_views.label,
+                },
+            )
+        else:
+            self._start_export(target, source=source, expected=self._zip_record)
 
     def _export_current(self):
         if self.directory is None or self._export_future is not None:
@@ -440,9 +513,21 @@ class VisualizationPanel(QWidget):
         self.export_current.setEnabled(False)
         self.status.setText("Exporting…")
         self._export_source = self.directory
-        self._export_future = _EXPORTS.submit(
-            export_media, target, protected=(self.directory, self._source_run), **kwargs
-        )
+        selected_view = kwargs.pop("mesh_view", None)
+        if selected_view is not None:
+            from diffeoforge.desktop.mesh_view_export import export_oriented_gallery
+
+            self._export_future = _EXPORTS.submit(
+                export_oriented_gallery,
+                target,
+                protected=(self.directory, self._source_run),
+                **kwargs,
+                **selected_view,
+            )
+        else:
+            self._export_future = _EXPORTS.submit(
+                export_media, target, protected=(self.directory, self._source_run), **kwargs
+            )
         self._export_timer.start()
 
     def _export_finished(self):

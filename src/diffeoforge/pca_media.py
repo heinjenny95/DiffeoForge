@@ -575,7 +575,12 @@ def _archive_gallery(gallery: Path, target: Path) -> None:
         if not path.is_file():
             continue
         relative = path.relative_to(gallery)
-        allowed = relative.as_posix() in {"index.html", "mesh-pca.html", "mesh-pca.json"}
+        allowed = relative.as_posix() in {
+            "index.html",
+            "mesh-pca.html",
+            "mesh-pca.json",
+            "mesh-view.json",
+        }
         allowed |= len(relative.parts) == 2 and (
             (relative.parts[0] == "figures" and path.suffix in {".png", ".pdf"})
             or (relative.parts[0] == "thumbnails" and path.suffix == ".png")
