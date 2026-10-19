@@ -21,10 +21,7 @@ def render_density(dialog):
     title.setObjectName("sectionTitle")
     layout.addWidget(title)
     note = QLabel(
-        "Compare only the chosen fit: one matched reference and two nested denser bases. "
-        "All use the same pilot specimens and the same saved starting deformation. "
-        "Existing control points/momenta stay in the starting basis; new points start "
-        "with zero momentum. Your original anatomical approvals remain saved."
+        'Compare the chosen fit with two denser control-point bases, then review each new fit.'
     )
     note.setWordWrap(True)
     layout.addWidget(note)
@@ -63,10 +60,10 @@ def render_density(dialog):
     table.setMaximumHeight(225)
     layout.addWidget(table)
     limits = QLabel(
-        "Distances and endpoint changes are sampled/numerical diagnostics. "
-        "Size means the original specimen's bounding-box diagonal. "
-        "Lower distance alone cannot approve anatomy or establish an optimal density. "
-        "Compare the finer fits with the matched reference; the original fit is retained history."
+
+            'Distances are relative to each original bounding-box diagonal. A lower distance '
+            'needs anatomical review; it does not establish an optimal density.'
+
     )
     limits.setWordWrap(True)
     layout.addWidget(limits)

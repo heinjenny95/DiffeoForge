@@ -12,6 +12,14 @@ The [next development-version plan](docs/NEXT_VERSION_PLAN.md) sequences the
 current UX work and explicitly plans the larger hardware, distribution and
 scientific gates. Planning does not mark those gates complete.
 
+## v138 implementation and remaining evidence
+
+The owner authorized the current and older software backlog on 19 October 2026.
+[v138 scope and reconciliation](docs/V138_DESKTOP_BACKLOG.md) records the completed
+source work and remaining gates. Source checkboxes do not establish installed,
+native scientific, external platform or independent usability acceptance. Current
+scientific runs remain unchanged. No Linux/macOS or HPC test systems are available.
+
 ## Owner-requested cleanup
 
 - [x] Add opt-in automatic process recording: active sections at 10×, long waits
@@ -27,14 +35,15 @@ scientific gates. Planning does not mark those gates complete.
   2026: the button is still present in installed v130. Preserve real projects,
   results and engineering test fixtures. This task remains open until the button
   and demo entry points are removed, the change is tested and installed, and the
-  installed UI is checked. Backlog only; removal has not been implemented.
+  installed UI is checked. v138 removes source/installer entry points and assets;
+  the installed check waits for safe installation after active work ends.
 
 ## Atlas stopping and continuation
 
-- [ ] When an atlas reaches its iteration limit, show how much its objective
+- [x] When an atlas reaches its iteration limit, show how much its objective
   improved near the end and give a concise, explained recommendation beside
-  **Continue +300 iterations**. Owner request, 19 October 2026: backlog only;
-  implementation is deferred. Compare recent iteration windows (for example,
+  **Continue +300 iterations**. Implemented in v138 source. Compare recent
+  iteration windows (for example,
   the last 10 and 50), show absolute gains and relative changes with a declared
   denominator, and distinguish ongoing improvement, flattening and insufficient
   evidence. Account for sparse or rounded logs, continuation boundaries and
@@ -46,14 +55,13 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Longer-term UI customization — low priority
 
-- [ ] Add appearance settings with light/dark modes and user-selected colors.
+- [x] Add appearance settings with light/dark modes and user-selected colors.
   In particular, let users replace the current teal accent with an arbitrary
   color across navigation, buttons and other UI highlights. Apply the chosen
   theme consistently to owned dialogs, save the preference between sessions,
   and offer a reset to the default appearance. Keep text, focus, disabled controls
-  and status messages legible across themes. Owner request, 19 October 2026:
-  long-term, low-priority backlog only; no implementation or delivery date is
-  implied, and this is not a prerequisite for the current scientific workflow.
+  and status messages legible across themes. Implemented in v138 source,
+  with preview/cancel, persistence, reset and contrast checks.
 
 ## Pilot usability follow-up
 
@@ -146,7 +154,10 @@ scientific gates. Planning does not mark those gates complete.
   bounded backend exit, no subsequent candidate, checkpoint preservation and
   truthful terminal metadata. Include frozen Windows and backend shutdown-failure
   cases. An observed ineffective cancellation remains unresolved; a manual
-  operational stop does not establish a software repair.
+  operational stop does not establish a software repair. v138 adds session
+  supervision, launch-bound acknowledgements, bounded escalation and explicit
+  missing-ack failure handling. Process-only checks pass; native scientific GPU
+  and frozen Windows end-to-end qualification remain open.
 
 - [ ] Profile and accelerate preparation before the pilot starts: aligned-cohort
   analysis, staged-plan construction, alignment/project preparation, verification
@@ -156,8 +167,9 @@ scientific gates. Planning does not mark those gates complete.
   hashes, stale-input rejection, coordinate precision, topology, scientific
   geometry and all fit/tolerance/anatomy gates; no silent decimation or skipped
   integrity checks. Verify cold/warm large-mesh timings, unchanged outputs,
-  invalidation, progress and cancellation. Backlog only, recorded 2026-10-14;
-  implementation is deferred while the owner's current workflow/run continues.
+  invalidation, progress and cancellation. v138 adds the scalar measurement
+  cache and safe-boundary cancellation, with synthetic million-face cold/warm
+  checks. Broader end-to-end preparation/RSS qualification remains open.
 
 - [x] Check new screening approximations at every vertex/face centroid with
   component coverage, bounded resolution escalation and original fallback;
@@ -207,7 +219,8 @@ scientific gates. Planning does not mark those gates complete.
   native stop: restore the unchanged saved state in a separate protected
   successor, reserve complete output space and skip further optimization.
   See [verification and limits](docs/REFERENCE_FINAL_EXPORT_RECOVERY.md).
-- [ ] Expose saved-state export recovery in the desktop.
+- [x] Expose saved-state export recovery in the desktop (v138); prepare a separate
+  unchanged-checkpoint successor, check storage and start only on explicit action.
 - [x] Apply complete-flow storage planning to desktop cohorts below the production
   threshold, including resume, binary input/ASCII output expansion and the worker
   launch guard. See [v121 scope](docs/V121_STORAGE_AND_ACTIVITY.md).
@@ -238,7 +251,7 @@ scientific gates. Planning does not mark those gates complete.
   exclude only the documented template copy, and review the original GPA cohort
   without editing saved results. See [v113 correction](docs/V113_PILOT_COHORT_HANDOFF.md).
 
-- [ ] Offer an explicit **Reopen and refine saved pilot** action for completed
+- [x] Offer an explicit **Reopen and refine saved pilot** action for completed
   and provisionally completed studies, alongside **Use saved parameters** and
   **Start new pilot**. Allow inspection and targeted continuation without
   restarting the entire search. Preserve the original results, review history,
@@ -350,7 +363,7 @@ scientific gates. Planning does not mark those gates complete.
 - [x] Start with blank input paths and offer explicit restoration of every
   recorded path from the last project; loading history dispatches no validation.
   See [v93 implementation and verification](docs/V93_INPUT_VALIDATION.md).
-- [ ] Make the distinction between a loaded completed result and active
+- [x] Make the distinction between a loaded completed result and active
   **Data & Alignment** inputs explicit, and prevent an unintended new pilot
   using another project's retained inputs. Opening results currently updates
   the result view without replacing the setup form; this gap remains open.
@@ -639,8 +652,8 @@ scientific gates. Planning does not mark those gates complete.
   [media/export requirements](docs/PCA_VISUALIZATION_EXPORTS.md). Implemented
   in v129 with a separate left-rail Visualization page; installed acceptance
   remains a separate delivery gate.
-- [ ] **Interactive 3D PC1–PC3 morphospace in Step 7 Visualization** (owner request,
-  2026-10-19; deferred backlog). Add a rotatable, pannable, zoomable view using
+- [x] **Interactive 3D PC1–PC3 morphospace in Step 7 Visualization** (owner request,
+  2026-10-19; implemented in v138 source). Add a rotatable, pannable, zoomable view using
   existing verified PCA scores, with miniature specimen meshes as glyphs at their
   PC1/PC2/PC3 coordinates. Include axis/variance labels, specimen selection/hover,
   glyph-size control and reset view. Use consistent mesh orientation/scale and
@@ -648,8 +661,8 @@ scientific gates. Planning does not mark those gates complete.
   responsive. Do not refit the atlas, recompute PCA or jitter score coordinates.
   Explain unavailable PC3 for lower-rank results. See
   [follow-up requirements](docs/PCA_VISUALIZATION_EXPORTS.md#deferred-follow-up--19-october-2026).
-- [ ] **Export every Step 7 medium individually in common formats** (owner
-  request, 2026-10-19; deferred backlog). Provide direct saves for mesh-PCA plots,
+- [x] **Export every Step 7 medium individually in common formats** (owner
+  request, 2026-10-19; implemented in v138 source). Provide direct saves for mesh-PCA plots,
   mean/SD panels, heatmaps and all available videos, plus a snapshot of the new
   3D viewer's current camera. Use PNG by default and optional JPEG for images,
   MP4 for videos; keep existing PDF files and the complete gallery ZIP available.
@@ -757,13 +770,15 @@ scientific gates. Planning does not mark those gates complete.
 - [ ] Prospectively evaluate shape-coverage selection on diverse large cohorts;
   synthetic invariance/local-feature tests do not guarantee anatomical coverage
 - [ ] Prospectively validate dataset-specific settings before any safe-preset claim
-- [ ] Add a prospective multi-resolution mesh sensitivity workflow and guided
+- [x] Add a prospective multi-resolution mesh sensitivity workflow and guided
   evidence report: compare researcher-approved face-count levels without silent
   source-mesh modification; bind every derived mesh to its simplification
   provenance; assess atlas/template geometry, registration residuals, pairwise
   tangent distances, PCA subspace/scores, and reconstructed PC extremes; report
   the smallest tested resolution that meets predeclared stability tolerances, or
-  state explicitly that no face-count recommendation is supported.
+  state explicitly that no face-count recommendation is supported. v138 adds
+  prospective frozen configurations and read-only assessment. Actual native
+  researcher-approved study observations remain open.
 - [x] Pre-compute configured all-pairs and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting
 - [x] Fresh-process objective/gradient wall-time and sampled-RSS protocol

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html import escape
+
+from diffeoforge.desktop.parameter_short_help import SHORT_HELP
 
 
 @dataclass(frozen=True)
@@ -12,10 +14,17 @@ class ParameterGuidance:
 
     summary: str
     sections: tuple[tuple[str, str], ...]
+    compact: str | None = None
 
     def to_html(self) -> str:
         """Render compact rich text for a Qt label."""
 
+        if self.compact is not None:
+            return "<p>" + escape(self.compact).replace("\n", "<br>") + "</p>"
+        return self.full_html()
+
+    def full_html(self) -> str:
+        """Retain the detailed reference for documentation and support reports."""
         parts = [f"<p>{escape(self.summary)}</p>"]
         parts.extend(
             f"<p><b>{escape(heading)}:</b> {escape(text)}</p>"
@@ -630,4 +639,9 @@ DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
             ),
         ),
     ),
+}
+
+DEFORMETRICA_PARAMETER_GUIDANCE = {
+    key: replace(value, compact=SHORT_HELP[key])
+    for key, value in DEFORMETRICA_PARAMETER_GUIDANCE.items()
 }

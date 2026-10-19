@@ -1,4 +1,4 @@
-# Development continuity — v137 responsive pilot and continuous video
+# Development continuity — v138 desktop backlog
 
 Snapshot: 2026-10-19. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,20 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v138 implements the owner-authorized desktop backlog: in-app results for saved
+shape-space methods, optional mesh-based 3D views, individual media exports,
+light/dark/custom-accent appearance, recent cap-improvement advice, shorter UI
+copy, demo removal, completed-pilot refinement and desktop final-export recovery.
+New WSL runs add launch-bound cancellation supervision; mesh measurements gain a
+content/transform-bound scalar cache. A prospective mesh-resolution study freezes
+approved levels and thresholds before separately started runs. See
+[scope, checks and remaining gates](V138_DESKTOP_BACKLOG.md).
+
+This is source work until its separate frozen delivery checks are recorded.
+Installed v137 and the running atlas remain unchanged. External Linux/macOS and
+HPC systems are unavailable; scientific, platform and independent usability gates
+remain open. No current run is migrated, stopped or restarted by this work.
 
 v137 moves repeated pilot presentation verification, comparison preparation,
 review saving and stage selections off the GUI thread, retaining fresh worker

@@ -259,6 +259,10 @@ def render_engine_file_bytes(
                 config["output"].get("checkpoint_mode") == "compact_convergence_export"
             ),
         ).encode("utf-8")
+    if config["output"].get("process_control") == "linux_session_v1":
+        from diffeoforge.reference_process_control import CONTROL_SOURCE
+
+        rendered["backend_control.py"] = CONTROL_SOURCE.encode("utf-8")
     return rendered
 
 
@@ -291,6 +295,10 @@ def generate_engine_files(
         adapter = engine_directory / "sitecustomize.py"
         adapter.write_bytes(rendered["sitecustomize.py"])
         paths.append(adapter)
+    if "backend_control.py" in rendered:
+        control = engine_directory / "backend_control.py"
+        control.write_bytes(rendered["backend_control.py"])
+        paths.append(control)
     return tuple(paths)
 
 
@@ -474,6 +482,12 @@ def _build_launcher_command(
         )
         env_arguments = tuple(f"{key}={value}" for key, value in environment.items())
         unset_arguments = ("-u", "USE_CUDA") if gpu_kernels else ()
+        supervised = (
+            ("/usr/bin/python3", "-I", "-B", "engine/backend_control.py")
+            if arguments[0] == "estimate"
+            and config["output"].get("process_control") == "linux_session_v1"
+            else ()
+        )
         return CommandSpec(
             argv=(
                 "wsl.exe",
@@ -485,6 +499,7 @@ def _build_launcher_command(
                 "env",
                 *unset_arguments,
                 *env_arguments,
+                *supervised,
                 launcher["executable"],
                 *arguments,
             ),

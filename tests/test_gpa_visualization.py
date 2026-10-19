@@ -151,7 +151,8 @@ def test_gpa_review_dialog_can_inspect_and_complete_exact_visual(
     dialog._select_highest_residual()
     application.processEvents()
     assert dialog.viewed_mesh_count >= 1
-    assert "squared landmark residual" in dialog.mesh_status_label.text()
+    assert "squared landmark residual" in dialog.mesh_status_label.toolTip()
+    assert dialog.mesh_status_label.text().endswith(".vtk")
     assert "/" in dialog.inspection_progress_label.text()
 
     dialog.selected_surface_check.setChecked(True)

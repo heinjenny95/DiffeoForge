@@ -216,21 +216,28 @@ def run_reference_execution_worker(
             {
                 "phase": "prepare",
                 "message": (
+                    "Preparing a separate saved-state export."
+                    if request.final_export_only else
                     "Creating the immutable reviewed Deformetrica run."
                     if request.resume_source is None
                     else "Creating a new immutable Deformetrica resume successor."
                 ),
             },
         )
-        run_directory = (
-            prepare_run(request.config_path, run_id=request.run_id, preflight=preflight)
-            if request.resume_source is None
-            else prepare_resume_run(
-                request.resume_source,
-                run_id=request.run_id,
-                additional_iterations=request.additional_iterations,
+        if request.final_export_only:
+            from diffeoforge.reference_final_export_recovery import prepare_final_export
+
+            run_directory = prepare_final_export(request.resume_source, run_id=request.run_id)
+        else:
+            run_directory = (
+                prepare_run(request.config_path, run_id=request.run_id, preflight=preflight)
+                if request.resume_source is None
+                else prepare_resume_run(
+                    request.resume_source,
+                    run_id=request.run_id,
+                    additional_iterations=request.additional_iterations,
+                )
             )
-        )
         if run_directory.resolve() != request.destination:
             raise RuntimeError("Prepared reference destination differs from the reviewed request")
         if cancel_event.is_set():
@@ -246,6 +253,8 @@ def run_reference_execution_worker(
             {
                 "phase": "execute",
                 "message": (
+                    "Writing saved atlas trajectories and reconstructions (no optimization)."
+                    if request.final_export_only else
                     "Deformetrica is running in the verified DiffeoForge runtime."
                     if request.resume_source is None
                     else (
@@ -269,8 +278,10 @@ def run_reference_execution_worker(
 
         def observe_line(line: str) -> None:
             nonlocal last_iteration
-            if cancel_event.is_set():
-                raise KeyboardInterrupt
+            if cancel_event.is_set() or request.final_export_only:
+                # execute_run delivers and verifies the backend cancellation.
+                # Raising here would bypass that handshake on the next log line.
+                return
             progress = tracker.observe(
                 line,
                 elapsed_seconds=time.monotonic() - started,
@@ -285,6 +296,7 @@ def run_reference_execution_worker(
             log_source: str | None,
         ) -> None:
             state = (
+                "exporting" if request.final_export_only else
                 "computing_first_iteration"
                 if last_iteration is None
                 else "optimizing"
@@ -310,8 +322,13 @@ def run_reference_execution_worker(
             latest_resources = dict(resources)
             emit("resources", latest_resources)
 
+        execution = execute_run
+        if request.final_export_only:
+            from diffeoforge.reference_final_export_recovery import execute_final_export
+
+            execution = execute_final_export
         with contextlib.redirect_stdout(stderr):
-            return_code = execute_run(
+            return_code = execution(
                 run_directory,
                 line_callback=observe_line,
                 activity_callback=observe_activity,

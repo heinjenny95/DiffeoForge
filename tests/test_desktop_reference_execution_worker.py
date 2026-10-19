@@ -384,6 +384,54 @@ def test_reference_execution_worker_prepares_resume_successor_without_source_pre
     assert events[-1].payload["outcome"] == "completed"
 
 
+def test_final_export_worker_dispatches_export_adapter_without_optimizer(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    import diffeoforge.reference_final_export_recovery as recovery
+
+    base = _request(tmp_path)
+    source = (tmp_path / "runs" / "stopped-export").resolve()
+    request = replace(base, resume_source=source, final_export_only=True)
+    monkeypatch.setattr(DesktopReferenceLaunchRequest, "verify_launch_inputs", lambda _: None)
+
+    def forbid(*args, **kwargs):
+        raise AssertionError("An export-only request must not dispatch optimization")
+
+    calls = []
+
+    def prepare(saved, *, run_id):
+        assert saved == source and run_id == request.run_id
+        request.destination.mkdir(parents=True)
+        calls.append("prepare_export")
+        return request.destination
+
+    def execute(run_directory, **callbacks):
+        assert run_directory == request.destination
+        assert callbacks["cancel_requested"]() is False
+        callbacks["line_callback"]("DiffeoForge final mesh export started")
+        callbacks["activity_callback"](5.0, "Writing specimen 1", "output/native.log")
+        (run_directory / "result.json").write_text('{"status":"completed"}\n')
+        calls.append("execute_export")
+        return 0
+
+    monkeypatch.setattr(execution_worker, "collect_preflight", forbid)
+    monkeypatch.setattr(execution_worker, "prepare_run", forbid)
+    monkeypatch.setattr(execution_worker, "prepare_resume_run", forbid)
+    monkeypatch.setattr(execution_worker, "execute_run", forbid)
+    monkeypatch.setattr(recovery, "prepare_final_export", prepare)
+    monkeypatch.setattr(recovery, "execute_final_export", execute)
+    monkeypatch.setattr(
+        execution_worker, "collect_run_report",
+        lambda _: SimpleNamespace(checks=(), result={"status": "completed"}),
+    )
+    code, events, errors = _run(request)
+    assert code == 0 and not errors
+    assert calls == ["prepare_export", "execute_export"]
+    assert events[-1].payload["outcome"] == "completed"
+    assert next(e for e in events if e.kind == "activity").payload["state"] == "exporting"
+    assert not any(e.kind == "progress" for e in events)
+
+
 def test_reference_worker_reuses_desktop_cached_preflight(tmp_path, monkeypatch):
     from diffeoforge.report import collect_preflight
 

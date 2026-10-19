@@ -27,7 +27,7 @@ from diffeoforge.desktop.worker_protocol import sha256_file
 from diffeoforge.reference_runtime import launcher_identity
 from diffeoforge.runs import inspect_resume_source
 
-REFERENCE_LAUNCH_REQUEST_VERSION = "0.3"
+REFERENCE_LAUNCH_REQUEST_VERSION = "0.4"
 
 
 class DesktopReferencePrelaunchError(RuntimeError):
@@ -46,7 +46,7 @@ def validate_reference_launch_request(value: Mapping[str, Any]) -> None:
 
     try:
         version = value.get("reference_launch_request_version")
-        if version not in {"0.2", "0.3"}:
+        if version not in {"0.2", "0.3", "0.4"}:
             raise DesktopReferencePrelaunchError("Unsupported reference launch request version")
         jsonschema.Draft202012Validator(_schema(str(version))).validate(dict(value))
     except jsonschema.ValidationError as error:
@@ -120,6 +120,7 @@ class DesktopReferenceLaunchRequest:
     launcher_executable: str | None = None
     resume_source: Path | None = None
     additional_iterations: int = 0
+    final_export_only: bool = False
 
     @property
     def engine(self) -> str:
@@ -139,6 +140,7 @@ class DesktopReferenceLaunchRequest:
                 None if self.resume_source is None else str(self.resume_source)
             ),
             "additional_iterations": self.additional_iterations,
+            "final_export_only": self.final_export_only,
             "launcher": launcher,
         }
 
@@ -171,6 +173,12 @@ class DesktopReferenceLaunchRequest:
         }
 
     def __post_init__(self) -> None:
+        if type(self.final_export_only) is not bool or (
+            self.final_export_only and (self.resume_source is None or self.additional_iterations)
+        ):
+            raise DesktopReferencePrelaunchError(
+                "Export-only recovery requires a source checkpoint and no optimizer extension"
+            )
         if type(self.additional_iterations) is not int:
             raise DesktopReferencePrelaunchError("Additional iteration budget must be an integer")
         if self.additional_iterations and self.resume_source is None:
@@ -229,6 +237,7 @@ class DesktopReferenceLaunchRequest:
                 else Path(value["resume_source"]).expanduser().resolve()
             ),
             additional_iterations=value.get("additional_iterations", 0),
+            final_export_only=value.get("final_export_only", False),
         )
 
     def verify_launch_inputs(self) -> None:
@@ -249,6 +258,23 @@ class DesktopReferenceLaunchRequest:
                     f"Reference resume source is not eligible: {error}"
                 ) from error
             source_config = evidence.source_run / "config" / "source-config.yaml"
+            if self.final_export_only:
+                import shutil
+
+                from diffeoforge.reference_final_export_recovery import (
+                    checkpoint_iteration,
+                    export_stop_evidence,
+                    required_export_space,
+                )
+
+                export_stop_evidence(
+                    evidence.source_run, checkpoint_iteration(evidence.checkpoint_path),
+                    int(evidence.manifest["effective_config"]["optimization"]["max_iterations"]),
+                )
+                if shutil.disk_usage(evidence.source_run.parent).free < required_export_space(
+                    evidence.source_run, evidence.manifest
+                ):
+                    raise DesktopReferencePrelaunchError("Insufficient space for a complete export")
             if source_config.resolve() != self.config_path:
                 raise DesktopReferencePrelaunchError(
                     "Reference resume request is bound to a different protected source "
@@ -358,6 +384,7 @@ def build_reference_resume_launch_request(
     request_id: str,
     run_id: str,
     additional_iterations: int = 0,
+    final_export_only: bool = False,
 ) -> DesktopReferenceLaunchRequest:
     """Bind one verified interrupted run to a new immutable desktop successor."""
 
@@ -389,6 +416,7 @@ def build_reference_resume_launch_request(
         launcher_executable=configured_launcher.get("executable"),
         resume_source=evidence.source_run,
         additional_iterations=additional_iterations,
+        final_export_only=final_export_only,
     )
     request.verify_launch_inputs()
     return request

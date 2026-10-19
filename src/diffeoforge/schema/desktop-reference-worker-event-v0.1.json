@@ -159,7 +159,7 @@
       ],
       "properties": {
         "state": {
-          "enum": ["computing_first_iteration", "optimizing"]
+          "enum": ["computing_first_iteration", "optimizing", "exporting"]
         },
         "elapsed_seconds": {"type": "number", "minimum": 0},
         "maximum_iterations": {"type": "integer", "minimum": 1},

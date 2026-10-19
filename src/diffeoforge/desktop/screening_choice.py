@@ -38,12 +38,10 @@ class ScreeningChoicePanel(QWidget):
         self.table.setMaximumHeight(240)
         layout.addWidget(self.table)
         self.notice = QLabel(
-            "Sorted by the largest sampled p95 distance across the screening specimens "
-            "(lower is closer, in project coordinates). Regularity and area distortion are "
-            "context, not fit scores. Small distance differences can reflect sampling. "
-            "These frozen-reference screens do not establish the best joint atlas. "
-            "Your approvals remain saved; only the option you choose below is tested "
-            "with all pilot specimens, followed by separate all-specimen visual QC."
+
+                'Choose one kept option for the joint test. Distances use project units; small '
+                'differences may reflect sampling. The joint fit needs its own visual review.'
+
         )
         self.notice.setWordWrap(True)
         layout.addWidget(self.notice)

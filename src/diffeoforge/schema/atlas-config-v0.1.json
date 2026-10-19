@@ -47,6 +47,14 @@
           "type": "string",
           "minLength": 1
         },
+        "mesh_resolution_study": {
+          "type": "object", "additionalProperties": false,
+          "required": ["fingerprint", "level"],
+          "properties": {
+            "fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "level": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,40}$"}
+          }
+        },
         "parameter_provenance": {
           "type": "object",
           "additionalProperties": false,
@@ -385,7 +393,7 @@
                           "pattern": "^[0-9a-f]{64}$"
                         },
                         "stage_id": {
-                          "enum": ["attachment", "deformation", "noise"]
+                          "enum": ["attachment", "deformation", "noise", "timepoints"]
                         }
                       }
                     },
@@ -1254,6 +1262,7 @@
         "retain_flow_meshes": {
           "const": true
         },
+        "process_control": {"const": "linux_session_v1"},
         "checkpoint_mode": {
           "enum": ["native_full_outputs", "compact_final_export", "compact_convergence_export"]
         }

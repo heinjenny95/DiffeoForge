@@ -394,9 +394,10 @@ def test_reference_launch_accepts_legacy_v02_and_rejects_unbound_extension(tmp_p
     payload = build_reference_launch_request(
         _review(config), _readiness(config), request_id="version-test", run_id="run-v03",
     ).as_dict()
-    assert payload["reference_launch_request_version"] == "0.3"
+    assert payload["reference_launch_request_version"] == "0.4"
     payload["reference_launch_request_version"] = "0.2"
     payload.pop("additional_iterations")
+    payload.pop("final_export_only")
     assert DesktopReferenceLaunchRequest.from_dict(payload).additional_iterations == 0
     payload["reference_launch_request_version"] = "0.3"
     payload["additional_iterations"] = 300

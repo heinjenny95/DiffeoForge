@@ -15,6 +15,7 @@ import numpy as np
 
 from diffeoforge.analysis.procrustes import SimilarityTransform
 from diffeoforge.config import ConfigurationError
+from diffeoforge.measurement_cache import measurement_key, read_measurement, write_measurement
 from diffeoforge.mesh import sha256_file
 from diffeoforge.shape_descriptor import SHAPE_DESCRIPTOR_VERSION, surface_shape_descriptor
 from diffeoforge.surface_io import load_surface_mesh
@@ -208,6 +209,8 @@ def recommend_reference_parameters(
     alignment_fingerprint: str | None = None,
     triangle_budget_per_mesh: int = 20_000,
     progress_callback: Callable[[int, int, str], None] | None = None,
+    cache_directory: Path | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> ReferenceParameterRecommendation:
     """Analyze one GPA-aligned cohort and produce transparent starting guidance.
 
@@ -255,10 +258,59 @@ def recommend_reference_parameters(
     edge_medians: list[float] = []
     source_records: list[dict[str, object]] = []
     for index, path in enumerate(paths):
+        if cancel_requested is not None and cancel_requested():
+            raise InterruptedError("Parameter analysis cancelled; existing inputs were preserved")
+        digest = sha256_file(path)
+        transform = None if transforms is None else transforms[index]
+        key = measurement_key(path, digest, transform, triangle_budget_per_mesh,
+                              SHAPE_DESCRIPTOR_VERSION)
+        cached = read_measurement(cache_directory, key)
+        if cached is not None:
+            observation = MeshGeometryObservation(**cached["observation"])
+            centroid = np.asarray(cached["centroid"], dtype=np.float64)
+            diagonal = observation.bounding_box_diagonal
+            edge_median = observation.median_sampled_edge_length
+        else:
+            observation, centroid = _measure_surface(path, transform, triangle_budget_per_mesh)
+            diagonal = observation.bounding_box_diagonal
+            edge_median = observation.median_sampled_edge_length
+        if observation.sha256 != digest or sha256_file(path) != digest:
+            raise ConfigurationError(f"Mesh changed during parameter analysis: {path}")
+        if cancel_requested is not None and cancel_requested():
+            raise InterruptedError("Parameter analysis cancelled; existing inputs were preserved")
+        if cached is None:
+            write_measurement(cache_directory, key, {
+                "observation": asdict(observation), "centroid": centroid.tolist(),
+            })
+        observations.append(observation)
+        centroids.append(centroid)
+        diagonals.append(diagonal)
+        edge_medians.append(edge_median)
+        source_records.append({
+            "path_name": path.name, "sha256": observation.sha256,
+            "points": observation.points, "triangles": observation.triangles,
+            "aligned_diagonal": diagonal, "median_sampled_edge_length": edge_median,
+            "shape_descriptor_version": SHAPE_DESCRIPTOR_VERSION,
+            "shape_descriptor": observation.shape_descriptor,
+        })
+        if progress_callback:
+            action = (
+                "Reused verified measurement" if cached is not None else "Measured surface shape"
+            )
+            progress_callback(index + 1, len(paths), f"{action}: {path.name}")
+
+    return _recommend_from_observations(
+        paths, observations, centroids, diagonals, edge_medians, source_records,
+        alignment_basis, alignment_fingerprint, surface_detail_intent,
+        deformation_scale_intent, expected_shape_disparity,
+    )
+
+
+def _measure_surface(path, transform, triangle_budget):
         loaded = load_surface_mesh(path)
         points = np.asarray(loaded.geometry.vertices, dtype=np.float64)
-        if transforms is not None:
-            points = transforms[index].apply(points)
+        if transform is not None:
+            points = transform.apply(points)
         diagonal = _bounds_diagonal(points)
         centroid = np.mean(points, axis=0)
         centered = points - centroid
@@ -266,7 +318,7 @@ def recommend_reference_parameters(
         edge_lengths = _sampled_edge_lengths(
             points,
             loaded.geometry.triangles,
-            triangle_budget=triangle_budget_per_mesh,
+            triangle_budget=triangle_budget,
         )
         edge_median = float(median(edge_lengths))
         observation = MeshGeometryObservation(
@@ -279,29 +331,14 @@ def recommend_reference_parameters(
             median_sampled_edge_length=edge_median,
             shape_descriptor=surface_shape_descriptor(points, loaded.geometry.triangles),
         )
-        observations.append(observation)
-        centroids.append(centroid)
-        diagonals.append(diagonal)
-        edge_medians.append(edge_median)
-        source_records.append(
-            {
-                "path_name": path.name,
-                "sha256": loaded.metadata.sha256,
-                "points": loaded.metadata.points,
-                "triangles": loaded.metadata.triangles,
-                "aligned_diagonal": diagonal,
-                "median_sampled_edge_length": edge_median,
-                "shape_descriptor_version": SHAPE_DESCRIPTOR_VERSION,
-                "shape_descriptor": observation.shape_descriptor,
-            }
-        )
-        if sha256_file(path) != loaded.metadata.sha256:
-            raise ConfigurationError(
-                f"Mesh changed while parameter guidance was computed: {path}"
-            )
-        if progress_callback:
-            progress_callback(index + 1, len(paths), f"Measured surface shape: {path.name}")
+        return observation, centroid
 
+
+def _recommend_from_observations(
+    paths, observations, centroids, diagonals, edge_medians, source_records,
+    alignment_basis, alignment_fingerprint, surface_detail_intent,
+    deformation_scale_intent, expected_shape_disparity,
+):
     cohort_diagonal = float(median(diagonals))
     template_diagonal = diagonals[0]
     edge_to_diagonal = float(median(edge_medians)) / cohort_diagonal

@@ -83,6 +83,8 @@ or byte-identical CUDA serialization on every platform.
 
 Large final exports still take time and disk space. The reserve is a conservative
 planning estimate based on retained native serialization, not a quota or a guarantee
-against other programs consuming space. This support tool does not add an automatic
-desktop recovery action or broaden the existing production-scale launch gate;
-both remain separate product work.
+against other programs consuming space. v138 exposes **Recover final export…**
+in the desktop. It prepares this same protected export-only successor and waits
+for an explicit Start action; the supervised execution worker dispatches the
+export adapter without optimization. Existing storage and source checks apply.
+This does not broaden the production-scale launch gate or recover automatically.

@@ -171,13 +171,11 @@ class ReferenceValidationDialog(QDialog):
             InfoDisclosure(
                 "What this can and cannot prove",
                 (
-                    "A robust result means the same finalist is preferred across the "
-                    "predeclared training and resampling comparisons, using external "
-                    "surface error and deformation distortion. It supports robustness "
-                    "within this tested parameter neighborhood. It does not prove a "
-                    "universal optimum. The fixed-template holdout adds out-of-sample "
-                    "geometric evidence without re-estimating the atlas. Independent "
-                    "biological landmarks remain a separate later validation gate."
+
+                        'Stable preference across the frozen training and resampling tests '
+                        'supports this parameter neighborhood. The untouched holdout tests '
+                        'generalization. Neither replaces biological landmark validation.'
+
                 ),
                 parent=self,
             )
@@ -191,7 +189,7 @@ class ReferenceValidationDialog(QDialog):
         root.addWidget(self.progress)
         self.accounting_label = QLabel()
         self.accounting_label.setWordWrap(True)
-        root.addWidget(self.accounting_label)
+        root.addWidget(InfoDisclosure("Run accounting", self.accounting_label, parent=self))
         self.elapsed_label = QLabel()
         self.elapsed_label.setWordWrap(True)
         root.addWidget(self.elapsed_label)
@@ -205,13 +203,13 @@ class ReferenceValidationDialog(QDialog):
         self.design_label = QLabel()
         self.design_label.setWordWrap(True)
         self.design_label.setObjectName("card")
-        body_layout.addWidget(self.design_label)
         self.design_disclosure = InfoDisclosure(
             "See frozen finalists and decision rule",
             "Loading frozen design…",
             parent=body,
         )
         body_layout.addWidget(self.design_disclosure)
+        body_layout.addWidget(InfoDisclosure("Design summary", self.design_label, parent=body))
         self.result_label = QLabel()
         self.result_label.setWordWrap(True)
         self.result_label.setObjectName("status")
@@ -321,8 +319,7 @@ class ReferenceValidationDialog(QDialog):
             self.status_label.setText(
                 self._live_status
                 or (
-                    f"Validation is running: {completed} of {total} immutable runs "
-                    "complete. Completed runs are retained if you cancel."
+                    "Validation is running. Completed results are kept if you cancel."
                 )
             )
         elif self._snapshot.status == "completed" and self._holdout_snapshot is None:

@@ -87,12 +87,15 @@ other files' permissions and the separately tracked installer distribution.
 
 ## Deferred follow-up — 19 October 2026
 
-The owner explicitly requested backlog entries, not immediate implementation.
-The current Step 7 panel provides two-dimensional mesh-glyph projections and an
-**Export gallery ZIP** action; its prepared gallery already contains PNG/PDF
-figures and MP4 movies. The requirements below extend that route and remain open.
+The initial request was a backlog entry; the owner later authorized implementation.
+v138 adds the 3D view and individual exports below. Step 6 also displays saved
+comparison-method results with selectable axes, PNG/JPEG export and an optional
+mesh-based 3D view when at least three dimensions were saved. Method labels retain
+PC, kPC, PCo, Dim or DC as appropriate; nonlinear embeddings do not acquire invented
+variance percentages or native PC deformations. See [v138](V138_DESKTOP_BACKLOG.md).
+Source checks, frozen delivery and independent first use remain separate gates.
 
-- [ ] **Interactive 3D morphospace.** Show PC1, PC2 and PC3 together, placing
+- [x] **Interactive 3D morphospace.** Show PC1, PC2 and PC3 together, placing
   miniature specimen meshes at their existing verified score coordinates.
   Support rotation, pan, zoom, reset view, specimen selection/hover with score
   values, and glyph-size adjustment for overlap. Keep axis names and explained
@@ -101,7 +104,7 @@ figures and MP4 movies. The requirements below extend that route and remain open
   results with fewer than three usable PCs explicitly. Cache/preload display
   geometry with bounded background work; no atlas refit or PCA recomputation.
 
-- [ ] **Direct export of every displayed medium.** Allow individual saves for
+- [x] **Direct export of every displayed medium.** Allow individual saves for
   mesh-PCA plots, mean/minus/plus SD panels, heatmaps and each available movie.
   Add an image snapshot of the 3D morphospace using its current camera, distinct
   from an export that retains interactivity. Use **PNG** as the default lossless

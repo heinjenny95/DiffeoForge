@@ -1786,8 +1786,11 @@ def test_desktop_applies_completed_search_extension_after_dialog_closes(
     from PySide6.QtWidgets import QDialog
 
     class FakeDialog(QDialog):
-        def __init__(self, study_directory, *, verified_snapshot) -> None:
-            super().__init__()
+        def __init__(self, study_directory, parent=None, *, verified_snapshot) -> None:
+            super().__init__(parent)
+            from PySide6.QtCore import Qt
+
+            self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowMinMaxButtonsHint)
             assert study_directory == source_study
             assert verified_snapshot.study_directory == source_study
             self.study_directory = successor_study
@@ -1832,7 +1835,7 @@ def test_desktop_applies_completed_search_extension_after_dialog_closes(
     application.processEvents()
 
     pilot = window._reference_calibration_dialog
-    assert pilot is not None and pilot.parent() is None
+    assert pilot is not None and pilot.parent() is window and pilot.isWindow()
     assert pilot.isVisible() and not pilot.isModal()
     assert not window.centralWidget().isEnabled()
     window._open_reference_calibration()
@@ -2810,14 +2813,15 @@ def test_desktop_window_renders_deformetrica_iteration_and_bounded_eta(
 
     assert window.run_progress_bar.value() == 12
     assert window.run_progress_bar.maximum() == 100
-    assert "maximum" in window.run_progress_bar.format()
-    assert "Iteration 12 of maximum 100" in window.run_optimizer_label.text()
+    assert window.run_progress_bar.format() == "%p% of iteration budget"
+    assert "Iteration 12 of 100" in window.run_state_label.text()
+    assert "Iteration 12" not in window.run_optimizer_label.text()
     assert "Elapsed: 1 h 01 min 01 s" in window.run_optimizer_label.text()
-    assert "Maximum-iteration scenario: 7 h 27 min 20 s" in (window.run_optimizer_label.text())
+    assert "To iteration limit: 7 h 27 min 20 s" in window.run_optimizer_label.text()
     assert "Estimated complete-workflow time remaining: not reliable yet" in (
-        window.run_optimizer_label.text()
+        window.run_optimizer_label.toolTip()
     )
-    assert "not an expected finish time" in window.run_optimizer_label.text()
+    assert "not a convergence forecast" in window.run_optimizer_label.text()
     assert "#3 progress" in window.run_event_log.toPlainText()
 
     stable_event = DesktopReferenceWorkerEvent(
@@ -2843,11 +2847,11 @@ def test_desktop_window_renders_deformetrica_iteration_and_bounded_eta(
     )
     window._atlas_event(stable_event)
     assert "Estimated complete-workflow time remaining: 6 min 00 s–12 min 00 s" in (
-        window.run_optimizer_label.text()
+        window.run_optimizer_label.toolTip()
     )
-    assert "likely optimizer stop around iterations 30–40" in (window.run_optimizer_label.text())
-    assert "registration-QC preparation, and PCA" in window.run_optimizer_label.text()
-    assert "Maximum-iteration scenario: 40 min 00 s" in (window.run_optimizer_label.text())
+    assert "likely optimizer stop around iterations 30–40" in window.run_optimizer_label.toolTip()
+    assert "registration-QC preparation, and PCA" in window.run_optimizer_label.toolTip()
+    assert "To iteration limit: 40 min 00 s" in window.run_optimizer_label.text()
     window.close()
     application.processEvents()
 
@@ -2880,10 +2884,10 @@ def test_desktop_window_renders_deformetrica_first_iteration_heartbeat(
 
     window._atlas_event(event)
 
-    assert "computing first iteration" in window.run_stage_label.text()
+    assert "Optimize atlas" == window.run_stage_label.text()
     assert "6 min 07 s elapsed" in window.run_progress_bar.format()
-    assert "no complete iteration logged yet" in window.run_optimizer_label.text()
-    assert "Started estimator" in window.run_optimizer_label.text()
+    assert "no complete iteration logged yet" in window.run_optimizer_label.text().lower()
+    assert "Started estimator" in window.run_optimizer_label.toolTip()
     assert "#4 activity" in window.run_event_log.toPlainText()
     window.close()
     application.processEvents()
@@ -3008,7 +3012,7 @@ def test_desktop_accepts_only_parent_verified_deformetrica_terminal_result(
 
     assert window._run_result is result
     assert window.run_result_card.isHidden() is False
-    assert "independently verified" in window.run_state_label.text()
+    assert "Importing results" in window.run_state_label.text()
     assert "Outcome: completed" in window.run_result_label.text()
     assert window.start_atlas_button.text().startswith("Preparing visual quality review")
     assert window.rail_steps[2].isEnabled() is False
@@ -3679,7 +3683,8 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
     assert "Käfer-Atlas" in window.result_summary_label.text()
     assert "did not converge" in window.result_completion_label.text()
     assert window.result_completion_label.objectName() == "statusWarning"
-    assert "biological validity" in window.result_boundary_label.text()
+    assert "anatomical approval are separate" in window.result_boundary_label.text()
+    assert "biological validity" in window.result_boundary_label.toolTip()
     result_pca = window.findChild(QWidget, "resultPca")
     assert result_pca is not None
     assert "PC1" in result_pca.findChildren(QLabel)[0].text()
@@ -3743,7 +3748,7 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
         )
     )
     assert window.result_completion_label.objectName() == "statusSuccess"
-    assert "optimizer converged" in window.result_completion_label.text()
+    assert "Converged (gradient tolerance)" in window.result_completion_label.text()
     reference_review = replace(
         review,
         engine_route="deformetrica_reference",
@@ -3755,9 +3760,9 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
     )
     window._result_review_succeeded(reference_review)
     assert window.result_completion_label.objectName() == "statusSuccess"
-    assert "numerical tolerance criterion was met" in window.result_completion_label.text()
-    assert "last visible logged iteration" in window.result_completion_label.text()
-    assert "not proof" in window.result_completion_label.text()
+    assert "Native tolerance met" in window.result_completion_label.text()
+    assert "last logged iteration 65 / 150" in window.result_completion_label.text()
+    assert "not proof" in window.result_completion_label.toolTip()
     assert window.reference_pca_deformation_card.isHidden() is False
     assert window.generate_reference_pca_deformations_button.isEnabled() is True
     assert "prepared automatically" in window.reference_pca_deformation_status_label.text()
@@ -3959,7 +3964,7 @@ def test_shape_space_comparison_uses_dedicated_worker_without_locking_qc(
     application.processEvents()
 
 
-def test_completed_shape_space_comparison_opens_pdf_and_exposes_html(
+def test_completed_shape_space_comparison_displays_in_app_and_keeps_explicit_reports(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -4012,18 +4017,20 @@ def test_completed_shape_space_comparison_opens_pdf_and_exposes_html(
     monkeypatch.setattr(window, "_registration_results_released", lambda: True)
     window._shape_space_comparison_succeeded(result)
 
-    assert opened == [pdf]
+    assert opened == []
     assert window.open_shape_space_pdf_button.isHidden() is False
     assert window.open_shape_space_html_button.isHidden() is False
+    window.open_shape_space_pdf_button.click()
+    assert opened == [pdf]
     window.open_shape_space_html_button.click()
     assert opened == [pdf, report]
-    assert "PDF saved in the project folder" in (window.shape_space_comparison_status_label.text())
-    assert "does not validate registration" in window.shape_space_comparison_status_label.text()
+    assert "Select a method below" in window.shape_space_comparison_status_label.text()
+    assert "validate registration" in window.shape_space_comparison_status_label.toolTip()
     assert "Test evidence passed" in window.shape_space_comparison_details.text()
     artifact.manifest["default_decision"]["status"] = "not_supported"
     window._shape_space_comparison_succeeded(result)
     assert window.shape_space_comparison_status_label.objectName() == "statusWarning"
-    assert "not fully supported" in window.shape_space_comparison_status_label.text()
+    assert "check incomplete" in window.shape_space_comparison_status_label.text()
     window.close()
     application.processEvents()
 
@@ -4411,8 +4418,29 @@ def test_desktop_window_renders_mesh_preflight_progress(monkeypatch, tmp_path):
         assert window.run_progress_bar.value() == completed
         assert window.run_progress_bar.maximum() == 95
         assert "subject.vtk" in window.run_state_label.text()
-        assert "Deformetrica has not started" in window.run_optimizer_label.text()
-        assert "next mesh-check boundary" in window.run_optimizer_label.text()
+        assert window.run_stage_label.text() == "Check atlas inputs"
+        assert "Cancel stops after the current mesh check" in window.run_optimizer_label.text()
+        assert window.run_progress_bar.format() == "%p% of input checks"
     assert "Saved mesh check verified and reused" in window.run_state_label.text()
     window.close()
     application.processEvents()
+
+
+def test_parameter_project_binding_refuses_old_pilot_after_input_change():
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    current = ["cohort-a", "template-a", "project-a", "mm", "alignment-a"]
+    saved_result = object()
+    window = SimpleNamespace(
+        _parameter_project_form_binding=tuple(current),
+        _parameter_project_form_signature=lambda: tuple(current),
+        _result_review=saved_result,
+    )
+    window._bound_project_matches_form = lambda: DiffeoForgeWindow._bound_project_matches_form(
+        window
+    )
+    assert window._bound_project_matches_form()
+    current[0] = "cohort-b"
+    assert not window._bound_project_matches_form()
+    assert DiffeoForgeWindow._reference_calibration_context(window) is None
+    assert window._result_review is saved_result

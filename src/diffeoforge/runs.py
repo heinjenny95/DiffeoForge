@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import ctypes
 import errno
+import hashlib
 import importlib.metadata
 import json
 import os
@@ -1308,6 +1309,47 @@ def _load_resume_provenance(run_directory: Path) -> Mapping[str, Any] | None:
     return provenance
 
 
+class BackendShutdownUnverified(RuntimeError):
+    """Leave the lifecycle open when Linux shutdown has not been confirmed."""
+
+
+def _control_receipt(run: Path, token: str) -> Mapping[str, Any]:
+    try:
+        receipt = _read_json_object(run / "logs/backend-control.json", "Backend shutdown")
+        valid = (
+            receipt.get("state") in {"stopped", "completed"}
+            and receipt.get("session_empty") is True
+            and receipt.get("token_sha256") == hashlib.sha256(token.encode("ascii")).hexdigest()
+            and isinstance(receipt.get("boot_id"), str)
+            and isinstance(receipt.get("identity"), dict)
+            and receipt.get("identity", {}).get("start_ticks", 0) > 0
+            and (receipt["state"] != "stopped" or receipt.get("command_received") is True)
+        )
+    except (OSError, ValueError, RuntimeError, TypeError) as error:
+        raise BackendShutdownUnverified("Backend shutdown receipt could not be verified") from error
+    if not valid:
+        raise BackendShutdownUnverified("Backend did not confirm shutdown for this launch")
+    return receipt
+
+
+def _request_backend_stop(run: Path, token: str) -> None:
+    control = run / "logs/backend-cancel.json"
+    temporary = control.with_suffix(".tmp")
+    temporary.write_text(json.dumps({"token": token, "operation": "cancel"}), encoding="utf-8")
+    os.replace(temporary, control)
+
+
+def _stop_supervised_backend(process, run: Path, token: str) -> None:
+    try:
+        _request_backend_stop(run, token)
+        process.wait(timeout=30)
+        _control_receipt(run, token)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise BackendShutdownUnverified(
+            "Backend shutdown was not confirmed within 30 seconds"
+        ) from error
+
+
 def _terminate_process(process: subprocess.Popen[str] | None) -> None:
     if process is None or process.poll() is not None:
         return
@@ -1316,7 +1358,7 @@ def _terminate_process(process: subprocess.Popen[str] | None) -> None:
         process.wait(timeout=10)
     except subprocess.TimeoutExpired:
         process.kill()
-        process.wait()
+        process.wait(timeout=5)
 
 
 def _log_reports_keyboard_interrupt(log_path: Path) -> bool:
@@ -1379,6 +1421,11 @@ def execute_run(
         ):
             raise ConfigurationError("Prepared budget differs from protected extension provenance.")
     command = build_command(config, run_path)
+    supervised = "engine/backend_control.py" in command.argv
+    cancellation_started = None
+    cancellation_token = uuid4().hex + uuid4().hex
+    if supervised:
+        (run_path / "logs/backend-control-token").write_text(cancellation_token, encoding="ascii")
     event_path = run_path / "events.jsonl"
     log_path = run_path / "logs" / "deformetrica.log"
     started_at = utc_now()
@@ -1522,7 +1569,16 @@ def execute_run(
                         dispatch_line(str(observed), "process output")
                 observe_native_logs()
                 if cancel_requested is not None and cancel_requested():
-                    raise KeyboardInterrupt
+                    if not supervised:
+                        raise KeyboardInterrupt
+                    if cancellation_started is None:
+                        _request_backend_stop(run_path, cancellation_token)
+                        cancellation_started = time.monotonic()
+                    elif time.monotonic() - cancellation_started > 30:
+                        raise BackendShutdownUnverified(
+                            "Backend cancellation was not confirmed within 30 seconds; "
+                            "shutdown is unverified. Inspect backend-control.json."
+                        )
                 now = time.monotonic()
                 if (
                     resource_callback is not None and resource_monitor is not None
@@ -1547,14 +1603,31 @@ def execute_run(
                 time.sleep(0.25)
             output_reader.join(timeout=2)
             return_code = process.wait()
+            if supervised:
+                receipt = _control_receipt(run_path, cancellation_token)
+                if receipt["state"] == "stopped":
+                    interrupted = True
+                    return_code = 130
+                    execution_error = "Cancelled by user; backend shutdown confirmed"
     except KeyboardInterrupt:
         interrupted = True
         return_code = 130
         execution_error = "KeyboardInterrupt: interrupted by user"
-        _terminate_process(process)
+        if supervised and process is not None:
+            _stop_supervised_backend(process, run_path, cancellation_token)
+        else:
+            _terminate_process(process)
     except Exception as error:
         execution_error = f"{type(error).__name__}: {error}"
-        _terminate_process(process)
+        if isinstance(error, BackendShutdownUnverified):
+            # No terminal inventory/result may race a possibly active backend.
+            # Explicit stopped-process recovery remains necessary afterwards.
+            _terminate_process(process)
+            raise
+        if supervised and process is not None:
+            _stop_supervised_backend(process, run_path, cancellation_token)
+        else:
+            _terminate_process(process)
 
     ended_at = utc_now()
     duration_seconds = round(time.monotonic() - start_time, 6)
@@ -2059,6 +2132,7 @@ def prepare_resume_run(
         for artifact in source_manifest["protected_artifacts"]:
             relative = PurePosixPath(artifact["path"])
             if relative.as_posix() in {
+                "engine/backend_control.py",
                 "engine/optimization_parameters.xml", "engine/sitecustomize.py",
                 "config/effective-config.yaml",
             }:
@@ -2103,6 +2177,12 @@ def prepare_resume_run(
             adapter_path = temp_directory / "engine" / "sitecustomize.py"
             adapter_path.write_text(rendered_adapter, encoding="utf-8", newline="\n")
             copied_artifacts.append(adapter_path)
+        if config["output"].get("process_control") == "linux_session_v1":
+            from diffeoforge.reference_process_control import CONTROL_SOURCE
+
+            control_path = temp_directory / "engine/backend_control.py"
+            control_path.write_text(CONTROL_SOURCE, encoding="utf-8", newline="\n")
+            copied_artifacts.append(control_path)
         optimization_path = temp_directory / "engine" / "optimization_parameters.xml"
         generate_resume_optimization_file(
             config,

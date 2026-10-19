@@ -187,6 +187,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
+    mesh_study_create = subparsers.add_parser(
+        "mesh-resolution-study-create", help="Freeze approved mesh levels and stability tolerances."
+    )
+    mesh_study_create.add_argument("plan", type=Path)
+    mesh_study_create.add_argument("--output", type=Path, required=True)
+    mesh_study_assess = subparsers.add_parser(
+        "mesh-resolution-study-assess", help="Compare completed prospective mesh-level runs."
+    )
+    mesh_study_assess.add_argument("study", type=Path)
+    mesh_study_assess.add_argument(
+        "assignments", type=Path, help="JSON mapping level IDs to run paths."
+    )
+    mesh_study_assess.add_argument("--output", type=Path, required=True)
 
     landmark_txt_parser = subparsers.add_parser(
         "landmarks-import-txt",
@@ -2300,6 +2313,24 @@ def _execution_outcome(run_directory: Path, return_code: int) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.command in {"mesh-resolution-study-create", "mesh-resolution-study-assess"}:
+        try:
+            from diffeoforge.mesh_resolution_study import assess_study, freeze_study
+            from diffeoforge.strict_json import load_strict_json_object
+
+            if args.command == "mesh-resolution-study-create":
+                result = freeze_study(args.plan, args.output)
+            else:
+                assignments = load_strict_json_object(
+                    args.assignments.read_bytes(), args.assignments, label="Mesh-level assignments"
+                )
+                result = assess_study(args.study, assignments, args.output)
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(result)
+        return 0
 
     if args.command == "landmarks-import-txt":
         try:

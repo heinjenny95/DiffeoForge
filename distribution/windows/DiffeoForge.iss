@@ -90,8 +90,10 @@ Source: "install-reference-runtime.ps1"; DestDir: "{app}\runtime"; Flags: ignore
 
 [Icons]
 Name: "{group}\DiffeoForge"; Filename: "{app}\DiffeoForge.exe"; WorkingDir: "{app}"
-Name: "{group}\DiffeoForge Demo"; Filename: "{app}\DiffeoForge.exe"; Parameters: "--demo"; WorkingDir: "{app}"
 Name: "{autodesktop}\DiffeoForge"; Filename: "{app}\DiffeoForge.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+
+[InstallDelete]
+Type: files; Name: "{group}\DiffeoForge Demo.lnk"
 
 #ifdef ReferenceRuntimeArchive
 [Run]

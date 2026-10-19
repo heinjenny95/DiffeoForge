@@ -81,8 +81,12 @@ def test_run_window_observes_progress_and_clears_engine_bound_history(app, monke
     assert window.run_live_optimizer_plot.samples[0].iteration == 300
     assert not window.run_live_optimizer_plot.isHidden()
     source = tmp_path / "finished"
-    monkeypatch.setattr(widgets, "iteration_extension_limit", lambda path: 300)
+    from diffeoforge.desktop import convergence_advice
+
+    monkeypatch.setattr(convergence_advice, "capped_run_advice", lambda path: (300, "Advice"))
     window._refresh_iteration_extension(source)
+    window._cap_advice.future.result(timeout=5)
+    window._cap_advice._poll()
     assert "300 → 600" in window.run_more_iterations_button.text()
     assert not window.result_more_iterations_button.isHidden()
     assert not window.qc_more_iterations_button.isHidden()

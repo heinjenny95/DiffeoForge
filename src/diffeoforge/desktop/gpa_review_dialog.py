@@ -58,15 +58,11 @@ class GpaAlignmentReviewDialog(QDialog):
         self.activity.bind_loader(self._detail_loader, "Loading original alignment detail")
         layout.addWidget(self.activity)
         explanation = QLabel(
-            "This window renders the exact in-memory transforms from the numerical GPA "
-            "preview. By default, every aligned mesh is shown simultaneously as an "
-            "equal-weight, high-contrast colored wireframe: coincident silhouettes indicate "
-            "matching position, scale, and orientation, while separated colors expose "
-            "misalignment immediately. The selected mesh is only drawn slightly thicker. "
-            "Enable its shaded surface when you want an individual inspection. Large "
-            "surfaces use bounded display proxies here; numerical GPA and atlas computation "
-            "remain bound to the complete source meshes. No source or aligned file is "
-            "created or changed."
+
+                'Overlapping colored outlines help reveal alignment. Enable a shaded surface to'
+                ' inspect one specimen. Display proxies do not replace full-resolution '
+                'analysis.'
+
         )
         explanation.setWordWrap(True)
         explanation.setObjectName("boundaryText")
@@ -243,7 +239,7 @@ class GpaAlignmentReviewDialog(QDialog):
         )
         rank = residuals.index(mesh.squared_landmark_residual) + 1
         self.mesh_status_label.setStyleSheet("")
-        self.mesh_status_label.setText(
+        self.mesh_status_label.setToolTip(
             f"{Path(mesh.path).name}  |  {mesh.source_format.upper()}  |  "
             f"{mesh.source_point_count:,} points / "
             f"{mesh.source_triangle_count:,} triangles  |  "
@@ -251,6 +247,7 @@ class GpaAlignmentReviewDialog(QDialog):
             f"(rank {rank} of {len(residuals)}, highest first)  |  "
             f"GPA scale {mesh.applied_scale:.6g}"
         )
+        self.mesh_status_label.setText(Path(mesh.path).name)
         self.inspection_progress_label.setText(
             f"Mesh {index + 1} of {len(self.visual.meshes)} · unique viewed "
             f"{len(self._viewed_indices)} / {len(self.visual.meshes)}"

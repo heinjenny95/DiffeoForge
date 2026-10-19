@@ -82,12 +82,10 @@ class LandmarkEditorDialog(QDialog):
         self.activity.bind_loader(self._mesh_loader, "Loading landmark mesh")
         layout.addWidget(self.activity)
         explanation = QLabel(
-            "Place each label on the same anatomical location for every mesh. Rotate and "
-            "zoom the specimen, then click the visible surface. A new click replaces the "
-            "selected point. Reduced-view clicks snap to the nearest original surface point "
-            "in the background. Original detail is optional for inspecting small features. "
-            "DiffeoForge stores original-surface coordinates and never modifies the source "
-            "meshes. Progress is autosaved; Cancel keeps the draft."
+
+                'Use the same anatomical location for each label. Click again to replace a '
+                'point. Progress is autosaved; Cancel keeps the draft.'
+
         )
         explanation.setWordWrap(True)
         summary = QLabel(

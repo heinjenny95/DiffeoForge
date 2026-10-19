@@ -7,6 +7,7 @@ import time
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from html import escape
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -273,7 +274,7 @@ from diffeoforge.reference_shape_space_pdf import (
     ReferenceShapeSpacePdfExport,
     write_reference_shape_space_pdf,
 )
-from diffeoforge.runs import inspect_resume_source, iteration_extension_limit
+from diffeoforge.runs import inspect_resume_source
 from diffeoforge.scientific_report import (
     SCIENTIFIC_REPORT_HTML,
     ScientificReportArtifact,
@@ -424,9 +425,9 @@ class _ReadOnlyStatusText(QPlainTextEdit):
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.setMinimumHeight(150)
-        self.setMaximumHeight(190)
-        self.setAccessibleName("Alignment preview report")
+        self.setMinimumHeight(52)
+        self.setMaximumHeight(110)
+        self.setAccessibleName("Status details")
         self.setToolTip(
             "Read-only GPA diagnostics. Scroll to review the complete report; "
             "the text can also be selected and copied."
@@ -451,6 +452,7 @@ class _ExpandableParameterHelp(QWidget):
     ) -> None:
         super().__init__(parent)
         self.parameter_name = parameter_name
+        self._guidance = guidance
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
@@ -460,7 +462,7 @@ class _ExpandableParameterHelp(QWidget):
         self.toggle_button.setCheckable(True)
         self.toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.toggle_button.setAccessibleName(f"Explain {parameter_name}")
-        self.toggle_button.setAccessibleDescription(guidance.summary)
+        self.toggle_button.setAccessibleDescription(guidance.compact or guidance.summary)
         self.toggle_button.toggled.connect(self._set_expanded)
         layout.addWidget(self.toggle_button)
 
@@ -474,14 +476,17 @@ class _ExpandableParameterHelp(QWidget):
         self.text_browser.setOpenExternalLinks(False)
         self.text_browser.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.text_browser.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.text_browser.setMinimumHeight(145)
-        self.text_browser.setMaximumHeight(210)
+        self.text_browser.setMinimumHeight(70)
+        self.text_browser.setMaximumHeight(110)
         self.text_browser.setAccessibleName(f"{parameter_name} parameter guidance")
         self.text_browser.setToolTip(
-            "Scroll inside this panel to read the complete parameter explanation."
+            "Short parameter guidance. Open Detailed reference for the full explanation."
         )
         # Compatibility alias used by existing callers and tests.
         self.text_label = self.text_browser
+        reference = QPushButton("Detailed reference…")
+        reference.clicked.connect(self._show_reference)
+        panel_layout.addWidget(reference)
         panel_layout.addWidget(self.text_browser)
         self.panel.hide()
         layout.addWidget(self.panel)
@@ -490,6 +495,19 @@ class _ExpandableParameterHelp(QWidget):
     def _set_expanded(self, expanded: bool) -> None:
         self.panel.setVisible(expanded)
         self.toggle_button.setText("ⓘ Hide parameter info" if expanded else "ⓘ Parameter info")
+
+    def _show_reference(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self.parameter_name + " · reference")
+        dialog.resize(650, 500)
+        layout = QVBoxLayout(dialog)
+        text = QTextBrowser()
+        text.setHtml(self._guidance.full_html())
+        layout.addWidget(text)
+        close = QPushButton("Close")
+        close.clicked.connect(dialog.accept)
+        layout.addWidget(close)
+        dialog.exec()
 
 
 class _WorkerSignals(QObject):
@@ -908,10 +926,19 @@ class _ReferenceParameterWorker(QRunnable):
         self.transforms = transforms
         self.alignment_fingerprint = alignment_fingerprint
         self.signals = _WorkerSignals()
+        self.cancelled = threading.Event()
+
+    def request_cancel(self) -> bool:
+        if self.cancelled.is_set():
+            return False
+        self.cancelled.set()
+        return True
 
     @Slot()
     def run(self) -> None:
         try:
+            from PySide6.QtCore import QStandardPaths
+
             recommendation = recommend_reference_parameters(
                 self.mesh_paths,
                 alignment_basis=self.alignment_basis,
@@ -920,6 +947,13 @@ class _ReferenceParameterWorker(QRunnable):
                 expected_shape_disparity=self.expected_shape_disparity,
                 transforms=self.transforms,
                 alignment_fingerprint=self.alignment_fingerprint,
+                cancel_requested=self.cancelled.is_set,
+                cache_directory=Path(QStandardPaths.writableLocation(
+                    QStandardPaths.StandardLocation.CacheLocation
+                )) / "mesh-measurements",
+                progress_callback=lambda done, total, message: self.signals.progress.emit(
+                    (done, total, message)
+                ),
             )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
@@ -1239,13 +1273,11 @@ class _ShapeSpaceComparisonDialog(QDialog):
             InfoDisclosure(
                 "What the methods mean",
                 (
-                    "LDDMM metric tangent PCA is the default linear summary because it uses "
-                    "the fitted deformation kernel and can reconstruct shootable momenta. "
-                    "Tangent-distance PCoA is its independent geometric cross-check. Cartesian "
-                    "momenta PCA and the Roberts fixed-gamma KernelPCA are compatibility views. "
-                    "Generic RBF KernelPCA, Isomap, and diffusion maps are exploratory: their "
-                    "tuning can change the morphospace and DiffeoForge does not claim a direct "
-                    "Deformetrica preimage for them."
+
+                        'Tangent PCA uses the fitted LDDMM metric. PCoA checks tangent '
+                        'distances independently. Cartesian and RBF methods are alternative '
+                        'representations; Isomap and diffusion maps are exploratory.'
+
                 ),
                 parent=self,
             )
@@ -1461,6 +1493,35 @@ class _IterationExtensionWorker(QRunnable):
             self.signals.failed.emit(str(error))
             return
         self.signals.succeeded.emit((request, result, maximum))
+
+
+class _SavedExportWorker(QRunnable):
+    def __init__(self, source):
+        super().__init__()
+        self.source = source
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self):
+        try:
+            request = build_reference_resume_launch_request(
+                self.source, request_id=f"export-{uuid.uuid4().hex}",
+                run_id=f"export-only-{uuid.uuid4().hex[:12]}", final_export_only=True,
+            )
+            evidence = inspect_resume_source(self.source)
+            result = ResumableReferenceRun(
+                run_directory=evidence.source_run,
+                project_name=evidence.manifest["effective_config"]["project"]["name"],
+                subject_count=evidence.manifest["input_count"]["subjects"],
+                terminal_status=evidence.terminal_status,
+                checkpoint_bytes=evidence.checkpoint_bytes,
+                source_config_path=request.config_path,
+                source_config_sha256=request.expected_config_sha256,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit((request, result))
 
 
 class _ArtifactWorker(QRunnable):
@@ -1694,7 +1755,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.setWindowTitle(f"DiffeoForge {display_version()}")
         self.resize(1120, 780)
         self.setMinimumSize(900, 650)
-        self.setStyleSheet(_STYLE)
+        from diffeoforge.desktop.appearance import AppearanceController
+
+        self.appearance = AppearanceController(self, _STYLE)
         self._thread_pool = ActivityPool(self)
         self._run_lookup_notice: tuple[str, str] | None = None
         self._result_mesh_loader = ResultMeshLoader(self)
@@ -1909,6 +1972,9 @@ class DiffeoForgeWindow(QMainWindow):
         boundary.setObjectName("railCaption")
         boundary.setWordWrap(True)
         layout.addWidget(boundary)
+        appearance_button = QPushButton("Appearance…")
+        appearance_button.clicked.connect(self.appearance.show_dialog)
+        layout.addWidget(appearance_button)
         return rail
 
     def _build_setup_content(self, data_form_card: QWidget) -> QWidget:
@@ -1923,7 +1989,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 1 OF 6")
+        eyebrow = QLabel("STEP 1 OF 7")
         eyebrow.setObjectName("eyebrow")
         title = QLabel("New atlas project")
         title.setObjectName("title")
@@ -1936,21 +2002,12 @@ class DiffeoForgeWindow(QMainWindow):
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
-        self.open_demo_button = QPushButton("Open demo · explore all steps with public examples")
-        self.open_demo_button.setObjectName("secondary")
-        self.open_demo_button.setToolTip(
-            "Open a separate offline presentation window. "
-            "No analysis, project changes or backend connection."
-        )
-        self.open_demo_button.clicked.connect(self._open_demo)
-        layout.addWidget(self.open_demo_button)
-
         boundary = QFrame()
         boundary.setObjectName("boundary")
         boundary_layout = QHBoxLayout(boundary)
         boundary_layout.setContentsMargins(13, 9, 13, 9)
         boundary_text = QLabel(
-            "Choose data and alignment here. Parameters and the pilot come next."
+            'Choose a mesh folder and check alignment to begin.'
         )
         boundary_text.setObjectName("boundaryText")
         boundary_text.setWordWrap(True)
@@ -1989,19 +2046,13 @@ class DiffeoForgeWindow(QMainWindow):
         self.resume_interrupted_run_button = QPushButton("Resume interrupted run…")
         self.resume_interrupted_run_button.setObjectName("secondary")
         self.resume_interrupted_run_button.setToolTip(
-            "Select an interrupted Deformetrica run with a verified checkpoint: the run "
-            "folder itself (it contains manifest.json and result.json) or the folder that "
-            "directly contains its “runs” folder. A run stopped before its first "
-            "checkpoint cannot be continued; a message will say so."
+            'Continue an interrupted run from its verified checkpoint in a new run folder.'
         )
         self.resume_interrupted_run_button.clicked.connect(self._select_interrupted_run)
         self.recover_abandoned_run_button = QPushButton("Recover after crash…")
         self.recover_abandoned_run_button.setObjectName("secondary")
         self.recover_abandoned_run_button.setToolTip(
-            "Finalize a run left nonterminal by a power loss or hard process stop, then "
-            "continue a verified checkpoint as a new run. Select the run folder itself or "
-            "the folder that directly contains its “runs” folder. Use this only once per "
-            "crashed run; afterwards the run counts as interrupted."
+            'Recover a run after a power loss or hard stop. Its processes must already be stopped.'
         )
         self.recover_abandoned_run_button.clicked.connect(self._select_abandoned_run)
         layout.addWidget(resume_label)
@@ -2016,6 +2067,12 @@ class DiffeoForgeWindow(QMainWindow):
         resume_layout.addWidget(self.open_completed_run_button)
         resume_layout.addWidget(self.resume_interrupted_run_button)
         resume_layout.addWidget(self.recover_abandoned_run_button)
+        self.saved_export_button = QPushButton("Recover final export…")
+        self.saved_export_button.setToolTip(
+            "Export a stopped saved state in a new run, without more optimization."
+        )
+        self.saved_export_button.clicked.connect(self._select_saved_export)
+        resume_layout.addWidget(self.saved_export_button)
         resume_layout.addStretch()
         layout.addWidget(resume_row)
         layout.addWidget(data_form_card)
@@ -2067,7 +2124,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 2 OF 6")
+        eyebrow = QLabel("STEP 2 OF 7")
         eyebrow.setObjectName("eyebrow")
         title = QLabel("Parameter setting")
         title.setObjectName("title")
@@ -2086,8 +2143,7 @@ class DiffeoForgeWindow(QMainWindow):
         boundary_layout = QVBoxLayout(boundary)
         boundary_layout.setContentsMargins(13, 9, 13, 9)
         boundary_text = QLabel(
-            "Follow the green action. This page prepares parameters; it does not start "
-            "the full-cohort atlas."
+            "Choose the next action below to prepare your pilot."
         )
         boundary_text.setObjectName("boundaryText")
         boundary_text.setWordWrap(True)
@@ -2095,13 +2151,16 @@ class DiffeoForgeWindow(QMainWindow):
         boundary_layout.addWidget(
             InfoDisclosure(
                 "Workflow details",
-                "Analyze the aligned meshes, build the pilot plan, run its candidates, "
-                "compare the explained trade-offs, and select an option. Visual "
-                "reconstruction QC remains available but is optional.",
+                "Analyze aligned meshes, fit the pilot, review its reconstructions, then test "
+                "the combined settings. Accepted fits require your visual review.",
             )
         )
         layout.addWidget(boundary)
         layout.addWidget(parameter_form_card)
+        self.active_parameter_project_label = QLabel()
+        self.active_parameter_project_label.setWordWrap(True)
+        self.active_parameter_project_label.hide()
+        layout.addWidget(self.active_parameter_project_label)
 
         self.result_card = self._build_result_card()
         self.result_card.hide()
@@ -2189,12 +2248,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_calibration_execution_status.setObjectName("status")
         self.reference_calibration_execution_status.setWordWrap(True)
         calibration_detail = QLabel(
-            "DiffeoForge creates a provisional starting configuration automatically, "
-            "checks the managed Deformetrica installation, and runs every candidate in "
-            "the current stage. You can select from the explained pros and cons without "
-            "opening every reconstruction. The guided viewer remains available as "
-            "optional visual QC, and its status is recorded. The selected values become "
-            "the final read-only parameter set shown below."
+
+                'Fit and inspect the pilot reconstructions. Keep an acceptable option at each '
+                'stage, then check the combined model. Your approved choice supplies the atlas '
+                'settings.'
+
         )
         calibration_detail.setObjectName("reviewDetail")
         calibration_detail.setWordWrap(True)
@@ -2282,22 +2340,23 @@ class DiffeoForgeWindow(QMainWindow):
         form.addRow("Report-SHA-256", self.saved_reference_status_hash_edit)
 
         self.saved_reference_status_verification_detail_label = QLabel(
-            "This check reads only the selected report file. It opens no project, YAML, "
-            "approval, run, container, or engine state and changes nothing."
+            'Check the saved report against its recorded hash.'
         )
         self.saved_reference_status_verification_detail_label.setObjectName("reviewDetail")
         self.saved_reference_status_verification_detail_label.setWordWrap(True)
         self.saved_reference_status_verification_detail_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        self.verify_saved_reference_status_button = QPushButton("Verify saved report read-only")
+        self.verify_saved_reference_status_button = QPushButton('Check saved report')
         self.verify_saved_reference_status_button.setObjectName("secondary")
         self.verify_saved_reference_status_button.clicked.connect(
             self._verify_saved_reference_status
         )
         self.saved_reference_status_verification_export_label = QLabel(
-            "Evidence export is available only after a successful check that remains "
-            "bound to the current inputs. The file contains private provenance."
+
+                'Export is enabled after verification. The evidence contains private paths and '
+                'provenance.'
+
         )
         self.saved_reference_status_verification_export_label.setObjectName("hint")
         self.saved_reference_status_verification_export_label.setWordWrap(True)
@@ -2305,7 +2364,7 @@ class DiffeoForgeWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.export_saved_reference_status_verification_button = QPushButton(
-            "Export verified evidence as a new JSON file"
+            'Export check…'
         )
         self.export_saved_reference_status_verification_button.setObjectName("secondary")
         self.export_saved_reference_status_verification_button.clicked.connect(
@@ -2340,7 +2399,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 3 OF 6")
+        eyebrow = QLabel("STEP 3 OF 7")
         eyebrow.setObjectName("eyebrow")
         title = QLabel("Review parameters and workload")
         title.setObjectName("title")
@@ -2402,8 +2461,7 @@ class DiffeoForgeWindow(QMainWindow):
             self._update_template_preview_plane
         )
         self.template_preview_detail_label = QLabel(
-            "This projection does not modify the mesh and does not replace 3D inspection, "
-            "mesh QC, or landmark picking."
+            '2D projection. Use the 3D viewer for anatomical inspection.'
         )
         self.template_preview_detail_label.setObjectName("reviewDetail")
         self.template_preview_detail_label.setWordWrap(True)
@@ -2444,8 +2502,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_readiness_status_label.setObjectName("status")
         self.reference_readiness_status_label.setWordWrap(True)
         self.reference_readiness_detail_label = QLabel(
-            "DiffeoForge verifies the installed engine, available memory, and project folder "
-            "automatically. This is a safety check, not an estimated computation time."
+            'Checks the engine, memory and project destination.'
         )
         self.reference_readiness_detail_label.setObjectName("reviewDetail")
         self.reference_readiness_detail_label.setWordWrap(True)
@@ -2622,7 +2679,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 4 OF 6")
+        eyebrow = QLabel("STEP 4 OF 7")
         eyebrow.setObjectName("eyebrow")
         self.run_title_label = QLabel("Compute atlas")
         self.run_title_label.setObjectName("title")
@@ -2803,7 +2860,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_live_optimizer_plot.hide()
         progress_layout.addWidget(self.run_live_optimizer_plot)
         progress_layout.addWidget(self.run_optimizer_label)
-        progress_layout.addWidget(self.run_event_log)
+        progress_layout.addWidget(InfoDisclosure("Event log", self.run_event_log))
         layout.addWidget(progress)
 
         self.run_result_card = QFrame()
@@ -2882,13 +2939,12 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 6 OF 6")
+        eyebrow = QLabel("STEP 6 OF 7")
         eyebrow.setObjectName("eyebrow")
         self.results_page_title = QLabel("Verified results & shape-space analysis")
         self.results_page_title.setObjectName("title")
         subtitle = QLabel(
-            "Read a bound summary and open only artifacts whose size and SHA-256 were "
-            "rechecked immediately beforehand."
+            'Review the result, inspect its fit, and explore PCA.'
         )
         subtitle.setObjectName("subtitle")
         subtitle.setWordWrap(True)
@@ -2918,7 +2974,7 @@ class DiffeoForgeWindow(QMainWindow):
         summary.setObjectName("card")
         summary_layout = QVBoxLayout(summary)
         summary_layout.setContentsMargins(24, 22, 24, 24)
-        summary_title = QLabel("Bound result snapshot")
+        summary_title = QLabel('Result details')
         summary_title.setObjectName("sectionTitle")
         self.result_summary_label = QLabel()
         self.result_summary_label.setWordWrap(True)
@@ -2930,7 +2986,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_completion_label.setObjectName("status")
         self.result_completion_label.setWordWrap(True)
         summary_layout.addWidget(self.result_completion_label)
-        summary_layout.addWidget(self.result_summary_label)
+        summary_layout.addWidget(InfoDisclosure("Provenance", self.result_summary_label))
         layout.addWidget(summary)
 
         atlas_viewer = QFrame()
@@ -3297,16 +3353,11 @@ class DiffeoForgeWindow(QMainWindow):
             InfoDisclosure(
                 "How DiffeoForge uses this evidence",
                 (
-                    "The model-aligned PCA must preserve the fitted tangent metric, agree "
-                    "with independent PCoA up to rotation, and reconstruct shootable momenta. "
-                    "Generic RBF, Isomap, and diffusion-map views remain exploratory because "
-                    "their tuning changes the view and they have no automatic momenta preimage. "
-                    "The Roberts preset reproduces a published postprocessing choice; it is not "
-                    "an automatic claim that this choice is best for another dataset. "
-                    "PCoA agreement checks the same atlas metric, not biological validity. "
-                    "RBF kernel PCA uses a different feature space: its variance percentages "
-                    "are not interchangeable with the default deformation-kernel PCA. "
-                    "All views inherit the atlas registration and its QC concerns."
+
+                        'Tangent-metric PCA describes the fitted deformation model. PCoA is an '
+                        'independent distance check. RBF, Isomap and diffusion maps are '
+                        'exploratory and use different variance definitions.'
+
                 ),
                 parent=self.shape_space_comparison_card,
             )
@@ -3327,6 +3378,10 @@ class DiffeoForgeWindow(QMainWindow):
         shape_space_actions.addWidget(self.open_shape_space_html_button)
         shape_space_actions.addStretch()
         shape_space_layout.addLayout(shape_space_actions)
+        from diffeoforge.desktop.method_results import MethodResultsPanel
+
+        self.method_results_panel = MethodResultsPanel(self.shape_space_comparison_card)
+        shape_space_layout.addWidget(self.method_results_panel)
         self.shape_space_comparison_card.hide()
         layout.addWidget(self.shape_space_comparison_card)
         layout.addWidget(quality_card)
@@ -3400,17 +3455,18 @@ class DiffeoForgeWindow(QMainWindow):
             InfoDisclosure(
                 "What additional evidence it creates",
                 (
-                    "The lab reserves an untouched holdout, freezes the pilot-selected "
-                    "parameter set and its nearest tested neighbors, runs every finalist "
-                    "on identical predeclared cohorts, and compares external surface "
-                    "error, deformation distortion, geometric validity, and stability. "
-                    "Untouched holdout registration keeps each trained template frozen. "
-                    "Independent biological landmark validation remains a separate evidence gate."
+
+                        'Compare nearby settings across training resamples and an untouched '
+                        'holdout. Biological validation remains separate.'
+
                 ),
                 parent=validation_lab,
             )
         )
         validation_layout.addWidget(self.open_validation_lab_button)
+        self.mesh_resolution_study_button = QPushButton("Scientific mesh-resolution study…")
+        self.mesh_resolution_study_button.clicked.connect(self._open_mesh_resolution_study)
+        validation_layout.addWidget(self.mesh_resolution_study_button)
         layout.addWidget(validation_lab)
 
         scientific_report = QFrame()
@@ -3479,11 +3535,10 @@ class DiffeoForgeWindow(QMainWindow):
             InfoDisclosure(
                 "Exact export boundary",
                 (
-                    "SVG remains the canonical resolution-independent artwork. DiffeoForge "
-                    "does not guess journal DPI or synthesize a deformation video from PCA "
-                    "endpoint meshes, because endpoint interpolation is not a verified "
-                    "diffeomorphic path. Subject reconstructions stay in the source run by "
-                    "default to keep the export compact."
+
+                        'Figures use SVG. Review names and metadata before sharing; no '
+                        'credentials or checkpoints are included.'
+
                 ),
                 parent=publication_card,
             )
@@ -3588,7 +3643,7 @@ class DiffeoForgeWindow(QMainWindow):
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(52, 32, 52, 24)
-        eyebrow = QLabel("STEP 5 OF 6")
+        eyebrow = QLabel("STEP 5 OF 7")
         eyebrow.setObjectName("eyebrow")
         title = QLabel("Visual quality review")
         title.setObjectName("title")
@@ -3599,8 +3654,7 @@ class DiffeoForgeWindow(QMainWindow):
         hint.setObjectName("subtitle")
         hint.setWordWrap(True)
         boundary = QLabel(
-            "Record a decision for each required case to continue. Uncertain or implausible "
-            "cases remain visible as QC warnings; no specimens are removed."
+            'Uncertain or implausible cases remain warnings; no specimens are removed.'
         )
         boundary.setObjectName("boundaryText")
         boundary.setWordWrap(True)
@@ -3616,15 +3670,11 @@ class DiffeoForgeWindow(QMainWindow):
             InfoDisclosure(
                 "QC scope and limitations",
                 (
-                    "Finishing review is not scientific approval. With uncertain or implausible "
-                    "cases, results are exploratory. Inspect alignment, template anatomy and "
-                    "local fit; compare a separately documented run if changes are needed. "
-                    "Back to atlas run only navigates; it does not rerun or repair the atlas. "
-                    "A filtered PCA plot is not a substitute for review. Not flagged does not mean "
-                    "visually reviewed: relative screening can miss uniformly poor fits. "
-                    "Reduced displays "
-                    "can hide fine anatomy; use Original detail and check missing detail and local "
-                    "misregistration. Optional spot checks remain useful."
+
+                        'Review flagged cases at Original detail. Reduced views can hide local '
+                        'errors. Unflagged cases may still fit poorly; spot checks are useful. '
+                        'Unresolved cases keep results exploratory.'
+
                 ),
             )
         )
@@ -4353,13 +4403,10 @@ class DiffeoForgeWindow(QMainWindow):
         procrustes_advanced.addWidget(self.procrustes_iterations_spin)
         procrustes_advanced.addStretch()
         procrustes_hint = QLabel(
-            "This preview uses homologous landmarks to estimate translation and "
-            "rotation. The selected size treatment is then applied explicitly to the "
-            "complete surfaces. The recommended mode removes size using an area-weighted "
-            "surface measure that is stable under triangle subdivision. "
-            "Checks and review decisions are saved in the project folder. Raw "
-            "meshes remain unchanged; approved project creation writes immutable "
-            "aligned VTK copies and records every transform. Reflection is off by default."
+
+                'GPA aligns homologous landmarks using the chosen size treatment. Inspect the '
+                'transformed cohort before approving it.'
+
         )
         procrustes_hint.setObjectName("hint")
         procrustes_hint.setWordWrap(True)
@@ -4451,9 +4498,10 @@ class DiffeoForgeWindow(QMainWindow):
         guidance_title.setObjectName("sectionTitle")
         guidance_layout.addWidget(guidance_title)
         guidance_intro = QLabel(
-            "Choose the biological scales that matter, then let DiffeoForge measure "
-            "the aligned geometry. The resulting numbers are provisional centers for "
-            "the pilot comparisons, not final atlas parameters."
+
+                'Declare relevant biological scales, then analyze aligned meshes to propose '
+                'pilot settings.'
+
         )
         guidance_intro.setObjectName("hint")
         guidance_intro.setWordWrap(True)
@@ -4463,18 +4511,11 @@ class DiffeoForgeWindow(QMainWindow):
         guidance_background_layout.setSpacing(8)
         guidance_background_layout.addWidget(guidance_intro)
         self.reference_scale_difference_label = QLabel(
-            "<b>These are three independent questions:</b><br>"
-            "<b>1 · Matching resolution — What should DiffeoForge notice?</b> "
-            "This is the measuring lens used to score surface fit.<br>"
-            "<b>2 · Expected difference amplitude — How different may real specimens "
-            "be?</b> This declares whether large required changes are expected biology, "
-            "rather than automatically treating their size as a defect.<br>"
-            "<b>3 · Deformation reach — How far should one adjustment spread?</b> "
-            "This controls whether a region can move locally or must move smoothly with "
-            "its neighbors.<br><br>"
-            "<b>They do not have to match.</b> A cohort may contain extremely different "
-            "shapes while their coordinated changes are broad/global; DiffeoForge now "
-            "records those as separate scientific declarations."
+
+                '<b>Matching resolution:</b> which surface details matter.<br><b>Shape '
+                'disparity:</b> how large real differences may be.<br><b>Deformation reach:</b>'
+                ' how far a local change spreads. These settings are independent.'
+
         )
         self.reference_scale_difference_label.setObjectName("conceptDifference")
         self.reference_scale_difference_label.setAccessibleName(
@@ -4584,6 +4625,10 @@ class DiffeoForgeWindow(QMainWindow):
         self.analyze_reference_parameters_button.setObjectName("secondary")
         self.analyze_reference_parameters_button.clicked.connect(self._analyze_reference_parameters)
         guidance_layout.addWidget(self.analyze_reference_parameters_button)
+        self.cancel_parameter_analysis_button = QPushButton("Cancel analysis")
+        self.cancel_parameter_analysis_button.clicked.connect(self._cancel_parameter_analysis)
+        self.cancel_parameter_analysis_button.hide()
+        guidance_layout.addWidget(self.cancel_parameter_analysis_button)
         self.reference_guidance_summary_label = QLabel(
             "No aligned-mesh analysis has been completed."
         )
@@ -4741,18 +4786,6 @@ class DiffeoForgeWindow(QMainWindow):
         data_card_layout.addLayout(data_form)
         parameter_card_layout.addLayout(parameter_form)
         return data_card, parameter_card
-
-    def _open_demo(self) -> None:
-        from diffeoforge.desktop.demo_window import DemoWindow
-
-        demo = getattr(self, "_demo_window", None)
-        if demo is None:
-            demo = DemoWindow(self)
-            self._demo_window = demo
-            demo.destroyed.connect(lambda: setattr(self, "_demo_window", None))
-        demo.show()
-        demo.raise_()
-        demo.activateWindow()
 
     def _build_result_card(self) -> QWidget:
         card = QFrame()
@@ -5218,11 +5251,8 @@ class DiffeoForgeWindow(QMainWindow):
                 f"Declared coordinate system: {result.coordinate_system}.\n"
                 f"Coordinate units: {result.units_label}.\n\n"
                 f"DiffeoForge created the working CSV automatically at:\n{result.csv_path}\n\n"
-                "No separate conversion or CSV selection is needed. Coordinates and source "
-                "files were not changed. No RAS/LPS conversion, unit conversion, or "
-                "semilandmark sliding was applied. Point order defines homology (LM1…LMN). "
-                "Confirm that landmarks and meshes use the same coordinate frame and units; "
-                "the normal GPA preview remains required."
+                "Check that mesh and landmark frames and units match, then review GPA. "
+                "Point order defines homology; no RAS/LPS or unit conversion was applied."
                 f"{ignored}",
             )
         except (OSError, TypeError, ValueError) as error:
@@ -5776,6 +5806,11 @@ class DiffeoForgeWindow(QMainWindow):
             self.analyze_reference_parameters_button.setText(
                 "Analyze aligned meshes & suggest parameters"
             )
+        measuring = isinstance(self._worker, _ReferenceParameterWorker)
+        self.cancel_parameter_analysis_button.setVisible(measuring)
+        self.cancel_parameter_analysis_button.setEnabled(
+            measuring and not self._worker.cancelled.is_set()
+        )
         recommendation_ready = bool(
             reference
             and self._reference_recommendation is not None
@@ -5989,6 +6024,15 @@ class DiffeoForgeWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(result.html_path)))
 
     @Slot()
+    def _cancel_parameter_analysis(self) -> None:
+        worker = self._worker
+        if isinstance(worker, _ReferenceParameterWorker) and worker.request_cancel():
+            self.cancel_parameter_analysis_button.setEnabled(False)
+            self.reference_guidance_status_label.setText(
+                "Cancellation requested. Finishing the current mesh check…"
+            )
+
+    @Slot()
     def _analyze_reference_parameters(self) -> None:
         if self._worker is not None:
             return
@@ -6038,6 +6082,9 @@ class DiffeoForgeWindow(QMainWindow):
             self._reference_parameter_analysis_failed(
                 "The completed analysis is no longer bound to the active request."
             )
+            return
+        if worker.cancelled.is_set():
+            self._reference_parameter_analysis_failed("Parameter analysis cancelled")
             return
         try:
             current_paths = self._current_surface_cohort()
@@ -6157,6 +6204,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_guidance_status_label.setText(
             f"Aligned-mesh parameter analysis failed: {message}"
         )
+        if message.startswith("Parameter analysis cancelled"):
+            self.reference_guidance_summary_label.setText("Analysis cancelled.")
+            self.reference_guidance_summary_label.setObjectName("status")
+            self.reference_guidance_status_label.setText("Existing inputs were preserved.")
+            self.reference_guidance_status_label.setObjectName("status")
         self._update_reference_effective_widths()
         self._update_reference_guidance_controls()
         self._sync_ready_state()
@@ -6319,31 +6371,33 @@ class DiffeoForgeWindow(QMainWindow):
             "statusSuccess" if alignment.converged else "statusError"
         )
         self.procrustes_preview_status_label.setStyleSheet("")
+        diagnostics = (
+            ("State", f"{status} · {alignment.termination_reason}"),
+            ("Meshes / landmarks / iterations",
+             f"{specimen_count} / {len(preview.landmark_labels)} / {len(alignment.history)}"),
+            ("Source formats", format_summary),
+            ("Final mean change", f"{final_iteration.mean_change:.6g}"),
+            ("Total squared residual", f"{final_iteration.total_squared_residual:.6g}"),
+            ("Residual min / median / max",
+             f"{residuals[0]:.6g} / {median_residual:.6g} / {residuals[-1]:.6g}"),
+            ("Size treatment / working size",
+             f"{preview.scaling_label} / {preview.target_size:.6g}"),
+            ("Applied scale min / max", f"{min(scales):.6g} / {max(scales):.6g}"),
+            ("Surface RMS radius min / max",
+             f"{min(post_surface_sizes):.6g} / {max(post_surface_sizes):.6g}"),
+            ("Vertex centroid size min / max",
+             f"{min(post_vertex_sizes):.6g} / {max(post_vertex_sizes):.6g}"),
+            ("Size policies compared", str(len(sensitivity["modes"]))),
+            ("Preview fingerprint", preview.fingerprint),
+        )
         self.procrustes_preview_details.setText(
-            f"Read-only preview {status}: {specimen_count} meshes, "
-            f"{len(preview.landmark_labels)} landmarks, "
-            f"{len(alignment.history)} iterations ({alignment.termination_reason}).\n"
-            f"Source formats: {format_summary}. Approved publication will preserve "
-            "byte-identical raw copies and write aligned-vtk/*.vtk for both engines.\n"
-            f"Final mean change: {final_iteration.mean_change:.6g}; total squared "
-            f"residual: {final_iteration.total_squared_residual:.6g}.\n"
-            f"Per-mesh squared residual min / median / max: "
-            f"{residuals[0]:.6g} / {median_residual:.6g} / {residuals[-1]:.6g}.\n"
-            f"Size treatment: {preview.scaling_label}; working size "
-            f"{preview.target_size:.6g}.\n"
-            f"Applied scale min / max: {min(scales):.6g} / {max(scales):.6g}.\n"
-            f"Post-alignment surface RMS radius min / max: "
-            f"{min(post_surface_sizes):.6g} / {max(post_surface_sizes):.6g}; "
-            f"vertex centroid size min / max: "
-            f"{min(post_vertex_sizes):.6g} / {max(post_vertex_sizes):.6g}.\n"
-            f"Preprocessing sensitivity: {len(sensitivity['modes'])} size policies "
-            "compared without atlas reruns. This does not establish atlas or "
-            f"morphospace robustness.{sensitivity_warnings}\n"
-            f"Exact preview fingerprint: {preview.fingerprint}\n"
-            "Raw meshes and the landmark CSV remain unchanged. This numerical preview "
-            "does not establish biological landmark quality.\n"
-            "Next: open the visual GPA review to inspect the transformed cohort before "
-            "the approval checkbox becomes available."
+            "<table>" + "".join(
+                f"<tr><td>{escape(label)}</td><td>{escape(value)}</td></tr>"
+                for label, value in diagnostics
+            ) + "</table><p>This numerical preview does not establish "
+            "biological landmark quality.</p>"
+            + ("<p>" + escape(sensitivity_warnings).replace("\n", "<br>") + "</p>"
+               if sensitivity_warnings else "")
         )
         self.procrustes_preview_status_label.setText(
             f"Alignment preview ready: {specimen_count} meshes. Open visual GPA review."
@@ -6541,14 +6595,15 @@ class DiffeoForgeWindow(QMainWindow):
             message = "No saved status report has been verified."
         self.saved_reference_status_verification_label.setText(message)
         self.saved_reference_status_verification_detail_label.setText(
-            "This check reads only the selected report file. It opens no project, YAML, "
-            "approval, run, container, or engine state and changes nothing."
+            'Check the saved report against its recorded hash.'
         )
         self.saved_reference_status_verification_export_label.setObjectName("hint")
         self.saved_reference_status_verification_export_label.setStyleSheet("")
         self.saved_reference_status_verification_export_label.setText(
-            "Evidence export is available only after a successful check that remains "
-            "bound to the current inputs. The file contains private provenance."
+
+                'Export is enabled after verification. The evidence contains private paths and '
+                'provenance.'
+
         )
         self._sync_saved_reference_status_verification_controls()
 
@@ -7130,10 +7185,10 @@ class DiffeoForgeWindow(QMainWindow):
                 "Advanced manual parameters — pilot calibration will be skipped"
             )
             self.reference_parameter_hint.setText(
-                "Advanced values are editable in the mesh coordinate system. DiffeoForge "
-                "also records each value as a percentage of the measured template diagonal "
-                "for reproducibility. This explicitly bypasses the guided pilot-calibration "
-                "requirement; the full-cohort result still requires scientific validation."
+
+                    'Advanced values use mesh units. Ratios to the median mesh size are '
+                    'recorded for reproducibility.'
+
             )
         self._update_reference_effective_widths()
         self._sync_ready_state()
@@ -7209,6 +7264,9 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_run_request = None
         self._run_result = None
         self._result_review = None
+        self._parameter_project_form_binding = None
+        self.active_parameter_project_label.hide()
+        self.method_results_panel.clear()
         self.result_card.hide()
         self._refresh_iteration_extension(None)
         self.run_live_optimizer_plot.clear()
@@ -7222,6 +7280,12 @@ class DiffeoForgeWindow(QMainWindow):
         self.show_run_button.setEnabled(False)
         self.start_atlas_button.setEnabled(False)
         self.run_result_card.hide()
+
+    def _open_mesh_resolution_study(self) -> None:
+        from diffeoforge.desktop.mesh_resolution_dialog import MeshResolutionDialog
+
+        dialog = MeshResolutionDialog(self)
+        dialog.exec()
 
     @Slot()
     def _update_modern_execution_explanation(self) -> None:
@@ -7770,7 +7834,9 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self.start_atlas_button.setText(
                 (
-                    "Start +300 iterations"
+                    "Start saved-state export"
+                    if self._reference_run_request.final_export_only
+                    else "Start +300 iterations"
                     if self._reference_run_request.additional_iterations
                     else "Resume interrupted Deformetrica run"
                 )
@@ -8337,25 +8403,36 @@ class DiffeoForgeWindow(QMainWindow):
         self._show_reference_resume(request, result)
 
     def _refresh_iteration_extension(self, source: Path | None) -> None:
-        self._iteration_extension_source = None
-        maximum = None
-        if source is not None:
-            try:
-                maximum = iteration_extension_limit(source)
-            except (OSError, RuntimeError, TypeError, ValueError, KeyError):
-                pass
-        for button in (
-            self.run_more_iterations_button, self.result_more_iterations_button,
-            self.qc_more_iterations_button,
-        ):
-            button.setVisible(maximum is not None)
-            if maximum is not None:
-                button.setText(f"Continue +300 iterations ({maximum} → {maximum + 300})")
-                button.setToolTip(
-                    "Continue from the saved state in a new run. Previous results remain available."
-                )
-        if maximum is not None:
-            self._iteration_extension_source = source
+        if not hasattr(self, "_cap_advice"):
+            from diffeoforge.desktop.convergence_advice import CapAdviceController
+
+            self._cap_advice = CapAdviceController(self, (
+                self.run_more_iterations_button, self.result_more_iterations_button,
+                self.qc_more_iterations_button,
+            ))
+        self._cap_advice.load(source)
+
+    @Slot()
+    def _select_saved_export(self):
+        if self._worker is not None:
+            return
+        selected = QFileDialog.getExistingDirectory(
+            self, "Select the failed run whose final export should be recovered"
+        )
+        if not selected:
+            return
+        worker = _SavedExportWorker(Path(selected))
+        worker.signals.succeeded.connect(self._saved_export_ready)
+        worker.signals.failed.connect(self._iteration_extension_failed)
+        self._worker = worker
+        self._thread_pool.start(worker)
+        self._sync_ready_state()
+
+    @Slot(object)
+    def _saved_export_ready(self, prepared):
+        self._worker = None
+        request, result = prepared
+        self._show_reference_resume(request, result)
 
     @Slot()
     def _prepare_iteration_extension(self) -> None:
@@ -8465,6 +8542,19 @@ class DiffeoForgeWindow(QMainWindow):
                 f"New run: {self._wrappable_path(request.destination)}"
             )
             self.run_progress_bar.setFormat("Continuation not started")
+        if request.final_export_only:
+            self.run_title_label.setText("Recover the saved state's final export")
+            self.run_subtitle_label.setText(
+                "Write complete trajectories and reconstructions in a new run."
+            )
+            self.run_boundary_label.setText(
+                "No optimization: saved parameters and iteration must remain unchanged. "
+                "Original evidence is retained. Review the recovered reconstructions afterwards."
+            )
+            self.run_optimizer_label.setText(
+                "Saved-state export only; no new optimizer iterations."
+            )
+            self.run_progress_bar.setFormat("Export recovery not started")
         self._navigate_to_step(3)
         self._sync_ready_state()
         if extension_maximum is not None:
@@ -8606,8 +8696,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.shape_space_comparison_status_label.setObjectName("statusSuccess")
         self.shape_space_comparison_status_label.setStyleSheet("")
         self.shape_space_comparison_status_label.setText(
-            f"{method_count} method(s) compared. PDF saved in the project folder. "
-            "Method agreement does not validate registration or biological interpretation."
+            f"{method_count} methods ready. Select a method below."
+        )
+        self.shape_space_comparison_status_label.setToolTip(
+            "PDF and HTML reports are saved beside this atlas. Method agreement does not "
+            "validate registration or biological interpretation."
         )
         self.shape_space_comparison_details.setText(
             f"{decision['status']}: {decision['reason']} "
@@ -8620,10 +8713,11 @@ class DiffeoForgeWindow(QMainWindow):
             self.shape_space_comparison_status_label.setObjectName("statusWarning")
             self.shape_space_comparison_status_label.setText(
                 self.shape_space_comparison_status_label.text()
-                + " The default-method numerical checks were not fully supported; review details."
+                + " Default-method check incomplete; open details."
             )
             self.shape_space_comparison_status_label.setStyleSheet("")
-        self._open_shape_space_pdf_report()
+        if self._result_review is not None:
+            self.method_results_panel.load(artifact, self._result_review)
         if self._close_after_shape_space_comparison:
             self._close_after_shape_space_comparison = False
             self.close()
@@ -9265,6 +9359,12 @@ class DiffeoForgeWindow(QMainWindow):
     def _project_succeeded(self, result: ProjectSetupResult) -> None:
         self._worker = None
         self._result = result
+        self._parameter_project_form_binding = self._parameter_project_form_signature()
+        self.active_parameter_project_label.setText(
+            f"Parameter project: {result.config_path.parent.name}"
+        )
+        self.active_parameter_project_label.setToolTip(str(result.config_path))
+        self.active_parameter_project_label.show()
         self._remember_current_project(result)
         self.status_label.setObjectName("statusSuccess")
         self.status_label.setStyleSheet("")
@@ -9547,6 +9647,8 @@ class DiffeoForgeWindow(QMainWindow):
     def _reference_calibration_context(
         self,
     ) -> tuple[ReferenceCalibrationPlan, Path] | None:
+        if not self._bound_project_matches_form():
+            return None
         review = self._review
         if review is None or review.engine is not DesktopEngine.DEFORMETRICA_REFERENCE:
             return None
@@ -9574,6 +9676,20 @@ class DiffeoForgeWindow(QMainWindow):
         context = plan, directory
         self._pilot_context_cache = cache_key, context
         return context
+
+    def _parameter_project_form_signature(self):
+        return (
+            self.engine_combo.currentData(),
+            self.mesh_edit.text().strip(), self.template_edit.text().strip(),
+            self.project_edit.text().strip(), self.units_combo.currentText(),
+            self.pattern_edit.text().strip(), self.landmarks_edit.text().strip(),
+            self.procrustes_apply_check.isChecked(), self.already_gpa_check.isChecked(),
+            getattr(self._procrustes_preview, "fingerprint", None),
+        )
+
+    def _bound_project_matches_form(self):
+        bound = getattr(self, "_parameter_project_form_binding", None)
+        return bound is None or bound == self._parameter_project_form_signature()
 
     @staticmethod
     def _pilot_file_stamp(path: Path):
@@ -9861,6 +9977,12 @@ class DiffeoForgeWindow(QMainWindow):
             self._worker is not None
             or self.engine_combo.currentData() != DesktopEngine.DEFORMETRICA_REFERENCE
         ):
+            return
+        if not self._bound_project_matches_form():
+            self.status_label.setText(
+                "Inputs changed. Create or open the current project before starting its pilot. "
+                "The previously loaded result remains available."
+            )
             return
         # Defend this entry point as well as the combo signal: a stale Modern
         # result must never skip Reference creation and reach a no-op check.
@@ -11018,6 +11140,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_live_optimizer_plot.setVisible(reference)
         self.run_result_card.hide()
         self.run_event_log.clear()
+        self._reference_cancel_pending = False
         self.run_technical_toggle.setChecked(False)
         if reference:
             self.run_progress_bar.setRange(0, 0)
@@ -11078,12 +11201,13 @@ class DiffeoForgeWindow(QMainWindow):
         ):
             return
         self.cancel_atlas_button.setEnabled(False)
+        self._reference_cancel_pending = isinstance(worker, _ReferenceAtlasWorker)
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
         if isinstance(worker, _ReferenceAtlasWorker):
             self.run_state_label.setText(
-                "Cancellation requested. Deformetrica will be interrupted after the current "
-                "log/optimizer operation; terminal evidence and any checkpoint are preserved."
+                "Cancellation requested — waiting for confirmed backend shutdown. "
+                "The last saved checkpoint will be retained."
             )
         elif isinstance(worker, _RemoteAtlasWorker):
             self.run_state_label.setText(
@@ -11160,7 +11284,6 @@ class DiffeoForgeWindow(QMainWindow):
                 "Worker reports an error; the parent is reconciling process termination."
             )
         self.run_event_log.appendPlainText(f"#{event.sequence} {event.kind}: {message}")
-
     def _remote_atlas_event(self, event: dict[str, object]) -> None:
         index = int(event["index"])
         kind = str(event["kind"])
@@ -11241,15 +11364,21 @@ class DiffeoForgeWindow(QMainWindow):
         elif event.kind == "phase":
             phase = str(event.payload["phase"])
             message = str(event.payload["message"])
-            self.run_stage_label.setText(
-                f"Deformetrica stage: {phase.replace('_', ' ')} · {message}"
-            )
+            export_only = getattr(self._reference_run_request, "final_export_only", False)
+            self.run_stage_label.setText({
+                "verify_request": "Check launch", "preflight": "Check inputs",
+                "prepare": "Prepare run",
+                "execute": "Export saved atlas" if export_only else "Run atlas",
+                "finalize": "Save output inventory", "verify_result": "Check completed result",
+            }[phase])
             if phase != "execute":
                 self.run_progress_bar.setRange(0, 0)
                 self.run_progress_bar.setFormat(f"Stage: {phase.replace('_', ' ')}")
             else:
                 self.run_progress_bar.setRange(0, 0)
-                self.run_progress_bar.setFormat("Computing first iteration")
+                self.run_progress_bar.setFormat(
+                    "Writing saved meshes" if export_only else "Computing first iteration"
+                )
                 self._latest_reference_resource_text = (
                     "Live resources: waiting for the first backend-process sample."
                 )
@@ -11269,23 +11398,15 @@ class DiffeoForgeWindow(QMainWindow):
             message = f"{completed} of {total} meshes checked · {role}: {name} · {action}"
             self.run_progress_bar.setRange(0, total)
             self.run_progress_bar.setValue(completed)
-            self.run_progress_bar.setFormat("Mesh checks: %v of %m")
-            self.run_stage_label.setText(f"Prepare atlas — input checks · {action}")
+            self.run_progress_bar.setFormat("%p% of input checks")
+            self.run_stage_label.setText("Check atlas inputs")
             self.run_state_label.setText(message)
             self.run_optimizer_label.setText(
-                "Deformetrica has not started yet. Unchanged mesh checks are reused after "
-                "a fresh content check. A new deep check can take several minutes.\n"
-                "Cancel safely stops at the next mesh-check boundary."
+                "Cancel stops after the current mesh check."
             )
         elif event.kind == "resources":
             self._latest_reference_resource_text = self._reference_resource_text(event.payload)
-            lines = [
-                line for line in self.run_optimizer_label.text().splitlines()
-                if not line.startswith("Live resources:")
-            ]
-            self.run_optimizer_label.setText(
-                "\n".join([*lines, self._latest_reference_resource_text])
-            )
+            self.run_optimizer_label.setToolTip(self._latest_reference_resource_text)
             return
         elif event.kind == "activity":
             elapsed = float(event.payload["elapsed_seconds"])
@@ -11295,47 +11416,49 @@ class DiffeoForgeWindow(QMainWindow):
             self._latest_reference_resource_text = self._reference_resource_text(
                 event.payload.get("resources")
             )
-            if "DiffeoForge initialization:" in latest_message:
+            if state == "exporting":
+                message = latest_message
+                self.run_stage_label.setText("Export saved atlas")
+                self.run_progress_bar.setRange(0, 0)
+                self.run_progress_bar.setFormat("Writing trajectories")
+                self.run_optimizer_label.setText(f"Elapsed: {self._format_duration(elapsed)}")
+            elif "DiffeoForge initialization:" in latest_message:
                 message = latest_message.split("DiffeoForge initialization:", 1)[1].strip()
-                self.run_stage_label.setText(f"Initialize full cohort — {message}")
+                self.run_stage_label.setText("Initialize full cohort")
                 self.run_progress_bar.setRange(0, 0)
                 self.run_progress_bar.setFormat("Initialize specimens on the fixed pilot basis")
                 self.run_optimizer_label.setText(
-                    f"Initialization precedes the joint atlas. {message}\n"
-                    f"{self._format_duration(elapsed)} elapsed; "
-                    "the joint atlas starts after initialization.\n"
-                    f"{self._latest_reference_resource_text}"
+                    f"Elapsed: {self._format_duration(elapsed)}. Joint optimization follows."
                 )
             elif state == "computing_first_iteration":
                 message = (
-                    "Deformetrica is active and computing its first complete objective and "
-                    "gradient evaluation."
+                    "Computing the first objective and gradient."
                 )
                 self.run_stage_label.setText(
-                    "Deformetrica stage: execute | computing first iteration"
+                    "Optimize atlas"
                 )
                 self.run_progress_bar.setRange(0, 0)
                 self.run_progress_bar.setFormat(
                     f"First iteration active | {self._format_duration(elapsed)} elapsed"
                 )
                 self.run_optimizer_label.setText(
-                    f"{self._reference_runtime_estimate_text(self._review)}\n"
-                    f"Live activity: {self._format_duration(elapsed)} elapsed; no complete "
-                    f"iteration logged yet. Latest Deformetrica message: {latest_message}\n"
-                    f"{self._latest_reference_resource_text}"
+                    f"Elapsed: {self._format_duration(elapsed)}. No complete iteration logged yet."
                 )
             else:
                 last_iteration = event.payload["last_iteration"]
-                message = "Deformetrica is active between logged optimizer iterations."
+                message = (
+                    f"Iteration {last_iteration} / {event.payload['maximum_iterations']} "
+                    "· computing"
+                )
                 self.run_stage_label.setText(
-                    "Deformetrica stage: execute | optimizer computation is active"
+                    "Optimize atlas"
                 )
                 self.run_optimizer_label.setText(
-                    f"Live activity: {self._format_duration(elapsed)} elapsed | last logged "
-                    f"iteration {last_iteration} of {event.payload['maximum_iterations']} | "
-                    f"latest message: {latest_message}\n"
-                    f"{self._latest_reference_resource_text}"
+                    f"Elapsed: {self._format_duration(elapsed)}"
                 )
+            self.run_optimizer_label.setToolTip(
+                f"{latest_message}\n{self._latest_reference_resource_text}"
+            )
             self.run_state_label.setText(message)
             source_text = "Deformetrica log" if source is None else str(source)
             message = f"{message} Elapsed {self._format_duration(elapsed)}; source {source_text}."
@@ -11407,21 +11530,17 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self.run_progress_bar.setRange(0, maximum)
             self.run_progress_bar.setValue(min(iteration, maximum))
-            self.run_progress_bar.setFormat("Iteration %v of maximum %m")
+            self.run_progress_bar.setFormat("%p% of iteration budget")
             self.run_stage_label.setText(
-                "Deformetrica stage: execute · optimizer output is being observed"
+                "Optimize atlas"
             )
             self.run_optimizer_label.setText(
-                f"Iteration {iteration} of maximum {maximum} · objective "
-                f"{float(event.payload['log_likelihood']):.6g} · attachment "
-                f"{float(event.payload['attachment']):.6g} · regularity "
-                f"{float(event.payload['regularity']):.6g}\n"
-                f"Elapsed: {self._format_duration(elapsed)} · observed pace: {rate_text} "
-                "(rolling median; may change)\n"
-                f"{convergence_text}{contention_text}\n"
-                f"Maximum-iteration scenario: {eta_text} remaining if all {maximum} "
-                "iterations run (not an expected finish time)\n"
-                f"{self._latest_reference_resource_text}"
+                f"Elapsed: {self._format_duration(elapsed)} · {rate_text}\n"
+                f"To iteration limit: {eta_text} "
+                f"(estimate, not a convergence forecast){contention_text}"
+            )
+            self.run_optimizer_label.setToolTip(
+                f"{convergence_text}\n{self._latest_reference_resource_text}"
             )
             self.run_state_label.setText(message)
         else:
@@ -11431,6 +11550,10 @@ class DiffeoForgeWindow(QMainWindow):
                 "verification is running."
             )
         self.run_event_log.appendPlainText(f"#{event.sequence} {event.kind}: {message}")
+        if getattr(self, "_reference_cancel_pending", False) and event.kind != "terminal":
+            self.run_state_label.setText(
+                "Cancellation requested — waiting for confirmed backend shutdown."
+            )
 
     @Slot(object)
     def _atlas_succeeded(
@@ -11743,10 +11866,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
-            "Deformetrica completion was independently verified; its output parameters "
-            "are now being imported, every subject reconstruction is being ranked for "
-            "registration QC, and a deformation-kernel PCA snapshot is being recomputed. This can "
-            "take several minutes for a large cohort."
+            'Importing results, checking reconstructions and preparing PCA…'
             if reference
             else "Workflow, bundle, inventory, mesh QC, and static SVGs are being "
             "fully reverified before the results view is enabled."
@@ -11763,6 +11883,11 @@ class DiffeoForgeWindow(QMainWindow):
                 previews.takeAt(0).widget().deleteLater()
             self.reference_pca_sd_previews.setProperty("media", None)
         self._result_review = review
+        self.results_page_title.setText(f"Results · {review.project_name}")
+        if review.engine_route == "deformetrica_reference":
+            self.method_results_panel.load_saved(review)
+        else:
+            self.method_results_panel.clear()
         self._refresh_iteration_extension(review.run_directory)
         method_label = review.pca_method_label
         self.result_pca_title.setText(method_label)
@@ -11773,11 +11898,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_pca_method_disclosure.content_widget.setText(
             f"Active verified method: {method_label} (ID: {review.pca_method_id}). "
             + (
-                "PCA uses the fitted LDDMM tangent metric (linearized PGA). Axis shapes use "
-                "geodesic shooting. This is a tangent approximation, not exact nonlinear PGA "
-                "or an intrinsic-mean claim. Vaillant et al. (2004), "
-                "doi:10.1016/j.neuroimage.2004.07.023; Fletcher et al. (2004), "
-                "doi:10.1109/TMI.2004.831793."
+                (
+                    'PCA uses the fitted LDDMM tangent metric. Axis shapes use geodesic '
+                    'shooting. This is a tangent approximation; methods and citations are in '
+                    'the report.'
+                )
                 if review.pca_method_id == "lddmm_deformation_kernel_pca"
                 else (
                     "This is linear PCA of flattened Cartesian initial momenta. It does not "
@@ -11833,8 +11958,9 @@ class DiffeoForgeWindow(QMainWindow):
             return
         self._populate_atlas_viewer(review)
         self.result_boundary_label.setText(
-            "\n".join(f"• {boundary}" for boundary in review.scientific_boundaries)
+            "Numerical convergence and anatomical approval are separate."
         )
+        self.result_boundary_label.setToolTip("\n".join(review.scientific_boundaries))
         run_label = (
             "Deformetrica run" if review.engine_route == "deformetrica_reference" else "Workflow"
         )
@@ -11899,6 +12025,25 @@ class DiffeoForgeWindow(QMainWindow):
                 f"Reported stop signal: {stop}. This is independently verified execution "
                 "evidence, not proof of adequate registration or scientific convergence."
             )
+        self.result_completion_label.setToolTip(self.result_completion_label.text())
+        stop = review.optimizer_termination_reason.replace("_", " ")
+        if review.optimizer_converged is False:
+            stop = f"Optimizer did not converge ({stop})"
+        elif review.optimizer_converged is True:
+            stop = f"Converged ({stop})"
+        elif review.optimizer_termination_reason == "tolerance_threshold":
+            stop = "Native tolerance met"
+        else:
+            stop += "; convergence not established"
+        unit = "iteration" if review.engine_route == "deformetrica_reference" else "cycle"
+        duration = (
+            " · " + self._format_result_duration(review.execution_duration_seconds)
+            if review.execution_duration_seconds is not None else ""
+        )
+        self.result_completion_label.setText(
+            f"Stop: {stop} · last logged {unit} {review.optimizer_cycles_completed}"
+            f" / {review.optimizer_max_cycles}{duration}. Review atlas fit next."
+        )
         self._populate_result_artifacts(review)
         self.open_validation_lab_button.setEnabled(review.engine_route == "deformetrica_reference")
         self.create_scientific_report_button.setEnabled(True)
@@ -11907,14 +12052,15 @@ class DiffeoForgeWindow(QMainWindow):
         self.scientific_report_status_label.setObjectName("status")
         self.scientific_report_status_label.setStyleSheet("")
         self.scientific_report_status_label.setText(
-            "Ready. The report will be written beside the immutable atlas run; missing "
-            "sensitivity or biological evidence will remain explicitly unassessed."
+
+                'Ready to save the report beside this run. Missing scientific evidence remains '
+                'unassessed.'
+
         )
         self.publication_status_label.setObjectName("status")
         self.publication_status_label.setStyleSheet("")
         self.publication_status_label.setText(
-            "Ready. The export will copy only verified open artifacts beside the immutable "
-            "atlas run and will include a newly verified scientific report."
+            'Ready to export verified artifacts and a scientific report beside this run.'
         )
         self.pca_metadata_status_label.setObjectName("status")
         self.pca_metadata_status_label.setStyleSheet("")
@@ -11939,19 +12085,17 @@ class DiffeoForgeWindow(QMainWindow):
             self.shape_space_comparison_status_label.setObjectName("status")
             self.shape_space_comparison_status_label.setStyleSheet("")
             self.shape_space_comparison_status_label.setText(
-                "A matching completed selection will be hash-verified and reused."
+                'Saved method selections are available below.'
                 if comparison.exists()
                 else (
-                    "Choose the recommended quick evidence preset, individual methods, or "
-                    "the explicitly slow full suite. No atlas rerun is required."
+                    'Choose methods to calculate and display below.'
                 )
             )
         self._sync_reference_pca_deformation_action(review)
         self.result_status_label.setObjectName("statusSuccess")
         self.result_status_label.setStyleSheet("")
         self.result_status_label.setText(
-            "Snapshot fully verified. Before each open action, the selected artifact is "
-            "rebound to both manifest hashes, its file size, and SHA-256."
+            'Results loaded.'
             + (
                 f" Existing registration-QC autosave was ignored: {draft_warning}"
                 if draft_warning is not None

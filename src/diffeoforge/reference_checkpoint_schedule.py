@@ -10,6 +10,8 @@ def new_run_config(config):
     """Declare the new output default without rewriting source/legacy evidence."""
     result = deepcopy(dict(config))
     result["output"].setdefault("checkpoint_mode", COMPACT_MODE)
+    if result.get("runtime", {}).get("launcher", {}).get("type") == "wsl":
+        result["output"].setdefault("process_control", "linux_session_v1")
     return result
 
 

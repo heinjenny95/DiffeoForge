@@ -9,51 +9,61 @@ Scope agreed on 2026-09-14: implement the current usability backlog and plan the
 larger roadmap. This is a development plan, not a public release or scientific
 qualification claim. The established development branch remains authoritative.
 
+## v138 owner-authorized implementation — 19 October 2026
+
+The owner subsequently requested implementation of these items and the older
+software backlog while the atlas continues. v138 source implements the items
+below; [scope and older-task reconciliation](V138_DESKTOP_BACKLOG.md) separates
+software delivery from native/platform, prospective scientific and user gates.
+Installation waits for an idle application/backend. No additional Linux/macOS or
+HPC test systems are available.
+
 ## Owner-requested backlog — 19 October 2026
 
-- [ ] At an atlas iteration cap, summarize recent objective improvement and explain
+- [x] At an atlas iteration cap, summarize recent objective improvement and explain
   whether **Continue +300 iterations** appears worthwhile, the curve is flattening,
   or the history cannot support advice. Show recent-window gains and transparent
   comparison/precision limits; keep optimizer convergence, anatomy approval and
   manual continuation separate. See the
   [roadmap acceptance criteria](../ROADMAP.md#atlas-stopping-and-continuation).
-  Recorded for later implementation; no runtime, iteration budget or active run
-  changes are part of this backlog update.
+  Implemented in v138 source with precision-aware 10/50-iteration windows.
+  Existing runs and native stopping rules are unchanged.
 
-- [ ] Continue simplifying text throughout the interface, including dialogs and
+- [x] Continue simplifying text throughout the interface, including dialogs and
   already-collapsible help. Show the relevant outcome and next action, shorten
   explanations, and replace repetitive/formulaic AI-sounding copy with natural,
   direct language. Move routine technical detail to background-written local
   logs that users can find and search; keep actionable errors, essential warnings
   and required decisions visible. Extend the existing
   [text-reduction task](../ROADMAP.md#milestone-3-accessible-application), with
-  representative workflow/user review. Owner follow-up, 19 October 2026: backlog
-  for continued longer-term improvement; no implementation or active-run change.
+  representative workflow/user review. v138 implements this source pass;
+  longer-term usability review remains open.
   Concrete acceptance example: remove duplicate specimen/optimizer counters from
   the adjacent live-event status and cohort-initialization progress caption.
   Retain one compact summary, the phase and progress bar; keep history in logs.
   Use the [26-item source audit](UI_TEXT_AUDIT_2026-10-19.md) as the concrete
   checklist, covering main pages, pilot/QC, GPA/landmarking, comparisons,
-  validation and visualization. Audit findings are backlog, not implemented fixes.
+  validation and visualization. The 26 source locations are revised in v138;
+  independent first-use review remains open.
 
-- [ ] Add an interactive PC1–PC3 3D morphospace to Step 7 Visualization, using
+- [x] Add an interactive PC1–PC3 3D morphospace to Step 7 Visualization, using
   miniature meshes at the saved PCA coordinates, with rotate/pan/zoom, selection,
   glyph-size controls and responsive cached rendering. Add direct per-item
   image/video export throughout Visualization: PNG/JPEG stills, MP4 videos and
   a snapshot of the current 3D camera; preserve existing PDFs and gallery ZIP.
   See [detailed scope](PCA_VISUALIZATION_EXPORTS.md#deferred-follow-up--19-october-2026).
-  Owner explicitly chose the to-do list on 19 October 2026; implementation is
-  deferred, with no atlas/PCA recomputation or active-run change.
+  Implemented in v138, extended to saved comparison methods with correct
+  axis names. No atlas/PCA recomputation or active-run change is implied.
 
 ## Longer-term UI customization — low priority
 
-- [ ] Support light/dark modes and user-selected UI colors, including an arbitrary
+- [x] Support light/dark modes and user-selected UI colors, including an arbitrary
   replacement for the current teal accent. Persist appearance preferences, apply
   them consistently across main and secondary windows, retain readable interaction
   states and provide a default-theme reset. See the
   [roadmap item](../ROADMAP.md#longer-term-ui-customization--low-priority).
-  Owner request recorded on 19 October 2026 for later, low-priority work; no
-  implementation, next-version commitment or active-run change is included.
+  Implemented in v138 source with persistent preferences, owned-dialog
+  theming, contrast adjustment, preview/cancel and reset.
 
 ## v129 owner-selected implementation
 

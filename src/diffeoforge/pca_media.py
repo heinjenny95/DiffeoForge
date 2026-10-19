@@ -33,7 +33,7 @@ from diffeoforge.reference_pca_deformations import (
 )
 from diffeoforge.runs import publish_directory_exclusive
 
-MEDIA_VERSION = "1"
+MEDIA_VERSION = "2"
 
 
 class MediaCancelled(RuntimeError):
@@ -390,6 +390,19 @@ def _render_media(
             specimen_bounds.append(mesh.GetBounds())
             _check(record)
         specimen_bounds = merge_bounds(specimen_bounds)
+        # Private display-only geometry. It is inventoried outside the sharing
+        # gallery, whose allowlist deliberately excludes geometry and checkpoints.
+        from diffeoforge.desktop.morphospace_geometry import glyph_topology
+
+        budget = max(8, min(128, 24000 // max(1, len(meshes))))
+        vertex_ids, display_faces = glyph_topology(proxy, budget)
+        np.savez_compressed(
+            root / "morphospace-3d.npz",
+            vertices=np.asarray(meshes)[:, vertex_ids],
+            faces=display_faces,
+            scores=pca.scores,
+            ratios=pca.explained_variance_ratio,
+        )
         for i, value in enumerate(meshes):
             frame = renderer.render(with_points(proxy, value), specimen_bounds)
             frame.save(thumbs / f"{i + 1}.png")

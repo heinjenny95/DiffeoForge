@@ -795,6 +795,7 @@ def create_reference_calibration_search_extension_study(
     adaptive_context: Mapping[str, Any] | None = None,
     continuation_context: Mapping[str, Any] | None = None,
     confirm_full_targets: bool = False,
+    reopen_completed: bool = False,
 ) -> ReferenceCalibrationStudySnapshot:
     """Create an immutable successor that runs only new outward candidates.
 
@@ -804,7 +805,12 @@ def create_reference_calibration_search_extension_study(
     """
 
     source_root = Path(source_study_directory).expanduser().resolve()
-    source_snapshot = load_reference_calibration_study(source_root)
+    source_snapshot = (
+        completed_pilot_refinement_view(source_root) if reopen_completed
+        else load_reference_calibration_study(source_root)
+    )
+    if reopen_completed and continuation_context is None:
+        raise ReferenceCalibrationStudyError("Completed refinement needs one selected continuation")
     if source_snapshot.plan.qc_recalibration_source:
         raise ReferenceCalibrationStudyError(
             "QC recalibration uses a bounded grid; review the failed fit or template "
@@ -814,7 +820,9 @@ def create_reference_calibration_search_extension_study(
         raise ReferenceCalibrationStudyError(
             "Search extension requires a completed stage awaiting review"
         )
-    if any(candidate.status != "completed" for candidate in source_snapshot.candidates):
+    if not reopen_completed and any(
+        candidate.status != "completed" for candidate in source_snapshot.candidates
+    ):
         raise ReferenceCalibrationStudyError(
             "Search extension requires every source candidate to be completed"
         )
@@ -860,8 +868,16 @@ def create_reference_calibration_search_extension_study(
             or planned is None
             or not center.metrics
             or center.metrics.get("invalid_face_count") != 0
-            or center.metrics.get("optimizer_stop_signal")
-            not in {"maximum_iterations", "tolerance_threshold"}
+            or (
+                center.metrics.get("optimizer_stop_signal")
+                not in {"maximum_iterations", "tolerance_threshold"}
+                and not (
+                    reopen_completed
+                    and center.metrics.get("metric_version") == "fixed-state-resolution-adoption-v1"
+                    and center.metrics.get("optimizer_stop_signal")
+                    == "not_run_fixed_state_evaluation"
+                )
+            )
         ):
             raise ReferenceCalibrationStudyError(
                 "Continuation needs a valid completed optimizer state"
@@ -883,6 +899,12 @@ def create_reference_calibration_search_extension_study(
             raise ReferenceCalibrationStudyError(
                 "Continuation settings differ from the selected fit"
             )
+        if "timepoints" in continuation_context:
+            expected_timepoints = int(planned.values.get(
+                "timepoints", load_config(center.config_path)["model"]["deformation"]["timepoints"]
+            ))
+            if continuation_context["timepoints"] != expected_timepoints:
+                raise ReferenceCalibrationStudyError("Continuation changed the selected time grid")
         proposal = propose_selected_continuation(
             source_snapshot.plan, assessment, continuation_context
         )
@@ -1025,6 +1047,7 @@ def create_reference_calibration_search_extension_study(
                 "full_cohort": dict(source_manifest["inputs"]["full_cohort"]),
             },
             "search_extension_source": {
+                "completed_pilot_refinement": reopen_completed,
                 "study_directory": str(source_root),
                 "study_id": source_snapshot.study_id,
                 "manifest_sha256": sha256_file(source_root / STUDY_MANIFEST),
@@ -1094,6 +1117,8 @@ def create_reference_calibration_search_extension_study(
         for event in source_events:
             if event.get("event") != "stage_selected":
                 continue
+            if reopen_completed and event.get("stage_id") == source_snapshot.current_stage.stage_id:
+                continue
             payload = {key: value for key, value in event.items() if key not in control_keys}
             payload["imported_source_event_hash"] = event["event_hash"]
             _append_event(root, "stage_selected", payload)
@@ -1110,6 +1135,18 @@ def create_reference_calibration_search_extension_study(
             state = source_by_id[candidate.candidate_id]
             source_event = source_completed_events.get(candidate.candidate_id)
             if state.metrics is None or source_event is None:
+                if reopen_completed:
+                    history = next(
+                        (e for e in reversed(source_events)
+                         if e.get("candidate_id") == candidate.candidate_id), source_events[0]
+                    )
+                    _append_event(root, "candidate_history_retained", {
+                        "stage_id": current_stage.stage_id,
+                        "candidate_id": candidate.candidate_id,
+                        "imported_source_event_hash": history["event_hash"],
+                        "source_status": state.status, "source_error": state.error,
+                    })
+                    continue
                 raise ReferenceCalibrationStudyError(
                     f"Completed source evidence is absent for {candidate.candidate_id}"
                 )
@@ -1117,6 +1154,7 @@ def create_reference_calibration_search_extension_study(
             evidence_directory = config_path.parent / "source-evidence"
             evidence_directory.mkdir()
             evidence_record = {
+                "completed_pilot_refinement": reopen_completed,
                 "source_study_directory": str(source_root),
                 "source_event_hash": source_event["event_hash"],
                 "source_run_directory": (
@@ -1228,9 +1266,29 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
             raise ReferenceCalibrationStudyError(
                 "Calibration search-extension source manifest changed or is absent"
             )
-        source_snapshot = load_reference_calibration_study(source_root, _restore_reviews=False)
+        source_snapshot = (
+            completed_pilot_refinement_view(source_root, restore_reviews=False)
+            if extension_source.get("completed_pilot_refinement") is True
+            else load_reference_calibration_study(source_root, _restore_reviews=False)
+        )
         source_events = _load_events(source_root)
         lineage = dict(plan.search_extension_lineage)
+        retained = [e for e in _load_events(root) if e["event"] == "candidate_history_retained"]
+        if retained:
+            if extension_source.get("completed_pilot_refinement") is not True:
+                raise ReferenceCalibrationStudyError("Retained history needs a completed source")
+            states = {c.candidate_id: c for c in source_snapshot.candidates}
+            for event in retained:
+                state = states.get(event.get("candidate_id"))
+                expected_event = next((e for e in reversed(source_events)
+                                       if e.get("candidate_id") == event.get("candidate_id")),
+                                      source_events[0])
+                if (
+                    state is None or state.status != event.get("source_status")
+                    or state.error != event.get("source_error")
+                    or event.get("imported_source_event_hash") != expected_event["event_hash"]
+                ):
+                    raise ReferenceCalibrationStudyError("Retained candidate history changed")
         proposal = extension_source.get("proposal")
         safety_limits = _normalized_search_extension_safety_limits(extension_source)
         series_safety_limits = _normalized_search_extension_safety_limits(
@@ -1398,6 +1456,10 @@ def calibration_candidate_run_directory(candidate: CalibrationStudyCandidateStat
         source = load_reference_calibration_study(
             record["source_study_directory"], _restore_reviews=False
         )
+        if source.status == "completed" and record.get("completed_pilot_refinement") is True:
+            source = completed_pilot_refinement_view(
+                source.study_directory, restore_reviews=False,
+            )
         previous = next(
             (c for c in source.candidates if c.candidate_id == candidate.candidate_id), None
         )
@@ -1654,10 +1716,21 @@ def load_reference_calibration_study(
         return snapshot
 
 
+def completed_pilot_refinement_view(study_directory, *, restore_reviews=True):
+    """Reconstruct the final stage read-only after verifying completed evidence."""
+    completed = load_reference_calibration_study(study_directory, _restore_reviews=False)
+    if completed.status != "completed":
+        raise ReferenceCalibrationStudyError("Refinement requires a completed pilot")
+    return _load_verified_calibration_study(
+        study_directory, _restore_reviews=restore_reviews, _reopen_final=True,
+    )
+
+
 def _load_verified_calibration_study(
     study_directory: Path | str,
     *,
     _restore_reviews: bool = True,
+    _reopen_final: bool = False,
 ) -> ReferenceCalibrationStudySnapshot:
     """Verify and reconstruct one study exclusively from bound bytes and events."""
 
@@ -1719,6 +1792,15 @@ def _load_verified_calibration_study(
             )
     selected_values, selected_candidates = _selected_state(events)
     final_events = [event for event in events if event["event"] == "study_completed"]
+    if _reopen_final:
+        if not final_events:
+            raise ReferenceCalibrationStudyError("Refinement requires a completed pilot")
+        selected_values, selected_candidates = _selected_state(tuple(
+            e for e in events if not (
+                e["event"] == "stage_selected" and e.get("stage_id") == plan.stages[-1].stage_id
+            )
+        ))
+        final_events = []
     if final_events:
         from diffeoforge.reference_pilot_qualification import verify_completed
 
@@ -1797,7 +1879,8 @@ def _load_verified_calibration_study(
         ]
         starts = [event for event in candidate_events if event["event"] == "candidate_started"]
         latest = (completed or failures or starts or [None])[-1]
-        if candidate.candidate_id in superseded:
+        history = [e for e in candidate_events if e["event"] == "candidate_history_retained"]
+        if history or candidate.candidate_id in superseded:
             status = "superseded"
         elif completed:
             status = "completed"

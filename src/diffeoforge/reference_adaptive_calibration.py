@@ -18,7 +18,7 @@ from diffeoforge.adaptive_calibration import (
     FitObservation,
     adaptive_fit_decision,
 )
-from diffeoforge.config import validate_schema
+from diffeoforge.config import load_config, validate_schema
 from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_calibration import (
     CalibrationCandidate,
@@ -89,6 +89,10 @@ def propose_selected_continuation(plan, assessment, context):
     if assessment.plan_fingerprint != plan.fingerprint:
         raise ValueError("Continuation assessment belongs to another plan")
     expected_keys = {"candidate_id", "iterations", "values"}
+    if "timepoints" in context:
+        if type(context["timepoints"]) is not int or context["timepoints"] < 2:
+            raise ValueError("Continuation time grid must contain at least two samples")
+        expected_keys.add("timepoints")
     if context.get("finer_surface") is True:
         expected_keys.add("finer_surface")
     if context.get("confirm_full_targets") is True:
@@ -122,7 +126,10 @@ def propose_selected_continuation(plan, assessment, context):
                     if context.get("finer_surface")
                     else "Continue selected fit"
                 ),
-                parameter_values=tuple(sorted(context["values"].items())),
+                parameter_values=tuple(sorted({
+                    **context["values"],
+                    **({"timepoints": context["timepoints"]} if "timepoints" in context else {}),
+                }.items())),
                 rationale=(
                     "Finer attachment and stronger fit; compatible learned deformation."
                     if context.get("finer_surface")
@@ -140,10 +147,15 @@ def propose_selected_continuation(plan, assessment, context):
     return replace(proposal, fingerprint=_canonical_hash(payload))
 
 
-def create_selected_continuation(source, destination, *, candidate_id, iterations):
+def create_selected_continuation(
+    source, destination, *, candidate_id, iterations, reopen_completed=False,
+):
     from diffeoforge import reference_calibration_study as study
 
-    snapshot = study.load_reference_calibration_study(source)
+    snapshot = (
+        study.completed_pilot_refinement_view(source) if reopen_completed
+        else study.load_reference_calibration_study(source)
+    )
     if snapshot.current_stage is None:
         raise ValueError("The pilot is already complete")
     planned = next(c for c in snapshot.current_stage.candidates if c.candidate_id == candidate_id)
@@ -153,6 +165,12 @@ def create_selected_continuation(source, destination, *, candidate_id, iteration
         iterations=iterations,
         values={k: values[k] for k in FIT_PARAMETERS},
     )
+    if snapshot.current_stage.order == 4:
+        candidate = next(c for c in snapshot.candidates if c.candidate_id == candidate_id)
+        grid = planned.values.get("timepoints")
+        if grid is None:
+            grid = load_config(candidate.config_path)["model"]["deformation"]["timepoints"]
+        context["timepoints"] = int(grid)
     limits = snapshot.search_extension_safety_limits or {
         k: (values[k] / 8, values[k] * 8) for k in FIT_PARAMETERS
     }
@@ -161,6 +179,7 @@ def create_selected_continuation(source, destination, *, candidate_id, iteration
         destination,
         safety_limits={k: limits[k] for k in FIT_PARAMETERS},
         continuation_context=context,
+        reopen_completed=reopen_completed,
     )
 
 
@@ -236,7 +255,9 @@ def bind_learned_seed(snapshot, center_id, destination):
 
     candidate = next(c for c in snapshot.candidates if c.candidate_id == center_id)
     run = study.calibration_candidate_run_directory(candidate)
-    if (candidate.metrics or {}).get("metric_version") == "fixed-state-resolution-adoption-v1":
+    if (getattr(candidate, "metrics", None) or {}).get(
+        "metric_version"
+    ) == "fixed-state-resolution-adoption-v1":
         from diffeoforge.reference_resolution_adoption import source_run
 
         run = source_run(snapshot.study_directory, candidate)

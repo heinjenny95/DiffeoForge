@@ -45,9 +45,12 @@ def test_all_deformetrica_guidance_has_explanation_and_example() -> None:
         headings = {heading for heading, _text in guidance.sections}
         assert "Example" in headings, key
         assert all(text.strip() for _heading, text in guidance.sections), key
-        rendered = guidance.to_html()
+        rendered = guidance.full_html()
         assert escape(guidance.summary) in rendered
         assert "<b>Example:</b>" in rendered
+        assert guidance.compact and len(guidance.compact) < 250
+        assert escape(guidance.compact) in guidance.to_html()
+        assert "<b>Example:</b>" not in guidance.to_html()
 
 
 def test_each_deformetrica_control_has_an_expandable_english_guide(
@@ -80,24 +83,25 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
         assert help_panel.panel.isHidden() is True, key
         assert help_panel.toggle_button.text() == "ⓘ Parameter info", key
         assert help_panel.toggle_button.accessibleName().startswith("Explain "), key
-        assert "Example:" in help_panel.text_browser.toPlainText(), key
+        assert help_panel.text_browser.toPlainText() == (
+            DEFORMETRICA_PARAMETER_GUIDANCE[key].compact
+        ), key
 
     attachment_help = window.reference_parameter_help_panels["surface_detail"]
     attachment_help.toggle_button.click()
     application.processEvents()
     assert attachment_help.panel.isHidden() is False
     assert attachment_help.toggle_button.text() == "ⓘ Hide parameter info"
-    assert "Fine matching:" in attachment_help.text_browser.toPlainText()
-    assert "Coarse matching:" in attachment_help.text_browser.toPlainText()
-    assert "does not control how far a deformation spreads" in (
+    assert "Fine matching" in attachment_help.text_browser.toPlainText()
+    assert "Coarse matching" in attachment_help.text_browser.toPlainText()
+    assert "separate from deformation reach" in (
         attachment_help.text_browser.toPlainText()
     )
     assert (
         attachment_help.text_browser.verticalScrollBarPolicy()
         == Qt.ScrollBarPolicy.ScrollBarAsNeeded
     )
-    attachment_help.text_browser.setFixedHeight(60)
-    attachment_help.text_browser.resize(320, 60)
+    attachment_help.text_browser.setFixedSize(160, 30)
     application.processEvents()
     assert attachment_help.text_browser.verticalScrollBar().maximum() > 0
 
@@ -108,10 +112,8 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
     distinction = window.reference_scale_difference_label
     assert distinction.objectName() == "conceptDifference"
     assert distinction.isVisible() is False
-    assert "three independent questions" in distinction.text()
-    assert "What should DiffeoForge notice?" in distinction.text()
-    assert "How far should one adjustment spread?" in distinction.text()
-    assert "They do not have to match." in distinction.text()
+    for concept in ("Matching resolution", "Shape disparity", "Deformation reach", "independent"):
+        assert concept in distinction.text()
     assert window.reference_surface_detail_combo.itemText(0) == (
         "Notice small ridges, pits, and edges (fine)"
     )
@@ -140,7 +142,7 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
     deformation_help = window.reference_parameter_help_panels["deformation_scale"]
     deformation_help.toggle_button.click()
     application.processEvents()
-    assert "does not control which surface details are noticed" in (
+    assert "does not set matching resolution" in (
         deformation_help.text_browser.toPlainText()
     )
 

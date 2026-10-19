@@ -441,6 +441,37 @@ class _CalibrationStageWorker(QRunnable):
             self.signals.finished.emit(self)
 
 
+class _CompletedPilotRefinementWorker(QRunnable):
+    def __init__(self, source, candidate_id):
+        super().__init__()
+        self.source, self.candidate_id = source, candidate_id
+        self.signals = _CalibrationSignals()
+        self.is_finished = False
+        self.error_message = None
+
+    def request_cancel(self):
+        return False  # Immutable preparation only; no numerical process is running.
+
+    @Slot()
+    def run(self):
+        try:
+            from uuid import uuid4
+
+            from diffeoforge.reference_adaptive_calibration import create_selected_continuation
+
+            result = create_selected_continuation(
+                self.source, self.source.parent / f"{self.source.name}-refine-{uuid4().hex[:8]}",
+                candidate_id=self.candidate_id, iterations=300, reopen_completed=True,
+            )
+            self.signals.succeeded.emit(result)
+        except Exception as error:
+            self.error_message = str(error)
+            self.signals.failed.emit(str(error))
+        finally:
+            self.is_finished = True
+            self.signals.finished.emit(self)
+
+
 class CalibrationCandidateViewerDialog(QDialog):
     """Review the atlas and all subject reconstructions from one immutable run."""
 
@@ -1226,11 +1257,10 @@ class ReferenceCalibrationDialog(QDialog):
             self.advanced_mode.blockSignals(False)
             title.setText("QC follow-up calibration")
             boundary.setText(
-                "Bounded neighboring settings around the previous atlas. All recorded QC "
-                "concerns and retained controls are included. Inspect the selected candidate "
-                "after each stage. No automatic anatomical approval or outward search. "
-                "The original template is retained; unresolved fits may require template review. "
-                "After selection, run a new full-cohort atlas and repeat QC."
+
+                    'Test nearby settings for the flagged specimens. Every new fit needs its '
+                    'own review.'
+
             )
             self.advanced_mode.hide()
             self.afk_mode.hide()
@@ -1256,11 +1286,10 @@ class ReferenceCalibrationDialog(QDialog):
         self.find_fit_button = QPushButton("Find fit")
         self.find_fit_button.setObjectName("primary")
         self.find_fit_button.setToolTip(
-            "One specimen and one attempt at a time. Reject starts the next parameters for "
-            "this specimen; approve starts the next specimen. A common deformation basis "
-            "is retained after the first approval. All approved individual "
-            "fits initialize a new combined original-target confirmation, which needs fresh QC. "
-            "Saved results still need your visual QC. Previous pilots are preserved."
+
+                'Review one fit at a time. Reject tries other settings; approve moves to the '
+                'next specimen. Check the combined model afterwards.'
+
         )
         self.find_fit_button.clicked.connect(self._find_fit)
         fit_row.addWidget(self.find_fit_button)
@@ -1527,9 +1556,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.afk_mode.hide()
         self.outward_mode.hide()
         boundary.setText(
-            "Find fit: one specimen, one attempt, then your review. "
-            "Reject tries new parameters; approve continues. "
-            "A combined fit is checked afterwards."
+            'Fit one specimen, review it, then continue. The combined fit is checked afterwards.'
         )
         # Keep optional controls inside the scroll area. They previously consumed
         # most of the window before its content, especially at high DPI.
@@ -1852,17 +1879,15 @@ class ReferenceCalibrationDialog(QDialog):
                     "provisional; state-drift diagnostics and old qualification receipts "
                     "retain their original meaning in the report."
                     if completion
-                    else "This bounded QC follow-up varied attachment width, deformation/control "
-                    "spacing, noise and time points around the previous settings. "
-                    "Each selected stage required visual review. It is adaptive calibration, "
-                    "not independent validation; a new full-cohort atlas and QC are still required."
+                    else (
+                        'Nearby settings were tested around the previous model. Review the '
+                        'selected fit before applying it.'
+                    )
                     if self._snapshot.plan.qc_recalibration_source
-                    else "DiffeoForge first screened attachment and deformation scales "
-                    "together, then refined deformation, regularization, and numerical "
-                    "accuracy. Standard automatic choices require stability; AFK can accept "
-                    "eligible ambiguous or boundary-limited choices provisionally. "
-                    "The complete report preserves every alternative, "
-                    "evidence grade, sensitivity warning, and limitation."
+                    else (
+                        'The pilot compared matching, deformation and numerical resolution. '
+                        'Review the final combined fit before using these settings.'
+                    )
                 )
                 method.setWordWrap(True)
                 recommendation_layout.addWidget(
@@ -1885,6 +1910,14 @@ class ReferenceCalibrationDialog(QDialog):
                 render_density(self)
 
             actions = QHBoxLayout()
+            refine = QPushButton("Reopen and refine saved pilot…")
+            refine.setEnabled(not running)
+            refine.setToolTip(
+                "Prepare a linked +300-iteration fit at the saved time grid. "
+                "The original pilot is retained; computation starts only on your next action."
+            )
+            refine.clicked.connect(self._refine_completed_pilot)
+            actions.addWidget(refine)
             if self._snapshot.report_html_path is not None:
                 report_button = QPushButton("Open full recommendation report")
                 _set_action_emphasis(report_button, True)
@@ -2001,10 +2034,10 @@ class ReferenceCalibrationDialog(QDialog):
             self.content_layout.addWidget(next_steps)
         if fresh_guided:
             steps = QLabel(
-                "1. Fit one specimen with the proposed starting settings.\n\n"
-                "2. Inspect its reconstruction. Reject tries another setting; "
-                "approve continues.\n\n"
-                "3. Check a combined fit before preparing the full atlas."
+
+                    'Fit → inspect → approve or try again. Continue when each specimen has an '
+                    'acceptable fit.'
+
             )
             steps.setWordWrap(True)
             steps.setObjectName("card")
@@ -2669,7 +2702,7 @@ class ReferenceCalibrationDialog(QDialog):
         meaning_label = QLabel(meaning)
         meaning_label.setWordWrap(True)
         option_help_layout.addWidget(meaning_label)
-        rationale = QLabel("Why this option exists: " + planned.rationale)
+        rationale = QLabel('Reason: ' + planned.rationale)
         rationale.setWordWrap(True)
         option_help_layout.addWidget(rationale)
         layout.addWidget(
@@ -2691,9 +2724,10 @@ class ReferenceCalibrationDialog(QDialog):
                     else "Anatomical review needed — inspect the overlays."
                 )
                 fit_label.setWordWrap(True)
-                layout.addWidget(fit_label)
+                # Recorded review is shown once below the review action.
+                fit_label.deleteLater()
                 detail = QLabel(
-                    "Distance p95 / original bounding-box diagonal; lower is closer. "
+                    'Sampled p95 distance / original bounding-box diagonal. Lower is closer. '
                     + (
                         "Area-sampled point-to-triangle distances; anatomy needs visual review.\n\n"
                         if metrics.get("original_surface_fit")
@@ -2706,18 +2740,18 @@ class ReferenceCalibrationDialog(QDialog):
                 )
                 detail.setWordWrap(True)
                 layout.addWidget(
-                    InfoDisclosure("Technical distance proxy — not fit quality", detail)
+                    InfoDisclosure('Surface distances', detail)
                 )
             passed, check_text = automatic_check_summary(metrics)
             check = QLabel(("✓ " if passed else "⚠ ") + check_text)
             check.setWordWrap(True)
             option_help_layout.addWidget(check)
-            comparison_title = QLabel("Relative measurements — anatomy needs review")
+            comparison_title = QLabel('Measurements')
             comparison_title.setObjectName("sectionTitle")
             option_help_layout.addWidget(comparison_title)
             if tradeoffs:
                 comparison_details_title = QLabel(
-                    "How to interpret the automatic comparison signals"
+                    'Comparison'
                 )
                 comparison_details_title.setObjectName("sectionTitle")
                 option_help_layout.addWidget(comparison_details_title)
@@ -2734,10 +2768,6 @@ class ReferenceCalibrationDialog(QDialog):
                     comparison.setTextFormat(Qt.TextFormat.RichText)
                     comparison.setWordWrap(True)
                     option_help_layout.addWidget(comparison)
-                    comparison_detail = QLabel(self._tradeoff_assessment_html(tradeoff))
-                    comparison_detail.setTextFormat(Qt.TextFormat.RichText)
-                    comparison_detail.setWordWrap(True)
-                    option_help_layout.addWidget(comparison_detail)
             else:
                 comparison = QLabel(
                     "No standout relative signal was detected for this option; "
@@ -2785,7 +2815,7 @@ class ReferenceCalibrationDialog(QDialog):
             self._review_buttons[candidate.candidate_id] = viewer
             viewer.setEnabled(candidate.status == "completed")
             approval = QCheckBox("Visual QC passed")
-            approval.setVisible(approved)
+            approval.setVisible(False)
             approval.setChecked(approved)
             approval.setEnabled(False)
             approval.setToolTip("Review this option again to change the recorded decision.")
@@ -3408,6 +3438,17 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot(object)
     def _event(self, event: Mapping[str, object]) -> None:
+        if (
+            self._worker is not None
+            and getattr(getattr(self._worker, "runner", None), "_cancel_requested", False)
+            and str(event["event"]) in {
+                "qualification_progress", "screen_progress", "candidate_progress",
+                "candidate_activity", "candidate_phase", "candidate_worker_event",
+                "progress", "activity",
+            }
+        ):
+            self.status.setText("Cancellation requested — waiting for backend shutdown.")
+            return
         if event["event"] == "qualification_progress":
             if event["phase"] == "integration_cached":
                 self.status.setText(
@@ -3913,6 +3954,21 @@ class ReferenceCalibrationDialog(QDialog):
         return bool(
             getattr(self, "_sequence_info", None) and self._sequence_info["phase"] == "individual"
         )
+
+    @Slot()
+    def _refine_completed_pilot(self):
+        if self._worker is not None or self._snapshot.status != "completed":
+            return
+        identifier = self._snapshot.selected_candidate_ids.get("timepoints")
+        if identifier is None:
+            return
+        worker = _CompletedPilotRefinementWorker(self.study_directory, identifier)
+        worker.signals.succeeded.connect(self._succeeded)
+        worker.signals.failed.connect(self._failed)
+        worker.signals.finished.connect(self._worker_finished)
+        self._worker = worker
+        self.status.setText("Preparing a linked refinement; the saved pilot remains unchanged…")
+        self._thread_pool.start(worker)
 
     @Slot()
     def _cancel(self) -> None:

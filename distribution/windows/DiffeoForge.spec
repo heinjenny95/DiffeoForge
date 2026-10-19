@@ -12,11 +12,6 @@ schema_data = [
     (str(path), "diffeoforge/schema")
     for path in sorted(schema_directory.glob("*.json"))
 ]
-demo_data = [
-    (str(path), "diffeoforge/desktop/demo_data")
-    for path in sorted((source / "diffeoforge/desktop/demo_data").iterdir())
-    if path.is_file()
-]
 third_party_data = [
     (str(path), "third-party/licenses" if path.parent.name == "licenses" else "third-party")
     for path in sorted((repository / "distribution/third-party").rglob("*"))
@@ -82,7 +77,7 @@ desktop_analysis = Analysis(
     [str(entrypoints / "diffeoforge_desktop.py")],
     pathex=[str(source)],
     binaries=[],
-    datas=schema_data + demo_data + third_party_data,
+    datas=schema_data + third_party_data,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},

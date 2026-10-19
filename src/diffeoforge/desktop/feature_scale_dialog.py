@@ -45,11 +45,10 @@ class FeatureScaleRulerDialog(QDialog):
         title.setObjectName("sectionTitle")
         layout.addWidget(title)
         explanation = QLabel(
-            "Click two homologously interpretable endpoints on the template. The "
-            "distance records the smallest anatomical feature that the surface metric "
-            "should attempt to preserve. Rotate with left-drag, pan with right-drag, "
-            "and zoom with the wheel. This is a researcher decision, not an automatic "
-            "measurement of biological importance."
+
+                'Select the two ends of the smallest anatomical feature you want to preserve. '
+                'Drag to rotate; right-drag to pan; wheel to zoom.'
+
         )
         explanation.setWordWrap(True)
         layout.addWidget(explanation)

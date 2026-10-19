@@ -20,7 +20,8 @@ def test_resource_only_update_preserves_optimizer_progress_and_event_log(monkeyp
         window.run_progress_bar.setRange(0, 100)
         window.run_progress_bar.setValue(5)
         window.run_state_label.setText("Optimizing at iteration 5")
-        window.run_optimizer_label.setText("Iteration 5\nLive resources: previous sample")
+        window.run_optimizer_label.setText("Elapsed: 30 s · 6 s/iteration")
+        window.run_optimizer_label.setToolTip("Live resources: previous sample")
         window.run_event_log.setPlainText("Iteration 5 observed")
         resources = ProcessResourceMonitor(os.getpid(), requested_device="cpu").sample()
         window._reference_atlas_event(DesktopReferenceWorkerEvent(
@@ -30,8 +31,9 @@ def test_resource_only_update_preserves_optimizer_progress_and_event_log(monkeyp
         assert window.run_progress_bar.value() == 5
         assert window.run_progress_bar.maximum() == 100
         assert window.run_state_label.text() == "Optimizing at iteration 5"
-        assert window.run_optimizer_label.text().startswith("Iteration 5\nLive resources:")
-        assert "previous sample" not in window.run_optimizer_label.text()
+        assert window.run_optimizer_label.text() == "Elapsed: 30 s · 6 s/iteration"
+        assert window.run_optimizer_label.toolTip().startswith("Live resources:")
+        assert "previous sample" not in window.run_optimizer_label.toolTip()
     finally:
         window.close()
         app.processEvents()

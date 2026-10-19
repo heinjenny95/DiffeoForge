@@ -227,6 +227,16 @@ class ReferenceExecutionController:
             self.request.verify_launch_inputs()
             config = load_config(self.request.config_path)
             maximum_iterations = int(config["optimization"]["max_iterations"])
+            if self.request.resume_source is not None:
+                from diffeoforge.runs import inspect_resume_source
+
+                evidence = inspect_resume_source(
+                    self.request.resume_source,
+                    additional_iterations=self.request.additional_iterations,
+                )
+                maximum_iterations = int(
+                    evidence.manifest["effective_config"]["optimization"]["max_iterations"]
+                ) + self.request.additional_iterations
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             with self._lock:
                 self._state = "failed"
