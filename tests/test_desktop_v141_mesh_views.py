@@ -31,7 +31,7 @@ def record(path, name=None):
     return {"path": name or str(path), "bytes": path.stat().st_size, "sha256": sha256_file(path)}
 
 
-def fixture_media(tmp_path):
+def fixture_media(tmp_path, components=3):
     root, media = tmp_path / "run", tmp_path / "visualizations" / "media"
     root.mkdir()
     gallery = media / "PCA-Gallery"
@@ -49,8 +49,8 @@ def fixture_media(tmp_path):
         )
         sources.append(record(mesh))
         Image.new("RGBA", (84, 72), (20, 100, 130, 255)).save(gallery / f"thumbnails/{index}.png")
-    scores = np.array([[-1.25, 2, -0.5], [1.25, -2, 0.5]])
-    ratios = np.array([0.6, 0.3, 0.1])
+    scores = np.array([[-1.25, 2, -0.5], [1.25, -2, 0.5]])[:, :components]
+    ratios = np.array([0.6, 0.3, 0.1])[:components]
     _write_gallery(gallery, [], [], SimpleNamespace(scores=scores, explained_variance_ratio=ratios))
     _archive_gallery(gallery, media / "PCA-Gallery.zip")
     metadata = {
@@ -176,8 +176,9 @@ def test_pca_camera_never_turns_image_glyphs_or_changes_scores(qapp):
     canvas.cache.clear()
 
 
-def test_named_gallery_export_keeps_scores_images_and_sealed_cache(qapp, tmp_path):
-    media, scores, ratios, _ = fixture_media(tmp_path)
+@pytest.mark.parametrize("components", [2, 3])
+def test_named_gallery_export_keeps_scores_images_and_sealed_cache(qapp, tmp_path, components):
+    media, scores, ratios, _ = fixture_media(tmp_path, components)
     data = mv.load_surfaces(media, scores, threading.Event())
     rotation = mv.preset_views()[2][1]
     images = mv.render_views(data, rotation, [0, 1], threading.Event())
@@ -188,7 +189,6 @@ def test_named_gallery_export_keeps_scores_images_and_sealed_cache(qapp, tmp_pat
         expected=record(source),
         items=json.loads((media / "PCA-Gallery/mesh-pca.json").read_text()),
         images=images,
-        ratios=ratios,
         rotation=rotation,
         name="Relevant surface",
         protected=(media,),
@@ -198,7 +198,7 @@ def test_named_gallery_export_keeps_scores_images_and_sealed_cache(qapp, tmp_pat
         assert archive.testzip() is None
         names = archive.namelist()
         assert all("PC" in n for n in names if n.endswith(".pdf"))
-        assert sum(n.endswith(".pdf") for n in names) == 3
+        assert sum(n.endswith(".pdf") for n in names) == (3 if components == 3 else 1)
         assert json.loads(archive.read("PCA-Gallery/mesh-view.json"))["name"] == "Relevant surface"
         rows = json.loads(archive.read("PCA-Gallery/mesh-pca.json"))
         np.testing.assert_array_equal([row["scores"] for row in rows], scores)

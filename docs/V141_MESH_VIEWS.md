@@ -27,10 +27,12 @@ queue. A complete new set replaces the old images together. The original atlas,
 PCA, checkpoints, scientific approvals and sealed media remain unchanged.
 
 Current PNG/JPEG snapshots retain the selected view. A gallery ZIP exported after
-applying a view rebuilds its PCA thumbnails and three PNG/PDF plots, records the
+applying a view rebuilds its PCA thumbnails and available PNG/PDF pairs, records the
 view rotation, and keeps exact score positions. Existing SD panels, displacement
 maps and movies retain their labelled cameras. Raw geometry, logs and checkpoints
 are not added to the presentation archive. No network sharing is implicit.
+Variance labels come from the verified gallery; a two-component result does not
+need a working 3D viewer to export its chosen 2D mesh view.
 
 ## Verification and remaining scope
 
@@ -41,7 +43,7 @@ runtime, installation and independent first use are separate checks; delivery
 evidence records their actual state. No anatomical choice is approved by these
 engineering tests.
 
-The final focused source run passes 37 cases with clean process exit. A synthetic
+The final focused source run passes 38 cases with clean process exit. A synthetic
 Qt preview, shared 2D/3D view, saved-view restore and three-pair PNG/PDF/ZIP probe
 also passes. Frozen/installed delivery verification is recorded separately.
 

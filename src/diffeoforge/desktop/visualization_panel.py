@@ -420,13 +420,6 @@ class VisualizationPanel(QWidget):
         if not target.suffix:
             target = target.with_suffix(".zip")
         if self.mesh_views.selected is not None:
-            import numpy as np
-
-            if self.morphospace.canvas.data is None:
-                QMessageBox.warning(
-                    self, "Export not ready", "Wait for the saved PCA axes to load."
-                )
-                return
             self._start_export(
                 target,
                 source=source,
@@ -434,7 +427,6 @@ class VisualizationPanel(QWidget):
                 mesh_view={
                     "items": self._items,
                     "images": list(self.mesh_views.images),
-                    "ratios": np.array(self.morphospace.canvas.data[3]),
                     "rotation": self.mesh_views.rotation.copy(),
                     "name": self.mesh_views.label,
                 },

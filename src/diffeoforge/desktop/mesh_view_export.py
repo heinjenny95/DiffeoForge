@@ -6,6 +6,7 @@ import html
 import io
 import json
 import os
+import re
 import tempfile
 import uuid
 import zipfile
@@ -20,7 +21,7 @@ from diffeoforge.mesh import sha256_file
 
 
 def export_oriented_gallery(
-    target, *, source, expected, items, images, ratios, rotation, name, protected=()
+    target, *, source, expected, items, images, rotation, name, ratios=None, protected=()
 ):
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
@@ -46,14 +47,10 @@ def export_oriented_gallery(
     ):
         raise ValueError("Prepared gallery changed since verification")
     scores = np.asarray([item["scores"][:3] for item in items], dtype=np.float64)
-    ratios = np.asarray(ratios, dtype=np.float64)
     if (
         scores.ndim != 2
         or not len(scores)
         or not np.isfinite(scores).all()
-        or ratios.ndim != 1
-        or len(ratios) < scores.shape[1]
-        or not np.isfinite(ratios).all()
         or len(images) != len(scores)
         or any(image.isNull() for image in images)
     ):
@@ -93,6 +90,22 @@ def export_oriented_gallery(
                     destination = gallery / relative
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     destination.write_bytes(archive.read(item))
+            page = (gallery / "mesh-pca.html").read_text(encoding="utf-8")
+            match = re.search(r",ratios=(\[[^\]]*\]),canvas=", page)
+            if match is None:
+                raise ValueError("Saved gallery variance labels are missing")
+            saved_ratios = np.asarray(json.loads(match[1]), dtype=np.float64)
+            if (
+                saved_ratios.ndim != 1
+                or len(saved_ratios) < scores.shape[1]
+                or not np.isfinite(saved_ratios).all()
+                or (
+                    ratios is not None
+                    and not np.array_equal(np.asarray(ratios)[: len(saved_ratios)], saved_ratios)
+                )
+            ):
+                raise ValueError("Gallery variance labels differ from the saved result")
+            ratios = saved_ratios
             frames = []
             for index, image in enumerate(images, 1):
                 data = QByteArray()
