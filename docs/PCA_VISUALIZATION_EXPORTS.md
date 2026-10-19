@@ -84,3 +84,39 @@ After explicit upload authorization, verify the complete uploaded bytes against
 the local export and check the requested file-specific read-only link scope.
 Keep file IDs, URLs and verification receipts in the private project; preserve
 other files' permissions and the separately tracked installer distribution.
+
+## Deferred follow-up — 19 October 2026
+
+The owner explicitly requested backlog entries, not immediate implementation.
+The current Step 7 panel provides two-dimensional mesh-glyph projections and an
+**Export gallery ZIP** action; its prepared gallery already contains PNG/PDF
+figures and MP4 movies. The requirements below extend that route and remain open.
+
+- [ ] **Interactive 3D morphospace.** Show PC1, PC2 and PC3 together, placing
+  miniature specimen meshes at their existing verified score coordinates.
+  Support rotation, pan, zoom, reset view, specimen selection/hover with score
+  values, and glyph-size adjustment for overlap. Keep axis names and explained
+  variance visible. Use common mesh orientation/scale and appropriately bound
+  display proxies; changing glyph size must not move the PCA positions. Handle
+  results with fewer than three usable PCs explicitly. Cache/preload display
+  geometry with bounded background work; no atlas refit or PCA recomputation.
+
+- [ ] **Direct export of every displayed medium.** Allow individual saves for
+  mesh-PCA plots, mean/minus/plus SD panels, heatmaps and each available movie.
+  Add an image snapshot of the 3D morphospace using its current camera, distinct
+  from an export that retains interactivity. Use **PNG** as the default lossless
+  image format, optional **JPEG**, and **MP4** for video. Keep existing **PDF**
+  figures and the complete gallery **ZIP**; do not make ZIP the only save route.
+  Clearly distinguish current-item export from exporting all media. Preserve
+  aspect ratios, legends, score/axis labels, units and shared color scales; expose
+  useful output-resolution/quality choices without adding routine technical prose.
+  Reuse matching verified assets and validate the saved images/video decoding.
+  Keep source scientific artifacts intact and preserve the media-only package
+  boundary: no automatic inclusion of raw mesh geometry or checkpoints.
+
+Implementation starting points:
+[Step 7 panel and existing ZIP export](../src/diffeoforge/desktop/visualization_panel.py),
+[prepared media/gallery pipeline](../src/diffeoforge/pca_media.py).
+Interacting with mesh glyphs and maintaining responsiveness across representative
+cohort sizes need explicit engineering checks; reusing PCA coordinates alone
+does not establish that acceptance.

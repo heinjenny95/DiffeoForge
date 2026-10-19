@@ -639,6 +639,25 @@ scientific gates. Planning does not mark those gates complete.
   [media/export requirements](docs/PCA_VISUALIZATION_EXPORTS.md). Implemented
   in v129 with a separate left-rail Visualization page; installed acceptance
   remains a separate delivery gate.
+- [ ] **Interactive 3D PC1–PC3 morphospace in Step 7 Visualization** (owner request,
+  2026-10-19; deferred backlog). Add a rotatable, pannable, zoomable view using
+  existing verified PCA scores, with miniature specimen meshes as glyphs at their
+  PC1/PC2/PC3 coordinates. Include axis/variance labels, specimen selection/hover,
+  glyph-size control and reset view. Use consistent mesh orientation/scale and
+  cached display proxies, with bounded background preparation so navigation stays
+  responsive. Do not refit the atlas, recompute PCA or jitter score coordinates.
+  Explain unavailable PC3 for lower-rank results. See
+  [follow-up requirements](docs/PCA_VISUALIZATION_EXPORTS.md#deferred-follow-up--19-october-2026).
+- [ ] **Export every Step 7 medium individually in common formats** (owner
+  request, 2026-10-19; deferred backlog). Provide direct saves for mesh-PCA plots,
+  mean/SD panels, heatmaps and all available videos, plus a snapshot of the new
+  3D viewer's current camera. Use PNG by default and optional JPEG for images,
+  MP4 for videos; keep existing PDF files and the complete gallery ZIP available.
+  Make the scope explicit (current item versus all media), reuse verified saved
+  assets and check exported images/videos. Preserve axis labels, aspect ratio,
+  units, color scales, source evidence and the media-only sharing boundary.
+  Existing ZIP export is already implemented; these per-item controls and the 3D
+  view are new work. See [scope](docs/PCA_VISUALIZATION_EXPORTS.md#deferred-follow-up--19-october-2026).
 - [ ] Add verified reference PC deformation meshes and registration-quality rendering
 - [x] Verify native PC Shooting's effective time grid and physical endpoint before
   selecting meshes. The inspected reference route can ignore the declared point

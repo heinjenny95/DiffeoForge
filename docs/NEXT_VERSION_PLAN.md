@@ -36,6 +36,15 @@ qualification claim. The established development branch remains authoritative.
   checklist, covering main pages, pilot/QC, GPA/landmarking, comparisons,
   validation and visualization. Audit findings are backlog, not implemented fixes.
 
+- [ ] Add an interactive PC1–PC3 3D morphospace to Step 7 Visualization, using
+  miniature meshes at the saved PCA coordinates, with rotate/pan/zoom, selection,
+  glyph-size controls and responsive cached rendering. Add direct per-item
+  image/video export throughout Visualization: PNG/JPEG stills, MP4 videos and
+  a snapshot of the current 3D camera; preserve existing PDFs and gallery ZIP.
+  See [detailed scope](PCA_VISUALIZATION_EXPORTS.md#deferred-follow-up--19-october-2026).
+  Owner explicitly chose the to-do list on 19 October 2026; implementation is
+  deferred, with no atlas/PCA recomputation or active-run change.
+
 ## Longer-term UI customization — low priority
 
 - [ ] Support light/dark modes and user-selected UI colors, including an arbitrary
