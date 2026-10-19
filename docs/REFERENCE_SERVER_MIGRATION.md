@@ -128,6 +128,12 @@ access lifetime and server process lifetime are separate operational concerns.
 Numerical convergence, final export, anatomical review and PCA remain separate
 states; preserve previously accepted results and analyses.
 
+Change a monitoring interval only on the owner's request, updating the existing
+monitor rather than creating a duplicate. Preserve its run identity, destination,
+read-only scope and terminal notification rules, then read back the saved schedule.
+A longer interval delays discovery of completion or failure; it does not pause,
+resume or change the scientific job. Keep healthy progress quiet at either cadence.
+
 ## Owner-authorized monitoring access renewal
 
 Renew a monitoring key's expiry only after the owner specifies the new deadline
