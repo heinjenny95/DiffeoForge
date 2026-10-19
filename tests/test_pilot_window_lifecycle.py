@@ -1,8 +1,8 @@
 """Pilot progress is an independent, minimizable window; computation stays owned."""
-
 from types import SimpleNamespace
 
 import pytest
+from pilot_view_helpers import wait_pilot_view
 
 
 def test_pilot_minimize_progress_escape_and_idle_close(tmp_path, monkeypatch):
@@ -19,6 +19,7 @@ def test_pilot_minimize_progress_escape_and_idle_close(tmp_path, monkeypatch):
     config_path = _project(tmp_path)
     snapshot = create_reference_calibration_study(config_path, tmp_path / "pilot")
     dialog = ReferenceCalibrationDialog(snapshot.study_directory)
+    wait_pilot_view(dialog)
     finished = []
     dialog.finished.connect(finished.append)
     assert dialog.parent() is None
@@ -34,6 +35,7 @@ def test_pilot_minimize_progress_escape_and_idle_close(tmp_path, monkeypatch):
         assert dialog.isMinimized()
         dialog._event({"event": "candidate_started", "candidate_id": "synthetic"})
         dialog._render()
+        wait_pilot_view(dialog)
         application.processEvents()
         assert dialog.isMinimized() and dialog._worker is worker
         if running:
@@ -66,7 +68,7 @@ def test_independent_pilot_retains_main_window_appearance(tmp_path, monkeypatch)
     application = QApplication.instance() or QApplication([])
     config_path = _project(tmp_path)
     snapshot = create_reference_calibration_study(config_path, tmp_path / "pilot")
-    window = DiffeoForgeWindow()
+    window = DiffeoForgeWindow(recording_allowed=False)
     window._review = review_project(config_path, DesktopEngine.DEFORMETRICA_REFERENCE)
     window._reference_readiness = SimpleNamespace(ready=True)
     monkeypatch.setattr(
@@ -83,7 +85,8 @@ def test_independent_pilot_retains_main_window_appearance(tmp_path, monkeypatch)
     pilot = window._reference_calibration_dialog
     try:
         application.processEvents()
-        assert pilot is not None and pilot.parent() is None
+        assert pilot is not None and pilot.parentWidget() is window
+        wait_pilot_view(pilot)
         assert pilot.windowModality() == Qt.WindowModality.NonModal
         assert pilot.windowFlags() & Qt.WindowType.WindowMinimizeButtonHint
         title = pilot.findChild(QLabel, "title")
@@ -95,6 +98,7 @@ def test_independent_pilot_retains_main_window_appearance(tmp_path, monkeypatch)
         assert primary.palette().color(QPalette.ColorRole.Button).name() == "#167c6b"
         pilot.showMinimized()
         pilot._render()
+        wait_pilot_view(pilot)
         application.processEvents()
         assert pilot.isMinimized()
     finally:

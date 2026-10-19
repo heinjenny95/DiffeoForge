@@ -17,6 +17,7 @@ import re
 import shutil
 import threading
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
@@ -1614,6 +1615,25 @@ def _read_review_journal(series_root: Path) -> tuple[dict[str, Any], ...]:
     return tuple(records)
 
 
+@contextmanager
+def calibration_verification_scope():
+    """Share lineage verification within one read operation, never between actions.
+
+    This scope must not contain a journal/configuration mutation. A later user
+    action starts a new scope and checks the bound evidence again.
+    """
+    top = not hasattr(_LOAD_CONTEXT, "snapshots")
+    if top:
+        _LOAD_CONTEXT.snapshots = {}
+        _LOAD_CONTEXT.resolution_checks = {}
+    try:
+        yield
+    finally:
+        if top:
+            del _LOAD_CONTEXT.snapshots
+            del _LOAD_CONTEXT.resolution_checks
+
+
 def load_reference_calibration_study(
     study_directory: Path | str,
     *,
@@ -1621,13 +1641,9 @@ def load_reference_calibration_study(
 ) -> ReferenceCalibrationStudySnapshot:
     """Verify each immutable ancestor once within this read, never across reads."""
     root = Path(study_directory).expanduser().resolve()
-    top = not hasattr(_LOAD_CONTEXT, "snapshots")
-    if top:
-        _LOAD_CONTEXT.snapshots = {}
-        _LOAD_CONTEXT.resolution_checks = {}
-    cache = _LOAD_CONTEXT.snapshots
-    key = root, _restore_reviews
-    try:
+    with calibration_verification_scope():
+        cache = _LOAD_CONTEXT.snapshots
+        key = root, _restore_reviews
         if key in cache:
             if cache[key] is None:
                 raise ReferenceCalibrationStudyError("Cyclic calibration study lineage")
@@ -1636,10 +1652,6 @@ def load_reference_calibration_study(
         snapshot = _load_verified_calibration_study(root, _restore_reviews=_restore_reviews)
         cache[key] = snapshot
         return snapshot
-    finally:
-        if top:
-            del _LOAD_CONTEXT.snapshots
-            del _LOAD_CONTEXT.resolution_checks
 
 
 def _load_verified_calibration_study(

@@ -37,6 +37,7 @@ from diffeoforge.desktop.calibration_comparison_widget import (
     CalibrationComparisonCanvas3D,
 )
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
+from diffeoforge.desktop.pilot_view_preparation import prepare_pilot_view
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.desktop.reference_calibration_presentation import (
     CalibrationTradeoffAssessment,
@@ -58,10 +59,7 @@ from diffeoforge.reference_calibration_study import (
     CalibrationStudyCandidateState,
     ReferenceCalibrationStudyRunner,
     ReferenceCalibrationStudySnapshot,
-    assess_reference_calibration_snapshot,
     calibration_candidate_run_directory,
-    iteration_limit_selection_available,
-    load_reference_calibration_report,
     load_reference_calibration_study,
     normalized_candidate_subject_fit,
     record_reference_calibration_candidate_review,
@@ -244,6 +242,8 @@ class _CalibrationStageWorker(QRunnable):
         finer_model: bool = False,
         adopt_resolution: bool = False,
         density_next: bool = False,
+        stage_selection_id: str | None = None,
+        provisional_override_id: str | None = None,
         integration_tolerances: Mapping[str, float] | None = None,
     ) -> None:
         super().__init__()
@@ -265,6 +265,8 @@ class _CalibrationStageWorker(QRunnable):
         self.finer_model = finer_model
         self.adopt_resolution = adopt_resolution
         self.density_next = density_next
+        self.stage_selection_id = stage_selection_id
+        self.provisional_override_id = provisional_override_id
         self.screen_subjects = screen_subjects
         self.integration_tolerances = integration_tolerances
         self.adaptive_fit_search = adaptive_fit_search
@@ -288,7 +290,8 @@ class _CalibrationStageWorker(QRunnable):
         with self._lock:
             if self._finished:
                 return False
-        if self.finish_candidate_id is not None:
+        if (self.finish_candidate_id is not None or self.stage_selection_id is not None
+                or self.provisional_override_id is not None):
             return False  # Atomic completion verifies/saves evidence; no engine is running.
         return self.runner.request_cancel()
 
@@ -304,7 +307,17 @@ class _CalibrationStageWorker(QRunnable):
             self.signals.event.emit(event)
 
         try:
-            if self.finish_candidate_id is not None:
+            if self.stage_selection_id is not None:
+                result, _assessment = record_reference_calibration_stage_review(
+                    self.runner.study_directory, visual_approvals=self.visual_approvals,
+                    selected_candidate_id=self.stage_selection_id,
+                )
+            elif self.provisional_override_id is not None:
+                result, _assessment = record_reference_calibration_provisional_override(
+                    self.runner.study_directory, visual_approvals=self.visual_approvals,
+                    selected_candidate_id=self.provisional_override_id,
+                )
+            elif self.finish_candidate_id is not None:
                 from diffeoforge.reference_pilot_completion import finish
 
                 result, _assessment = finish(self.runner.study_directory, self.finish_candidate_id)
@@ -481,6 +494,9 @@ class CalibrationCandidateViewerDialog(QDialog):
         self._allow_plan_b = self._allow_plan_b and self._valid_individual
         self.feature_observations: dict[str, dict[str, object]] = {}
         self._mesh_loader = PreviewMeshLoader(self)
+        self._mesh_loader.activity_changed.connect(
+            lambda busy: self.setProperty("processRecordingWaiting", busy)
+        )
         self._mesh_loader.loaded.connect(self._pair_loaded)
         self._mesh_loader.failed.connect(self._pair_failed)
         self.setWindowTitle(f"Visual registration check — {candidate.candidate_id}")
@@ -1104,7 +1120,17 @@ class ReferenceCalibrationDialog(QDialog):
             and verified_snapshot.study_directory.resolve() != self.study_directory
         ):
             raise ValueError("Verified pilot snapshot belongs to a different study")
-        self._snapshot = verified_snapshot or load_reference_calibration_study(self.study_directory)
+        self._snapshot = verified_snapshot
+        self._prepared_view = None
+        self._view_loading = False
+        self._view_closed = False
+        self._review_saving = False
+        self._review_save_loader = PreviewMeshLoader(self)
+        self._review_save_loader.loaded.connect(self._review_saved)
+        self._review_save_loader.failed.connect(self._review_save_failed)
+        self._view_loader = PreviewMeshLoader(self)
+        self._view_loader.loaded.connect(self._view_loaded)
+        self._view_loader.failed.connect(self._view_failed)
         self._viewer_preparation = PreviewMeshLoader(self)
         self._viewer_preparation.loaded.connect(self._candidate_prepared)
         self._viewer_preparation.failed.connect(self._candidate_prepare_failed)
@@ -1131,6 +1157,13 @@ class ReferenceCalibrationDialog(QDialog):
         self._tray.setToolTip("DiffeoForge pilot")
         self._tray.messageClicked.connect(self._show_pilot_notification)
         self._thread_pool = ActivityPool(self)
+        for loader, label in (
+            (self._view_loader, "Verifying saved pilot"),
+            (self._review_save_loader, "Saving review"),
+            (self._viewer_preparation, "Preparing comparison"),
+            (self._saved_search_loader, "Verifying saved search"),
+        ):
+            self._thread_pool.indicator.bind_loader(loader, label)
         self._approval_checks: dict[str, QCheckBox] = {}
         self._review_buttons: dict[str, QPushButton] = {}
         self._continuation_buttons: dict[str, QPushButton] = {}
@@ -1187,7 +1220,7 @@ class ReferenceCalibrationDialog(QDialog):
             "reaches the feasibility limits shown at Start."
         )
         self.outward_mode.setEnabled(False)
-        if self._snapshot.plan.qc_recalibration_source:
+        if self._snapshot and self._snapshot.plan.qc_recalibration_source:
             self.advanced_mode.blockSignals(True)
             self.advanced_mode.setChecked(True)
             self.advanced_mode.blockSignals(False)
@@ -1210,7 +1243,9 @@ class ReferenceCalibrationDialog(QDialog):
             "Automatically improve fit (up to 12 extra runs per stage)"
         )
         self.adaptive_fit_search.setChecked(False)
-        self.adaptive_fit_search.setVisible(not bool(self._snapshot.plan.qc_recalibration_source))
+        self.adaptive_fit_search.setVisible(not bool(
+            self._snapshot and self._snapshot.plan.qc_recalibration_source
+        ))
         self.adaptive_fit_search.setToolTip(
             "Up to 3 rounds, 300 iterations per added run. Compare every specimen, "
             "continue useful results and test relative parameter changes within recorded bounds. "
@@ -1487,15 +1522,7 @@ class ReferenceCalibrationDialog(QDialog):
         main_actions.addWidget(close)
         footer.addLayout(main_actions)
         root.addLayout(footer)
-        self.advanced_mode.blockSignals(True)
-        from diffeoforge.reference_sequential_fit import sequence_info
-
-        self.advanced_mode.setChecked(bool(
-            self._snapshot.plan.qc_recalibration_source
-            or (any(c.status == "completed" for c in self._snapshot.candidates)
-                and not sequence_info(self.study_directory))
-        ))
-        self.advanced_mode.blockSignals(False)
+        self._presentation_initialized = False
         self.advanced_mode.hide()
         self.afk_mode.hide()
         self.outward_mode.hide()
@@ -1540,6 +1567,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.scroll.setWidget(scroll_body)
         title.setText("Pilot · fit → review → combined check")
         self._render(self._snapshot)
+        self.finished.connect(self._dispose_readers)
 
     @property
     def snapshot(self) -> ReferenceCalibrationStudySnapshot:
@@ -1566,7 +1594,36 @@ class ReferenceCalibrationDialog(QDialog):
                 prefix = "Optional strict check"
             button.setText(f"{prefix}: +{self.continuation_iterations.value()} iterations")
 
-    def _render(self, snapshot: ReferenceCalibrationStudySnapshot | None = None) -> None:
+    def _render(self, snapshot: ReferenceCalibrationStudySnapshot | None = None,
+                *, prepared=None) -> None:
+        if self._view_closed:
+            return
+        if prepared is None:
+            if (snapshot is not None and self._prepared_view is not None
+                    and self._prepared_view.snapshot is snapshot):
+                prepared = self._prepared_view
+            else:
+                if snapshot is not None:
+                    self._snapshot = snapshot
+                self._view_loading = True
+                self.content.setEnabled(False)
+                self.pilot_tools.setEnabled(False)
+                for control in (self.start_button, self.advance_button,
+                                self.review_next_button, self.keep_previous_button,
+                                self.next_step_button, self.selection_combo,
+                                self.find_fit_button, self.collect_evidence_button,
+                                self.advanced_mode, self.afk_mode):
+                    control.setEnabled(False)
+                self.status.setText("Verifying saved evidence in background…")
+                root = self.study_directory
+                self._view_loader.request_operation(
+                    root, lambda: prepare_pilot_view(root, snapshot),
+                )
+                return
+        self._view_loading = False
+        self._prepared_view = prepared
+        self.content.setEnabled(True)
+        self.pilot_tools.setEnabled(True)
         for control, visible in getattr(self, "_density_hidden_visibility", {}).items():
             control.setVisible(visible)
         self._density_hidden_visibility = {}
@@ -1575,12 +1632,17 @@ class ReferenceCalibrationDialog(QDialog):
         self.final_check_summary.hide()
         self.status.show()
         self._assessment = None
-        self._snapshot = snapshot or load_reference_calibration_study(self.study_directory)
-        from diffeoforge.reference_calibration_study import STUDY_MANIFEST, _read_json
-
-        self._density_record = _read_json(
-            self.study_directory / STUDY_MANIFEST, "study",
-        ).get("control_density")
+        self._snapshot = prepared.snapshot
+        if not self._presentation_initialized:
+            self.advanced_mode.blockSignals(True)
+            self.advanced_mode.setChecked(bool(
+                self._snapshot.plan.qc_recalibration_source
+                or (any(c.status == "completed" for c in self._snapshot.candidates)
+                    and not prepared.sequence_info)
+            ))
+            self.advanced_mode.blockSignals(False)
+            self._presentation_initialized = True
+        self._density_record = prepared.manifest.get("control_density")
         self.screen_controls.hide()
         self.screen_notice.hide()
         stage = self._snapshot.current_stage
@@ -1616,10 +1678,8 @@ class ReferenceCalibrationDialog(QDialog):
                 and not self._snapshot.integration_tolerances
                 and not any(c.attempts for c in self._snapshot.candidates)
             )
-        from diffeoforge.reference_sequential_fit import sequence_info, sequence_progress
-
-        self._sequence_info = sequence_info(self.study_directory)
-        self._sequence_progress = sequence_progress(self.study_directory)
+        self._sequence_info = prepared.sequence_info
+        self._sequence_progress = prepared.sequence_progress
         stage = self._snapshot.current_stage
         baseline = next((c for c in self._snapshot.candidates
                          if stage and c.candidate_id == stage.stage_id + "-retained"), None)
@@ -1642,9 +1702,7 @@ class ReferenceCalibrationDialog(QDialog):
             and not any(c.status == "orphaned" for c in self._snapshot.candidates)
         )
         if can_keep:
-            provisional_baseline = iteration_limit_selection_available(
-                self._snapshot, stage.stage_id + "-retained"
-            )
+            provisional_baseline = stage.stage_id + "-retained" in prepared.provisional_ids
             prefix = ("Verify and keep saved" if baseline is None
                       else "Keep provisional" if provisional_baseline else "Keep approved")
             self.keep_previous_button.setText(
@@ -1674,9 +1732,7 @@ class ReferenceCalibrationDialog(QDialog):
                 self._visually_approved_candidates.discard(candidate_id)
         self._clear_content()
         running = self._worker is not None or self._restoring_search
-        from diffeoforge.reference_calibration_study import STUDY_MANIFEST, _read_json
-
-        context = _read_json(self.study_directory / STUDY_MANIFEST, "study")
+        context = prepared.manifest
         directory = context["inputs"].get("full_cohort", {}).get("directory")
         if directory:
             dataset = QLabel("Pilot data: " + " / ".join(Path(directory).parts[-4:]))
@@ -1735,7 +1791,7 @@ class ReferenceCalibrationDialog(QDialog):
             path = self._snapshot.final_config_path
             report = None
             if self._snapshot.report_json_path is not None:
-                report = load_reference_calibration_report(self.study_directory)
+                report = prepared.report
             recommendation = QFrame()
             recommendation.setObjectName("card")
             recommendation_layout = QVBoxLayout(recommendation)
@@ -1993,11 +2049,7 @@ class ReferenceCalibrationDialog(QDialog):
                 )
             )
         if self._snapshot.status == "awaiting_review":
-            assessment = assess_reference_calibration_snapshot(
-                self._snapshot,
-                visual_approvals=self._visual_approvals(),
-                completion_preview=stage.order == 4,
-            )
+            assessment = prepared.assessment
             self._assessment = assessment
             recommended_option = self._recommended_option_text(assessment)
             summary = QLabel(
@@ -2285,7 +2337,38 @@ class ReferenceCalibrationDialog(QDialog):
 
             render_density(self)
 
+    @Slot(object, object)
+    def _view_loaded(self, root, prepared) -> None:
+        if self._view_closed or self._review_saving or root != self.study_directory:
+            return
+        self._render(prepared=prepared)
+        selected = getattr(self, "_pending_view_selection", None)
+        self._pending_view_selection = None
+        if selected is not None:
+            self.selection_combo.setCurrentIndex(self.selection_combo.findData(selected))
+        screen = getattr(self, "_pending_screen_review", False)
+        self._pending_screen_review = False
+        if screen and not self._snapshot.early_screening["complete"]:
+            self._start_pilot(adaptive=False, early_screen=True)
+            return
+        pending = getattr(self, "_pending_specimen_review", None)
+        if pending and self._worker is None:
+            self._pending_specimen_review = None
+            self._continue_specimen_review(*pending)
+        if getattr(self, "_pending_continue_stage", False) and self._worker is None:
+            self._pending_continue_stage = False
+            self._start()
+
+    @Slot(object, str)
+    def _view_failed(self, root, error) -> None:
+        if self._view_closed or root != self.study_directory:
+            return
+        self._view_loading = False
+        self.status.setText("Saved evidence could not be verified: " + error)
+
     def _update_final_next_step(self) -> None:
+        if self._view_loading:
+            return
         stage = self._snapshot.current_stage
         if not stage or stage.order != 4 or self._density_record:
             return
@@ -2357,7 +2440,8 @@ class ReferenceCalibrationDialog(QDialog):
             self.status.style().polish(self.status)
 
     def _perform_final_next_step(self) -> None:
-        if self._worker is not None or self._restoring_search:
+        if (self._worker is not None or self._restoring_search
+                or self._view_loading or self._review_saving):
             return
         step = getattr(self, "_final_next_step", None)
         if step is None:
@@ -2597,7 +2681,7 @@ class ReferenceCalibrationDialog(QDialog):
         )
         if candidate.metrics is not None:
             metrics = candidate.metrics
-            fit = normalized_candidate_subject_fit(self._snapshot, candidate)
+            fit = self._prepared_view.fits.get(candidate.candidate_id, {})
             if fit:
                 fit_label = QLabel(
                     "Anatomical review approved."
@@ -2863,6 +2947,8 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot()
     def _update_stage_review_action(self) -> None:
+        if self._view_loading:
+            return
         if self._snapshot.status != "awaiting_review":
             self._update_final_next_step()
             return
@@ -2916,12 +3002,15 @@ class ReferenceCalibrationDialog(QDialog):
             return
         eligible = selected in self._selectable_candidate_ids()
         stage = self._snapshot.current_stage
-        provisional = iteration_limit_selection_available(self._snapshot, selected)
+        provisional = selected in self._prepared_view.provisional_ids
         final_provisional = False
         if stage.order == 4:
-            from diffeoforge.reference_pilot_completion import provisional_available
-
-            final_provisional = provisional_available(self._snapshot, selected)
+            row = next((r for r in self._assessment.candidates
+                        if r.candidate_id == selected), None) if self._assessment else None
+            final_provisional = bool(row and any(
+                "explicit provisional finish is available after QC" in reason
+                for reason in row.rejection_reasons
+            ))
         last = stage.order == len(self._snapshot.plan.stages)
         self.advance_button.setText(
             "Finish pilot provisionally → full atlas setup"
@@ -3034,6 +3123,8 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot()
     def _open_next_review(self) -> None:
+        if self._view_loading or self._snapshot is None:
+            return
         completed = tuple(
             candidate for candidate in self._snapshot.candidates if candidate.status == "completed"
         )
@@ -3062,7 +3153,7 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot()
     def _start(self) -> None:
-        if self._worker is not None:
+        if self._worker is not None or self._view_loading:
             return
         if getattr(self, "_density_record", None) and any(
             c.status != "completed" for c in self._snapshot.candidates
@@ -3207,8 +3298,10 @@ class ReferenceCalibrationDialog(QDialog):
         finer_model: bool = False,
         adopt_resolution: bool = False,
         density_next: bool = False,
+        stage_selection_id: str | None = None,
+        provisional_override_id: str | None = None,
     ) -> None:
-        if self._restoring_search:
+        if self._restoring_search or self._view_loading or self._review_saving:
             raise ValueError("Wait until the saved search has finished loading")
         runner = ReferenceCalibrationStudyRunner(self.study_directory)
         qualification = qualification or bool(
@@ -3245,6 +3338,8 @@ class ReferenceCalibrationDialog(QDialog):
             finer_model=finer_model,
             adopt_resolution=adopt_resolution,
             density_next=density_next,
+            stage_selection_id=stage_selection_id,
+            provisional_override_id=provisional_override_id,
             integration_tolerances=(
                 {k: f.value() / 100 for k, f in self.integration_fields.items()}
                 if self._snapshot.current_stage
@@ -3512,6 +3607,10 @@ class ReferenceCalibrationDialog(QDialog):
     @Slot(object)
     def _succeeded(self, snapshot: ReferenceCalibrationStudySnapshot) -> None:
         finishing = getattr(self._worker, "finish_candidate_id", None) is not None
+        self._pending_continue_stage = bool(
+            getattr(self._worker, "provisional_override_id", None)
+            and snapshot.status != "completed"
+        )
         self._worker = None
         self.study_directory = snapshot.study_directory
         if finishing and snapshot.status == "completed":
@@ -3519,7 +3618,7 @@ class ReferenceCalibrationDialog(QDialog):
             # Parent's existing finished handler applies parameters, never runs an atlas.
             self.accept()
             return
-        self._render()
+        self._render(snapshot)
         if snapshot.current_stage and snapshot.current_stage.order == 4:
             latest = next(
                 (
@@ -3531,9 +3630,7 @@ class ReferenceCalibrationDialog(QDialog):
                 None,
             )
             if latest:
-                self.selection_combo.setCurrentIndex(
-                    self.selection_combo.findData(latest.candidate_id)
-                )
+                self._pending_view_selection = latest.candidate_id
         self._notify_review_ready()
         if self._fit_search_stop_text:
             self.status.setText(self._fit_search_stop_text)
@@ -3549,7 +3646,7 @@ class ReferenceCalibrationDialog(QDialog):
             or not self._individual_checkpoint()
         ):
             return
-        if self._worker is not None:
+        if self._worker is not None or self._view_loading:
             self._pending_specimen_review = (root, candidate_id, approved)
             return
         self._start_pilot(
@@ -3656,10 +3753,11 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot()
     def _use_provisional(self) -> None:
-        assessment = assess_reference_calibration_snapshot(
-            self._snapshot,
-            visual_approvals=self._visual_approvals(),
-        )
+        if self._view_loading or self._review_saving or self._worker is not None:
+            return
+        assessment = self._assessment
+        if assessment is None:
+            return
         candidate_id = assessment.balanced_candidate_id
         if candidate_id is None:
             QMessageBox.warning(
@@ -3668,18 +3766,7 @@ class ReferenceCalibrationDialog(QDialog):
                 "Every candidate failed an automatic or recorded plausibility gate.",
             )
             return
-        try:
-            snapshot, _assessment = record_reference_calibration_provisional_override(
-                self.study_directory,
-                visual_approvals=self._visual_approvals(),
-                selected_candidate_id=candidate_id,
-            )
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
-            QMessageBox.warning(self, "Provisional selection rejected", str(error))
-            return
-        self._render()
-        if snapshot.status != "completed":
-            self._start()
+        self._start_pilot(adaptive=False, provisional_override_id=candidate_id)
 
     @Slot()
     def _compare_options(self) -> None:
@@ -3841,7 +3928,8 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot()
     def _advance(self) -> None:
-        if self._worker is not None or self._restoring_search:
+        if (self._worker is not None or self._restoring_search
+                or self._view_loading or self._review_saving):
             return
         if self._snapshot.status == "completed":
             self.accept()
@@ -3854,7 +3942,6 @@ class ReferenceCalibrationDialog(QDialog):
                 "Choose one automatically valid candidate before continuing.",
             )
             return
-        approvals = self._visual_approvals()
         if self._individual_checkpoint():
             self._start_pilot(adaptive=False, specimen_action=("advance", str(selected), 0))
             return
@@ -3862,14 +3949,21 @@ class ReferenceCalibrationDialog(QDialog):
             from diffeoforge.reference_pilot_completion import capped
 
             candidate = next(c for c in self._snapshot.candidates if c.candidate_id == selected)
-            if capped(candidate):
+            fixed = (candidate.metrics or {}).get("metric_version") == (
+                "fixed-state-resolution-adoption-v1"
+            )
+            if capped(candidate) or fixed:
                 answer = QMessageBox.question(
                     self,
                     "Finish pilot provisionally?",
-                    "This joint fit reached its iteration limit. Its time-resolution checks "
-                    "pass and you approved its anatomy, but optimizer stability and stable "
-                    "momenta are not established. Keep these warnings and prepare the "
-                    "full-cohort atlas configuration? No atlas starts now.",
+                    "Shape: approved. Time resolution: passed.\n\n"
+                    + ("Optimizer: this saved field was evaluated at finer time steps without "
+                       "a new fit. Convergence at this grid remains unconfirmed.\n\n"
+                       if fixed else
+                       "Optimizer: the fit reached its iteration limit before confirmed "
+                       "convergence.\n\n")
+                    + "Finish with this warning recorded and prepare the full-cohort atlas? "
+                    "This does not start the atlas yet.",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No,
                 )
@@ -3877,41 +3971,36 @@ class ReferenceCalibrationDialog(QDialog):
                     return
             self._start_pilot(adaptive=False, finish_candidate_id=str(selected))
             return
-        if iteration_limit_selection_available(self._snapshot, selected):
+        if selected in self._prepared_view.provisional_ids:
             self._start_pilot(adaptive=False, provisional_candidate_id=str(selected))
             return
-        try:
-            _snapshot, _assessment = record_reference_calibration_stage_review(
-                self.study_directory,
-                visual_approvals=approvals,
-                selected_candidate_id=str(selected),
-            )
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
-            QMessageBox.warning(self, "Stage selection rejected", str(error))
-            return
-        self._render()
-        visual_status = (
-            "passed"
-            if selected in self._visually_approved_candidates
-            else ("failed" if selected in self._visually_reviewed_candidates else "not performed")
-        )
-        self.status.setText(
-            f"Selection recorded: {selected}. The next calibration stage is ready. "
-            f"Visual QC: {visual_status}."
-        )
+        self._start_pilot(adaptive=False, stage_selection_id=str(selected))
 
     def _open_candidate(self, candidate: CalibrationStudyCandidateState) -> None:
+        if self._view_loading or self._view_closed or self._review_saving:
+            return
         if candidate.status != "completed":
             self.status.setText("This option is still computing. Inspect a completed option.")
             return
-        root, snapshot = self.study_directory, self._snapshot
+        root = self.study_directory
         self.status.setText("Preparing comparison in background… The pilot can continue.")
+
+        def prepare():
+            from diffeoforge.reference_calibration_study import calibration_verification_scope
+
+            with calibration_verification_scope():
+                snapshot = load_reference_calibration_study(root)
+                current = next((c for c in snapshot.candidates
+                                if c.candidate_id == candidate.candidate_id), None)
+                if current != candidate:
+                    raise ValueError("Saved comparison identity changed; reopen the option")
+                return (
+                    snapshot, collect_calibration_qc_pairs(root, current),
+                    normalized_candidate_subject_fit(snapshot, current),
+                )
+
         self._viewer_preparation.request_operation(
-            (root, candidate),
-            lambda: (
-                collect_calibration_qc_pairs(root, candidate),
-                normalized_candidate_subject_fit(snapshot, candidate),
-            ),
+            (root, candidate), prepare,
         )
 
     def _review_early_screen(self) -> None:
@@ -3941,6 +4030,8 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot(object, object)
     def _candidate_prepared(self, key: object, prepared: object) -> None:
+        if self._view_closed or self._review_saving:
+            return
         if key[0] == "compare-plan-b":
             root, candidate, pairs = prepared
             dialog = CalibrationCandidateViewerDialog(
@@ -3958,9 +4049,10 @@ class ReferenceCalibrationDialog(QDialog):
             root, candidate = reviewed_snapshot.study_directory, reviewed_snapshot.candidates[0]
         else:
             root, candidate = key
-            pairs, fit = prepared
+            if self._view_closed or root != self.study_directory:
+                return
+            reviewed_snapshot, pairs, fit = prepared
         try:
-            reviewed_snapshot = load_reference_calibration_study(root)
             dialog = CalibrationCandidateViewerDialog(
                 root,
                 candidate,
@@ -4015,21 +4107,14 @@ class ReferenceCalibrationDialog(QDialog):
                 dialog._show_feature_check(dialog._pairs[int(index)])
             dialog._update_review_progress()
             dialog.exec()
+            preference = None
             if dialog.review_recorded and dialog.fit_preferences:
-                from diffeoforge.reference_fit_preferences import save_inspection_preference
-
                 if not dialog.preference_decision:
                     raise ValueError("Choose relative fit feedback before the final decision")
-                save_inspection_preference(root, dialog.preference_decision)
-            if dialog.keep_as_plan_b:
-                if Path(root).resolve() == self.study_directory.resolve() and self._worker is None:
-                    self._start_pilot(
-                        adaptive=False, specimen_action=("maybe", candidate.candidate_id, 0)
-                    )
+                preference = dialog.preference_decision
+            if not dialog.review_recorded and not dialog.keep_as_plan_b:
                 return
-            if dialog.review_recorded:
-                record_reference_calibration_candidate_review(
-                    root,
+            review = dict(
                     candidate_id=candidate.candidate_id,
                     approved=dialog.review_passed,
                     reviewed_subjects=tuple(
@@ -4045,31 +4130,80 @@ class ReferenceCalibrationDialog(QDialog):
                         for p in dialog._pairs
                         if p.required and p.pair_id in dialog._reviewed_pair_ids
                     },
-                )
+            )
+            keep = dialog.keep_as_plan_b
+            origin = self.study_directory
+
+            def save():
+                if preference is not None:
+                    from diffeoforge.reference_fit_preferences import save_inspection_preference
+
+                    save_inspection_preference(root, preference)
+                if keep:
+                    return None
+                saved = record_reference_calibration_candidate_review(root, **review)
                 if screen_parent:
                     from diffeoforge.reference_stage_screening import record_screen_review
 
                     record_screen_review(screen_parent, root)
-                    self._render()
-                    if not self._snapshot.early_screening["complete"]:
-                        self._start_pilot(adaptive=False, early_screen=True)
-                    return
-                if Path(root).resolve() != self.study_directory.resolve():
-                    return
-                self._visually_reviewed_candidates.add(candidate.candidate_id)
-                if dialog.review_passed:
-                    self._visually_approved_candidates.add(candidate.candidate_id)
-                else:
-                    self._visually_approved_candidates.discard(candidate.candidate_id)
-                self._render()
-                self._continue_specimen_review(root, candidate.candidate_id, dialog.review_passed)
+                    saved = load_reference_calibration_study(screen_parent)
+                return saved
+
+            self._review_saving = True
+            self.content.setEnabled(False)
+            self.pilot_tools.setEnabled(False)
+            self.next_step_button.setEnabled(False)
+            self.advance_button.setEnabled(False)
+            self.selection_combo.setEnabled(False)
+            self.status.setText("Saving your review in background…")
+            self._review_save_loader.request_operation(
+                (origin, root, candidate.candidate_id, review["approved"], keep, screen_parent),
+                save,
+            )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.status.setText("Comparison unavailable: " + str(error))
             QMessageBox.warning(self, "Candidate viewer unavailable", str(error))
 
+    @Slot(object, object)
+    def _review_saved(self, key, snapshot) -> None:
+        self._review_saving = False
+        origin, root, candidate_id, approved, keep, screen_parent = key
+        if self._view_closed or self.study_directory != origin:
+            return
+        if keep:
+            self._render(self._snapshot)
+            if root == self.study_directory and self._worker is None:
+                self._start_pilot(adaptive=False, specimen_action=("maybe", candidate_id, 0))
+            return
+        if screen_parent:
+            self._pending_screen_review = True
+        else:
+            self._pending_specimen_review = (root, candidate_id, approved)
+        self._render(snapshot)
+
+    @Slot(object, str)
+    def _review_save_failed(self, key, error) -> None:
+        self._review_saving = False
+        if self._view_closed or self.study_directory != key[0]:
+            return
+        self._render()
+        QMessageBox.warning(self, "Review could not be saved", error)
+
+    @Slot(int)
+    def _dispose_readers(self, _result=0) -> None:
+        self._view_closed = True
+        for loader in (self._view_loader, self._viewer_preparation,
+                       self._preview_prefetch, self._saved_search_loader):
+            loader.cancel()
+
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self._review_saving:
+            QMessageBox.information(self, "Saving review", "Wait until your review is saved.")
+            event.ignore()
+            return
         self._release_finished_worker()
         if self._worker is None:
+            self._dispose_readers()
             super().closeEvent(event)
             return
         QMessageBox.information(
@@ -4086,8 +4220,11 @@ class ReferenceCalibrationDialog(QDialog):
 
     def reject(self) -> None:
         """Escape must not hide/destroy a running pilot or lose its controller."""
+        if self._review_saving:
+            return
         self._release_finished_worker()
         if self._worker is None:
+            self._dispose_readers()
             super().reject()
 
     def _restore_plan_b(self) -> None:

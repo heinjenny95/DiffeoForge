@@ -2,6 +2,7 @@ import shutil
 from dataclasses import dataclass, replace
 
 import pytest
+from pilot_view_helpers import wait_pilot_view
 from test_reference_calibration_study import _approve_for_test
 from test_reference_integration_check import _fourth
 
@@ -288,12 +289,14 @@ def test_capped_dialog_requires_recorded_qc_and_explicit_provisional_finish(tmp_
     app = QApplication.instance() or QApplication([])
     _, done, _, identifier = _checked(tmp_path, monkeypatch, capped=True)
     dialog = ReferenceCalibrationDialog(done.study_directory)
+    wait_pilot_view(dialog)
     assert dialog.selection_combo.currentData() == done.candidates[-1].candidate_id
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(identifier))
     assert not dialog.advance_button.isEnabled()
     assert "no optimization" in dialog.qualification_button.text()
     _approve_preview(done, identifier)
     dialog._render()
+    wait_pilot_view(dialog)
     assert dialog.advance_button.isEnabled()
     assert "provisionally" in dialog.advance_button.text()
     assert not dialog._assessment.balanced_candidate_id
@@ -365,6 +368,7 @@ def test_completed_dialog_has_explicit_return_to_atlas_setup(tmp_path, monkeypat
         window, "_review_project", lambda: reviewed.append(window._result.config_path)
     )
     dialog = ReferenceCalibrationDialog(final.study_directory)
+    wait_pilot_view(dialog)
     window._reference_calibration_dialog = dialog
     window.centralWidget().setEnabled(False)
     dialog.finished.connect(window._reference_calibration_closed)

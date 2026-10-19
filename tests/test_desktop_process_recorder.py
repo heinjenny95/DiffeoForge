@@ -9,11 +9,11 @@ import pytest
 
 pytest.importorskip("PySide6")
 pytest.importorskip("imageio_ffmpeg")
-from PySide6.QtCore import QSettings, Slot
+from PySide6.QtCore import QObject, QPoint, QSettings, Qt, Signal, Slot
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QLineEdit, QVBoxLayout, QWidget
 
-from diffeoforge.desktop.activity import ActivityIndicator
+from diffeoforge.desktop.activity import ActivityIndicator, ActivityPool
 from diffeoforge.desktop.process_recorder import ProcessRecorder
 
 
@@ -59,7 +59,7 @@ def stop(application, window, recorder):
     application.processEvents()
 
 
-def test_real_qt_capture_auto_exports_each_computation_and_restarts(application, tmp_path):
+def test_pilot_attempts_and_atlas_steps_stay_in_one_real_video(application, tmp_path):
     gui_thread = threading.get_ident()
     deliveries = []
 
@@ -80,20 +80,32 @@ def test_real_qt_capture_auto_exports_each_computation_and_restarts(application,
         indicator = ActivityIndicator(window)
         indicator.show()
         application.processEvents()
-        worker = type("_AtlasWorker", (), {})()
-        indicator.task_finished.emit(worker)
-        wait(application, lambda: rec.current is not first and rec.last_output is not None)
-        assert rec.current is not None
+        for name in ("_ProjectWorker", "_ProcrustesPreviewWorker",
+                     "_CalibrationStageWorker", "_CalibrationStageWorker",
+                     "_ReferenceAtlasWorker", "_ReferencePCADeformationWorker",
+                     "_AtlasWorker", "_RemoteAtlasWorker"):
+            indicator.task_finished.emit(type(name, (), {})())
+            QTest.qWait(100)
+            application.processEvents()
+        QTest.qWait(600)  # Beyond the former delayed rotation.
+        assert rec.current is first and rec.last_output is None
+        assert not list((tmp_path / "project").glob("recordings/*.mp4"))
+        # A visible plot change after the attempts belongs to the same encoder.
+        window.setStyleSheet("background: #992244")
+        rec._capture(force=True)
+        rec.finish_manually()
+        wait(application, lambda: not rec.encoders)
+        assert rec.current is None
         data = json.loads(rec.last_output.with_suffix(".json").read_text(encoding="utf-8"))
-        assert data["finish_reason"] == "computation_finished"
+        assert data["finish_reason"] == "manual_finish"
         assert data["capture_samples"] >= 3
         assert all(thread == gui_thread for thread, _value in deliveries)
         assert settings.value("enabled", type=bool) is True
-        second = rec.current
+        assert len(deliveries) == 1
+        assert len(list((tmp_path / "project" / "recordings").glob("*.mp4"))) == 1
+        rec._restart()
+        assert rec.current is not None and rec.current is not first
         QTest.qWait(400)
-        rec._computation_finished(worker)
-        wait(application, lambda: rec.current is not second and len(deliveries) == 2)
-        assert len(list((tmp_path / "project" / "recordings").glob("*.mp4"))) == 2
         assert rec.handle_close() is True
         wait(application, lambda: not rec.encoders)
         assert rec.handle_close() is False
@@ -122,14 +134,94 @@ def test_owned_dialog_capture_excludes_foreign_windows_and_wait_mode(application
         application.processEvents()
         image = rec._image(time.monotonic(), "active")
         assert image.pixelColor(320, 160).blue() < 150
-        rec.last_input = time.monotonic() - 31
+        indicator = ActivityIndicator(window)
+        indicator.set_task("compute", "Running atlas")
         rec._capture(force=True)
         assert rec.last_mode == "waiting"
-        rec.last_input = time.monotonic()
+        indicator.set_task("compute", None)
         rec._capture(force=True)
         assert rec.last_mode == "active"
     finally:
         foreign.close()
+        dialog.close()
+        stop(application, window, rec)
+
+
+def test_real_gui_stall_pauses_video_without_splitting_or_cutting_responsive_waits(
+    application, tmp_path,
+):
+    window, rec, _settings = setup(tmp_path)
+    try:
+        rec.enabled.setChecked(True)
+        first = rec.current
+        QTest.qWait(500)
+        rec._tick()
+        time.sleep(2.15)  # Deliberately block only this engineering GUI event loop.
+        rec._tick()
+        assert rec.current is first
+        indicator = ActivityIndicator(window)
+        indicator.set_task("compute", "Running atlas")
+        rec._capture(force=True)
+        QTest.qWait(2200)  # Responsive event loop while backend-style waiting.
+        rec.finish_manually()
+        wait(application, lambda: not rec.encoders)
+        data = json.loads(rec.last_output.with_suffix(".json").read_text())
+        assert len(data["pauses"]) == 1
+        pause = data["pauses"][0]
+        assert pause["reason"] == "interface_unresponsive"
+        assert 2.0 < pause["source_end"] - pause["source_start"] < 2.5
+        assert data["output"]["seconds"] < 1.4
+        assert data["source_seconds"] > 4.5
+    finally:
+        stop(application, window, rec)
+
+
+def test_speed_follows_worker_completion_and_review_not_mouse_or_keyboard(
+    application, tmp_path,
+):
+    class Signals(QObject):
+        succeeded = Signal(object)
+        failed = Signal(str)
+
+    window, rec, _settings = setup(tmp_path)
+    dialog = QDialog(window)
+    try:
+        queued = []
+        pool = ActivityPool(window, pool=SimpleNamespace(start=queued.append))
+        worker = SimpleNamespace(signals=Signals())
+        rec.enabled.setChecked(True)
+        first = rec.current
+        pool.start(worker)
+        rec._capture(force=True)
+        assert rec.last_mode == "waiting"
+        QTest.mouseMove(window, QPoint(25, 25))
+        QTest.mouseClick(window, Qt.MouseButton.LeftButton)
+        QTest.keyClick(window, Qt.Key.Key_Shift)
+        rec._capture(force=True)
+        assert rec.last_mode == "waiting" and rec.current is first
+        # An explicit review may open while a different background task continues.
+        dialog.show()
+        dialog.activateWindow()
+        application.processEvents()
+        assert rec._recording_mode() == "active"
+        dialog.setProperty("processRecordingWaiting", True)
+        assert rec._recording_mode() == "waiting"  # Review meshes still loading.
+        dialog.setProperty("processRecordingWaiting", False)
+        assert rec._recording_mode() == "active"
+        dialog.hide()
+        window.activateWindow()
+        application.processEvents()
+        assert rec._recording_mode() == "waiting"
+        worker.signals.succeeded.emit(None)
+        application.processEvents()
+        rec._capture(force=True)
+        assert rec.last_mode == "active" and rec.current is first
+        rec.finish_manually()
+        wait(application, lambda: not rec.encoders)
+        data = json.loads(rec.last_output.with_suffix(".json").read_text())
+        assert data["speeds"] == {"active": 10, "waiting": 1000}
+        assert [t["speed"] for t in data["timeline"]] == [10, 1000, 10]
+    finally:
         dialog.close()
         stop(application, window, rec)
 
@@ -214,11 +306,6 @@ def test_actual_saved_pilot_open_path_has_recordable_owner(application, tmp_path
     dialog.activateWindow()
     application.processEvents()
     assert window.process_recorder._capture_window() is dialog
-    window.process_recorder._bind_indicators()
-    assert all(
-        indicator in window.process_recorder._bound_indicators
-        for indicator in dialog.findChildren(ActivityIndicator)
-    )
     dialog.close()
     application.processEvents()
     window.close()

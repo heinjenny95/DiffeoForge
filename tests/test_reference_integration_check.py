@@ -1,6 +1,7 @@
 from dataclasses import replace
 
 import pytest
+from pilot_view_helpers import wait_pilot_view
 from test_reference_stage_retention import _second_stage
 
 from diffeoforge import reference_calibration_study as study
@@ -227,6 +228,7 @@ def test_stage4_exposes_independent_check_and_explicit_finer_refit(tmp_path, mon
     identifier = done.candidates[-1].candidate_id
     _approve_for_test(done.study_directory, identifier)
     dialog = ReferenceCalibrationDialog(runner.study_directory)
+    wait_pilot_view(dialog)
     dialog.show()
     app.processEvents()
     assert dialog.finer_resolution_button.isHidden()
@@ -252,6 +254,7 @@ def test_stage4_exposes_independent_check_and_explicit_finer_refit(tmp_path, mon
     ]
     dialog._worker = object()
     dialog._render()
+    wait_pilot_view(dialog)
     assert not dialog.next_step_button.isEnabled()
     assert not dialog.finer_model_button.isEnabled()
     dialog._worker = None

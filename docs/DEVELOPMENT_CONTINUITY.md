@@ -1,6 +1,6 @@
-# Development continuity — v136 saved resolution adoption
+# Development continuity — v137 responsive pilot and continuous video
 
-Snapshot: 2026-10-18. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-19. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -20,6 +20,19 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v137 moves repeated pilot presentation verification, comparison preparation,
+review saving and stage selections off the GUI thread, retaining fresh worker
+snapshots and limiting verification reuse to a single read. Process recording
+continues across all pilot/atlas tasks in one project session. Busy workflow
+phases use 1000×; required review/decision phases use 10×, independent of mouse or
+keyboard activity. Unresponsive GUI intervals are omitted after recovery and
+documented in the timing companion. Manual recording finish or app close saves
+the video. Scientific/approval gates remain unchanged. See
+[behavior and verification boundaries](V137_RESPONSIVE_PILOT_RECORDING.md).
+Source implementation and scoped video/UI checks are complete; broader
+regressions, exact frozen build and safe installation are being verified.
+Installed remains v136 until delivery verification confirms the new payload.
 
 v136 adds an explicit finer saved-evaluation adoption route in Stage 4. It reuses
 two checked grids and computes only the missing nested grid without running an

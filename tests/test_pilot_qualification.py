@@ -1,4 +1,5 @@
 import pytest
+from pilot_view_helpers import wait_pilot_view
 from test_reference_integration_check import _fourth
 
 from diffeoforge import reference_calibration_study as study
@@ -282,6 +283,7 @@ def test_notification_deduplicates_without_forcing_focus_and_keeps_iteration(tmp
         ),
     )
     dialog = ReferenceCalibrationDialog(done.study_directory)
+    wait_pilot_view(dialog)
     calls = []
     monkeypatch.setattr(QApplication, "alert", lambda *a: calls.append(a))
     monkeypatch.setattr(QSystemTrayIcon, "isSystemTrayAvailable", lambda: False)

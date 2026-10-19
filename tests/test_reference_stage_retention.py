@@ -1,4 +1,5 @@
 import pytest
+from pilot_view_helpers import wait_pilot_view
 from test_reference_calibration_study import _afk_runner, _approve_for_test, _review_ready_stage
 
 from diffeoforge import reference_calibration_study as study
@@ -252,6 +253,7 @@ def test_keep_button_dispatches_only_retention_worker_and_hides_for_numerical_st
     application = QApplication.instance() or QApplication([])
     runner, _, _, second = _second_stage(tmp_path, monkeypatch)
     dialog = ReferenceCalibrationDialog(second.study_directory)
+    wait_pilot_view(dialog)
     assert not dialog.keep_previous_button.isHidden()
     assert dialog.keep_previous_button.text() == "Keep approved stage 1 fit → stage 3"
     starts = []
@@ -269,6 +271,7 @@ def test_keep_button_dispatches_only_retention_worker_and_hides_for_numerical_st
     third = study.load_reference_calibration_study(second.study_directory)
     fourth = keep_previous_fit(third.study_directory)
     dialog._render()
+    wait_pilot_view(dialog)
     assert dialog.keep_previous_button.isHidden()
     assert fourth.current_stage.order == 4
     dialog.close()

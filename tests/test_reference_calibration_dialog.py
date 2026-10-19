@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 
 import pytest
+from pilot_view_helpers import wait_pilot_view
 
 from diffeoforge.reference_calibration_study import CalibrationStudyCandidateState
 
@@ -16,6 +17,7 @@ def test_viewer_load_failure_replaces_preparing_status(monkeypatch, tmp_path):
     app = QApplication.instance() or QApplication([])
     runner, snapshot = _review_ready_stage(tmp_path, monkeypatch)
     dialog = module.ReferenceCalibrationDialog(runner.study_directory)
+    wait_pilot_view(dialog)
     dialog.status.setText("Preparing comparison in background… The pilot can continue.")
 
     def invalid(_root):
@@ -24,9 +26,14 @@ def test_viewer_load_failure_replaces_preparing_status(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "load_reference_calibration_study", invalid)
     warnings = []
     monkeypatch.setattr(module.QMessageBox, "warning", lambda *args: warnings.append(args[2]))
-    dialog._candidate_prepared((runner.study_directory, snapshot.candidates[0]), ([], {}))
+    dialog._open_candidate(snapshot.candidates[0])
+    deadline = time.monotonic() + 10
+    while dialog._viewer_preparation._active is not None and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.002)
+    app.processEvents()
     assert dialog.status.text() == "Comparison unavailable: Bound evidence changed"
-    assert warnings == ["Bound evidence changed"]
+    assert warnings == []
     assert dialog._worker is None
     dialog.close()
     app.processEvents()
@@ -279,6 +286,7 @@ def test_staged_calibration_requires_saved_fit_and_can_refine_rejected_center(
     application = QApplication.instance() or QApplication([])
     runner, snapshot = _review_ready_stage(tmp_path, monkeypatch)
     dialog = dialog_module.ReferenceCalibrationDialog(runner.study_directory)
+    wait_pilot_view(dialog)
     dialog.show()
     application.processEvents()
     assert dialog.advanced_mode.isHidden() and dialog.afk_mode.isHidden()
@@ -291,6 +299,7 @@ def test_staged_calibration_requires_saved_fit_and_can_refine_rejected_center(
     assert dialog.collect_evidence_button.isEnabled()
     _approve_for_test(runner.study_directory, cid)
     dialog._render()
+    wait_pilot_view(dialog)
     assert dialog.advance_button.isEnabled()
     name = snapshot.plan.selected_pilot_subjects[0].filename
     study.record_reference_calibration_candidate_review(
@@ -301,6 +310,7 @@ def test_staged_calibration_requires_saved_fit_and_can_refine_rejected_center(
         subject_decisions={name: "fail"},
     )
     dialog._render()
+    wait_pilot_view(dialog)
     assert not dialog.advance_button.isEnabled()
     assert dialog.selection_combo.currentData() == cid  # Rejected center remains inspectable.
     assert dialog.collect_evidence_button.isEnabled()

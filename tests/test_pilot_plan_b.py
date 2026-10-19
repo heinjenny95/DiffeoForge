@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pilot_view_helpers import wait_pilot_view
 from test_reference_calibration_study import _approve_for_test, _review_ready_stage
 from test_reference_sequential_fit import _measured, _reject
 
@@ -108,6 +109,7 @@ def test_blank_improve_choice_uses_single_completed_fit_and_finished_worker_can_
     monkeypatch.setattr(search, "measure_original_fit", _measured)
     first = sequence.run_specimen_sequence(runner)
     dialog = ReferenceCalibrationDialog(first.study_directory)
+    wait_pilot_view(dialog)
     calls = []
     monkeypatch.setattr(dialog, "_start_pilot", lambda **kw: calls.append(kw))
     dialog.selection_combo.setCurrentIndex(0)

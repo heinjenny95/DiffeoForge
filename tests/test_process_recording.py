@@ -4,6 +4,7 @@ import hashlib
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -47,18 +48,18 @@ def test_native_encoder_preserves_timing_final_state_and_project_delivery(tmp_pa
     assert data["status"] == "complete"
     assert data["source_seconds"] == 320
     assert data["final_hold_frames"] == 30
-    # 10s / 10 + 300s / 300 + 10s / 10 + one-second declared end hold.
-    assert data["output"]["frames"] == 120
-    assert data["output"]["seconds"] == 4
-    assert [item["speed"] for item in data["timeline"]] == [10, 300, 10]
+    # 10s / 10 + 300s / 1000 + 10s / 10 + one-second declared end hold.
+    assert data["output"]["frames"] == 99
+    assert data["output"]["seconds"] == 3.3
+    assert [item["speed"] for item in data["timeline"]] == [10, 1000, 10]
     assert data["capture_gap_count"] == 1
     assert data["output"]["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
     assert not list(rec.directory.glob("segment-*.mp4"))
     meta, frames = decode(path)
-    assert meta["fps"] == 30 and len(frames) == 120
+    assert meta["fps"] == 30 and len(frames) == 99
     assert abs(float(frames[-1].mean()) - 230) < 5
     # The deliberately delayed active capture is visibly labelled, not silent motion.
-    assert frames[75][10, 150, 0] > frames[75][10, 150, 1] + 50
+    assert frames[45][10, 150, 0] > frames[45][10, 150, 1] + 50
 
 
 def test_live_lock_then_partial_recovery_without_replacing_existing_outputs(tmp_path):
@@ -77,6 +78,41 @@ def test_live_lock_then_partial_recovery_without_replacing_existing_outputs(tmp_
     assert len(decode(path)[1]) == 6
     with pytest.raises(ValueError, match="already been exported"):
         recover_recording(rec.directory, root)
+
+
+def test_unresponsive_intervals_are_cut_but_normal_waiting_and_final_state_remain(tmp_path):
+    rec = ProcessRecording(tmp_path, (160, 96))
+    rec.add(pixels(40), 0, "active")
+    rec.add(pixels(80), 1, "active")
+    rec.add(pixels(120), 601, "waiting", pauses=({
+        "source_start": 1, "source_end": 601, "reason": "interface_unresponsive",
+    },))
+    rec.add(pixels(220), 901, "active")  # Healthy five-minute backend wait stays.
+    path = rec.finish(901, reason="manual_finish")
+    data = json.loads(path.with_suffix(".json").read_text())
+    assert data["source_seconds"] == 901
+    assert data["capture_gap_count"] == 0
+    assert data["pauses"][0]["source_end"] == 601
+    # One active second /10 + 300 responsive waiting seconds /1000 + final hold.
+    meta, frames = decode(path)
+    assert meta["fps"] == 30 and len(frames) == 42
+    assert abs(float(frames[-1].mean()) - 220) < 5
+
+
+@pytest.mark.parametrize("pauses", [
+    ({"source_start": -1, "source_end": 2, "reason": "interface_unresponsive"},),
+    ({"source_start": 1, "source_end": 5, "reason": "interface_unresponsive"},),
+    ({"source_start": 2, "source_end": 1, "reason": "interface_unresponsive"},),
+])
+def test_invalid_pause_cannot_remove_unrelated_video_time(tmp_path, pauses):
+    rec = ProcessRecording(tmp_path, (160, 96))
+    rec.add(pixels(), 0, "active")
+    try:
+        with pytest.raises(ValueError, match="pause interval"):
+            rec.add(pixels(), 3, "active", pauses=pauses)
+        assert rec.data["pauses"] == []
+    finally:
+        rec.fail(RuntimeError("fixture cleanup"))
 
 
 @pytest.mark.parametrize("corruption", ["bytes", "path", "size", "fps"])
@@ -114,6 +150,25 @@ def test_invalid_time_and_unavailable_project_fail_without_deleting_segments(tmp
         rec.finish(1 / 3, tmp_path / "missing")
     assert list(rec.directory.glob("segment-*.mp4"))
     assert json.loads((rec.directory / "session.json").read_text())["status"] == "failed"
+
+
+def test_export_retries_transient_windows_destination_lock(tmp_path, monkeypatch):
+    original = Path.replace
+    calls = []
+
+    def locked_twice(source, target):
+        if source.suffix == ".copying":
+            calls.append(target)
+            if len(calls) <= 2:
+                raise PermissionError("Fixture Windows sharing lock")
+        return original(source, target)
+
+    monkeypatch.setattr(Path, "replace", locked_twice)
+    rec = ProcessRecording(tmp_path, (160, 96))
+    rec.add(pixels(), 0, "active")
+    path = rec.finish(1)
+    assert len(calls) == 3 and path.stat().st_size > 0
+    assert len(decode(path)[1]) == 33
 
 
 def test_abrupt_public_writer_exit_releases_lock_and_recovers_only_sealed_video(tmp_path):

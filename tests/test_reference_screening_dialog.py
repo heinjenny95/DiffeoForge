@@ -1,4 +1,5 @@
 import pytest
+from pilot_view_helpers import wait_pilot_view
 from test_reference_stage_retention import _second_stage
 from test_reference_stage_screening import _review_screen
 
@@ -15,6 +16,7 @@ def _dialog(tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     runner, _, _, second = _second_stage(tmp_path, monkeypatch)
     dialog = ReferenceCalibrationDialog(second.study_directory)
+    wait_pilot_view(dialog)
     dialog.show()
     app.processEvents()
     return app, runner, dialog
@@ -44,6 +46,7 @@ def test_saved_screen_waits_for_review_and_kept_options_use_joint_dispatch(tmp_p
     app, runner, dialog = _dialog(tmp_path, monkeypatch)
     result = screening.run_next_screen(runner, subjects=(dialog.screen_subject.currentData(),))
     dialog._render()
+    wait_pilot_view(dialog)
     assert dialog.start_button.text() == "Review this specimen"
     assert dialog.advance_button.isHidden()
     calls = []
@@ -56,6 +59,7 @@ def test_saved_screen_waits_for_review_and_kept_options_use_joint_dispatch(tmp_p
             break
         result = screening.run_next_screen(runner)
     dialog._render()
+    wait_pilot_view(dialog)
     assert dialog.screen_comparison.isVisible()
     assert not dialog.start_button.isEnabled()
     assert dialog.screen_comparison.table.rowCount() == len(result.early_screening["kept"])
@@ -79,6 +83,7 @@ def test_saved_screen_waits_for_review_and_kept_options_use_joint_dispatch(tmp_p
     dialog._start()
     assert calls[-1] == dict(adaptive=False, screen_joint_choice=chosen)
     dialog._render()
+    wait_pilot_view(dialog)
     app.processEvents()
     assert dialog.screen_comparison.selected_candidate_id == chosen
     dialog.close()
@@ -90,11 +95,13 @@ def test_stage_three_filter_and_stage_four_full_cohort_controls(tmp_path, monkey
     app, _, dialog = _dialog(tmp_path, monkeypatch)
     keep_previous_fit(dialog.study_directory)
     dialog._render()
+    wait_pilot_view(dialog)
     dialog.pilot_tools.toggle_button.setChecked(True)
     assert dialog.screen_controls.isVisible()
     assert dialog.snapshot.current_stage.order == 3
     keep_previous_fit(dialog.study_directory)
     dialog._render()
+    wait_pilot_view(dialog)
     assert dialog.snapshot.current_stage.order == 4
     assert dialog.screen_controls.isHidden()
     # Current stage 4 uses fixed-state qualification; legacy refit criteria stay hidden.
@@ -119,6 +126,7 @@ def test_technical_failures_show_retry_with_separate_counts_and_worker_dispatch(
     while not result.early_screening["complete"]:
         result = screening.run_next_screen(runner)
     dialog._render()
+    wait_pilot_view(dialog)
     assert not dialog.pilot_tools.toggle_button.isChecked()
     assert dialog.retry_screens_button.isVisible()
     assert "All stage" not in dialog.retained_fit_notice.text()
@@ -140,6 +148,7 @@ def test_technical_failures_show_retry_with_separate_counts_and_worker_dispatch(
     assert len(outcomes) == 1 and not worker.error_message
     assert not outcomes[0].early_screening["technical_failures"]
     dialog._render()
+    wait_pilot_view(dialog)
     assert dialog.retry_screens_button.isHidden()
     assert dialog.start_button.text() == "Test next option"
     dialog.close()

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
+from pilot_view_helpers import wait_pilot_view
 
 import diffeoforge.reference_calibration_study as study_module
 from diffeoforge.cli import main
@@ -351,6 +352,7 @@ def test_afk_start_errors_are_visible_and_retryable(
     events_path = runner.study_directory / "events.jsonl"
     events_before = events_path.read_bytes()
     dialog = dialog_module.ReferenceCalibrationDialog(runner.study_directory)
+    wait_pilot_view(dialog)
     dialog.afk_mode.setChecked(True)
     dialog.outward_mode.setChecked(True)
     monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)

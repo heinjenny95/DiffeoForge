@@ -10219,6 +10219,11 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_calibration_study_directory = directory
         try:
             snapshot = dialog.snapshot
+            if snapshot is None:
+                self._pilot_status_key = None
+                self._refresh_reference_calibration_execution_card()
+                self._sync_ready_state()
+                return
             if snapshot.study_directory.resolve() != directory:
                 raise ValueError("Pilot snapshot belongs to a different study")
             self._pilot_status_key = None

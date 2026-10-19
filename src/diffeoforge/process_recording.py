@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 
 FPS = 30
-SPEEDS = {"active": 10, "waiting": 300}
+SPEEDS = {"active": 10, "waiting": 1000}
 SEGMENT_FRAMES = 900
 
 
@@ -193,7 +193,16 @@ def _export(directory, data, project, *, recovered=False):
         # any existing user video, including after a concurrent recovery request.
         with target.open("xb"):
             pass
-        copying.replace(target)
+        for attempt in range(8):
+            if target.stat().st_size != 0:
+                raise FileExistsError("Reserved recording destination changed during export")
+            try:
+                copying.replace(target)
+                break
+            except PermissionError:
+                if attempt == 7:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
     finally:
         copying.unlink(missing_ok=True)
     data.update(
@@ -239,11 +248,13 @@ class ProcessRecording:
             "size": list(size),
             "fps": FPS,
             "speeds": SPEEDS,
+            "mode_policy": "Busy workflow tasks 1000x; human review and decisions 10x",
             "segments": [],
             "timeline": [],
             "capture_gaps": [],
             "capture_gap_count": 0,
             "capture_samples": 0,
+            "pauses": [],
             "boundary": "Local UI presentation; not scientific run evidence",
         }
         self._writer = None
@@ -301,13 +312,13 @@ class ProcessRecording:
             if self._segment_count >= self.segment_frames:
                 self._seal()
 
-    def add(self, pixels, elapsed, mode):
+    def add(self, pixels, elapsed, mode, *, pauses=()):
         if mode not in SPEEDS or not math.isfinite(elapsed) or elapsed < self._last_t:
             raise ValueError("Invalid recording time or mode")
         w, h = self.data["size"]
         if pixels.shape != (h, w, 3) or pixels.dtype != np.uint8:
             raise ValueError("Recording frame dimensions or pixel type differ")
-        self._advance(elapsed)
+        self._advance(elapsed, pauses=pauses)
         self._last = np.ascontiguousarray(pixels).copy()
         if not self.data["timeline"] or self._mode != mode:
             self.data["timeline"].append(
@@ -321,9 +332,19 @@ class ProcessRecording:
         self._mode = mode
         self.data["capture_samples"] += 1
 
-    def _advance(self, elapsed):
+    def _advance(self, elapsed, *, pauses=()):
+        previous_end, omitted = self._last_t, 0.0
+        for pause in pauses:
+            start, end = pause["source_start"], pause["source_end"]
+            if (not math.isfinite(start) or not math.isfinite(end)
+                    or start < previous_end or end <= start or end > elapsed
+                    or pause["reason"] != "interface_unresponsive"):
+                raise ValueError("Invalid recording pause interval")
+            previous_end = end
+            omitted += end - start
+        self.data["pauses"].extend(dict(p) for p in pauses)
         if self._last is not None:
-            delta = elapsed - self._last_t
+            delta = elapsed - self._last_t - omitted
             self._output_time += delta / SPEEDS[self._mode]
             count = max(0, round(self._output_time * FPS) - self._total_frames)
             # A delayed GUI/encoder sample is recorded rather than presented as
@@ -348,13 +369,13 @@ class ProcessRecording:
                 self._append(self._last, count)
         self._last_t = elapsed
 
-    def finish(self, elapsed, project=None, reason="session"):
+    def finish(self, elapsed, project=None, reason="session", *, pauses=()):
         try:
             if not math.isfinite(elapsed) or elapsed < self._last_t:
                 raise ValueError("Invalid recording finish time")
             if self._last is None:
                 raise ValueError("No application frames were captured")
-            self._advance(elapsed)
+            self._advance(elapsed, pauses=pauses)
             # Keep the actual final UI visible for one playback second. This is
             # an explicitly declared end hold, not extra elapsed session time.
             self._append(self._last, FPS)

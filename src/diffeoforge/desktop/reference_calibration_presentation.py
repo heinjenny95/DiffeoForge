@@ -221,13 +221,15 @@ def final_stage_next_step(
     if provisional:
         if fixed_state:
             return PilotNextStep(
-                "finish", "Finish pilot provisionally → atlas setup", "Shape and time resolution "
-                "checked. This saved field was evaluated without a new fit; optimizer convergence "
-                "at this grid remains unconfirmed.", True,
+                "finish", "Finish pilot provisionally → atlas setup", "Shape approved. Time "
+                "resolution passed. Provisional means optimizer convergence is unconfirmed: "
+                "this saved field was evaluated at finer time steps without a new fit. "
+                "You can continue to the full atlas with that warning recorded.", True,
             )
-        return PilotNextStep("finish", "Finish pilot provisionally → atlas setup", "Shape and "
-                             "time resolution checked. The iteration limit was reached; "
-                             "finishing provisionally keeps that warning.", True)
+        return PilotNextStep("finish", "Finish pilot provisionally → atlas setup", "Shape "
+                             "approved. Time resolution passed. Provisional means the optimizer "
+                             "reached its iteration limit before confirmed convergence. You can "
+                             "continue to the full atlas with that warning recorded.", True)
     if eligible:
         return PilotNextStep("finish", "Finish pilot → atlas setup", "Shape and time "
                              "resolution checked. Finish the pilot to prepare the full atlas.")
@@ -260,7 +262,14 @@ def final_stage_check_summary(
     else:
         resolution = "check needed"
     if metrics.get("metric_version") == "fixed-state-resolution-adoption-v1":
-        optimization = "saved field; no refit at this grid; provisional finish only"
+        source = metrics.get("source_optimizer") or {}
+        count = source.get("maximum_iterations")
+        limit = f" ({count} iterations)" if type(count) is int and count > 0 else ""
+        optimization = (
+            f"source fit reached its limit{limit}; convergence unconfirmed; no new fit at this grid"
+            if source.get("optimizer_stop_signal") == "maximum_iterations"
+            else "convergence at this grid unconfirmed; saved field evaluated without a new fit"
+        )
     elif metrics.get("converged") is True:
         optimization = "convergence confirmed"
     elif metrics.get("optimizer_stop_signal") == "maximum_iterations":

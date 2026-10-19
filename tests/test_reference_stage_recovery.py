@@ -2,6 +2,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
+from pilot_view_helpers import wait_pilot_view
 
 from diffeoforge.desktop.reference_calibration_presentation import stage_options_rejected
 
@@ -70,6 +71,7 @@ def test_rejected_screens_and_joint_fits_offer_visible_exact_retention(tmp_path,
     )
     result = _review_screen(result, False)
     dialog._render()
+    wait_pilot_view(dialog)
     assert "All stage" not in dialog.retained_fit_notice.text()
     assert dialog.start_button.text() == "Test next option"
     while not result.early_screening["complete"]:
@@ -77,6 +79,7 @@ def test_rejected_screens_and_joint_fits_offer_visible_exact_retention(tmp_path,
         result = _review_screen(result, False)
     before = events_path.read_bytes()
     dialog._render()
+    wait_pilot_view(dialog)
     app.processEvents()
     assert events_path.read_bytes() == before  # Display never selects or launches anything.
     assert "All stage 2 options were rejected" in dialog.retained_fit_notice.text()
@@ -107,6 +110,7 @@ def test_rejected_screens_and_joint_fits_offer_visible_exact_retention(tmp_path,
             display_scopes={n: "preview" for n in names},
         )
     dialog._render()
+    wait_pilot_view(dialog)
     app.processEvents()
     assert "All stage 3 options were rejected" in dialog.retained_fit_notice.text()
     assert "Time resolution still needs checking" in dialog.retained_fit_notice.text()
@@ -123,6 +127,7 @@ def test_rejected_screens_and_joint_fits_offer_visible_exact_retention(tmp_path,
         assert worker.error_message is None
     before = events_path.read_bytes()
     dialog._render()
+    wait_pilot_view(dialog)
     app.processEvents()
     assert events_path.read_bytes() == before
     assert dialog.snapshot.current_stage.order == 4
@@ -148,14 +153,17 @@ def test_provisional_baseline_and_busy_or_withdrawn_review_are_not_silenced(tmp_
         True if cid == "deformation-retained" else real(snapshot, cid)
     ))
     dialog._render()
+    wait_pilot_view(dialog)
     assert dialog.keep_previous_button.text() == "Keep provisional stage 1 fit → stage 3"
     assert "Convergence remains unconfirmed" in dialog.retained_fit_notice.text()
     dialog._restoring_search = True
     dialog._render()
+    wait_pilot_view(dialog)
     assert not dialog.keep_previous_button.isEnabled()
     dialog._restoring_search = False
     withdrawn = replace(dialog.snapshot, visual_reviews={"deformation-retained": False})
     dialog._render(withdrawn)
+    wait_pilot_view(dialog)
     assert dialog.retained_fit_panel.isHidden()
     assert not dialog.keep_previous_button.isEnabled()
     dialog.close()
@@ -213,6 +221,7 @@ def test_unstable_time_grid_has_one_visible_selected_fit_action_and_folded_detai
     old_style = app.styleSheet()
     app.setStyleSheet(_STYLE)
     dialog = ReferenceCalibrationDialog(done.study_directory)
+    wait_pilot_view(dialog)
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(identifier))
     dialog.resize(850, 650)
     dialog.show()
@@ -254,10 +263,12 @@ def test_unstable_time_grid_has_one_visible_selected_fit_action_and_folded_detai
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(identifier))
     dialog._restoring_search = True
     dialog._render()
+    wait_pilot_view(dialog)
     assert not dialog.next_step_button.isEnabled()
     assert dialog.final_check_summary.isHidden()
     dialog._restoring_search = False
     dialog._render()
+    wait_pilot_view(dialog)
     assert all(p.read_bytes() == data for p, data in before.items())
     dialog.close()
     app.setStyleSheet(old_style)

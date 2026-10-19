@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from pilot_view_helpers import wait_pilot_view
 from test_reference_calibration_study import _approve_for_test, _review_ready_stage
 
 from diffeoforge import reference_calibration_study as study
@@ -131,6 +132,7 @@ def test_qc_dispatches_next_parameters_or_next_animal_and_ignores_stale_viewers(
     monkeypatch.setattr(search, "measure_original_fit", _measured)
     first = sequence.run_specimen_sequence(runner)
     dialog = ReferenceCalibrationDialog(first.study_directory)
+    wait_pilot_view(dialog)
     calls = []
     monkeypatch.setattr(dialog, "_start_pilot", lambda **kw: calls.append(kw))
     cid = first.candidates[0].candidate_id
@@ -218,6 +220,7 @@ def test_legacy_sequence_resumes_approved_fits_with_exhausted_budget(tmp_path, m
     assert len(sequence._read(root)["approved"]) == 1
     assert {p: sha256_file(p) for p in root.rglob("*") if p.is_file()} == before
     dialog = ReferenceCalibrationDialog(reopened.study_directory)
+    wait_pilot_view(dialog)
     assert not hasattr(dialog, "fit_minutes")
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(cid))
     assert dialog.advance_button.isEnabled()
@@ -363,10 +366,12 @@ def test_individual_qc_advances_even_if_iteration_cap_is_reached(tmp_path, monke
     first = sequence.run_specimen_sequence(runner)
     candidate_id = first.candidates[0].candidate_id
     dialog = ReferenceCalibrationDialog(first.study_directory)
+    wait_pilot_view(dialog)
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(candidate_id))
     assert not dialog.advance_button.isEnabled()
     _approve_for_test(first.study_directory, candidate_id)
     dialog._render()
+    wait_pilot_view(dialog)
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(candidate_id))
     assert dialog.advance_button.text() == "Fit next specimen →"
     assert dialog.advance_button.isEnabled()

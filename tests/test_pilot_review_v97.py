@@ -3,6 +3,7 @@ import time
 from dataclasses import replace
 
 import pytest
+from pilot_view_helpers import wait_pilot_view
 from test_reference_adaptive_calibration import setup_search
 from test_reference_calibration_dialog import _model
 from test_reference_calibration_study import _review_ready_stage
@@ -164,9 +165,11 @@ def test_finished_candidate_can_be_prepared_without_blocking_gui_during_pilot(
     application = QApplication.instance() or QApplication([])
     runner, snapshot = _review_ready_stage(tmp_path, monkeypatch)
     dialog = dialogs.ReferenceCalibrationDialog(runner.study_directory)
+    wait_pilot_view(dialog)
     assert not dialog.adaptive_fit_search.isChecked()
     dialog._worker = object()
     dialog._render(snapshot)
+    wait_pilot_view(dialog)
     candidate = snapshot.candidates[0]
     assert dialog._review_buttons[candidate.candidate_id].isEnabled()
     release = threading.Event()

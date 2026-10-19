@@ -3,6 +3,7 @@ import shutil
 
 import numpy as np
 import pytest
+from pilot_view_helpers import wait_pilot_view
 from test_pilot_completion import _approve_preview, _checked
 
 from diffeoforge import reference_calibration_study as study
@@ -261,6 +262,7 @@ def test_density_ui_dispatches_one_fit_and_keeps_original_completed_action(tmp_p
     app = QApplication.instance() or QApplication([])
     _, source = _source(tmp_path, monkeypatch)
     original = ReferenceCalibrationDialog(source.study_directory)
+    wait_pilot_view(original)
     assert not original.density_button.isHidden()
     operations = []
     monkeypatch.setattr(
@@ -272,6 +274,7 @@ def test_density_ui_dispatches_one_fit_and_keeps_original_completed_action(tmp_p
     original.close()
     child = density.prepare(source.study_directory)
     dialog = ReferenceCalibrationDialog(child.study_directory)
+    wait_pilot_view(dialog)
     assert dialog.findChild(QTableWidget, "controlDensityComparison").rowCount() == 4
     assert "Fit next density" in dialog.start_button.text()
     assert dialog.qualification_button.isHidden()

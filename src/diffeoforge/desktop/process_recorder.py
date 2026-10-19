@@ -37,18 +37,7 @@ from shiboken6 import isValid
 from diffeoforge.desktop.activity import ActivityIndicator
 from diffeoforge.process_recording import FPS, SPEEDS, ProcessRecording, recover_recording
 
-COMPUTATIONS = {
-    "_ProjectWorker",
-    "_ProcrustesPreviewWorker",
-    "_AtlasWorker",
-    "_RemoteAtlasWorker",
-    "_ReferenceAtlasWorker",
-    "_CalibrationStageWorker",
-    "_ReferencePCADeformationWorker",
-    "_ReferenceShapeSpaceComparisonWorker",
-    "_PCAMetadataWorker",
-    "_ValidationWorker",
-}
+UNRESPONSIVE_SECONDS = 2.0
 
 
 class _RecordingSignals(QObject):
@@ -67,12 +56,14 @@ class _Encoder:
         self.stop = threading.Event()
         self.root, self.size, self.project, self.recovery = root, size, project, recovery
         self.end_time, self.reason = 0.0, "session"
+        self.final_pauses = ()
         self.thread = threading.Thread(
             target=self._run, name="Process recording encoder", daemon=True
         )
 
-    def finish(self, elapsed, project, reason):
+    def finish(self, elapsed, project, reason, *, pauses=()):
         self.end_time, self.project, self.reason = elapsed, project, reason
+        self.final_pauses = pauses
         self.stop.set()
 
     def _run(self):
@@ -85,7 +76,7 @@ class _Encoder:
             recording = ProcessRecording(self.root, self.size)
             while not self.stop.is_set() or not self.frames.empty():
                 try:
-                    elapsed, mode, image = self.frames.get(timeout=0.1)
+                    elapsed, mode, image, pauses = self.frames.get(timeout=0.1)
                 except queue.Empty:
                     continue
                 pixels = np.frombuffer(image.constBits(), np.uint8, image.sizeInBytes())
@@ -93,8 +84,10 @@ class _Encoder:
                 pixels = (
                     pixels[:, : image.width() * 3].reshape(image.height(), image.width(), 3).copy()
                 )
-                recording.add(pixels, elapsed, mode)
-            path = recording.finish(self.end_time, self.project, self.reason)
+                recording.add(pixels, elapsed, mode, pauses=pauses)
+            path = recording.finish(
+                self.end_time, self.project, self.reason, pauses=self.final_pauses
+            )
             self.signals.saved.emit(self, (path, recording.data["capture_gap_count"], False))
         except Exception as error:
             if recording is not None:
@@ -139,8 +132,6 @@ class ProcessRecorder(QObject):
         self.last_output = None
         self._closing = False
         self._finished_manually = False
-        self._bound_indicators = weakref.WeakSet()
-        self._rotation_pending = False
         self._click = None
         self._last_capture_window = None
         self._native_dialogs_previous = QApplication.testAttribute(
@@ -148,21 +139,31 @@ class ProcessRecorder(QObject):
         )
         self._capture_cost = []
         self._queue_drops = 0
+        self._last_tick = None
+        self._pending_pauses = []
         self.panel = QWidget()
         layout = QVBoxLayout(self.panel)
         layout.setContentsMargins(0, 8, 0, 0)
         self.enabled = QCheckBox("Auto-record process")
         self.enabled.setStyleSheet("QCheckBox { color: #eff8f7; }")
         self.enabled.setToolTip(
-            "Remember this choice. Record DiffeoForge windows at 10×; after 30 seconds "
-            "without interaction, shorten waiting time to 300×. Export a local MP4 after "
-            "each computation, on Finish, and when closing. No desktop or audio capture."
+            "Remember this choice. Record reviews and decisions at 10×; record busy "
+            "calculation and loading phases at 1000×. Mouse movement and clicks do not "
+            "change that speed. Keep the whole project "
+            "session together, including pilot attempts, reviews and the atlas plot. "
+            "Save one MP4 with Finish recording or when closing the app. Changing "
+            "projects or turning recording off also saves the current video. "
+            "Time while the interface is unresponsive is omitted after it recovers. "
+            "No desktop or audio capture."
         )
-        self.status = QLabel("10× · waiting time shortened")
+        self.status = QLabel("Reviews 10× · calculations 1000× · freezes omitted")
         self.status.setWordWrap(True)
         self.status.setObjectName("railCaption")
         row = QHBoxLayout()
-        self.finish_button = QPushButton("Finish")
+        self.finish_button = QPushButton("Finish recording")
+        self.finish_button.setToolTip(
+            "Save this continuous video. This does not stop the pilot or atlas."
+        )
         self.folder_button = QPushButton("Videos")
         self.recover_button = QPushButton("Recover interrupted video…")
         for button in (self.finish_button, self.folder_button, self.recover_button):
@@ -188,7 +189,6 @@ class ProcessRecorder(QObject):
         self.timer.setInterval(33)
         self.timer.timeout.connect(self._tick)
         QApplication.instance().installEventFilter(self)
-        self._bind_indicators()
         if self.enabled.isChecked():
             QApplication.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeDialogs, True)
             self.timer.start()
@@ -209,8 +209,6 @@ class ProcessRecorder(QObject):
         if not self._owned(watched):
             return False
         kind = event.type()
-        if kind == QEvent.Type.Show and isinstance(watched, ActivityIndicator):
-            self._bind_indicators()
         if kind in {
             QEvent.Type.MouseMove,
             QEvent.Type.MouseButtonPress,
@@ -273,31 +271,6 @@ class ProcessRecorder(QObject):
                     return self._cached_context
         return None
 
-    def _bind_indicators(self):
-        for indicator in self.window.findChildren(ActivityIndicator):
-            if indicator not in self._bound_indicators:
-                indicator.task_finished.connect(self._computation_finished)
-                self._bound_indicators.add(indicator)
-
-    def _computation_finished(self, worker):
-        if (
-            type(worker).__name__ not in COMPUTATIONS
-            or self.current is None
-            or self._rotation_pending
-        ):
-            return
-        self._rotation_pending = True
-        # Let the existing success/failure handlers display the actual terminal
-        # state before capturing the final frame. Never start or cancel a job.
-        QTimer.singleShot(500, self._rotate)
-
-    def _rotate(self):
-        self._rotation_pending = False
-        if self.current is not None and not self._closing:
-            self._capture(force=True)
-            self._finish_current("computation_finished")
-            self._start()
-
     def _start(self):
         if (
             self.current is not None
@@ -308,6 +281,8 @@ class ProcessRecorder(QObject):
             return
         self.project = self._context()
         self.started = time.monotonic()
+        self._last_tick = self.started
+        self._pending_pauses = []
         self.last_capture = -100.0
         self.next_capture = 0.0
         self.last_mode = "active"
@@ -325,13 +300,13 @@ class ProcessRecorder(QObject):
             return
         if not self.enabled.isChecked() or self._finished_manually:
             return
+        self._observe_tick(time.monotonic())
         if not self.window.isVisible():
             return
         self._start()
         now = time.monotonic()
         if now - self._last_context_check >= 1:
             self._last_context_check = now
-            self._bind_indicators()
             context = self._context()
             if self.project is None:
                 self.project = context
@@ -341,33 +316,46 @@ class ProcessRecorder(QObject):
                 self._start()
         self._capture()
 
+    def _observe_tick(self, now):
+        """Detect a stalled GUI heartbeat, including stalls while grabbing a frame."""
+        previous = self._last_tick
+        if self.current is not None and previous is not None:
+            start = max(previous, self.last_capture)
+            if now - start > UNRESPONSIVE_SECONDS:
+                self._pending_pauses.append({
+                    "source_start": start - self.started,
+                    "source_end": now - self.started,
+                    "reason": "interface_unresponsive",
+                })
+        self._last_tick = now
+
     def _capture(self, *, force=False):
         if self.current is None:
             return
         now = time.monotonic()
-        playing = False
-        panel = getattr(self.window, "visualization_panel", None)
-        if panel is not None and panel.isVisible():
-            playing = panel.player.playbackState().name == "PlayingState"
-        mode = "active" if now - self.last_input < 30 or playing else "waiting"
-        if self.window.isMinimized():
-            mode = "waiting"
+        self._observe_tick(now)
+        mode = self._recording_mode()
         interval = SPEEDS[mode] / FPS
         if not force and mode == self.last_mode and now < self.next_capture:
             return
         before = time.perf_counter()
         image = self._image(now, mode)
+        now = time.monotonic()
+        self._observe_tick(now)
         self._capture_cost.append(time.perf_counter() - before)
         if len(self._capture_cost) > 100:
             self._capture_cost.pop(0)
         if image is None:
             return
         try:
-            self.current.frames.put_nowait((now - self.started, mode, image))
+            self.current.frames.put_nowait(
+                (now - self.started, mode, image, tuple(self._pending_pauses))
+            )
         except queue.Full:
             self._queue_drops += 1
             self.status.setText("Recording delayed · encoder busy")
             return
+        self._pending_pauses.clear()
         if mode != self.last_mode or force or self.next_capture <= 0:
             self.next_capture = now + interval
         else:
@@ -375,7 +363,17 @@ class ProcessRecorder(QObject):
             if self.next_capture <= now:
                 self.next_capture = now + interval
         self.last_capture, self.last_mode = now, mode
-        self.status.setText("Recording · 10×" if mode == "active" else "Recording · waiting 300×")
+        self.status.setText("Recording · review 10×" if mode == "active"
+                            else "Recording · calculation 1000×")
+
+    def _recording_mode(self):
+        """Follow work in the captured workflow window, never input activity."""
+        target = self._capture_window()
+        busy = target.property("processRecordingWaiting") is True or any(
+            indicator.tasks and indicator.window() is target
+            for indicator in target.findChildren(ActivityIndicator)
+        )
+        return "waiting" if busy else "active"
 
     def _capture_window(self):
         pilot = getattr(self.window, "_reference_calibration_dialog", None)
@@ -456,7 +454,7 @@ class ProcessRecorder(QObject):
         painter.setFont(font)
         elapsed = int(now - self.started)
         clock = f"{elapsed // 3600:02}:{elapsed // 60 % 60:02}:{elapsed % 60:02}"
-        rate = "10×" if mode == "active" else "Waiting · 300×"
+        rate = "Review · 10×" if mode == "active" else "Calculation · 1000×"
         title = window.windowTitle().strip() or type(window).__name__
         caption = f"DiffeoForge · {title} · session {clock} · {rate}"
         caption = painter.fontMetrics().elidedText(caption, Qt.TextElideMode.ElideRight, w - 36)
@@ -468,7 +466,11 @@ class ProcessRecorder(QObject):
         if self.current is None:
             return
         encoder, self.current = self.current, None
-        encoder.finish(time.monotonic() - self.started, self.project, reason)
+        encoder.finish(
+            time.monotonic() - self.started, self.project, reason,
+            pauses=tuple(self._pending_pauses),
+        )
+        self._pending_pauses.clear()
         self.finish_button.setEnabled(False)
         self.status.setText("Exporting MP4…")
 
@@ -484,7 +486,7 @@ class ProcessRecorder(QObject):
 
     def _restart(self):
         self._finished_manually = False
-        self.finish_button.setText("Finish")
+        self.finish_button.setText("Finish recording")
         self.finish_button.clicked.disconnect()
         self.finish_button.clicked.connect(self.finish_manually)
         self.last_input = time.monotonic()

@@ -3,14 +3,16 @@ import shutil
 from dataclasses import replace
 
 import pytest
+from pilot_view_helpers import wait_pilot_view
 from test_reference_calibration_study import (
     _approve_for_test,
     _CompletedController,
     _metrics,
     _project,
+    _stub_learned_seed,
 )
 
-from diffeoforge.config import load_config
+from diffeoforge.config import load_config, validate_input_paths
 from diffeoforge.desktop.project_setup import load_existing_reference_project
 from diffeoforge.desktop.qc_recalibration import prepare_qc_recalibration
 from diffeoforge.desktop.registration_release import inspection_binding
@@ -166,13 +168,15 @@ def test_successor_is_bounded_preserves_sources_and_full_cohort(source, tmp_path
 def test_review_required_and_new_configuration_keeps_whole_cohort(source, tmp_path, monkeypatch):
     import diffeoforge.reference_calibration_study as module
 
+    _stub_learned_seed(monkeypatch)  # This controller emits metrics, not native tensors.
     path = prepare(source, tmp_path)
     study = next((path.parent / "calibration").iterdir())
 
     def collect(run):
         atlas = run / "atlas.vtk"
         atlas.write_text("fixture")
-        return _metrics(atlas)
+        metrics = _metrics(atlas)
+        return replace(metrics, subject_reconstruction_count=len(metrics.subject_residual_p95))
 
     monkeypatch.setattr(module, "collect_reference_calibration_run_metrics", collect)
     monkeypatch.setattr(module, "atlas_rms_distance", lambda *_args: 0.001)
@@ -190,7 +194,10 @@ def test_review_required_and_new_configuration_keeps_whole_cohort(source, tmp_pa
         )
     assert snapshot.status == "completed"
     result = load_config(snapshot.final_config_path)
-    assert result["input"] == load_config(path)["input"]
+    selected_inputs = validate_input_paths(result, snapshot.final_config_path)
+    original_inputs = validate_input_paths(load_config(path), path)
+    assert selected_inputs.subjects == original_inputs.subjects
+    assert selected_inputs.template.is_relative_to(study / "selected-seed")
     assert result["project"]["parameter_provenance"]["recommendation"]["calibration_result"][
         "full_cohort_confirmation_required"
     ]
@@ -302,6 +309,7 @@ def test_qc_dialog_requires_visual_selection_and_no_afk(source, tmp_path, monkey
     path = prepare(source, tmp_path)
     study = next((path.parent / "calibration").iterdir())
     dialog = ReferenceCalibrationDialog(study)
+    wait_pilot_view(dialog)
     assert dialog.advanced_mode.isChecked() and dialog.afk_mode.isHidden()
     assert dialog.outward_mode.isHidden() and dialog.start_button.isEnabled()
     dialog.close()
@@ -317,12 +325,14 @@ def test_qc_dialog_requires_visual_selection_and_no_afk(source, tmp_path, monkey
         study, controller_factory=_CompletedController
     ).run_current_stage()
     dialog = ReferenceCalibrationDialog(study)
+    wait_pilot_view(dialog)
     selected = snapshot.candidates[0].candidate_id
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(selected))
     dialog._update_stage_review_action()
     assert not dialog.advance_button.isEnabled()
     _approve_for_test(study, selected)
     dialog._render()
+    wait_pilot_view(dialog)
     assert dialog.advance_button.isEnabled()
     assert dialog.collect_evidence_button.isHidden()
     dialog.close()

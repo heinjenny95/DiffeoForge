@@ -3,6 +3,7 @@ import copy
 from dataclasses import replace
 
 import pytest
+from pilot_view_helpers import wait_pilot_view
 from test_reference_calibration_study import _afk_runner, _approve_for_test
 
 from diffeoforge import reference_calibration_study as study
@@ -163,11 +164,13 @@ def test_desktop_explicit_provisional_action_runs_in_worker_without_engine(tmp_p
     app = QApplication.instance() or QApplication([])
     _, snapshot, candidate = _capped(tmp_path, monkeypatch)
     dialog = dialog_module.ReferenceCalibrationDialog(snapshot.study_directory)
+    wait_pilot_view(dialog)
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(candidate.candidate_id))
     assert "provisionally" in dialog.advance_button.text()
     assert not dialog.advance_button.isEnabled()
     _approve_for_test(snapshot.study_directory, candidate.candidate_id)
     dialog._render()
+    wait_pilot_view(dialog)
     assert dialog.advance_button.isEnabled()
     assert "Convergence is not established" in dialog.status.text()
     dispatched = []

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from pilot_view_helpers import wait_pilot_view
 from test_reference_calibration_study import _approve_for_test, _review_ready_stage
 from test_reference_sequential_fit import _measured, _reject
 
@@ -243,6 +244,7 @@ def test_gui_improve_preserves_sequence_and_restoring_blocks_dispatch(tmp_path, 
     monkeypatch.setattr(search, "measure_original_fit", _measured)
     first = sequence.run_specimen_sequence(runner)
     dialog = ReferenceCalibrationDialog(first.study_directory)
+    wait_pilot_view(dialog)
     calls = []
     monkeypatch.setattr(dialog, "_start_pilot", lambda **kw: calls.append(kw))
     dialog._find_fit()

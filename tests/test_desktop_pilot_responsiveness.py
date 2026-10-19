@@ -1,5 +1,4 @@
 """Slow saved evidence must not block navigation or supply action authorization."""
-
 import hashlib
 import threading
 import time
@@ -8,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pilot_view_helpers import wait_pilot_view
 
 pytest.importorskip("PySide6")
 from PySide6.QtCore import QTimer
@@ -187,8 +187,8 @@ def test_completed_pilot_review_opens_without_applying_or_running(
     monkeypatch.setattr(module, "load_reference_calibration_study", lambda _d: snapshot)
 
     class SavedDialog(QDialog):
-        def __init__(self, directory, *, verified_snapshot):
-            super().__init__()
+        def __init__(self, directory, parent=None, *, verified_snapshot):
+            super().__init__(parent)
             assert verified_snapshot is snapshot
             self.study_directory = directory
             self.snapshot = verified_snapshot
@@ -247,6 +247,7 @@ def test_dialog_reuses_fresh_worker_snapshot_without_loading_again(
     dialog = dialog_module.ReferenceCalibrationDialog(
         snapshot.study_directory, verified_snapshot=snapshot
     )
+    wait_pilot_view(dialog)
     assert dialog.snapshot is snapshot
     dialog.close()
     app.processEvents()

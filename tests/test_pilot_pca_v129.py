@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from pilot_view_helpers import wait_pilot_view
 
 from diffeoforge.iteration_budget import recommend_iteration_budget
 from diffeoforge.mesh import write_vtk_polydata
@@ -88,6 +89,7 @@ def test_fresh_pilot_guided_action_and_scrolling_layout(tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     snapshot = create_reference_calibration_study(_project(tmp_path), tmp_path / "pilot")
     dialog = ReferenceCalibrationDialog(snapshot.study_directory)
+    wait_pilot_view(dialog)
     dialog.resize(850, 650)
     dialog.show()
     app.processEvents()

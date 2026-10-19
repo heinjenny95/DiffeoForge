@@ -1,4 +1,5 @@
 import pytest
+from pilot_view_helpers import wait_pilot_view
 from test_reference_integration_check import _fourth
 
 from diffeoforge.reference_stage_retention import register_previous_fit
@@ -25,12 +26,14 @@ def test_ready_stage_four_replaces_previous_stage_choice_and_preserves_reviews(
         if p.is_file() and p.name in {"events.jsonl", "visual-reviews.json", "evidence.json"}
     }
     dialog = ReferenceCalibrationDialog(fourth.study_directory)
+    wait_pilot_view(dialog)
     assert dialog.selection_combo.currentData() == retained.candidate_id
     # The same window previously selected a stage-three option. A ready stage
     # must rebuild its chooser even before any time-grid check has run.
     dialog.selection_combo.addItem("Previous stage B", "noise-02")
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.count() - 1)
     dialog._render(fourth)
+    wait_pilot_view(dialog)
     assert dialog.selection_combo.findData("noise-02") == -1
     assert dialog.selection_combo.currentData() == retained.candidate_id
     assert "Saved fit from stage 3" in dialog.selection_combo.currentText()
@@ -72,11 +75,14 @@ def test_ready_stage_four_with_multiple_saved_fits_keeps_current_stage_choice(
     runner, fourth = _fourth(tmp_path, monkeypatch)
     completed = runner.run_current_stage()
     dialog = ReferenceCalibrationDialog(completed.study_directory)
+    wait_pilot_view(dialog)
     chosen = completed.candidates[0].candidate_id
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(chosen))
     dialog._render(replace(completed, status="ready"))
+    wait_pilot_view(dialog)
     assert dialog.selection_combo.currentData() == chosen
     dialog._render(replace(completed, status="ready"))
+    wait_pilot_view(dialog)
     assert dialog.selection_combo.currentData() == chosen
     dialog.close()
     app.processEvents()

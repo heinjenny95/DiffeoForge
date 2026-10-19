@@ -28,7 +28,8 @@ def render_density(dialog):
     )
     note.setWordWrap(True)
     layout.addWidget(note)
-    values = rows(snapshot)
+    prepared = getattr(dialog, "_prepared_view", None)
+    values = prepared.density_rows if prepared is not None else rows(snapshot)
     table = QTableWidget(len(values), 5)
     table.setObjectName("controlDensityComparison")
     table.setHorizontalHeaderLabels(
