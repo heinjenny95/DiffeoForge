@@ -35,8 +35,14 @@ owned popups and retained provisional warnings before new trials start. The broa
 167-case run passed 162 cases; five test contracts were migrated for asynchronous
 presentation and the existing full-cohort initializer, and their focused checks
 now pass. Synthetic source UI/MP4 checks pass without scientific jobs or QC writes.
-Exact frozen build and safe installation of the final runtime are being verified.
-Installed remains v136 until delivery verification confirms the new payload.
+Exact frozen and installed UI/MP4 probes pass on runtime `393388b`; ready layouts
+match pixel for pixel. The tested v137 build is installed after a verified previous
+runtime backup and fresh closed/idle checks. All 3,463 bundle files and six evidence
+companions, registry version and installed startup smoke pass. Ordinary-shell
+ancestry and independent reconnection are verified before scientific dispatch.
+See [delivery evidence](V137_DELIVERY.md). Drive distribution remains v98 because
+no new upload was requested. Scientific validation and anatomy approval remain
+separate from these software checks.
 
 v136 adds an explicit finer saved-evaluation adoption route in Stage 4. It reuses
 two checked grids and computes only the missing nested grid without running an
