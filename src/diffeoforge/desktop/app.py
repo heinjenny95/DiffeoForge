@@ -22,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=argparse.SUPPRESS,
     )
+    parser.add_argument("--smoke-media", action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
@@ -29,6 +30,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Launch the desktop window or construct it once for packaging smoke tests."""
 
     args = build_parser().parse_args(argv)
+    if args.smoke_media:
+        from diffeoforge.media_runtime import verify_media_runtime
+
+        verify_media_runtime()
+        return 0
     try:
         from PySide6.QtWidgets import QApplication
 

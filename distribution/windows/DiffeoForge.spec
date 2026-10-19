@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 repository = Path(SPEC).resolve().parents[2]
 source = repository / "src"
@@ -17,6 +17,10 @@ third_party_data = [
     for path in sorted((repository / "distribution/third-party").rglob("*"))
     if path.is_file()
 ]
+
+# imageio resolves its version through importlib.metadata at import time. Its
+# plugin/resource hook alone does not collect that distribution metadata.
+media_metadata = copy_metadata("imageio") + copy_metadata("imageio-ffmpeg")
 
 # The post-build SBOM and installer-plan tools run from source after the frozen
 # bundle has been verified. Their implementations and third-party builder
@@ -77,7 +81,7 @@ desktop_analysis = Analysis(
     [str(entrypoints / "diffeoforge_desktop.py")],
     pathex=[str(source)],
     binaries=[],
-    datas=schema_data + third_party_data,
+    datas=schema_data + third_party_data + media_metadata,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},

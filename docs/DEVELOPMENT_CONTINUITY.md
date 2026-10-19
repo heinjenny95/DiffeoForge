@@ -1,4 +1,4 @@
-# Development continuity — v138 desktop backlog
+# Development continuity — v139 media runtime repair
 
 Snapshot: 2026-10-19. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,12 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v139 fixes absent imageio metadata in the Windows bundle and adds a frozen MP4
+encode/decode gate. Visualization checks media support before native work and
+retains existing endpoint results for retry. Source, frozen and installed states
+remain separate; see [repair scope](V139_MEDIA_RUNTIME.md). The automatic
+convergence-gated result-preparation request remains a backlog item.
 
 v138 implements the owner-authorized desktop backlog: in-app results for saved
 shape-space methods, optional mesh-based 3D views, individual media exports,

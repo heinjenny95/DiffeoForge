@@ -83,6 +83,11 @@ try {
     if ($process.ExitCode -ne 0) {
         throw "Frozen desktop smoke failed with exit code $($process.ExitCode)."
     }
+    $mediaProcess = Start-Process -FilePath $desktop -ArgumentList "--smoke-media" `
+        -Wait -PassThru -WindowStyle Hidden
+    if ($mediaProcess.ExitCode -ne 0) {
+        throw "Frozen image/video encode/decode smoke failed with exit code $($mediaProcess.ExitCode)."
+    }
     if ($SmokeConfig) {
         & $pythonExecutable tools\smoke_frozen_desktop_worker.py `
             (Join-Path $bundle "DiffeoForgeWorker.exe") `

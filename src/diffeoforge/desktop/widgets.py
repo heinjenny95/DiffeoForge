@@ -1179,6 +1179,12 @@ class _ReferencePCADeformationWorker(QRunnable):
         try:
             if self.cancelled.is_set():
                 raise RuntimeError("Visualization preparation cancelled before native work")
+            from diffeoforge.media_runtime import verify_media_runtime
+
+            self.signals.progress.emit("Checking image and video support")
+            verify_media_runtime()
+            if self.cancelled.is_set():
+                raise RuntimeError("Visualization preparation cancelled before native work")
             bundle = verify_reference_pca_bundle(
                 self.run_directory / DEFAULT_REFERENCE_PCA_DIRECTORY,
                 source_run=self.run_directory,
@@ -8895,13 +8901,12 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_pca_deformation_status_label.setObjectName("statusError")
         self.reference_pca_deformation_status_label.setStyleSheet("")
         self.reference_pca_deformation_status_label.setText(
-            f"PC shape generation did not produce a usable result: {message} "
-            "Nothing was restarted automatically."
+            f"Visualization preparation failed: {message}"
         )
         self.result_status_label.setObjectName("statusError")
         self.result_status_label.setStyleSheet("")
         self.result_status_label.setText(
-            "PC shape generation failed closed; the previously verified result remains loaded."
+            "Visualization preparation failed. Your atlas and PCA remain available."
         )
         self.visualization_panel.status.setText(f"Visualization preparation failed: {message}")
         self.visualization_panel.cancel.hide()

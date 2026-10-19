@@ -1,5 +1,12 @@
 # Private-alpha build numbering
 
+## v139 — frozen imageio metadata and media runtime checks
+
+v139 (`0.0.0.dev139`) repairs missing imageio distribution metadata in the Windows
+bundle. A frozen MP4 encode/decode build gate and early visualization preflight
+exercise the actual media route. Original atlas/PCA and verified PC endpoints
+remain preserved. See [scope and verification](V139_MEDIA_RUNTIME.md).
+
 ## v138 — desktop backlog, method views and follow-up repairs
 
 v138 (`0.0.0.dev138`) adds saved-method results and mesh-based 3D, individual media
