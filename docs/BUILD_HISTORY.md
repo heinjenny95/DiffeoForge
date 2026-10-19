@@ -1,5 +1,16 @@
 # Private-alpha build numbering
 
+## v138 — desktop backlog, method views and follow-up repairs
+
+v138 (`0.0.0.dev138`) adds saved-method results and mesh-based 3D, individual media
+exports, appearance settings, concise UI guidance and recent-cap advice. It also
+adds supervised cancellation, measurement caching, completed-pilot refinement,
+desktop export recovery and prospective mesh-resolution assessment. The follow-up
+repairs stale UI state, export I/O, cancellation boundaries and small-window layout.
+The exact Windows build and installer are verified; 375 desktop/v138 cases pass
+with clean process exit. Installation waits for the active atlas/application to
+be idle. See [delivery and separate gates](V138_DELIVERY.md).
+
 ## v128 — optional early atlas review
 
 v128 (`0.0.0.dev128`) makes the ten-iteration review checkpoint optional and off

@@ -2,10 +2,10 @@
 
 import time
 
-from PySide6.QtWidgets import QApplication
-
 
 def wait_pilot_view(dialog, timeout=20):
+    from PySide6.QtWidgets import QApplication
+
     app = QApplication.instance()
     deadline = time.monotonic() + timeout
     while dialog._view_loading and time.monotonic() < deadline:

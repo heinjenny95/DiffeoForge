@@ -606,6 +606,7 @@ def test_desktop_window_constructs_in_offscreen_smoke() -> None:
     # Keep the allowlist specific: other application stderr must still fail.
     assert all(
         line == "This plugin does not support propagateSizeHints()"
+        or line.startswith("qt.multimedia.ffmpeg: Using Qt multimedia with FFmpeg version ")
         or (
             sys.platform == "darwin"
             and re.fullmatch(

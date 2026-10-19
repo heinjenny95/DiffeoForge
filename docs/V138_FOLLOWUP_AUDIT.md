@@ -34,3 +34,23 @@ or demonstrated cause of an owner-reported freeze is claimed for that path.
 
 The tested source changes require a fresh Windows build. The earlier incomplete
 build is superseded; installation still waits for an idle app and backend.
+
+## Test and CI follow-up
+
+The shared pilot wait helper imported Qt even when only its scientific fixtures
+were needed, breaking collection in headless Python 3.11/3.13 jobs. Qt now imports
+only inside the GUI wait function; a blocked-Qt subprocess verifies that boundary.
+Linux UI CI now installs the Pulse library required by Qt Multimedia. Startup
+tests allow the specific FFmpeg version INFO line while retaining a zero-exit
+requirement and rejection of other unexpected stderr.
+
+Test teardown now deletes closed, newly created test windows while QApplication
+and its event loop still exist; appearance preferences are isolated per test.
+A mixed Windows run had aborted, and previous CI assertions could pass before a
+nonzero process exit. After the fixture repair, the scoped desktop/v138 run passes
+375 cases, skips one expected environment branch and exits normally with code 0.
+The nearby isolated legacy qualification case also passes, taking 110.36 s.
+No complete mixed-suite pass or demonstrated cause of an owner freeze is claimed.
+
+These completion changes affect tests/CI/docs only, preserving the verified
+runtime57b6278 build. See [delivery status](V138_DELIVERY.md).

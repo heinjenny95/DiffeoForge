@@ -30,9 +30,12 @@ content/transform-bound scalar cache. A prospective mesh-resolution study freeze
 approved levels and thresholds before separately started runs. See
 [scope, checks and remaining gates](V138_DESKTOP_BACKLOG.md).
 
-This is source work until its separate frozen delivery checks are recorded.
-Installed v137 and the running atlas remain unchanged. External Linux/macOS and
-HPC systems are unavailable; scientific, platform and independent usability gates
+The exact runtime57b6278 Windows build and local installer are verified; 375
+desktop/v138 cases pass with clean process exit. Ten source/frozen UI images are
+byte-identical. See [delivery and remaining gates](V138_DELIVERY.md). Post-freeze
+completion changes affect only tests, CI and documentation, preserving runtime
+and build inputs. Installed v137 and the running atlas remain unchanged. Additional
+owner-provided Linux/macOS and HPC systems are unavailable; scientific, platform and independent usability gates
 remain open. No current run is migrated, stopped or restarted by this work.
 
 v137 moves repeated pilot presentation verification, comparison preparation,

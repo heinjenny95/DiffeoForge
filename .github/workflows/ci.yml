@@ -195,7 +195,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcairo2-dev pkg-config libegl1 libopengl0
+          sudo apt-get install -y libcairo2-dev pkg-config libegl1 libopengl0 libpulse0
 
       - name: Install macOS rendering build prerequisites
         if: runner.os == 'macOS'
