@@ -10,6 +10,8 @@ afterwards. No persistent hash cache or weaker acceptance criterion is introduce
 
 Pending presentation disables dispatch until verification completes. Stale or
 closed-window deliveries are discarded; closing waits for an atomic review save.
+Retained provisional baselines keep their warning while the next stage is ready,
+as well as while it awaits review.
 Shape approval, time-grid stability and optimizer convergence remain separate.
 The provisional finish explanation identifies the source optimizer limit and
 states when a finer grid evaluated the saved field without a new optimization.
@@ -21,9 +23,9 @@ application close, disabling recording or changing projects saves the MP4.
 The recording button does not stop a scientific computation.
 
 Calculation and blocking-load phases use **1000×** playback. Reviews and decisions
-use **10×**. The captured workflow window's task state determines the rate;
+use **10×**. The application's owned workflow tasks determine the rate;
 mouse movement, clicks, keyboard activity and minimization do not change it.
-An explicit review window may require input while another window computes.
+Opening an information or review window during calculation retains 1000×.
 Opt-in persistence, application-owned window capture and exclusion of foreign
 applications/audio remain in place.
 

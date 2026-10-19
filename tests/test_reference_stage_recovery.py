@@ -145,11 +145,11 @@ def test_rejected_screens_and_joint_fits_offer_visible_exact_retention(tmp_path,
 def test_provisional_baseline_and_busy_or_withdrawn_review_are_not_silenced(tmp_path, monkeypatch):
     from test_reference_screening_dialog import _dialog
 
-    import diffeoforge.desktop.reference_calibration_dialog as module
+    from diffeoforge import reference_calibration_study as study
 
     app, _, dialog = _dialog(tmp_path, monkeypatch)
-    real = module.iteration_limit_selection_available
-    monkeypatch.setattr(module, "iteration_limit_selection_available", lambda snapshot, cid: (
+    real = study.iteration_limit_selection_available
+    monkeypatch.setattr(study, "iteration_limit_selection_available", lambda snapshot, cid: (
         True if cid == "deformation-retained" else real(snapshot, cid)
     ))
     dialog._render()

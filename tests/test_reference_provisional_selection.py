@@ -7,7 +7,8 @@ from pilot_view_helpers import wait_pilot_view
 from test_reference_calibration_study import _afk_runner, _approve_for_test
 
 from diffeoforge import reference_calibration_study as study
-from diffeoforge.config import load_config
+from diffeoforge.config import load_config, validate_input_paths
+from diffeoforge.reference_pca import read_deformetrica_momenta
 from diffeoforge.reference_stage_retention import keep_previous_fit, verify_reference
 
 
@@ -106,7 +107,9 @@ def test_retention_carries_warning_but_stage4_stays_strict(tmp_path, monkeypatch
         )
 
 
-def test_completed_report_discloses_capped_stages_and_no_pilot_field(tmp_path, monkeypatch):
+def test_completed_report_discloses_capped_stages_and_full_cohort_initializer(
+    tmp_path, monkeypatch,
+):
     runner, snapshot, candidate = _capped(tmp_path, monkeypatch)
     _approve_for_test(snapshot.study_directory, candidate.candidate_id)
     second, _ = _choose(snapshot, candidate)
@@ -130,7 +133,12 @@ def test_completed_report_discloses_capped_stages_and_no_pilot_field(tmp_path, m
     config = load_config(final.final_config_path)
     result = config["project"]["parameter_provenance"]["recommendation"]["calibration_result"]
     assert len(result["iteration_limit_provisional_selections"]) == 3
-    assert config["model"]["deformation"].get("initial_momenta") is None
+    inputs = validate_input_paths(config, final.final_config_path)
+    assert inputs.initial_momenta.is_relative_to(final.study_directory / "selected-seed")
+    assert read_deformetrica_momenta(inputs.initial_momenta).shape[0] == len(inputs.subjects)
+    assert config["model"]["deformation"]["initial_momenta_subjects"] == [
+        p.name for p in inputs.subjects
+    ]
 
 
 def test_retained_provisional_record_cannot_drop_warning_or_withdrawn_approval(

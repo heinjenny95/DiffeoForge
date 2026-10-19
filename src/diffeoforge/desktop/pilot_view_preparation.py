@@ -37,11 +37,11 @@ def prepare_pilot_view(directory: Path, snapshot=None) -> PilotView:
                 snapshot, visual_approvals=snapshot.visual_reviews,
                 completion_preview=bool(stage and stage.order == 4),
             )
-            if stage.order != 4:
-                provisional = {
-                    c.candidate_id for c in snapshot.candidates
-                    if study.iteration_limit_selection_available(snapshot, c.candidate_id)
-                }
+        if stage and stage.order != 4:
+            provisional = {
+                c.candidate_id for c in snapshot.candidates
+                if study.iteration_limit_selection_available(snapshot, c.candidate_id)
+            }
         fits = {
             c.candidate_id: study.normalized_candidate_subject_fit(snapshot, c)
             for c in snapshot.candidates if c.metrics is not None

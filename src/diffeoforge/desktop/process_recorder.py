@@ -367,11 +367,11 @@ class ProcessRecorder(QObject):
                             else "Recording · calculation 1000×")
 
     def _recording_mode(self):
-        """Follow work in the captured workflow window, never input activity."""
+        """Keep calculations fast across focus changes and owned popup windows."""
         target = self._capture_window()
         busy = target.property("processRecordingWaiting") is True or any(
-            indicator.tasks and indicator.window() is target
-            for indicator in target.findChildren(ActivityIndicator)
+            indicator.tasks
+            for indicator in self.window.findChildren(ActivityIndicator)
         )
         return "waiting" if busy else "active"
 

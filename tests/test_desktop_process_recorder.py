@@ -199,15 +199,15 @@ def test_speed_follows_worker_completion_and_review_not_mouse_or_keyboard(
         QTest.keyClick(window, Qt.Key.Key_Shift)
         rec._capture(force=True)
         assert rec.last_mode == "waiting" and rec.current is first
-        # An explicit review may open while a different background task continues.
+        # Opening another owned window must not slow a calculation video.
         dialog.show()
         dialog.activateWindow()
         application.processEvents()
-        assert rec._recording_mode() == "active"
+        assert rec._recording_mode() == "waiting"
         dialog.setProperty("processRecordingWaiting", True)
         assert rec._recording_mode() == "waiting"  # Review meshes still loading.
         dialog.setProperty("processRecordingWaiting", False)
-        assert rec._recording_mode() == "active"
+        assert rec._recording_mode() == "waiting"
         dialog.hide()
         window.activateWindow()
         application.processEvents()
@@ -216,6 +216,14 @@ def test_speed_follows_worker_completion_and_review_not_mouse_or_keyboard(
         application.processEvents()
         rec._capture(force=True)
         assert rec.last_mode == "active" and rec.current is first
+        dialog.show()
+        dialog.activateWindow()
+        application.processEvents()
+        assert rec._recording_mode() == "active"
+        dialog.setProperty("processRecordingWaiting", True)
+        assert rec._recording_mode() == "waiting"
+        dialog.setProperty("processRecordingWaiting", False)
+        dialog.hide()
         rec.finish_manually()
         wait(application, lambda: not rec.encoders)
         data = json.loads(rec.last_output.with_suffix(".json").read_text())

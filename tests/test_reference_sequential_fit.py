@@ -146,6 +146,7 @@ def test_qc_dispatches_next_parameters_or_next_animal_and_ignores_stale_viewers(
     dialog._continue_specimen_review(first.study_directory, cid, False)
     assert len(calls) == 2
     dialog._succeeded(first)
+    wait_pilot_view(dialog)
     assert len(calls) == 3 and dialog._pending_specimen_review is None
     dialog.close()
     app.processEvents()

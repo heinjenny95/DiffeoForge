@@ -288,6 +288,7 @@ def test_density_ui_dispatches_one_fit_and_keeps_original_completed_action(tmp_p
     assert len(workers) == 1 and workers[0].density_next and not workers[0].qualification
     dialog._worker = None
     dialog._saved_search_loaded(("restore", child.study_directory), source)
+    wait_pilot_view(dialog)
     assert dialog.snapshot.status == "completed"
     assert not dialog.density_button.isHidden()
     assert dialog.density_return_button.isHidden()

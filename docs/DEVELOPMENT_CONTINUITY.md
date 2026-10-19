@@ -30,8 +30,12 @@ keyboard activity. Unresponsive GUI intervals are omitted after recovery and
 documented in the timing companion. Manual recording finish or app close saves
 the video. Scientific/approval gates remain unchanged. See
 [behavior and verification boundaries](V137_RESPONSIVE_PILOT_RECORDING.md).
-Source implementation and scoped video/UI checks are complete; broader
-regressions, exact frozen build and safe installation are being verified.
+Thirty final focused cases pass, including global waiting-rate behavior across
+owned popups and retained provisional warnings before new trials start. The broad
+167-case run passed 162 cases; five test contracts were migrated for asynchronous
+presentation and the existing full-cohort initializer, and their focused checks
+now pass. Synthetic source UI/MP4 checks pass without scientific jobs or QC writes.
+Exact frozen build and safe installation of the final runtime are being verified.
 Installed remains v136 until delivery verification confirms the new payload.
 
 v136 adds an explicit finer saved-evaluation adoption route in Stage 4. It reuses
