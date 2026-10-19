@@ -9,6 +9,7 @@ from uuid import uuid4
 from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -51,6 +52,7 @@ class MeshResolutionDialog(QDialog):
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.table = QTableWidget(0, 4)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setHorizontalHeaderLabels(("Level", "Median faces", "Completed run", ""))
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table, 1)
@@ -76,6 +78,8 @@ class MeshResolutionDialog(QDialog):
     def _start(self, function, text, action):
         self.cancelled.clear()
         self.action = action
+        self.report = None
+        self.show_report.setEnabled(False)
         self.status.setText(text)
         self.create.setEnabled(False)
         self.open.setEnabled(False)
@@ -130,6 +134,8 @@ class MeshResolutionDialog(QDialog):
         path = QFileDialog.getExistingDirectory(self, f"Completed run for {key}")
         if path:
             self.assignments[key] = path
+            self.report = None
+            self.show_report.setEnabled(False)
             self.status.setText(
                 "Run selected. The report checks its exact level and design binding."
             )

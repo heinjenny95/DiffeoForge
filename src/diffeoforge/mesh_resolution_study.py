@@ -405,6 +405,8 @@ def assess_study(directory, assignments, destination, *, progress=None):
     rows = []
     for level in plan["levels"]:
         key = level["id"]
+        if progress:
+            progress(f"Comparing mesh level: {key}")
         inputs, metrics, pca, distances, endpoints, missing = evidence[key]
         base_inputs, base_metrics, base_pca, base_distances, base_ends, base_missing = baseline
         if inputs.subject_labels != base_inputs.subject_labels:
@@ -444,6 +446,8 @@ def assess_study(directory, assignments, destination, *, progress=None):
         else:
             pc_errors = []
             for pc in range(1, plan["components"] + 1):
+                if progress:
+                    progress(f"Comparing mesh level: {key}, PC{pc} endpoints")
                 # PC signs are arbitrary; compare both orientations, preserving each ± pair.
                 direct = max(
                     _geometry_p95(endpoints[pc, sign], base_ends[pc, sign])
@@ -477,6 +481,8 @@ def assess_study(directory, assignments, destination, *, progress=None):
         if complete and eligible
         else None
     )
+    if progress:
+        progress("Rechecking source evidence before publication")
     load_study(root)
     for level in plan["levels"]:
         fresh = _run_inputs(plan, level, Path(assignments[level["id"]]).resolve())
@@ -489,6 +495,8 @@ def assess_study(directory, assignments, destination, *, progress=None):
                 raise ValueError("PC endpoint evidence changed during assessment")
             for record in endpoint_snapshots[level["id"]]:
                 _check({key: record[key] for key in ("path", "bytes", "sha256")})
+    if progress:
+        progress("Saving assessment")
     value = {
         "assessment_version": VERSION,
         "study_sha256": sha256_file(root / PLAN),

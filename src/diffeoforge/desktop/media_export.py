@@ -5,11 +5,73 @@ from __future__ import annotations
 import os
 import shutil
 import uuid
+import weakref
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QImage
+from shiboken6 import isValid
 
+from diffeoforge.desktop.activity import ActivityIndicator
 from diffeoforge.mesh import sha256_file
+
+_EXPORTS = ThreadPoolExecutor(max_workers=1, thread_name_prefix="method-media-export")
+
+
+class MediaExportController(QObject):
+    """Keep file I/O off Qt; one accepted export per controller at a time."""
+
+    active_changed = Signal(bool)
+    finished = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.future = None
+        self.timer = QTimer(self)
+        self.timer.setInterval(40)
+        self.timer.timeout.connect(self._poll)
+        self._activity = None
+        owner = parent
+        while owner is not None:
+            self._activity = owner.findChild(ActivityIndicator)
+            if self._activity is not None:
+                break
+            owner = owner.parentWidget()
+        self._activity_key = ("media-export", id(self))
+        if self._activity is not None:
+            reference, key = weakref.ref(self._activity), self._activity_key
+
+            def clear_activity():
+                indicator = reference()
+                if indicator is not None and isValid(indicator):
+                    indicator.set_task(key, None)
+
+            self.destroyed.connect(clear_activity)
+
+    def start(self, target, **options):
+        if self.future is not None:
+            return False
+        self.future = _EXPORTS.submit(export_media, target, **options)
+        if self._activity is not None:
+            self._activity.set_task(self._activity_key, "Saving media")
+        self.active_changed.emit(True)
+        self.timer.start()
+        return True
+
+    def _poll(self):
+        if self.future is None or not self.future.done():
+            return
+        self.timer.stop()
+        future, self.future = self.future, None
+        if self._activity is not None:
+            self._activity.set_task(self._activity_key, None)
+        self.active_changed.emit(False)
+        try:
+            self.finished.emit(future.result())
+        except (OSError, RuntimeError, ValueError, TypeError) as error:
+            self.failed.emit(str(error))
 
 
 def export_media(target: Path, *, source=None, image=None, expected=None, protected=()):

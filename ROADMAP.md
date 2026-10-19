@@ -607,6 +607,10 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
   representative runtime/RAM profiling in addition to the regression-tested
   bounded-memory processing without weakening file verification or changing QC
   definitions. Do not skip scientific checks to make the viewer appear sooner.
+  The v138 follow-up also flags repeated retained-stage/qualification verification
+  and YAML/path work for operation-local profiling. GUI work remains asynchronous;
+  no new end-to-end timing/RSS pass is claimed. See
+  [follow-up audit](docs/V138_FOLLOWUP_AUDIT.md).
 
 - [x] Adopt the Deformetrica-first product decision with an evidence-gated Modern engine
 - [x] Extract strict landmark CSV handling from the Modern engine

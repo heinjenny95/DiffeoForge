@@ -439,6 +439,7 @@ class VisualizationPanel(QWidget):
         self.export.setEnabled(False)
         self.export_current.setEnabled(False)
         self.status.setText("Exporting…")
+        self._export_source = self.directory
         self._export_future = _EXPORTS.submit(
             export_media, target, protected=(self.directory, self._source_run), **kwargs
         )
@@ -451,9 +452,13 @@ class VisualizationPanel(QWidget):
         future, self._export_future = self._export_future, None
         try:
             target = future.result()
-            self.status.setText(f"Exported: {target.name}")
+            if self.directory == self._export_source:
+                self.status.setText(f"Exported: {target.name}")
         except (OSError, ValueError) as error:
             QMessageBox.warning(self, "Export failed", str(error))
-            self.status.setText("Export failed. Choose another destination or prepare media again.")
+            if self.directory == self._export_source:
+                self.status.setText(
+                    "Export failed. Choose another destination or prepare media again."
+                )
         self.export.setEnabled(self.directory is not None)
         self.export_current.setEnabled(self.directory is not None)

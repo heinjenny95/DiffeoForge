@@ -218,3 +218,13 @@ def test_completed_fixture_reports_missing_native_extremes_without_claiming_reso
         for row in evidence["levels"]
     )
     assert "No face-count recommendation is supported" in (report / "report.html").read_text()
+
+    def cancel_before_publication(message):
+        if message == "Saving assessment":
+            raise InterruptedError("Cancelled before publication")
+
+    with pytest.raises(InterruptedError, match="before publication"):
+        assess_study(
+            root, assignments, tmp_path / "cancelled-report", progress=cancel_before_publication
+        )
+    assert not (tmp_path / "cancelled-report").exists()

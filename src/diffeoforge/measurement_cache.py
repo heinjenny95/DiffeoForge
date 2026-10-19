@@ -101,4 +101,7 @@ def write_measurement(directory, key, payload):
     except OSError:
         pass  # Cache storage is optional; source measurement errors are not.
     finally:
-        temporary.unlink(missing_ok=True)
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass  # A cache cleanup failure must not fail the scientific measurement.

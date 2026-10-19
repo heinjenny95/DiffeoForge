@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from diffeoforge.desktop.media_export import export_media
+from diffeoforge.desktop.media_export import MediaExportController
 from diffeoforge.desktop.morphospace_3d import Morphospace3D
 from diffeoforge.desktop.morphospace_geometry import glyph_topology
 from diffeoforge.mesh import sha256_file
@@ -188,6 +188,14 @@ class Method3DDialog(QDialog):
         layout.addWidget(self.viewer, 1)
         self.export = QPushButton("Export current view…")
         self.export.clicked.connect(self._export)
+        self.export_task = MediaExportController(self)
+        self.export_task.active_changed.connect(lambda active: self.export.setEnabled(not active))
+        self.export_task.finished.connect(
+            lambda path: self.viewer.status.setText(f"Saved {path.name}")
+        )
+        self.export_task.failed.connect(
+            lambda error: QMessageBox.warning(self, "Export failed", error)
+        )
         layout.addWidget(self.export)
         layout.addWidget(QLabel("Mesh positions use saved scores; mesh size is for display."))
         by_name = {item.subject_name: item for item in review.registration_qc}
@@ -217,7 +225,7 @@ class Method3DDialog(QDialog):
                 path = Path(name)
                 if not path.suffix:
                     path = path.with_suffix(".jpg" if selected.startswith("JPEG") else ".png")
-                export_media(path, image=image, protected=(self.review.run_directory,))
+                self.export_task.start(path, image=image, protected=(self.review.run_directory,))
         except (OSError, ValueError) as error:
             QMessageBox.warning(self, "Export unavailable", str(error))
 
@@ -243,6 +251,15 @@ class MethodResultsPanel(QWidget):
         controls.addWidget(self.three_d)
         self.export = QPushButton("Export plot…")
         self.export.clicked.connect(self._export)
+        self.export_task = MediaExportController(self)
+        self.export_task.active_changed.connect(
+            lambda active: self.export.setEnabled(not active and self.result is not None)
+        )
+        self.export_task.finished.connect(self._export_finished)
+        self.export_task.failed.connect(
+            lambda error: QMessageBox.warning(self, "Export failed", error)
+        )
+        self._export_review = None
         controls.addWidget(self.export)
         layout.addLayout(controls)
         self.status = QLabel("Choose methods above to calculate or reopen their saved results.")
@@ -317,7 +334,7 @@ class MethodResultsPanel(QWidget):
             for method in self.result[1]:
                 self.methods.addItem(method["label"], method["method_id"])
             self.methods.blockSignals(False)
-            self.export.setEnabled(True)
+            self.export.setEnabled(self.export_task.future is None)
             self._method()
         except (OSError, RuntimeError, ValueError, KeyError) as error:
             self.status.setText(f"Method results unavailable: {error}")
@@ -414,6 +431,11 @@ class MethodResultsPanel(QWidget):
                 path = Path(name)
                 if not path.suffix:
                     path = path.with_suffix(".jpg" if selected.startswith("JPEG") else ".png")
-                export_media(path, image=image, protected=(self.review.run_directory,))
+                self._export_review = self.review
+                self.export_task.start(path, image=image, protected=(self.review.run_directory,))
             except (OSError, ValueError) as error:
                 QMessageBox.warning(self, "Export failed", str(error))
+
+    def _export_finished(self, path):
+        if self.review is self._export_review:
+            self.status.setText(f"Saved {path.name}")

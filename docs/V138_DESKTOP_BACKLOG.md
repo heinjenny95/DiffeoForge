@@ -149,3 +149,8 @@ acknowledges shutdown in 10.278 s; a mismatched token is rejected. An unrelated
 process stays alive and the synthetic checkpoint stays unchanged in both cases.
 These checks do not qualify native scientific GPU cancellation, anatomy or an
 external operating system. Frozen delivery is recorded separately.
+
+The owner's additional fault/optimization review adds
+[state, export-I/O and cancellation repairs](V138_FOLLOWUP_AUDIT.md), with 28
+focused cases passing. It also records the remaining pilot-verification profiling
+candidate without claiming an unmeasured speedup.
