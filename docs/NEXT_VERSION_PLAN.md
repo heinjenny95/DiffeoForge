@@ -9,6 +9,17 @@ Scope agreed on 2026-09-14: implement the current usability backlog and plan the
 larger roadmap. This is a development plan, not a public release or scientific
 qualification claim. The established development branch remains authoritative.
 
+## Owner-requested backlog — 19 October 2026
+
+- [ ] At an atlas iteration cap, summarize recent objective improvement and explain
+  whether **Continue +300 iterations** appears worthwhile, the curve is flattening,
+  or the history cannot support advice. Show recent-window gains and transparent
+  comparison/precision limits; keep optimizer convergence, anatomy approval and
+  manual continuation separate. See the
+  [roadmap acceptance criteria](../ROADMAP.md#atlas-stopping-and-continuation).
+  Recorded for later implementation; no runtime, iteration budget or active run
+  changes are part of this backlog update.
+
 ## v129 owner-selected implementation
 
 The follow-up v130 process recorder implements saved opt-in, active 10× / waiting

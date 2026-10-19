@@ -29,6 +29,21 @@ scientific gates. Planning does not mark those gates complete.
   and demo entry points are removed, the change is tested and installed, and the
   installed UI is checked. Backlog only; removal has not been implemented.
 
+## Atlas stopping and continuation
+
+- [ ] When an atlas reaches its iteration limit, show how much its objective
+  improved near the end and give a concise, explained recommendation beside
+  **Continue +300 iterations**. Owner request, 19 October 2026: backlog only;
+  implementation is deferred. Compare recent iteration windows (for example,
+  the last 10 and 50), show absolute gains and relative changes with a declared
+  denominator, and distinguish ongoing improvement, flattening and insufficient
+  evidence. Account for sparse or rounded logs, continuation boundaries and
+  non-monotonic/failed histories; do not infer a plateau from rounded equal values.
+  Present the recommendation as a transparent heuristic, not predicted future
+  gain, proven convergence or anatomical quality. Preserve native stopping/QC
+  rules and explicit user-controlled continuation; never start extra iterations
+  automatically. Keep analysis off the GUI thread and retain original run evidence.
+
 ## Pilot usability follow-up
 
 - [x] Adopt a verified finer evaluation of the same saved field without another
