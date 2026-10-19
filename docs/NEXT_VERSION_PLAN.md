@@ -20,6 +20,16 @@ qualification claim. The established development branch remains authoritative.
   Recorded for later implementation; no runtime, iteration budget or active run
   changes are part of this backlog update.
 
+- [ ] Continue simplifying text throughout the interface, including dialogs and
+  already-collapsible help. Show the relevant outcome and next action, shorten
+  explanations, and replace repetitive/formulaic AI-sounding copy with natural,
+  direct language. Move routine technical detail to background-written local
+  logs that users can find and search; keep actionable errors, essential warnings
+  and required decisions visible. Extend the existing
+  [text-reduction task](../ROADMAP.md#milestone-3-accessible-application), with
+  representative workflow/user review. Owner follow-up, 19 October 2026: backlog
+  for continued longer-term improvement; no implementation or active-run change.
+
 ## Longer-term UI customization — low priority
 
 - [ ] Support light/dark modes and user-selected UI colors, including an arbitrary

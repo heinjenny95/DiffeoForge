@@ -506,6 +506,16 @@ scientific gates. Planning does not mark those gates complete.
     scale ranges, centroid/RMS metrics, sensitivity-method detail and repeated
     read-only/reassurance paragraphs. Keep a short outcome, one clear next action,
     and concise actionable warnings or required decisions in the default view.
+    Owner follow-up, 19 October 2026: continue simplifying the entire interface
+    over time, including secondary windows and already-collapsible explanations.
+    Merely moving a wall of text into a disclosure is insufficient. Rewrite copy
+    in short, natural, concrete language; remove repetitive caveats, boilerplate
+    and formulaic AI-sounding phrasing. Keep the current outcome and next action
+    clear. Write routine technical detail and diagnostics to local log files in
+    the background, with a discoverable way to open/search them when needed.
+    Preserve actionable errors, essential warnings and required decisions in the
+    UI. Review representative end-to-end screens with users. This expanded scope
+    remains open backlog; no implementation or delivery date is claimed.
 - [x] **Default new GUI projects to Deformetrica Reference.** Preselect the reference
   engine so the familiar guided parameter-calibration workflow is available by
   default. Keep Modern explicitly opt-in and labelled experimental; explain that
