@@ -23,9 +23,13 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 v139 fixes absent imageio metadata in the Windows bundle and adds a frozen MP4
 encode/decode gate. Visualization checks media support before native work and
-retains existing endpoint results for retry. Source, frozen and installed states
-remain separate; see [repair scope](V139_MEDIA_RUNTIME.md). The automatic
-convergence-gated result-preparation request remains a backlog item.
+retains existing endpoint results for retry. Runtime `32f8587` passes 27 focused
+regression cases with clean exit, the exact frozen media smoke, complete build
+and installer checks. It is installed after verified backup and fresh idle
+guards: all 3,472 bundle files, six companions, registry and installed startup/media
+smokes pass; original project contents remain unchanged. Source, installed and
+distributed versions remain separate; see [repair and delivery](V139_MEDIA_RUNTIME.md).
+The automatic convergence-gated result-preparation request remains a backlog item.
 
 v138 implements the owner-authorized desktop backlog: in-app results for saved
 shape-space methods, optional mesh-based 3D views, individual media exports,
@@ -40,8 +44,9 @@ The exact runtime57b6278 Windows build and local installer are verified; 375
 desktop/v138 cases pass with clean process exit. Ten source/frozen UI images are
 byte-identical. See [delivery and remaining gates](V138_DELIVERY.md). Post-freeze
 completion changes affect only tests, CI and documentation, preserving runtime
-and build inputs. Installed v137 and the running atlas remain unchanged. Additional
-owner-provided Linux/macOS and HPC systems are unavailable; scientific, platform and independent usability gates
+and build inputs. That build was held while v137 was active and is now superseded
+by the installed v139 repair above. Additional owner-provided Linux/macOS and HPC
+systems are unavailable; scientific, platform and independent usability gates
 remain open. No current run is migrated, stopped or restarted by this work.
 
 v137 moves repeated pilot presentation verification, comparison preparation,

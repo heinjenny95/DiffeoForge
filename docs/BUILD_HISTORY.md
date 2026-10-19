@@ -6,6 +6,9 @@ v139 (`0.0.0.dev139`) repairs missing imageio distribution metadata in the Windo
 bundle. A frozen MP4 encode/decode build gate and early visualization preflight
 exercise the actual media route. Original atlas/PCA and verified PC endpoints
 remain preserved. See [scope and verification](V139_MEDIA_RUNTIME.md).
+The tested runtime `32f8587` is installed with all bundle/evidence hashes, registry,
+startup and MP4 encode/decode checks verified after a complete backup and fresh
+idle guards. Existing scientific project contents remain unchanged.
 
 ## v138 — desktop backlog, method views and follow-up repairs
 
@@ -15,8 +18,8 @@ adds supervised cancellation, measurement caching, completed-pilot refinement,
 desktop export recovery and prospective mesh-resolution assessment. The follow-up
 repairs stale UI state, export I/O, cancellation boundaries and small-window layout.
 The exact Windows build and installer are verified; 375 desktop/v138 cases pass
-with clean process exit. Installation waits for the active atlas/application to
-be idle. See [delivery and separate gates](V138_DELIVERY.md).
+with clean process exit. The build was held during the active atlas and is now
+superseded by v139. See [delivery and separate gates](V138_DELIVERY.md).
 
 ## v128 — optional early atlas review
 

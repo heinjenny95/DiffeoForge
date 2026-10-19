@@ -1,4 +1,9 @@
-# v138 — verified Windows build; installation pending
+# v138 — verified Windows build; superseded by v139
+
+Delivery update, 2026-10-19: v138 was held while the prior atlas/application was
+active. The later [v139 media repair](V139_MEDIA_RUNTIME.md), including this
+desktop backlog, is now installed and verified. The checks below document the
+historical v138 build; they do not identify the installed runtime.
 
 Runtime/build commit: `57b62783c004414c69dfeb029a4e35c87baa6074`.
 Version: `0.0.0.dev138`. Later completion changes affect tests, CI and documentation
@@ -6,8 +11,8 @@ only; runtime source and build inputs remain byte-identical to this commit.
 
 The owner-authorized [desktop backlog](V138_DESKTOP_BACKLOG.md) and
 [follow-up repairs](V138_FOLLOWUP_AUDIT.md) are included in the tested build.
-The current installed application remains v137 because the owner's atlas and
-execution worker are active. No installation or new scientific run was performed.
+At build completion, the installed application remained v137 because the atlas
+and execution worker were active. That build did not interrupt or replace them.
 
 ## Build and artifact verification
 
@@ -57,10 +62,11 @@ scientific GPU run or establish scientific/anatomical acceptance.
 
 ## Installation and distribution
 
-Safe installation still requires a fresh idle-application/backend check and a
+Safe installation requires a fresh idle-application/backend check and a
 verified recoverable backup. Existing installation authorization is retained;
 an active atlas is not interrupted to install. Installed UI and registry checks
-remain pending that step. The older incomplete build attempts are superseded.
+were deferred at that step; v139 records the subsequent installation checks. The
+older incomplete build attempts are superseded.
 
 The installer is unsigned and remains a local engineering/private-alpha build.
 No Drive upload, public release, tag, merge, signing claim or external platform
