@@ -516,6 +516,11 @@ scientific gates. Planning does not mark those gates complete.
     Preserve actionable errors, essential warnings and required decisions in the
     UI. Review representative end-to-end screens with users. This expanded scope
     remains open backlog; no implementation or delivery date is claimed.
+    Concrete owner example: cohort initialization repeats the same specimen and
+    optimizer counters in **Verified live events** and the progress-bar caption.
+    Show the phase, one compact specimen/iteration summary and the progress bar;
+    keep the event history available in logs rather than duplicating the current
+    status in adjacent labels. Check other workflow phases for the same repetition.
 - [x] **Default new GUI projects to Deformetrica Reference.** Preselect the reference
   engine so the familiar guided parameter-calibration workflow is available by
   default. Keep Modern explicitly opt-in and labelled experimental; explain that

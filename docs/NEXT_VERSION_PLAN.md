@@ -29,6 +29,9 @@ qualification claim. The established development branch remains authoritative.
   [text-reduction task](../ROADMAP.md#milestone-3-accessible-application), with
   representative workflow/user review. Owner follow-up, 19 October 2026: backlog
   for continued longer-term improvement; no implementation or active-run change.
+  Concrete acceptance example: remove duplicate specimen/optimizer counters from
+  the adjacent live-event status and cohort-initialization progress caption.
+  Retain one compact summary, the phase and progress bar; keep history in logs.
 
 ## Longer-term UI customization — low priority
 
