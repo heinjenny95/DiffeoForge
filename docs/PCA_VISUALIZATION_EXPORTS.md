@@ -17,6 +17,29 @@ on each axis. Keep a specimen key and provide zoom or glyph-size controls when
 meshes overlap. Topology-preserving display proxies are acceptable when explicitly
 labelled and bound to their full-resolution sources.
 
+## Group colours and direct specimen labels
+
+For a requested annotated export, join group membership and display identifiers
+to the exact saved PCA subject IDs. Reject missing, duplicate or ambiguous joins;
+do not infer groups from point positions or row order. Keep one recorded colour
+map across component pairs, point plots and mesh glyphs, with a labelled group
+legend and optional marker shapes for point plots.
+
+Place the requested identifier above each saved score position. If labels collide,
+move only the labels vertically and use leader lines; never jitter the PCA scores.
+Keep glyph cameras and scales common. Include all requested component pairs,
+explained variance, PNG/PDF/SVG files and a private identifier/score/colour key.
+An offline interactive view may offer zoom, pan, group filters and a common glyph
+size control. Filtering must preserve axis limits, and ordinary page scrolling
+must not change the plotted ranges accidentally.
+
+Verify exact score preservation, complete identifier coverage in every figure,
+consistent group colours, readable output, local HTML links and unchanged source
+hashes. Keep private data, identity-labelled media and rendering receipts alongside
+the owner's project. This is a media derivative, not a new PCA fit, a new approval
+or a claim that grouping establishes a biological difference. The annotation
+contract does not imply an installed UI control for importing study metadata.
+
 ## PC shapes and native integration
 
 For score coordinate `s`, shoot `mean_momenta + s * sqrt(variance) * PC_loading`
