@@ -20,6 +20,16 @@ HPC test systems are available.
 
 ## Owner-requested backlog — 19 October 2026
 
+- [ ] Prepare all configured PCA/method results and their visualization assets
+  as part of final atlas export/postprocessing, **only after verified native
+  convergence**. A finished workflow should expose the available mesh plots,
+  interactive 3D data and supported media immediately, without starting their
+  expensive preparation when a view is opened. Cap-only, cancelled, interrupted
+  and failed runs must not trigger this automatically. Show progress and report
+  unavailable/failed assets honestly; preserve human anatomical approval as a
+  separate step. See [acceptance criteria](PCA_VISUALIZATION_EXPORTS.md#prepare-results-before-converged-atlas-completion--pending).
+  Backlog only; not implemented in v138.
+
 - [x] At an atlas iteration cap, summarize recent objective improvement and explain
   whether **Continue +300 iterations** appears worthwhile, the curve is flattening,
   or the history cannot support advice. Show recent-window gains and transparent

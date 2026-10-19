@@ -40,6 +40,14 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 ## Atlas stopping and continuation
 
+- [ ] On verified native convergence, prepare the configured PCA/method results
+  and visualization assets during final export/postprocessing so the completed
+  atlas opens with its results ready, rather than only point plots. Do not start
+  this automatic preparation after an iteration cap, cancellation, interruption
+  or failure. Keep computation off the GUI thread, show preparation progress and
+  distinguish optimizer completion from results readiness. See
+  [acceptance criteria](docs/PCA_VISUALIZATION_EXPORTS.md#prepare-results-before-converged-atlas-completion--pending).
+
 - [x] When an atlas reaches its iteration limit, show how much its objective
   improved near the end and give a concise, explained recommendation beside
   **Continue +300 iterations**. Implemented in v138 source. Compare recent

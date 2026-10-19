@@ -123,3 +123,37 @@ Implementation starting points:
 Interacting with mesh glyphs and maintaining responsiveness across representative
 cohort sizes need explicit engineering checks; reusing PCA coordinates alone
 does not establish that acceptance.
+
+## Prepare results before converged atlas completion — pending
+
+Owner request, 19 October 2026: point plots are available first, while the other
+results still need preparation. Move that preparation into the final export and
+postprocessing phase so a completed workflow has its configured results ready.
+This is a new backlog item, not an implemented v138 behavior or verification of
+the owner's reported completed run.
+
+- Trigger automatic preparation only after the backend explicitly reports native
+  convergence, return code zero and consistent verified terminal/export metadata.
+  Reaching an iteration cap, cancelling, interruption or failure must not trigger
+  it. Do not infer convergence from appearance, a flat plot or a successful export.
+- Prepare results for the configured analysis scope and every supported applicable
+  view: saved method results, mesh morphospace plots, display geometry for optional
+  interactive 3D, mean/SD panels, endpoint heatmaps and axis movies. Preserve each
+  method's existing dimensionality and deformation semantics; do not invent native
+  PC deformations for methods that do not support them. Do not silently enable
+  additional scientific analyses or replace prior results.
+- Run bounded background work during export/postprocessing with clear progress.
+  Distinguish **Optimizer converged**, **Preparing results** and **Results ready**;
+  report overall completion only when the required configured assets are verified.
+  Optional or failed assets need a concise availability/error state and a targeted
+  retry, without relabeling numerical convergence or repeating the atlas fit.
+- Reuse only verified assets bound to the same source result, subject order,
+  method, settings and geometry. Seal sizes/hashes and validate image/video
+  decoding before publishing readiness; preserve original scientific artifacts.
+- Opening Steps 6 and 7 after completion should use the prepared results and
+  caches without another expensive analysis/render preparation pass. Ordinary
+  interactive camera drawing may remain on demand. Numerical convergence never
+  substitutes for anatomical approval or interpretation.
+- Verify the trigger/non-trigger paths, preparation failure/retry, stale-cache
+  rejection, responsive progress and direct access to every applicable prepared
+  result after reopening the completed project.
