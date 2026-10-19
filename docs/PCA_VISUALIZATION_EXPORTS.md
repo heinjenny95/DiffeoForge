@@ -22,6 +22,15 @@ on each axis. Keep a specimen key and provide zoom or glyph-size controls when
 meshes overlap. Topology-preserving display proxies are acceptable when explicitly
 labelled and bound to their full-resolution sources.
 
+For a requested component-pair figure, inspect the chosen surface view across
+representative shapes before rendering the whole cohort. Use full source
+surfaces for static exports when practical. If an overview remains crowded,
+show a clearly marked zoom of the same score region and retain a common glyph
+scale; never spread the score coordinates to make room. An optional offline
+viewer can highlight one specimen and show a larger surface preview beside the
+plot. Record the camera, bounds, score identity and unchanged source hashes
+with the project-local delivery, preserving the earlier media and results.
+
 ## Group colours and direct specimen labels
 
 For a requested annotated export, join group membership and display identifiers
