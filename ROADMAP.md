@@ -206,6 +206,12 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
   invalidation, progress and cancellation. v138 adds the scalar measurement
   cache and safe-boundary cancellation, with synthetic million-face cold/warm
   checks. Broader end-to-end preparation/RSS qualification remains open.
+  Owner follow-up, 20 October 2026: avoid loading and parsing the entire cohort
+  again for pilot parameter analysis after input checks/GPA already read it.
+  Reuse verified geometry or aligned measurements across these steps, retaining
+  fresh hashes, exact transform binding and bounded memory. The existing scalar
+  cache alone does not close this repeated-loading report. See
+  [specific acceptance](docs/NEXT_VERSION_PLAN.md#repeated-cohort-loading-before-pilot-selection--pending).
 
 - [x] Check new screening approximations at every vertex/face centroid with
   component coverage, bounded resolution escalation and original fallback;

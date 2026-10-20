@@ -103,6 +103,26 @@ The earlier manual refinement proposal below is superseded by the direct
 
 ## Delivery order and acceptance gates
 
+### Repeated cohort loading before pilot selection — pending
+
+Owner feedback, 20 October 2026: preparing the pilot reads the whole cohort
+again after earlier input/GPA steps. Full-cohort shape measurements support
+representative pilot selection; repeated full geometry parsing across these
+steps is the performance follow-up. The existing scalar measurement cache
+does not establish reuse of geometry already loaded by another step.
+
+- [ ] Profile and remove avoidable repeated mesh loading between input checks,
+  GPA and pilot parameter analysis. Reuse verified geometry or aligned
+  measurements with exact source/transform/settings binding and bounded memory.
+  Keep fresh file hashes and stale-input rejection. Verify cold/warm transitions,
+  reopening, cache invalidation and unchanged measurements/pilot selection;
+  separate hash I/O from parsing/transformation costs. Show whether the app is
+  checking files, reusing measurements or measuring shapes. Preserve full-cohort
+  coverage for selection and the chosen subset for actual pilot fitting.
+
+Backlog only; no implementation, measured speedup or scientific run is authorized
+by this entry.
+
 ### Priority: slow pilot previews and invisible QC locks
 
 First-use feedback on 2026-09-28: preview loading is too slow and the specimen
