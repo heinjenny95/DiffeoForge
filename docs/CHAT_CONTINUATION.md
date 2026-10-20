@@ -60,6 +60,13 @@ Verify schedule, destination and notification intent separately. A handoff file
 does not move an automation or establish a fresh remote observation. Keep private
 monitor receipts outside the repository.
 
+For an owner-authorized monitor transfer, update only the destination of the
+existing automation. Verify readback against the saved configuration: identity,
+full prompt, cadence, active status and notification settings must be preserved;
+unrelated paused monitors must remain unchanged. Retain private before/after
+receipts. A destination change does not require an extra server poll: keep the
+last verified observation's timestamp explicit until the next scheduled check.
+
 Every completed software, configuration or documentation change includes scoped
 commit/push and the existing Google Docs Project log update with preservation
 readback. Installer uploads remain on explicit request only. Recheck live app and
