@@ -7,6 +7,8 @@ movies, reuses a warm interactive preview renderer, displays hovered specimen
 IDs and adds individual/all comparison with shared movie playback and MP4 export.
 Scientific results and original media are preserved. See
 [scope and verification gates](V143_VISUALIZATION_VIEWS.md).
+The tested Windows runtime `994e7be` is installed; see
+[verified delivery](V143_DELIVERY.md).
 
 ## v142 — searchable completed results
 

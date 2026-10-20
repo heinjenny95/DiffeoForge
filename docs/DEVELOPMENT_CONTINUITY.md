@@ -4,8 +4,13 @@ v143 extends named views to all generated visualization media, keeps the preview
 renderer warm, adds specimen hover IDs and side-by-side PCA/SD/map/movie views.
 All-media publication is atomic and reuses verified native samples without
 scientific execution. See [behavior and delivery gates](V143_VISUALIZATION_VIEWS.md).
-Source, tested Windows installation and independent first use remain separate.
-The v142 installation below is the last completed delivery until v143 is verified.
+Runtime `994e7be` / `dev143` is installed after complete backup and fresh idle
+guards. All 64 distinct source checks and exact frozen/installed full-media
+probes pass; five source/frozen/installed views are pixel-identical. Bundle,
+registry, startup/media and original-file checks pass. The owner application
+remains closed; no scientific action or installer upload occurred. See
+[verified delivery](V143_DELIVERY.md). Independent first use remains separate;
+the v142 delivery below is historical.
 
 v142 replaces exact-directory result selection with a searchable library of
 recent/added projects and previously opened results. Nested selected-calibration
