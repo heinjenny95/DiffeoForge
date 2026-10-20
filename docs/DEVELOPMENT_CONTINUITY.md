@@ -3,8 +3,11 @@
 The owner's v145 clarification restores normal interaction to 10×, including
 paths and landmarks, and records only ready pilot fit evaluation at 2×.
 Calculation/loading remain 1000×. See [scope and checks](V145_PILOT_REVIEW_RECORDING.md).
-Source verification and Windows delivery are tracked separately; the v144
-installation snapshot below remains historical after the successor is installed.
+Runtime `4ba6bf9` / `dev145` is installed after full backup and fresh idle guards.
+All 26 focused source cases, exact frozen/installed actual-viewer MP4 probes,
+bundle/registry/startup/media and owner-file/settings preservation checks pass.
+See [verified delivery](V145_DELIVERY.md). Independent real-pilot first use remains
+open. The v144 installation snapshot below is historical.
 
 v144 changes human review/decision recording to 1× and retains 1000× calculation
 and loading. The tested Windows runtime `6aa6650` / `dev144` is installed after

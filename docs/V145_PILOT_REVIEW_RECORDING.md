@@ -22,5 +22,6 @@ Verification covers actual pilot viewer wiring, nested popup/loading precedence,
 return to ordinary interaction, mixed-rate encoded/decoded MP4 duration,
 GUI-stall omission and both legacy recovery policies. Synthetic presentation
 checks do not start owner scientific runs or change anatomy approvals.
-Windows frozen/installed verification and independent real-pilot first use remain
-separate delivery gates. Actual capture cadence still depends on host load.
+Windows frozen and installed probes pass; see [verified delivery](V145_DELIVERY.md).
+Independent real-pilot first use remains separate. Actual capture cadence still
+depends on host load.

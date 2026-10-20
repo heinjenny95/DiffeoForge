@@ -1,5 +1,8 @@
 # v144 local delivery verification
 
+Historical delivery, superseded by [v145](V145_DELIVERY.md): normal actions 10×,
+ready pilot fit evaluation 2×, calculation/loading 1000×.
+
 The tested Windows build is installed as **0.0.0.dev144**, from runtime source
 `6aa6650525de2f41467ae581e65181a888fc46e1`. Human review and decision recording
 uses **1×**; calculation and loading remain **1000×**. No scientific objective,

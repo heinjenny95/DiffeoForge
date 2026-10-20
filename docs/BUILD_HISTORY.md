@@ -6,6 +6,7 @@ v145 (`0.0.0.dev145`) restores 10× normal interaction, including paths and
 landmarks, and records ready pilot fit evaluation at 2×. Calculation/loading
 remain 1000×. This supersedes v144's broad 1× action rate after owner clarification.
 See [scope and verification](V145_PILOT_REVIEW_RECORDING.md).
+The tested Windows runtime is installed; see [delivery checks](V145_DELIVERY.md).
 
 ## v144 — real-time fit-review recording
 
