@@ -9,7 +9,7 @@ locations; do not copy those details into this repository.
 1. The current private handoff and both applicable `AGENTS.md` files.
 2. Current branch, `git status` and remote state; preserve unrelated work.
 3. [Development continuity](DEVELOPMENT_CONTINUITY.md),
-   [v145 delivery](V145_DELIVERY.md) and the relevant acceptance document.
+   [v146 modal review repair](V146_MODAL_REVIEW_RECORDING.md) and the relevant acceptance document.
 4. The complete [roadmap](../ROADMAP.md), [next-version plan](NEXT_VERSION_PLAN.md),
    [v138 reconciliation](V138_DESKTOP_BACKLOG.md),
    [visualization requirements](PCA_VISUALIZATION_EXPORTS.md),
@@ -25,6 +25,10 @@ authorization or establish current application/job state.
 The installed Windows runtime is `4ba6bf9` / `dev145`; it corrects the recording
 policy following owner clarification: normal actions,
 paths and landmarks 10×; ready pilot fit evaluation 2×; calculation/loading 1000×.
+Subsequent owner use found that the normal modal opening path retained the busy
+flag through review; the earlier direct-viewer probes missed it. v146 source
+fixes that callback ordering and tests the actual opener and decoded mesh frames.
+Verify successor installation separately.
 The source, exact frozen/installed recording and preservation checks pass;
 independent real-pilot first use remains open. Later documentation commits do not
 require an identical rebuild. The

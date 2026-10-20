@@ -1,4 +1,13 @@
-# Development continuity — v145 pilot-specific recording
+# Development continuity — v146 modal pilot review recording
+
+Owner first use exposed a missing modal-opening case in v145: the correct fit
+window was selected, but preparation stayed marked busy until that window closed,
+so review was compressed at 1000×. v146 publishes loader activity before result
+callbacks enter modal review. All 56 focused source cases pass, including the
+actual asynchronous pilot opener and decoded rotating-mesh frames. See
+[cause, repair and verification boundaries](V146_MODAL_REVIEW_RECORDING.md).
+Windows delivery is tracked separately; the prior v145 snapshot below does not
+close this first-use report.
 
 The owner's v145 clarification restores normal interaction to 10×, including
 paths and landmarks, and records only ready pilot fit evaluation at 2×.

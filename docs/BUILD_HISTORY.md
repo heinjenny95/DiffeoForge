@@ -1,5 +1,13 @@
 # Private-alpha build numbering
 
+## v146 — modal pilot review recording
+
+v146 (`0.0.0.dev146`) clears completed comparison loading before its result
+callback opens a modal fit viewer. This prevents review from being recorded at
+1000× while retaining the requested 10× actions / 2× review / 1000× busy rates.
+All 56 focused source cases pass, including decoded visible mesh content through
+the actual asynchronous pilot opener. See [scope and cause](V146_MODAL_REVIEW_RECORDING.md).
+
 ## v145 — pilot-specific review recording
 
 v145 (`0.0.0.dev145`) restores 10× normal interaction, including paths and

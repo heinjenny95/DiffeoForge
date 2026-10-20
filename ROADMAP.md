@@ -48,12 +48,15 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
   video with 1000× calculation/loading phases. The owner's v145 clarification
   retains 10× normal interaction (including paths and landmarks) and records only
   ready pilot fit evaluation at 2×, superseding v144's broad 1× action rate.
+  v146 fixes delayed loader-idle delivery during modal fit review; the actual
+  asynchronous opening path and encoded mesh visibility are now tested.
   Capture only owned application UI, use bounded background encoding, declare
   capture gaps and recover sealed presentation fragments. Engineering checks
   and independent first-use acceptance are distinct. See
   [v130 history](docs/V130_PROCESS_RECORDING.md),
   [continuous recording](docs/V137_RESPONSIVE_PILOT_RECORDING.md) and
-  [pilot-specific speeds](docs/V145_PILOT_REVIEW_RECORDING.md).
+  [pilot-specific speeds](docs/V145_PILOT_REVIEW_RECORDING.md) and
+  [modal review repair](docs/V146_MODAL_REVIEW_RECORDING.md).
 
 - [ ] Remove the visible **Open demo · explore all steps with public examples**
   button (`open_demo_button`) and the demo/presentation mode, its other UI entry

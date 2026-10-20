@@ -91,10 +91,12 @@ class PreviewMeshLoader(QObject):
     @Slot(int, object, object, str)
     def _finished(self, token: int, key: object, value: object, error: str) -> None:
         self._active = None
+        self._start()
+        # Result handlers may enter a modal review loop. Publish the real load
+        # state first, or recording stays at calculation speed until it closes.
+        self.activity_changed.emit(self._active is not None)
         if token == self._token:
             if error:
                 self.failed.emit(key, error)
             else:
                 self.loaded.emit(key, value)
-        self._start()
-        self.activity_changed.emit(self._active is not None)

@@ -8,9 +8,9 @@ from types import SimpleNamespace
 import pytest
 
 pytest.importorskip("PySide6")
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
+from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication, QDialog, QWidget
 
 from diffeoforge.desktop.activity import ActivityIndicator, ActivityPool
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
@@ -165,6 +165,43 @@ def test_cancelled_loader_stays_busy_until_real_exit_and_discards_stale_result(a
         QTest.qWait(5)
     assert not indicator.tasks
     assert received == []
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_loader_clears_busy_before_a_terminal_listener_enters_modal_loop(application, failure):
+    owner = QWidget()
+    indicator = ActivityIndicator(owner)
+    loader = PreviewMeshLoader(owner)
+    indicator.bind_loader(loader, "Preparing comparison")
+    observed = []
+
+    def terminal(_key, _value):
+        dialog = QDialog(owner)
+
+        def inspect():
+            observed.append((bool(indicator.tasks), loader._active))
+            dialog.reject()
+
+        QTimer.singleShot(30, inspect)
+        dialog.exec()
+
+    loader.loaded.connect(terminal)
+    loader.failed.connect(terminal)
+
+    def operation():
+        if failure:
+            raise ValueError("synthetic loader failure")
+        return "ready"
+
+    loader.request_operation("fixture", operation)
+    for _ in range(200):
+        application.processEvents()
+        if observed:
+            break
+        QTest.qWait(5)
+    assert observed == [(False, None)]
+    assert not indicator.tasks
+    owner.close()
 
 
 def test_owner_destroyed_before_completion_disconnects_activity_slots(application):

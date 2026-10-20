@@ -332,6 +332,87 @@ def test_encoder_failure_does_not_retry_or_close_the_application(
     stop(application, window, rec)
 
 
+def test_async_pilot_open_records_rotating_meshes_during_actual_modal_review(
+    application, tmp_path, monkeypatch,
+):
+    import imageio_ffmpeg
+    import numpy as np
+    from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtCore import QTimer
+    from test_reference_calibration_dialog import _model
+    from test_reference_calibration_study import _review_ready_stage
+
+    import diffeoforge.desktop.reference_calibration_dialog as module
+
+    _runner, snapshot = _review_ready_stage(tmp_path, monkeypatch)
+    window, rec, _settings = setup(tmp_path)
+    pilot = module.ReferenceCalibrationDialog(
+        snapshot.study_directory, window, verified_snapshot=snapshot,
+    )
+    window._reference_calibration_dialog = pilot
+    pair = module.CalibrationQcPair(
+        pair_id="synthetic", label="Synthetic specimen", required=True,
+        original_path=tmp_path / "original.vtk",
+        reconstruction_path=tmp_path / "reconstruction.vtk",
+    )
+    monkeypatch.setattr(module, "collect_calibration_qc_pairs", lambda *_args: (pair,))
+    monkeypatch.setattr(module, "normalized_candidate_subject_fit", lambda *_args: {})
+    monkeypatch.setattr(
+        "diffeoforge.desktop.pilot_preview.load_pilot_preview", lambda path, **_kw: _model(path),
+    )
+    observed, closed = [], []
+
+    class ObservedViewer(module.CalibrationCandidateViewerDialog):
+        def exec(self):
+            def inspect():
+                observed.append((rec._capture_window() is self, rec._recording_mode(),
+                                 self.canvas.comparison_ready))
+
+            QTimer.singleShot(500, inspect)
+            QTimer.singleShot(850, lambda: self.canvas.set_linked_camera(
+                (0.5, 0.65, 1.0, (0.0, 0.0), False),
+            ))
+            QTimer.singleShot(1800, self.reject)
+            result = super().exec()
+            closed.append(True)
+            return result
+
+    monkeypatch.setattr(module, "CalibrationCandidateViewerDialog", ObservedViewer)
+    try:
+        pilot.show()
+        wait_pilot_view(pilot)
+        wait(application, lambda: not pilot._thread_pool.indicator.tasks)
+        rec.enabled.setChecked(True)
+        pilot._open_candidate(snapshot.candidates[0])
+        # Force only the busy frame; the ready modal review must be captured by
+        # the ordinary recorder timer, not by a test-only forced review capture.
+        rec._capture(force=True)
+        assert rec.last_mode == "waiting"
+        wait(application, lambda: bool(closed))
+        rec.finish_manually()
+        wait(application, lambda: not rec.encoders)
+        assert observed == [(True, "pilot_review", True)]
+        data = json.loads(rec.last_output.with_suffix(".json").read_text())
+        assert any(row["mode"] == "pilot_review" for row in data["timeline"])
+        reader = imageio_ffmpeg.read_frames(str(rec.last_output))
+        try:
+            next(reader)
+            blue_counts = []
+            for frame in reader:
+                pixels = np.frombuffer(frame, np.uint8).reshape(400, 640, 3)
+                blue_counts.append(np.count_nonzero(
+                    (pixels[:, :, 0] < 80) & (pixels[:, :, 1] > 40)
+                    & (pixels[:, :, 1] < 140) & (pixels[:, :, 2] > 120),
+                ))
+        finally:
+            reader.close()
+        assert sum(count > 300 for count in blue_counts) >= 5
+    finally:
+        pilot.close()
+        window._reference_calibration_dialog = None
+        stop(application, window, rec)
+
+
 def test_existing_pilot_close_guard_precedes_recording_finalization(application, monkeypatch):
     from PySide6.QtWidgets import QMessageBox
 

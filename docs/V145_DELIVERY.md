@@ -1,5 +1,10 @@
 # v145 local delivery verification
 
+Subsequent owner use exposed an uncovered modal opening path: preparation stayed
+marked busy while the fit viewer's result callback was open, compressing review
+at 1000×. The probes below opened the viewer separately and did not qualify that
+transition. See [v146 cause and repair](V146_MODAL_REVIEW_RECORDING.md).
+
 The tested Windows build **0.0.0.dev145** is installed from runtime source
 `4ba6bf99168f6ee2f14ffe9aac1694027894ecb5`. Normal interaction, including paths and
 landmarks, records at **10×**; ready pilot fit evaluation at **2×**; calculation
