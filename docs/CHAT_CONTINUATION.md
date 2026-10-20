@@ -9,7 +9,7 @@ locations; do not copy those details into this repository.
 1. The current private handoff and both applicable `AGENTS.md` files.
 2. Current branch, `git status` and remote state; preserve unrelated work.
 3. [Development continuity](DEVELOPMENT_CONTINUITY.md),
-   [v143 delivery](V143_DELIVERY.md) and the relevant acceptance document.
+   [v144 delivery](V144_DELIVERY.md) and the relevant acceptance document.
 4. The complete [roadmap](../ROADMAP.md), [next-version plan](NEXT_VERSION_PLAN.md),
    [v138 reconciliation](V138_DESKTOP_BACKLOG.md),
    [visualization requirements](PCA_VISUALIZATION_EXPORTS.md),
@@ -22,10 +22,12 @@ authorization or establish current application/job state.
 
 ## Current software boundary
 
-The installed Windows runtime is `994e7be` / `dev143`; later documentation commits
-do not require a new version or an identical rebuild. The last delivery includes
-shared anatomical views across media, a warm preview renderer, specimen hover IDs
-and individual/all comparison with synchronized movies. Earlier versions added
+The installed Windows runtime is `6aa6650` / `dev144`; later documentation commits
+do not require a new version or an identical rebuild. The last delivery changes
+review/decision recording to 1× while retaining 1000× calculation/loading. The
+preceding v143 delivery includes shared anatomical views across media, a warm
+preview renderer, specimen hover IDs and individual/all comparison with
+synchronized movies. Earlier versions added
 completed-result discovery, saved-method/3D displays, direct exports, appearance
 preferences, recording and cap-improvement advice. See the linked delivery and
 reconciliation documents for the exact implemented scope and measured limits.

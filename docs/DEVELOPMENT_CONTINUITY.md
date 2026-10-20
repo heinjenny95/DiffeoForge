@@ -1,4 +1,13 @@
-# Development continuity — v143 visualization views
+# Development continuity — v144 real-time review recording
+
+v144 changes human review/decision recording to 1× and retains 1000× calculation
+and loading. The tested Windows runtime `6aa6650` / `dev144` is installed after
+full backup and fresh idle checks. All 25 focused source cases, exact frozen/
+installed recording probes, bundle/registry/startup/media and preservation checks
+pass. See [scope](V144_REAL_TIME_REVIEW_RECORDING.md) and
+[delivery](V144_DELIVERY.md). Independent owner acceptance remains open. The
+earlier v143 delivery snapshots below are historical; its reported heatmap issues
+remain open and were not part of this recording update.
 
 For a new chat, start with [current continuation guidance](CHAT_CONTINUATION.md)
 and the owner's latest private handoff. The owner has since reopened the app and

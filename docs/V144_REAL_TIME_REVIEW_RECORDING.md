@@ -20,5 +20,6 @@ Verification covers decoded MP4 duration across review/calculation/review
 transitions, real-time GUI capture after a loading phase, unchanged fast waiting,
 GUI-stall omission, lock/corruption handling and recovery of legacy fragments.
 These are presentation tests with synthetic fixtures; no private pilot/atlas fit
-or scientific approval is part of this change. Frozen and installed verification
-and independent owner acceptance remain separate delivery gates.
+or scientific approval is part of this change. The exact frozen and installed
+Windows recording probes pass; see [delivery verification](V144_DELIVERY.md).
+Independent owner acceptance remains separate.
