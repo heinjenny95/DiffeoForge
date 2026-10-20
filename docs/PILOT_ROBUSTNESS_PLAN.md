@@ -66,6 +66,32 @@ tolerance-stopped continuation must declare a supported arithmetic/stopping
 contract before requesting a tighter diagnostic threshold. Neither path may
 manufacture convergence or weaken the final acceptance criterion.
 
+Before proposing another trial for a persistent local-feature failure, audit the
+saved result without fitting again:
+
+- Bind the exact specimen, preferred/current attempts, native endpoint and viewer
+  sources to their manifests and hashes. Compare full-resolution template, target
+  and reconstruction; check the actual scientific working target separately from
+  display proxies. A visible extra feature may already be present in the template.
+- Trace effective XML settings and compatible warm-start fields across attempts.
+  A denser control grid does not by itself change the deformation kernel width;
+  rejection and relative preference are not a semantic feature-count objective.
+  Keep a fixed reference template distinct from the deformation applied to it.
+- Separate an iteration cap, explicit native tolerance and anatomical acceptance.
+  Compare geometry directly when attachment settings differ; native objective
+  values from different settings are not interchangeable fit-quality scores.
+- Add bidirectional regional point-to-triangle distances on the original surfaces
+  beside global summaries. Declare area weighting, coordinate units and any
+  exploratory region/crop; a global percentile can conceal an important local
+  mismatch. Component/orientation checks and anatomical feature counts answer
+  different questions.
+
+Report observed geometry and parameter/search restrictions separately from
+untested explanations such as insufficient deformation scale, initialization,
+attachment sensitivity or iteration budget. Any controlled fitting comparison
+remains a separate, explicitly scoped next action; preserve saved evidence and
+human review decisions. Do not silently turn anatomical notes into new loss terms.
+
 Rank proposed experiments from the evidence instead of always exhausting the
 same fixed-order list. Keep the current budget explicit and distinguish an
 exhausted budget from a satisfactory fit. Preserve all prior candidates and
