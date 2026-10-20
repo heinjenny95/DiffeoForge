@@ -22,12 +22,26 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 ## Owner-requested cleanup
 
+- [ ] Make endpoint heatmaps understandable: distinguish a static PC/SD endpoint
+  from a movie, explain the mean reference and signed normal displacement with a
+  short legend, and identify the six panels as views of the same shape. Remove
+  the misleading **−2 SD → Mean → +2 SD** path caption from static maps. See
+  [owner follow-up and acceptance](docs/PCA_VISUALIZATION_EXPORTS.md#heatmap-clarity-and-all-maps-view--pending).
+
+- [ ] Repair the heatmap **All · side by side** experience. The owner reports
+  that all heatmaps still cannot be displayed together in installed v143.
+  Reproduce this with the actual result and verify a discoverable overview of
+  every available PC/sign/map kind in the installed UI. The cause is not yet
+  diagnosed; prior engineering checks do not close this usability issue. See
+  [acceptance](docs/PCA_VISUALIZATION_EXPORTS.md#heatmap-clarity-and-all-maps-view--pending).
+
 - [x] Apply the selected mesh view to all generated visualization media, including
   SD panels, maps and movies; keep the anatomical preview responsive, show PCA
   specimen IDs on hover, and offer individual/all side-by-side media with shared
   movie playback. The tested v143 Windows build is installed; independent first
-  use remains separate. See [scope](docs/V143_VISUALIZATION_VIEWS.md) and
-  [verified delivery](docs/V143_DELIVERY.md).
+  use reported the open heatmap issues above. The implementation/delivery checks
+  remain recorded in [scope](docs/V143_VISUALIZATION_VIEWS.md) and
+  [verified delivery](docs/V143_DELIVERY.md); they do not resolve that report.
 
 - [x] Add opt-in automatic process recording: active sections at 10×, long waits
   at 300×, MP4 after each completed computation and immediate follow-up recording.

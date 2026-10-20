@@ -83,6 +83,33 @@ signs, with fixed cameras and no unreported registration. Report normalized unit
 when preprocessing removed physical scale; do not label normalized coordinates as
 micrometres. State whether summary statistics use vertex or surface-area weights.
 
+## Heatmap clarity and all-maps view — pending
+
+Owner feedback, 20 October 2026: the six-view `PC3 · −2 SD · normal-displacement`
+plate is unclear, and the installed interface still does not let the owner see
+all heatmaps together. These are open follow-ups to v143, not implemented fixes.
+The reason the overview is unavailable in the owner's session is not yet known.
+
+- [ ] **Clarify the static heatmap.** Use a short title identifying the PC, SD
+  endpoint and reference mean. Explain signed normal displacement in plain
+  language: zero means no normal displacement; the two color directions indicate
+  movement along or against the mean-surface normal. Keep magnitude distinct
+  from signed normal displacement and retain the correct units/shared scale.
+  Label the six panels as different views of the same endpoint, with directions
+  relative to the chosen view. Remove the `−2 SD → Mean → +2 SD` path caption
+  from static endpoints; reserve score-path wording for movies. Put detailed
+  definitions in optional help/provenance, keeping the visible explanation short.
+- [ ] **Make all heatmaps accessible together.** Reproduce the reported failure
+  with the owner's completed result in the installed app before choosing a fix.
+  Provide an obvious **All · side by side** control covering every available PC,
+  negative/positive endpoint and map kind, with clear grouping, readable labels
+  and shared scales within each kind. A six-camera plate for one endpoint alone
+  does not satisfy this overview. Preserve individual selection, aspect ratios,
+  chosen mesh orientation and usable scroll/zoom at normal screen size/DPI.
+  Verify switching between individual/all views, reopening the result and
+  exporting the overview. Check the actual installed UI with this result;
+  source or frozen probes alone do not close the reported usability issue.
+
 ## Movies
 
 Show each PC independently from -2 SD through the mean to +2 SD, with visible
