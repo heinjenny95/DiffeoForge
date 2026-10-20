@@ -7,6 +7,8 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def isolated_recording_preferences(monkeypatch, tmp_path):
+    # Result opening now remembers paths too; tests must never seed user history.
+    monkeypatch.setenv("DIFFEOFORGE_STATE_HOME", str(tmp_path / "navigation-state"))
     if importlib.util.find_spec("PySide6") is None:
         yield
         return

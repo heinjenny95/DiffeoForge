@@ -42,7 +42,7 @@ class RunFolderState(Enum):
 
 
 _ACTION_LABELS = {
-    RunLookupPurpose.OPEN_COMPLETED: "Open completed run…",
+    RunLookupPurpose.OPEN_COMPLETED: "Open results…",
     RunLookupPurpose.RESUME_INTERRUPTED: "Resume interrupted run…",
     RunLookupPurpose.RECOVER_CRASHED: "Recover after crash…",
 }

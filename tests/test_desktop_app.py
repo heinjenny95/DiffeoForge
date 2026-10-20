@@ -3784,9 +3784,11 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
     window._reference_pca_deformation_failed("synthetic failure")
     assert window._reference_pca_deformation_timer.isActive() is False
     assert window.generate_reference_pca_deformations_button.isEnabled() is True
-    assert "Nothing was restarted automatically" in (
-        window.reference_pca_deformation_status_label.text()
+    assert window.reference_pca_deformation_status_label.text() == (
+        "Visualization preparation failed: synthetic failure"
     )
+    assert window._worker is None
+    assert isinstance(queued[-1], _ReferencePCADeformationWorker)
 
     window.generate_reference_pca_deformations_button.click()
     window._reference_pca_deformation_succeeded(run / "analysis" / "shooting-result")
@@ -3852,7 +3854,16 @@ def test_desktop_can_select_a_saved_completed_run(monkeypatch, tmp_path, referen
     window = DiffeoForgeWindow()
     window._thread_pool = FakePool()  # type: ignore[assignment]
 
-    assert window.open_completed_run_button.text() == "Open completed run…"
+    from diffeoforge.desktop.completed_results import CompletedResultRun
+    from diffeoforge.desktop.result_library_dialog import ResultLibraryDialog
+    from PySide6.QtWidgets import QDialog
+
+    def choose(dialog):
+        dialog.selected_result = CompletedResultRun(run.resolve(), reference=reference)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(ResultLibraryDialog, "exec", choose)
+    assert window.open_completed_run_button.text() == "Open results…"
     window.open_completed_run_button.click()
     application.processEvents()
 
@@ -3872,7 +3883,7 @@ def test_desktop_can_select_a_saved_completed_run(monkeypatch, tmp_path, referen
     assert window.open_completed_run_button.isEnabled() is False
     window._completed_result_review_failed("test failure")
     assert window.open_completed_run_button.isEnabled() is True
-    assert window.open_completed_run_button.text() == "Open completed run…"
+    assert window.open_completed_run_button.text() == "Open results…"
     assert "full verification failed" in window.status_label.text()
     assert "full verification failed" in window.data_status_label.text()
     window.close()
@@ -4258,7 +4269,6 @@ def test_desktop_requires_explicit_confirmation_before_crash_recovery(
 @pytest.mark.parametrize(
     ("button_name", "expected_action"),
     [
-        ("open_completed_run_button", "Open completed run…"),
         ("resume_interrupted_run_button", "Resume interrupted run…"),
         ("recover_abandoned_run_button", "Recover after crash…"),
     ],

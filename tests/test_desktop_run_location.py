@@ -125,7 +125,7 @@ def test_wrong_action_for_the_found_state_names_the_fitting_action(tmp_path: Pat
 
     message = explain_missing_run(RunLookupPurpose.RESUME_INTERRUPTED, description)
 
-    assert "done: a completed Deformetrica run. Use “Open completed run…” for it." in message
+    assert "done: a completed Deformetrica run. Use “Open results…” for it." in message
     assert "Use “Recover after crash…” for it." in message
     assert "Use “Resume interrupted run…”" not in message
 

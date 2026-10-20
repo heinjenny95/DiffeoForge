@@ -1,4 +1,12 @@
-# Development continuity — v141 PCA mesh views
+# Development continuity — v142 searchable results
+
+v142 replaces exact-directory result selection with a searchable library of
+recent/added projects and previously opened results. Nested selected-calibration
+atlases are found in a bounded background search; optional trial fits and local
+display names reduce navigation noise. Existing full verification on explicit
+opening is preserved. See [behavior and delivery gates](V142_RESULT_LIBRARY.md).
+The tested/installed v141 runtime below remains separate until v142 completes
+its frozen build and safe idle-application installation gates.
 
 v141 separates the Stage 7 PCA mesh view from the PCA camera, adds a large
 rotatable preview with named result-bound views and replaces coarse 3D specimen

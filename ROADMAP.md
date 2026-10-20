@@ -384,6 +384,13 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
   the result view without replacing the setup form; this gap remains open.
   Preserve existing projects and require deliberate input selection.
 
+- [x] Replace exact-folder completed-run opening with a searchable result library:
+  discover nested version/selected-calibration runs in recent or explicitly added
+  projects, remember locations, keep pilot/diagnostic fits optional, show project,
+  specimen count and date, and allow local display names without moving folders.
+  Bounded background scanning and full verification on explicit opening remain
+  separate. See [v142 scope and delivery gates](docs/V142_RESULT_LIBRARY.md).
+
 ## Milestone 0: Public foundation
 
 - [x] Public repository, license, and pre-alpha warning

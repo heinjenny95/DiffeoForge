@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid
 
 from diffeoforge import display_version
 from diffeoforge.analysis.landmarks import (
@@ -52,9 +53,7 @@ from diffeoforge.desktop.calibration_comparison_widget import (
     CalibrationComparisonCanvas3D,
 )
 from diffeoforge.desktop.completed_results import (
-    CompletedResultDiscoveryError,
     CompletedResultRun,
-    discover_completed_results,
 )
 from diffeoforge.desktop.feature_scale_dialog import FeatureScaleRulerDialog
 from diffeoforge.desktop.gpa_review_dialog import GpaAlignmentReviewDialog
@@ -155,6 +154,8 @@ from diffeoforge.desktop.remote_atlas_controller import (
     create_desktop_remote_atlas_session,
     verify_desktop_remote_atlas_session,
 )
+from diffeoforge.desktop.result_library import save_library_preference
+from diffeoforge.desktop.result_library_dialog import ResultLibraryDialog
 from diffeoforge.desktop.result_mesh_loader import ResultMeshLoader
 from diffeoforge.desktop.result_review import (
     ModernResultReview,
@@ -2041,12 +2042,10 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.recent_projects_button.clicked.connect(self._select_recent_project)
         self.recent_projects_button.hide()
-        self.open_completed_run_button = QPushButton("Open completed run…")
+        self.open_completed_run_button = QPushButton("Open results…")
         self.open_completed_run_button.setObjectName("secondary")
         self.open_completed_run_button.setToolTip(
-            "Select the run folder itself (the folder that contains manifest.json and "
-            "result.json, e.g. …/runs/desktop-ref-…) or the folder that directly contains "
-            "its “runs” folder. If nothing fits, a message names what was found instead."
+            "Find completed atlases in known projects, or add a project folder to search."
         )
         self.open_completed_run_button.clicked.connect(self._select_completed_run)
         self.resume_interrupted_run_button = QPushButton("Resume interrupted run…")
@@ -8030,7 +8029,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.open_completed_run_button.setText(
             "Verifying completed run…"
             if isinstance(self._worker, _ResultReviewWorker)
-            else "Open completed run…"
+            else "Open results…"
         )
         looking_up = self._worker.purpose if isinstance(self._worker, _RunLookupWorker) else None
         self.resume_interrupted_run_button.setEnabled(self._worker is None)
@@ -8109,44 +8108,10 @@ class DiffeoForgeWindow(QMainWindow):
         if self._worker is not None:
             return
         initial = self.project_edit.text().strip() or self.mesh_edit.text().strip()
-        selected = QFileDialog.getExistingDirectory(
-            self,
-            "Select a completed run folder, or the folder that contains its runs folder",
-            initial,
-        )
-        if not selected:
-            return
-        self._clear_run_lookup_notice()
-        try:
-            results = discover_completed_results(selected)
-        except CompletedResultDiscoveryError as error:
-            self._report_run_lookup_problem(
-                "Completed runs could not be inspected",
-                f"Completed runs could not be inspected: {error}\n\n"
-                "Nothing was loaded and nothing was changed.",
-            )
-            return
-        if not results:
-            self._report_missing_run(RunLookupPurpose.OPEN_COMPLETED, Path(selected))
-            return
-        result = results[0]
-        if len(results) > 1:
-            labels = [
-                (f"{candidate.run_directory.name} — {candidate.run_directory.parent}")
-                for candidate in results
-            ]
-            chosen, accepted = QInputDialog.getItem(
-                self,
-                "Choose completed run",
-                "More than one completed run was found:",
-                labels,
-                0,
-                False,
-            )
-            if not accepted:
-                return
-            result = results[labels.index(chosen)]
-        self._open_completed_result(result)
+        dialog = ResultLibraryDialog(Path(initial) if initial else None, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_result is not None:
+            self._clear_run_lookup_notice()
+            self._open_completed_result(dialog.selected_result)
 
     @Slot()
     def _select_interrupted_run(self) -> None:
@@ -8970,6 +8935,8 @@ class DiffeoForgeWindow(QMainWindow):
             self._pca_auto_attempted.add(identity)
 
             def start_if_current():
+                if not isValid(self):
+                    return
                 current = self._result_review
                 if (current is not None
                     and (current.run_directory, current.bundle_manifest_sha256) == identity
@@ -11881,6 +11848,7 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(object)
     def _result_review_succeeded(self, review: ModernResultReview) -> None:
         self._worker = None
+        save_library_preference(opened=review.run_directory)
         if review.run_directory not in self._visualization_media_by_run:
             self.visualization_panel.clear()
             previews = self.reference_pca_sd_previews.layout()
