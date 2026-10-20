@@ -1,5 +1,9 @@
 # v144: real-time fit-review recording
 
+Historical v144 behavior, superseded by the owner's
+[v145 clarification](V145_PILOT_REVIEW_RECORDING.md): normal interaction 10×,
+pilot fit evaluation 2×, calculation/loading 1000×.
+
 Owner feedback, 20 October 2026: the pilot review video was too fast to follow.
 The former review/decision rate of 10× becomes **1×**. Calculation and loading
 remain **1000×**. Tooltip, status, video overlay and new timing companions use

@@ -1,5 +1,12 @@
 # Private-alpha build numbering
 
+## v145 — pilot-specific review recording
+
+v145 (`0.0.0.dev145`) restores 10× normal interaction, including paths and
+landmarks, and records ready pilot fit evaluation at 2×. Calculation/loading
+remain 1000×. This supersedes v144's broad 1× action rate after owner clarification.
+See [scope and verification](V145_PILOT_REVIEW_RECORDING.md).
+
 ## v144 — real-time fit-review recording
 
 v144 (`0.0.0.dev144`) records human review and decisions at 1× while keeping

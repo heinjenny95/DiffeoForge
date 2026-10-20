@@ -490,6 +490,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         super().__init__(parent)
         if candidate.run_directory is None:
             raise ValueError("Candidate has no completed run directory")
+        self.setProperty("processRecordingPilotReview", True)
         self._pairs = (
             pairs if pairs is not None else collect_calibration_qc_pairs(study_directory, candidate)
         )

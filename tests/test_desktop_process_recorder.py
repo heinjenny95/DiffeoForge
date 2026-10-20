@@ -170,8 +170,8 @@ def test_real_gui_stall_pauses_video_without_splitting_or_cutting_responsive_wai
         pause = data["pauses"][0]
         assert pause["reason"] == "interface_unresponsive"
         assert 2.0 < pause["source_end"] - pause["source_start"] < 2.5
-        # Responsive review time remains real-time; only the blocked GUI is cut.
-        assert 1.4 < data["output"]["seconds"] < 2.2
+        # Normal interaction remains ten-times; only the blocked GUI is cut.
+        assert 1.0 < data["output"]["seconds"] < 1.3
         assert data["source_seconds"] > 4.5
     finally:
         stop(application, window, rec)
@@ -228,8 +228,8 @@ def test_speed_follows_worker_completion_and_review_not_mouse_or_keyboard(
         rec.finish_manually()
         wait(application, lambda: not rec.encoders)
         data = json.loads(rec.last_output.with_suffix(".json").read_text())
-        assert data["speeds"] == {"active": 1, "waiting": 1000}
-        assert [t["speed"] for t in data["timeline"]] == [1, 1000, 1]
+        assert data["speeds"] == {"active": 10, "pilot_review": 2, "waiting": 1000}
+        assert [t["speed"] for t in data["timeline"]] == [10, 1000, 10]
     finally:
         dialog.close()
         stop(application, window, rec)
@@ -259,32 +259,56 @@ def test_remembered_opt_in_starts_after_show_and_smoke_opt_out_preserves_choice(
     other.close()
 
 
-def test_ready_fit_review_is_captured_at_real_time_after_fast_loading(application, tmp_path):
+def test_only_actual_pilot_fit_viewer_uses_two_times_after_fast_loading(application, tmp_path):
+    from diffeoforge.desktop.reference_calibration_dialog import CalibrationCandidateViewerDialog
+
     window, rec, _settings = setup(tmp_path)
-    dialog = QDialog(window)
+    candidate = SimpleNamespace(run_directory=tmp_path / "run", candidate_id="fixture")
+    dialog = CalibrationCandidateViewerDialog(tmp_path, candidate, window, pairs=())
+    popup = QDialog(dialog)
     dialog.resize(640, 400)
     try:
+        # Path selection, landmarking and the pilot dashboard remain ordinary actions.
+        rec.enabled.setChecked(True)
+        rec._capture(force=True)
+        assert rec.last_mode == "active"
         dialog.setProperty("processRecordingWaiting", True)
         dialog.show()
         dialog.activateWindow()
         application.processEvents()
-        rec.enabled.setChecked(True)
         rec._capture(force=True)
         QTest.qWait(250)
         dialog.setProperty("processRecordingWaiting", False)
         rec._capture(force=True)
+        assert rec.last_mode == "pilot_review"
+        popup.show()
+        popup.activateWindow()
+        application.processEvents()
+        assert rec._recording_mode() == "pilot_review"
+        dialog.setProperty("processRecordingWaiting", True)
+        assert rec._recording_mode() == "waiting"  # Loading wins in nested popups too.
+        dialog.setProperty("processRecordingWaiting", False)
+        popup.close()
+        dialog.activateWindow()
+        application.processEvents()
         QTest.qWait(1200)
         rec.finish_manually()
         wait(application, lambda: not rec.encoders)
         data = json.loads(rec.last_output.with_suffix(".json").read_text())
-        assert [t["speed"] for t in data["timeline"]] == [1000, 1]
-        review = data["timeline"][1]
+        assert [t["speed"] for t in data["timeline"]] == [10, 1000, 2]
+        review = data["timeline"][2]
         review_seconds = data["source_seconds"] - review["source_start"]
         assert review_seconds >= 1.2
-        assert abs(data["output"]["seconds"] - review_seconds - 1) < 0.05
+        assert abs(data["output"]["seconds"] - review["output_start"]
+                   - review_seconds / 2 - 1) < 0.05
         # The old ten-times capture cadence would provide only a few samples.
-        assert data["capture_samples"] >= 18
+        assert data["capture_samples"] >= 12
+        dialog.hide()
+        window.activateWindow()
+        application.processEvents()
+        assert rec._recording_mode() == "active"
     finally:
+        popup.close()
         dialog.close()
         stop(application, window, rec)
 

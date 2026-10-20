@@ -147,7 +147,8 @@ class ProcessRecorder(QObject):
         self.enabled = QCheckBox("Auto-record process")
         self.enabled.setStyleSheet("QCheckBox { color: #eff8f7; }")
         self.enabled.setToolTip(
-            "Remember this choice. Record reviews and decisions at 1×; record busy "
+            "Remember this choice. Record normal interaction at 10× and pilot fit "
+            "evaluation at 2×; record busy "
             "calculation and loading phases at 1000×. Mouse movement and clicks do not "
             "change that speed. Keep the whole project "
             "session together, including pilot attempts, reviews and the atlas plot. "
@@ -156,7 +157,7 @@ class ProcessRecorder(QObject):
             "Time while the interface is unresponsive is omitted after it recovers. "
             "No desktop or audio capture."
         )
-        self.status = QLabel("Reviews 1× · calculations 1000× · freezes omitted")
+        self.status = QLabel("Actions 10× · pilot review 2× · calculations 1000×")
         self.status.setWordWrap(True)
         self.status.setObjectName("railCaption")
         row = QHBoxLayout()
@@ -363,17 +364,29 @@ class ProcessRecorder(QObject):
             if self.next_capture <= now:
                 self.next_capture = now + interval
         self.last_capture, self.last_mode = now, mode
-        self.status.setText("Recording · review 1×" if mode == "active"
-                            else "Recording · calculation 1000×")
+        self.status.setText("Recording · " + {
+            "active": "actions 10×",
+            "pilot_review": "pilot review 2×",
+            "waiting": "calculation 1000×",
+        }[mode])
 
     def _recording_mode(self):
-        """Keep calculations fast across focus changes and owned popup windows."""
+        """Slow only ready pilot fit evaluation, including its owned popups."""
         target = self._capture_window()
-        busy = target.property("processRecordingWaiting") is True or any(
+        busy = any(
             indicator.tasks
             for indicator in self.window.findChildren(ActivityIndicator)
         )
-        return "waiting" if busy else "active"
+        pilot_review = False
+        while self._owned(target):
+            busy |= target.property("processRecordingWaiting") is True
+            pilot_review |= target.property("processRecordingPilotReview") is True
+            if target is self.window:
+                break
+            target = target.parentWidget()
+        if busy:
+            return "waiting"
+        return "pilot_review" if pilot_review else "active"
 
     def _capture_window(self):
         pilot = getattr(self.window, "_reference_calibration_dialog", None)
@@ -454,7 +467,11 @@ class ProcessRecorder(QObject):
         painter.setFont(font)
         elapsed = int(now - self.started)
         clock = f"{elapsed // 3600:02}:{elapsed // 60 % 60:02}:{elapsed % 60:02}"
-        rate = "Review · 1×" if mode == "active" else "Calculation · 1000×"
+        rate = {
+            "active": "Actions · 10×",
+            "pilot_review": "Pilot review · 2×",
+            "waiting": "Calculation · 1000×",
+        }[mode]
         title = window.windowTitle().strip() or type(window).__name__
         caption = f"DiffeoForge · {title} · session {clock} · {rate}"
         caption = painter.fontMetrics().elidedText(caption, Qt.TextElideMode.ElideRight, w - 36)

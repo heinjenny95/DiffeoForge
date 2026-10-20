@@ -1,4 +1,10 @@
-# Development continuity — v144 real-time review recording
+# Development continuity — v145 pilot-specific recording
+
+The owner's v145 clarification restores normal interaction to 10×, including
+paths and landmarks, and records only ready pilot fit evaluation at 2×.
+Calculation/loading remain 1000×. See [scope and checks](V145_PILOT_REVIEW_RECORDING.md).
+Source verification and Windows delivery are tracked separately; the v144
+installation snapshot below remains historical after the successor is installed.
 
 v144 changes human review/decision recording to 1× and retains 1000× calculation
 and loading. The tested Windows runtime `6aa6650` / `dev144` is installed after

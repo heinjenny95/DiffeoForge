@@ -45,14 +45,15 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 - [x] Add opt-in automatic process recording. The original v130 delivery used
   10× active sections and 300× waits; v137 keeps a continuous project-session
-  video with 1000× calculation/loading phases. v144 changes review and decision
-  phases to 1× after owner feedback that fit inspection was too fast to follow.
+  video with 1000× calculation/loading phases. The owner's v145 clarification
+  retains 10× normal interaction (including paths and landmarks) and records only
+  ready pilot fit evaluation at 2×, superseding v144's broad 1× action rate.
   Capture only owned application UI, use bounded background encoding, declare
   capture gaps and recover sealed presentation fragments. Engineering checks
   and independent first-use acceptance are distinct. See
   [v130 history](docs/V130_PROCESS_RECORDING.md),
   [continuous recording](docs/V137_RESPONSIVE_PILOT_RECORDING.md) and
-  [real-time reviews](docs/V144_REAL_TIME_REVIEW_RECORDING.md).
+  [pilot-specific speeds](docs/V145_PILOT_REVIEW_RECORDING.md).
 
 - [ ] Remove the visible **Open demo · explore all steps with public examples**
   button (`open_demo_button`) and the demo/presentation mode, its other UI entry

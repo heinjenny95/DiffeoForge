@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 
 FPS = 30
-SPEEDS = {"active": 1, "waiting": 1000}
+SPEEDS = {"active": 10, "pilot_review": 2, "waiting": 1000}
 SEGMENT_FRAMES = 900
 
 
@@ -248,7 +248,7 @@ class ProcessRecording:
             "size": list(size),
             "fps": FPS,
             "speeds": SPEEDS,
-            "mode_policy": "Busy workflow tasks 1000x; human review and decisions 1x",
+            "mode_policy": "Normal interaction 10x; pilot fit evaluation 2x; busy tasks 1000x",
             "segments": [],
             "timeline": [],
             "capture_gaps": [],
@@ -349,7 +349,7 @@ class ProcessRecording:
             count = max(0, round(self._output_time * FPS) - self._total_frames)
             # A delayed GUI/encoder sample is recorded rather than presented as
             # captured motion. Delays in intentionally sparse waiting mode are normal.
-            if self._mode == "active" and delta > 1.0:
+            if self._mode != "waiting" and delta > 1.0:
                 self.data["capture_gap_count"] += 1
                 if len(self.data["capture_gaps"]) < 1000:
                     self.data["capture_gaps"].append(
