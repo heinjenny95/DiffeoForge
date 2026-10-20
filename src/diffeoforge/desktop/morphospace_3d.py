@@ -5,7 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
     QComboBox,
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSlider,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -58,6 +59,8 @@ def load_geometry(path, expected=None, scores_expected=None):
 
 
 class MorphospaceCanvas(QWidget):
+    hovered = Signal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(300, 300)
@@ -242,6 +245,21 @@ class MorphospaceCanvas(QWidget):
         if self.data is None or scene is None:
             return -1
         xy = self._project(self.data[0], scene)
+        if self.glyph_images:
+            scores = self.data[0]
+            depths = ((scores - scene.center) / scene.scale) @ scene.rotation[2]
+            width = self.glyph_size * min(scene.width, scene.height) * 4 * scene.zoom
+            # Pick the visible, frontmost image pixel, including large/off-centre glyphs.
+            for index in reversed(np.argsort(depths)):
+                image = self.glyph_images[index]
+                height = width * image.height() / image.width()
+                dx, dy = position.x() - xy[index, 0], position.y() - xy[index, 1]
+                if abs(dx) < width / 2 and abs(dy) < height / 2:
+                    px = int((dx / width + 0.5) * image.width())
+                    py = int((dy / height + 0.5) * image.height())
+                    if image.pixelColor(px, py).alpha() > 20:
+                        return int(index)
+            return -1
         distances = np.linalg.norm(xy - [position.x(), position.y()], axis=1)
         index = int(distances.argmin())
         return index if distances[index] < 25 else -1
@@ -261,11 +279,18 @@ class MorphospaceCanvas(QWidget):
             self.update()
         else:
             index = self._pick(event.position())
-            self.setToolTip(
-                self._label(index)
-                if index >= 0
-                else "Drag to rotate · Right-drag to pan · Wheel to zoom"
-            )
+            text = self._label(index) if index >= 0 else ""
+            self.setToolTip(text)
+            self.hovered.emit(text)
+            if text:
+                QToolTip.showText(event.globalPosition().toPoint(), text, self)
+            else:
+                QToolTip.hideText()
+
+    def leaveEvent(self, event):  # noqa: N802
+        self.hovered.emit("")
+        QToolTip.hideText()
+        super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event):  # noqa: N802
         if self.last is not None and (event.position() - self.press).manhattanLength() < 4:
@@ -308,6 +333,11 @@ class Morphospace3D(QWidget):
         )
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        self.hover_label = QLabel()
+        self.hover_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.hover_label.setWordWrap(True)
+        self.canvas.hovered.connect(self.hover_label.setText)
+        layout.addWidget(self.hover_label)
         layout.addWidget(self.canvas, 1)
         self.timer = QTimer(self)
         self.timer.setInterval(40)
@@ -335,6 +365,7 @@ class Morphospace3D(QWidget):
         self.timer.start()
 
     def clear(self):
+        self.hover_label.clear()
         self.timer.stop()
         if self.future is not None:
             self.future.cancel()

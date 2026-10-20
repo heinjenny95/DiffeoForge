@@ -22,6 +22,12 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 ## Owner-requested cleanup
 
+- [x] Apply the selected mesh view to all generated visualization media, including
+  SD panels, maps and movies; keep the anatomical preview responsive, show PCA
+  specimen IDs on hover, and offer individual/all side-by-side media with shared
+  movie playback. Implemented in v143 source; frozen/installed verification is
+  tracked separately. See [scope](docs/V143_VISUALIZATION_VIEWS.md).
+
 - [x] Add opt-in automatic process recording: active sections at 10×, long waits
   at 300×, MP4 after each completed computation and immediate follow-up recording.
   Capture only owned application UI, use bounded background encoding, declare

@@ -225,6 +225,8 @@ def render_views(data, rotation, indices, cancelled):
 
 class MeshViewController(QObject):
     images_changed = Signal(object)
+    media_changed = Signal(object)
+    busy_changed = Signal(bool)
     preview_ready = Signal(object)
     ready_changed = Signal(bool)
     status_changed = Signal(str)
@@ -247,6 +249,9 @@ class MeshViewController(QObject):
         self.label = "Original mesh view"
         self.images = []
         self._generation = 0
+        self.all_media = False
+        self.directory = None
+        self._progress = [None]
 
     def clear(self):
         self._generation += 1
@@ -255,14 +260,17 @@ class MeshViewController(QObject):
             self.future.cancel()
         self.future, self.pending, self.data = None, None, None
         self.timer.stop()
+        self._progress = [None]
         self.views, self.selected, self.images = [], None, []
         self._restore_selected = None
         self.rotation, self.label = np.eye(3), "Original mesh view"
         self.ready_changed.emit(False)
+        self.busy_changed.emit(False)
         self.status_changed.emit("Choose which surface faces you.")
 
     def load(self, directory, scores, images):
         self.clear()
+        self.directory = directory
         self.images = images
         self.path, self.identity = preference_path(directory)
         try:
@@ -280,7 +288,20 @@ class MeshViewController(QObject):
             self.future = _JOBS.submit(load_surfaces, *args, self.cancelled)
         else:
             rotation, indices, _name = args
-            self.future = _JOBS.submit(render_views, self.data, rotation, indices, self.cancelled)
+            if kind == "apply" and self.all_media:
+                self._progress = [None]
+                self.future = _JOBS.submit(
+                    render_all_media,
+                    self.directory,
+                    rotation,
+                    _name,
+                    self.cancelled,
+                    self._progress,
+                )
+            else:
+                self.future = _JOBS.submit(
+                    render_views, self.data, rotation, indices, self.cancelled
+                )
         self.timer.start()
 
     def request(self, rotation, *, preview=None, name=None):
@@ -296,9 +317,15 @@ class MeshViewController(QObject):
         else:
             self._submit(kind, args)
         if kind == "apply":
-            self.status_changed.emit("Turning all meshes…")
+            self.busy_changed.emit(True)
+            self.status_changed.emit(
+                "Preparing all visualizations…" if self.all_media else "Turning all meshes…"
+            )
 
     def _poll(self):
+        if getattr(self, "_active_generation", None) == self._generation and self._progress[0]:
+            self.status_changed.emit(self._progress[0])
+            self._progress[0] = None
         if self.future is None or not self.future.done():
             return
         future, kind, args, generation = (
@@ -324,18 +351,114 @@ class MeshViewController(QObject):
                     self.preview_ready.emit(value[0])
                 else:
                     rotation, _indices, name = args
+                    media = None
+                    if self.all_media:
+                        value, media = value
                     updated = save_view(self.path, self.identity, self.views, name, rotation)
                     self.views, self.rotation, self.label = updated, rotation, name.strip()
                     self.selected = self.label
                     self.images = value
+                    if media is not None:
+                        self.media_changed.emit(media)
                     self.images_changed.emit(value)
-                    self.status_changed.emit("Applied to all meshes.")
+                    self.status_changed.emit(
+                        "Applied to all visualizations."
+                        if self.all_media
+                        else "Applied to all meshes."
+                    )
         except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
             if generation == self._generation:
                 self.status_changed.emit(str(error))
         if self.pending is not None:
             pending, self.pending = self.pending, None
             self._submit(*pending)
+        elif kind == "apply":
+            self.busy_changed.emit(False)
+
+
+def render_all_media(directory, rotation, name, cancelled, progress):
+    from diffeoforge.oriented_media import prepare_oriented_media
+
+    path = prepare_oriented_media(
+        directory, rotation, name, cancelled, lambda text: progress.__setitem__(0, text)
+    )
+    items = json.loads((path / "PCA-Gallery/mesh-pca.json").read_text())
+    images = [QImage(str(path / f"PCA-Gallery/thumbnails/{item['id']}.png")) for item in items]
+    if any(image.isNull() for image in images):
+        raise ValueError("A prepared specimen view could not be decoded")
+    return images, path
+
+
+class PreviewSession:
+    """One warm renderer on one thread; bounded latest-input mailbox, no GUI waits."""
+
+    def __init__(self, data):
+        self.data = data
+        self.condition = threading.Condition()
+        self.pending = self.result = None
+        self.closed = False
+        self.serial = 0
+        self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mesh-preview")
+        self.future = self.worker.submit(self._run)
+
+    def request(self, rotation, index):
+        with self.condition:
+            if self.closed:
+                return
+            self.serial += 1
+            self.pending = self.serial, index, checked_rotation(rotation)
+            self.condition.notify()
+
+    def take(self):
+        with self.condition:
+            result, self.result = self.result, None
+            return result
+
+    def close(self):
+        with self.condition:
+            self.closed = True
+            self.pending = None
+            self.condition.notify()
+        self.worker.shutdown(wait=False, cancel_futures=True)
+
+    def _run(self):
+        from diffeoforge.analysis.pca_media_rendering import SurfaceRenderer, with_points
+
+        renderer = None
+        mesh, current = None, -1
+        try:
+            renderer = SurfaceRenderer((420, 360))
+            while True:
+                with self.condition:
+                    self.condition.wait_for(lambda: self.closed or self.pending is not None)
+                    if self.closed:
+                        return
+                    serial, index, rotation = self.pending
+                    self.pending = None
+                try:
+                    if index != current:
+                        mesh = with_points(self.data[0], self.data[1][index])
+                        current = index
+                    frame = renderer.render(
+                        mesh, self.data[2], ("Preview", rotation[2], rotation[1])
+                    )
+                    pixels = np.ascontiguousarray(frame)
+                    image = QImage(
+                        pixels.data,
+                        pixels.shape[1],
+                        pixels.shape[0],
+                        pixels.strides[0],
+                        QImage.Format.Format_RGBA8888,
+                    ).copy()
+                    error = None
+                except Exception as failure:
+                    image, error = None, str(failure)
+                with self.condition:
+                    if not self.closed:
+                        self.result = serial, index, image, error
+        finally:
+            if renderer is not None:
+                renderer.close()
 
 
 class MeshViewPreview(QWidget):
@@ -379,11 +502,15 @@ class MeshViewDialog(QDialog):
     def __init__(self, controller, labels, parent=None):
         super().__init__(parent)
         self.controller = controller
+        self.source_data = controller.data
+        self.session = PreviewSession(self.source_data)
+        session = self.session
+        self.destroyed.connect(lambda: session.close())
         self.setWindowTitle("Choose the mesh view")
         self.resize(720, 650)
         layout = QVBoxLayout(self)
         layout.addWidget(
-            QLabel("Turn the relevant surface towards you, then apply it to all meshes.")
+            QLabel("Turn the relevant surface towards you, then apply it to all visualizations.")
         )
         self.specimens = QComboBox()
         self.specimens.addItems(labels)
@@ -418,24 +545,41 @@ class MeshViewDialog(QDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Apply to all meshes")
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Apply to all visualizations")
         buttons.accepted.connect(self._apply)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self.debounce = QTimer(self)
         self.debounce.setSingleShot(True)
-        self.debounce.setInterval(150)
+        self.debounce.setInterval(16)
         self.debounce.timeout.connect(self._request_preview)
         for spin in self.angles:
-            spin.valueChanged.connect(lambda: self.debounce.start())
-        self.specimens.currentIndexChanged.connect(lambda: self.debounce.start())
+            spin.valueChanged.connect(self._schedule_preview)
+        self.specimens.currentIndexChanged.connect(self._schedule_preview)
         self.preset.currentIndexChanged.connect(self._preset_changed)
         self.preview.turned.connect(self._turn)
-        controller.preview_ready.connect(self._preview_ready)
+        self.frames = QTimer(self)
+        self.frames.setInterval(16)
+        self.frames.timeout.connect(self._poll_preview)
+        self.frames.start()
         self.finished.connect(self._finished)
         if controller.images:
             self._preview_ready(controller.images[representative])
         self.debounce.start()
+
+    def _schedule_preview(self):
+        if not self.debounce.isActive():
+            self.debounce.start()
+
+    def _poll_preview(self):
+        result = self.session.take()
+        if result is not None:
+            _serial, index, image, error = result
+            if index == self.specimens.currentIndex():
+                if error:
+                    self.preview.setToolTip(error)
+                else:
+                    self._preview_ready(image)
 
     def rotation(self):
         return turn_view(self.preset.currentData(), *(spin.value() for spin in self.angles))
@@ -450,21 +594,22 @@ class MeshViewDialog(QDialog):
             spin.setValue(((spin.value() + delta + 180) % 360) - 180)
 
     def _request_preview(self):
-        self.controller.request(self.rotation(), preview=self.specimens.currentIndex())
+        self.session.request(self.rotation(), self.specimens.currentIndex())
 
     def _preview_ready(self, image):
         self.preview.image = image
         self.preview.update()
 
     def _apply(self):
-        if self.name.text().strip():
+        if self.name.text().strip() and self.controller.data is self.source_data:
             self.debounce.stop()
             self.controller.request(self.rotation(), name=self.name.text().strip())
             self.accept()
 
     def _finished(self):
         self.debounce.stop()
-        self.controller.preview_ready.disconnect(self._preview_ready)
+        self.frames.stop()
+        self.session.close()
 
 
 def mesh_view_button(controller, labels, parent):

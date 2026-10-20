@@ -1,4 +1,11 @@
-# Development continuity — v142 searchable results
+# Development continuity — v143 visualization views
+
+v143 extends named views to all generated visualization media, keeps the preview
+renderer warm, adds specimen hover IDs and side-by-side PCA/SD/map/movie views.
+All-media publication is atomic and reuses verified native samples without
+scientific execution. See [behavior and delivery gates](V143_VISUALIZATION_VIEWS.md).
+Source, tested Windows installation and independent first use remain separate.
+The v142 installation below is the last completed delivery until v143 is verified.
 
 v142 replaces exact-directory result selection with a searchable library of
 recent/added projects and previously opened results. Nested selected-calibration

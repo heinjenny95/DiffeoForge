@@ -206,6 +206,8 @@ class Method3DDialog(QDialog):
             artifact = review.artifact(by_name[label].reconstruction_artifact_key)
             records.append((artifact.path, artifact.bytes, artifact.sha256))
         self.viewer.labels = list(labels)
+        if getattr(parent, "mesh_images", None) is not None:
+            parent.apply_mesh_images(self)
         self.viewer.future = _WORK.submit(mesh_glyphs, tuple(records), scores, self.cancelled)
         self.viewer.status.setText("Loading verified reconstruction display meshes…")
         self.viewer.timer.start()
@@ -234,6 +236,7 @@ class MethodResultsPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.review = self.result = self.future = None
+        self.mesh_images = None
         self.dialogs = []
         self._saved = False
         layout = QVBoxLayout(self)
@@ -290,6 +293,21 @@ class MethodResultsPanel(QWidget):
         self.three_d.setEnabled(False)
         self.export.setEnabled(False)
         self.hide()
+
+    def set_mesh_images(self, labels, images, name, run):
+        self.mesh_images = (list(labels), list(images), name, run)
+        for dialog in list(self.dialogs):
+            self.apply_mesh_images(dialog)
+
+    def apply_mesh_images(self, dialog):
+        if self.mesh_images is None:
+            return
+        labels, images, name, run = self.mesh_images
+        if dialog.review.run_directory != run or set(dialog.viewer.labels) != set(labels):
+            return
+        by_label = dict(zip(labels, images, strict=True))
+        dialog.viewer.set_images([by_label[label] for label in dialog.viewer.labels])
+        dialog.viewer.canvas.mesh_view_label = name
 
     def load(self, artifact, review):
         self.clear()

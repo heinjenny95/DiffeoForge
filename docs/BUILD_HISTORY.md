@@ -1,5 +1,13 @@
 # Private-alpha build numbering
 
+## v143 — shared views and media comparison
+
+v143 (`0.0.0.dev143`) applies named anatomical views across PCA, SD, heatmaps and
+movies, reuses a warm interactive preview renderer, displays hovered specimen
+IDs and adds individual/all comparison with shared movie playback and MP4 export.
+Scientific results and original media are preserved. See
+[scope and verification gates](V143_VISUALIZATION_VIEWS.md).
+
 ## v142 — searchable completed results
 
 v142 (`0.0.0.dev142`) replaces exact-folder opening with a searchable library of

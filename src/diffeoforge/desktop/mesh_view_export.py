@@ -155,7 +155,11 @@ def export_oriented_gallery(
                 gallery,
                 figures,
                 videos,
-                SimpleNamespace(scores=scores, explained_variance_ratio=ratios),
+                SimpleNamespace(
+                    scores=scores,
+                    explained_variance_ratio=ratios,
+                    sample_labels=[item.get("label", f"Mesh {item['id']}") for item in items],
+                ),
             )
             for filename in ("index.html", "mesh-pca.html"):
                 path = gallery / filename

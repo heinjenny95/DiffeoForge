@@ -1921,6 +1921,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.visualization_panel = VisualizationPanel(self)
         self.visualization_panel.retry_requested.connect(self._start_reference_pca_deformations)
         self.visualization_panel.cancel_requested.connect(self._cancel_visualization)
+        self.visualization_panel.mesh_images_applied.connect(self.method_results_panel.set_mesh_images)
+        self.visualization_panel.view_applied.connect(self._visualization_view_applied)
         self.page_stack.addWidget(self.visualization_panel)
         self._pca_auto_attempted = set()
         self._visualization_media_by_run = {}
@@ -8920,6 +8922,7 @@ class DiffeoForgeWindow(QMainWindow):
                 self.visualization_panel.retry.show()
                 self._visualization_media_by_run.pop(review.run_directory, None)
                 return
+            media = self.visualization_panel.directory
             previews = self.reference_pca_sd_previews.layout()
             if self.reference_pca_sd_previews.property("media") != str(media):
                 while previews.count():
@@ -8947,6 +8950,16 @@ class DiffeoForgeWindow(QMainWindow):
                     self._pca_auto_attempted.discard(identity)
 
             QTimer.singleShot(0, start_if_current)
+
+    def _visualization_view_applied(self, media):
+        previews = self.reference_pca_sd_previews.layout()
+        while previews.count():
+            previews.takeAt(0).widget().deleteLater()
+        from diffeoforge.desktop.visualization_panel import ResponsiveMediaImage
+
+        for path in sorted((media / "PCA-Gallery/figures").glob("PC*-SD.png")):
+            previews.addWidget(ResponsiveMediaImage(path))
+        self.reference_pca_sd_previews.setProperty("media", str(media))
 
     @Slot()
     def _open_validation_lab(self) -> None:
