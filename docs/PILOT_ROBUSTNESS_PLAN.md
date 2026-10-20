@@ -92,6 +92,20 @@ attachment sensitivity or iteration budget. Any controlled fitting comparison
 remains a separate, explicitly scoped next action; preserve saved evidence and
 human review decisions. Do not silently turn anatomical notes into new loss terms.
 
+For an explicitly requested template change, preserve the previous configuration,
+alignment and pilot outputs. Keep the complete observation cohort: use a separate
+template copy rather than silently dropping its source specimen or retaining the
+old template copy as another observation. Copy the selected specimen's landmark
+rows to the new template alias. If preparing a new GPA, publish separate,
+hash-bound evidence and require fresh visual review; numerical convergence does
+not transfer the old review approval. Do not carry old template-bound guidance,
+pilot approvals or momentum fields into the new preparation. Retain absolute
+numerical settings unless a parameter change was also requested, and label their
+provenance accordingly. Verify the saved configuration, input identities,
+alignment evidence and desktop convenience paths. An already-open desktop
+session must reload the project before using the new preparation. Preparation
+alone does not authorize or start a new fit.
+
 Rank proposed experiments from the evidence instead of always exhausting the
 same fixed-order list. Keep the current budget explicit and distinguish an
 exhausted budget from a satisfactory fit. Preserve all prior candidates and
