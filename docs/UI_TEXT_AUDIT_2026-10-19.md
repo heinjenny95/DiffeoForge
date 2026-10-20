@@ -1,6 +1,8 @@
 # UI text audit — 19 October 2026
 
 Status: **26 source locations revised in v138; independent usability review open.**
+The owner's 20 October screenshot adds the still-open UI-27 follow-up below;
+the original source pass does not close that report.
 The numbered findings below retain the observed problem and reduction target.
 The checked items mean the source pass is implemented, not that native first-use
 acceptance or installation has passed. Default layouts and help are shortened;
@@ -118,6 +120,19 @@ Suggested wording records the original audit target; final copy is in the linked
   Stage 4 suppression of generic ranking advice; do not reintroduce that text.
   [Source: guided intro](../src/diffeoforge/desktop/reference_calibration_dialog.py#L1529),
   [stage guidance layout](../src/diffeoforge/desktop/reference_calibration_dialog.py#L1993).
+
+- [ ] **UI-27 — Pilot header and status still repeat the same instructions.**
+  Owner screenshot, 20 October 2026: the title "fit → review → combined check",
+  the "Fit → review → continue" heading and the sentence "Fit → inspect → approve
+  or try again" repeat the workflow. Generic "Pilot task…", "Ready for the first
+  specimen" and "Checking saved fits and preparing the next attempt…" also appear
+  together. Keep one short stage title, one truthful current activity/progress
+  line and one next action; do not show readiness while preparation is active.
+  Move the technical "Pilot data" path into details and consolidate overlapping
+  help. Preserve required review decisions, progress and actionable errors.
+  Verify the fresh/preparing/ready/review states with the owner at normal window
+  size. Backlog only; the screenshot does not establish the cause of the status
+  mismatch, and no UI repair is claimed.
 
 - [x] **UI-13 — Approved candidate: three copies of the same review state.** With
   fit metrics and a recorded approval, a card can show “Anatomical review approved,”

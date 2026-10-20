@@ -583,6 +583,12 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
     Show the phase, one compact specimen/iteration summary and the progress bar;
     keep the event history available in logs rather than duplicating the current
     status in adjacent labels. Check other workflow phases for the same repetition.
+    Owner screenshot follow-up, 20 October 2026: the pilot header repeats the
+    fit/review workflow in its title, subheading and instruction, alongside
+    multiple activity/readiness/preparation lines and a technical data path.
+    Keep one stage, one consistent status and one next action; fold the path and
+    consolidate help. This remains open after the v138 copy pass; see
+    [UI-27](docs/UI_TEXT_AUDIT_2026-10-19.md#pilot-and-comparison-dialogs).
     The [19 October source audit](docs/UI_TEXT_AUDIT_2026-10-19.md) records 26
     concrete open items across pages 1–7 and supporting dialogs, with source
     locations, visibility/state, proposed reductions and checks against false
