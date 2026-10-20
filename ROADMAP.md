@@ -84,12 +84,12 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 ## Longer-term UI customization — low priority
 
-- [ ] Extend named mesh views to SD panels, displacement maps, movies and other
-  method viewers. Offer a large anatomical preview, user-named views and optional
-  focus/crop, then preview the selected export. Use one camera/scale across
-  specimens and retain scientific coordinates; never infer anatomical names from
-  arbitrary axes. v141 implements Stage 7's shared 2D/3D PCA glyph views first;
-  other media still use their existing labelled cameras.
+- [ ] Complete reusable view profiles, optional focus/crop and a clear export
+  preview, with independent usability acceptance. v143 already applies named
+  views to PCA/SD/maps/movies and matching method viewers; do not reimplement that
+  extension from the historical v141 scope. Keep one camera/scale across specimens
+  and scientific coordinates unchanged; never infer anatomical names from arbitrary
+  axes. The owner's heatmap overview/clarity report remains open above.
 
 - [x] Add appearance settings with light/dark modes and user-selected colors.
   In particular, let users replace the current teal accent with an arbitrary

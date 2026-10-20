@@ -1,5 +1,12 @@
 # Development continuity — v143 visualization views
 
+For a new chat, start with [current continuation guidance](CHAT_CONTINUATION.md)
+and the owner's latest private handoff. The owner has since reopened the app and
+reported open heatmap clarity/all-map usability issues; see
+[current acceptance](PCA_VISUALIZATION_EXPORTS.md#heatmap-clarity-and-all-maps-view--pending).
+Delivery-time closed/idle states and historical next steps below are not live
+state or instructions to repeat completed work.
+
 v143 extends named views to all generated visualization media, keeps the preview
 renderer warm, adds specimen hover IDs and side-by-side PCA/SD/map/movie views.
 All-media publication is atomic and reuses verified native samples without
@@ -7,10 +14,11 @@ scientific execution. See [behavior and delivery gates](V143_VISUALIZATION_VIEWS
 Runtime `994e7be` / `dev143` is installed after complete backup and fresh idle
 guards. All 64 distinct source checks and exact frozen/installed full-media
 probes pass; five source/frozen/installed views are pixel-identical. Bundle,
-registry, startup/media and original-file checks pass. The owner application
-remains closed; no scientific action or installer upload occurred. See
-[verified delivery](V143_DELIVERY.md). Independent first use remains separate;
-the v142 delivery below is historical.
+registry, startup/media and original-file checks pass. At delivery the owner
+application remained closed; no scientific action or installer upload occurred.
+See [verified delivery](V143_DELIVERY.md). These checks do not establish independent
+first-use acceptance; the heatmap report above remains open. The v142 delivery
+below is historical.
 
 v142 replaces exact-directory result selection with a searchable library of
 recent/added projects and previously opened results. Nested selected-calibration
