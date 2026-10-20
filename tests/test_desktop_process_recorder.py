@@ -170,7 +170,8 @@ def test_real_gui_stall_pauses_video_without_splitting_or_cutting_responsive_wai
         pause = data["pauses"][0]
         assert pause["reason"] == "interface_unresponsive"
         assert 2.0 < pause["source_end"] - pause["source_start"] < 2.5
-        assert data["output"]["seconds"] < 1.4
+        # Responsive review time remains real-time; only the blocked GUI is cut.
+        assert 1.4 < data["output"]["seconds"] < 2.2
         assert data["source_seconds"] > 4.5
     finally:
         stop(application, window, rec)
@@ -227,8 +228,8 @@ def test_speed_follows_worker_completion_and_review_not_mouse_or_keyboard(
         rec.finish_manually()
         wait(application, lambda: not rec.encoders)
         data = json.loads(rec.last_output.with_suffix(".json").read_text())
-        assert data["speeds"] == {"active": 10, "waiting": 1000}
-        assert [t["speed"] for t in data["timeline"]] == [10, 1000, 10]
+        assert data["speeds"] == {"active": 1, "waiting": 1000}
+        assert [t["speed"] for t in data["timeline"]] == [1, 1000, 1]
     finally:
         dialog.close()
         stop(application, window, rec)
@@ -256,6 +257,36 @@ def test_remembered_opt_in_starts_after_show_and_smoke_opt_out_preserves_choice(
     assert settings.value("enabled", type=bool) is True
     disabled.handle_close()
     other.close()
+
+
+def test_ready_fit_review_is_captured_at_real_time_after_fast_loading(application, tmp_path):
+    window, rec, _settings = setup(tmp_path)
+    dialog = QDialog(window)
+    dialog.resize(640, 400)
+    try:
+        dialog.setProperty("processRecordingWaiting", True)
+        dialog.show()
+        dialog.activateWindow()
+        application.processEvents()
+        rec.enabled.setChecked(True)
+        rec._capture(force=True)
+        QTest.qWait(250)
+        dialog.setProperty("processRecordingWaiting", False)
+        rec._capture(force=True)
+        QTest.qWait(1200)
+        rec.finish_manually()
+        wait(application, lambda: not rec.encoders)
+        data = json.loads(rec.last_output.with_suffix(".json").read_text())
+        assert [t["speed"] for t in data["timeline"]] == [1000, 1]
+        review = data["timeline"][1]
+        review_seconds = data["source_seconds"] - review["source_start"]
+        assert review_seconds >= 1.2
+        assert abs(data["output"]["seconds"] - review_seconds - 1) < 0.05
+        # The old ten-times capture cadence would provide only a few samples.
+        assert data["capture_samples"] >= 18
+    finally:
+        dialog.close()
+        stop(application, window, rec)
 
 
 def test_encoder_failure_does_not_retry_or_close_the_application(

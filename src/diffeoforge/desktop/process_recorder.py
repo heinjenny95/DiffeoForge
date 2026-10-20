@@ -147,7 +147,7 @@ class ProcessRecorder(QObject):
         self.enabled = QCheckBox("Auto-record process")
         self.enabled.setStyleSheet("QCheckBox { color: #eff8f7; }")
         self.enabled.setToolTip(
-            "Remember this choice. Record reviews and decisions at 10×; record busy "
+            "Remember this choice. Record reviews and decisions at 1×; record busy "
             "calculation and loading phases at 1000×. Mouse movement and clicks do not "
             "change that speed. Keep the whole project "
             "session together, including pilot attempts, reviews and the atlas plot. "
@@ -156,7 +156,7 @@ class ProcessRecorder(QObject):
             "Time while the interface is unresponsive is omitted after it recovers. "
             "No desktop or audio capture."
         )
-        self.status = QLabel("Reviews 10× · calculations 1000× · freezes omitted")
+        self.status = QLabel("Reviews 1× · calculations 1000× · freezes omitted")
         self.status.setWordWrap(True)
         self.status.setObjectName("railCaption")
         row = QHBoxLayout()
@@ -363,7 +363,7 @@ class ProcessRecorder(QObject):
             if self.next_capture <= now:
                 self.next_capture = now + interval
         self.last_capture, self.last_mode = now, mode
-        self.status.setText("Recording · review 10×" if mode == "active"
+        self.status.setText("Recording · review 1×" if mode == "active"
                             else "Recording · calculation 1000×")
 
     def _recording_mode(self):
@@ -454,7 +454,7 @@ class ProcessRecorder(QObject):
         painter.setFont(font)
         elapsed = int(now - self.started)
         clock = f"{elapsed // 3600:02}:{elapsed // 60 % 60:02}:{elapsed % 60:02}"
-        rate = "Review · 10×" if mode == "active" else "Calculation · 1000×"
+        rate = "Review · 1×" if mode == "active" else "Calculation · 1000×"
         title = window.windowTitle().strip() or type(window).__name__
         caption = f"DiffeoForge · {title} · session {clock} · {rate}"
         caption = painter.fontMetrics().elidedText(caption, Qt.TextElideMode.ElideRight, w - 36)

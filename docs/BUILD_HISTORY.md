@@ -1,5 +1,12 @@
 # Private-alpha build numbering
 
+## v144 — real-time fit-review recording
+
+v144 (`0.0.0.dev144`) records human review and decisions at 1× while keeping
+calculation and loading phases at 1000×. Mode selection still follows workflow
+tasks, and existing video/recovery timing is preserved. See
+[scope and verification](V144_REAL_TIME_REVIEW_RECORDING.md).
+
 ## v143 — shared views and media comparison
 
 v143 (`0.0.0.dev143`) applies named anatomical views across PCA, SD, heatmaps and

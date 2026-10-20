@@ -36,9 +36,9 @@ def test_native_encoder_preserves_timing_final_state_and_project_delivery(tmp_pa
     project = tmp_path / "project"
     project.mkdir()
     rec = ProcessRecording(tmp_path / "staging", (160, 96), segment_frames=25)
-    # Three captures per second at 10x => thirty playback frames per second.
-    for i in range(31):
-        rec.add(pixels(20 + i * 3), i / 3, "active")
+    # Real-time review captures retain ten source seconds as ten video seconds.
+    for i in range(301):
+        rec.add(pixels(20 + i // 3), i / 30, "active")
     rec.add(pixels(150), 10, "waiting")
     rec.add(pixels(190), 310, "active")
     rec.add(pixels(230), 320, "active")
@@ -48,25 +48,25 @@ def test_native_encoder_preserves_timing_final_state_and_project_delivery(tmp_pa
     assert data["status"] == "complete"
     assert data["source_seconds"] == 320
     assert data["final_hold_frames"] == 30
-    # 10s / 10 + 300s / 1000 + 10s / 10 + one-second declared end hold.
-    assert data["output"]["frames"] == 99
-    assert data["output"]["seconds"] == 3.3
-    assert [item["speed"] for item in data["timeline"]] == [10, 1000, 10]
+    # 10s / 1 + 300s / 1000 + 10s / 1 + one-second declared end hold.
+    assert data["output"]["frames"] == 639
+    assert data["output"]["seconds"] == 21.3
+    assert [item["speed"] for item in data["timeline"]] == [1, 1000, 1]
     assert data["capture_gap_count"] == 1
     assert data["output"]["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
     assert not list(rec.directory.glob("segment-*.mp4"))
     meta, frames = decode(path)
-    assert meta["fps"] == 30 and len(frames) == 99
+    assert meta["fps"] == 30 and len(frames) == 639
     assert abs(float(frames[-1].mean()) - 230) < 5
     # The deliberately delayed active capture is visibly labelled, not silent motion.
-    assert frames[45][10, 150, 0] > frames[45][10, 150, 1] + 50
+    assert frames[400][10, 150, 0] > frames[400][10, 150, 1] + 50
 
 
 def test_live_lock_then_partial_recovery_without_replacing_existing_outputs(tmp_path):
     root = tmp_path / "staging"
     rec = ProcessRecording(root, (160, 96), segment_frames=2)
     for i in range(7):
-        rec.add(pixels(i * 20), i / 3, "active")
+        rec.add(pixels(i * 20), i / 30, "active")
     with pytest.raises(OSError):
         recover_recording(rec.directory, root)
     rec.fail(RuntimeError("public engineering interruption"))
@@ -93,9 +93,9 @@ def test_unresponsive_intervals_are_cut_but_normal_waiting_and_final_state_remai
     assert data["source_seconds"] == 901
     assert data["capture_gap_count"] == 0
     assert data["pauses"][0]["source_end"] == 601
-    # One active second /10 + 300 responsive waiting seconds /1000 + final hold.
+    # One active second /1 + 300 responsive waiting seconds /1000 + final hold.
     meta, frames = decode(path)
-    assert meta["fps"] == 30 and len(frames) == 42
+    assert meta["fps"] == 30 and len(frames) == 69
     assert abs(float(frames[-1].mean()) - 220) < 5
 
 
@@ -168,7 +168,7 @@ def test_export_retries_transient_windows_destination_lock(tmp_path, monkeypatch
     rec.add(pixels(), 0, "active")
     path = rec.finish(1)
     assert len(calls) == 3 and path.stat().st_size > 0
-    assert len(decode(path)[1]) == 33
+    assert len(decode(path)[1]) == 60
 
 
 def test_abrupt_public_writer_exit_releases_lock_and_recovers_only_sealed_video(tmp_path):
@@ -178,7 +178,7 @@ import numpy as np
 from diffeoforge.process_recording import ProcessRecording
 r = ProcessRecording(sys.argv[1], (160,96), segment_frames=2)
 for i in range(7):
-    r.add(np.full((96,160,3), 100, np.uint8), i/3, 'active')
+    r.add(np.full((96,160,3), 100, np.uint8), i/30, 'active')
 os._exit(0)  # Deliberate presentation-only fixture crash; no scientific worker.
 """
     subprocess.run([sys.executable, "-c", code, str(tmp_path)], check=True, timeout=30)
@@ -186,3 +186,21 @@ os._exit(0)  # Deliberate presentation-only fixture crash; no scientific worker.
     path = recover_recording(directory, tmp_path)
     assert len(decode(path)[1]) == 6
     assert json.loads(path.with_suffix(".json").read_text())["recovered_partial"] is True
+
+
+def test_legacy_sealed_ten_times_review_recovers_without_retiming(tmp_path, monkeypatch):
+    from diffeoforge import process_recording as module
+
+    root = tmp_path / "staging"
+    with monkeypatch.context() as legacy:
+        legacy.setattr(module, "SPEEDS", {"active": 10, "waiting": 1000})
+        rec = ProcessRecording(root, (160, 96), segment_frames=2)
+        for i in range(7):
+            rec.add(pixels(i * 20), i / 3, "active")
+        rec.fail(RuntimeError("legacy recording interruption fixture"))
+    path = recover_recording(rec.directory, root)
+    data = json.loads(path.with_suffix(".json").read_text())
+    assert data["speeds"] == {"active": 10, "waiting": 1000}
+    assert data["timeline"][0]["speed"] == 10
+    assert data["output"]["frames"] == 6
+    assert len(decode(path)[1]) == 6

@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 
 FPS = 30
-SPEEDS = {"active": 10, "waiting": 1000}
+SPEEDS = {"active": 1, "waiting": 1000}
 SEGMENT_FRAMES = 900
 
 
@@ -248,7 +248,7 @@ class ProcessRecording:
             "size": list(size),
             "fps": FPS,
             "speeds": SPEEDS,
-            "mode_policy": "Busy workflow tasks 1000x; human review and decisions 10x",
+            "mode_policy": "Busy workflow tasks 1000x; human review and decisions 1x",
             "segments": [],
             "timeline": [],
             "capture_gaps": [],

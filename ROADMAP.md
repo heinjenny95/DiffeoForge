@@ -43,12 +43,16 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
   remain recorded in [scope](docs/V143_VISUALIZATION_VIEWS.md) and
   [verified delivery](docs/V143_DELIVERY.md); they do not resolve that report.
 
-- [x] Add opt-in automatic process recording: active sections at 10×, long waits
-  at 300×, MP4 after each completed computation and immediate follow-up recording.
+- [x] Add opt-in automatic process recording. The original v130 delivery used
+  10× active sections and 300× waits; v137 keeps a continuous project-session
+  video with 1000× calculation/loading phases. v144 changes review and decision
+  phases to 1× after owner feedback that fit inspection was too fast to follow.
   Capture only owned application UI, use bounded background encoding, declare
   capture gaps and recover sealed presentation fragments. Engineering checks
   and independent first-use acceptance are distinct. See
-  [v130 behavior and limits](docs/V130_PROCESS_RECORDING.md).
+  [v130 history](docs/V130_PROCESS_RECORDING.md),
+  [continuous recording](docs/V137_RESPONSIVE_PILOT_RECORDING.md) and
+  [real-time reviews](docs/V144_REAL_TIME_REVIEW_RECORDING.md).
 
 - [ ] Remove the visible **Open demo · explore all steps with public examples**
   button (`open_demo_button`) and the demo/presentation mode, its other UI entry

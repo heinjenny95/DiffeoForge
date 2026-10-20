@@ -1,5 +1,9 @@
 # v137: responsive pilot review and continuous process video
 
+The v137 rates below are historical. v144 changes human review and decisions
+from 10× to 1× while retaining 1000× calculations/loading; see
+[current recording policy](V144_REAL_TIME_REVIEW_RECORDING.md).
+
 Reviewing a long pilot history repeatedly verified ancestors, result files and
 integration receipts on the GUI thread. The pilot now prepares its presentation,
 comparison inputs, review persistence and stage selections in background workers.
