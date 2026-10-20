@@ -5,8 +5,12 @@ recent/added projects and previously opened results. Nested selected-calibration
 atlases are found in a bounded background search; optional trial fits and local
 display names reduce navigation noise. Existing full verification on explicit
 opening is preserved. See [behavior and delivery gates](V142_RESULT_LIBRARY.md).
-The tested/installed v141 runtime below remains separate until v142 completes
-its frozen build and safe idle-application installation gates.
+The tested Windows runtime `951de4c` / `dev142` is installed after complete backup
+and fresh idle checks. All 126 source cases pass (one expected optional skip),
+exact frozen/installed library probes pass, both source/frozen/installed views
+are pixel-identical and original project/preference hashes are unchanged. Bundle,
+evidence, registry and media/startup checks pass. The owner app remains closed.
+See [verified delivery](V142_DELIVERY.md). The v141 delivery below is historical.
 
 v141 separates the Stage 7 PCA mesh view from the PCA camera, adds a large
 rotatable preview with named result-bound views and replaces coarse 3D specimen
@@ -20,7 +24,7 @@ hashes/evidence, registry and startup/media smokes pass. Five source/frozen/
 installed images are pixel-identical; original project bytes are unchanged.
 The owner app remains closed. See [delivery verification](V141_DELIVERY.md).
 
-Snapshot: 2026-10-19. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-20. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 

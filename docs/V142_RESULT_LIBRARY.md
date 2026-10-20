@@ -1,5 +1,7 @@
 # v142 — find results by project rather than folder depth
 
+The tested local Windows build is installed; see [delivery checks](V142_DELIVERY.md).
+
 **Open results…** opens a searchable list instead of immediately requesting an
 exact run directory. It searches recent projects, explicitly added project/data
 folders and previously opened results. A dataset folder can contain several

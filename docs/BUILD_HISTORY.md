@@ -1,5 +1,14 @@
 # Private-alpha build numbering
 
+## v142 — searchable completed results
+
+v142 (`0.0.0.dev142`) replaces exact-folder opening with a searchable library of
+recent/added projects and previously opened results. Deeply nested atlases,
+optional trial fits and local display names keep folder naming out of the normal
+opening path. Explicit selection retains full verification; scientific folders
+are preserved. The tested Windows build is installed. See
+[scope](V142_RESULT_LIBRARY.md) and [delivery checks](V142_DELIVERY.md).
+
 ## v141 — independent anatomical views for PCA glyphs
 
 v141 (`0.0.0.dev141`) adds a large rotatable specimen preview and named shared
