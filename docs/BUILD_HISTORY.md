@@ -7,6 +7,8 @@ callback opens a modal fit viewer. This prevents review from being recorded at
 1000× while retaining the requested 10× actions / 2× review / 1000× busy rates.
 All 56 focused source cases pass, including decoded visible mesh content through
 the actual asynchronous pilot opener. See [scope and cause](V146_MODAL_REVIEW_RECORDING.md).
+The tested runtime is installed; exact frozen/installed callback-to-modal MP4
+probes and preservation checks pass. See [delivery](V146_DELIVERY.md).
 
 ## v145 — pilot-specific review recording
 

@@ -26,6 +26,7 @@ test uses the actual asynchronous pilot opener, rotates synthetic meshes inside
 the actual modal viewer and decodes the MP4 to verify visible mesh frames, without
 forcing review captures. It closes without recording an anatomy decision.
 
-Frozen/installed verification must exercise this callback/modal path and inspect
-encoded mesh content, separately from timing. Independent owner acceptance remains
-open; synthetic presentation checks do not start owner scientific runs.
+Frozen and installed verification exercise this callback/modal path and inspect
+encoded mesh content, separately from timing; both pass. See
+[verified delivery](V146_DELIVERY.md). Independent owner acceptance remains open;
+synthetic presentation checks do not start owner scientific runs.

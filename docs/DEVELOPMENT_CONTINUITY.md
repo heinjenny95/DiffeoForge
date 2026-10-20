@@ -6,8 +6,12 @@ so review was compressed at 1000×. v146 publishes loader activity before result
 callbacks enter modal review. All 56 focused source cases pass, including the
 actual asynchronous pilot opener and decoded rotating-mesh frames. See
 [cause, repair and verification boundaries](V146_MODAL_REVIEW_RECORDING.md).
-Windows delivery is tracked separately; the prior v145 snapshot below does not
-close this first-use report.
+Runtime `ced5e4d` / `dev146` is installed after complete verified backup and fresh
+idle checks. Exact frozen/installed actual-opener MP4 probes confirm sustained mesh
+content and three different recorded orientations; bundle/registry/startup/media
+and post-probe owner-file/settings preservation checks pass. See
+[delivery](V146_DELIVERY.md). Independent owner acceptance remains open; prior
+v145 direct-viewer probes did not cover this production transition.
 
 The owner's v145 clarification restores normal interaction to 10×, including
 paths and landmarks, and records only ready pilot fit evaluation at 2×.
