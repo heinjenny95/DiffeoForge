@@ -198,13 +198,17 @@ def test_offline_gallery_hover_embeds_specimen_labels_with_exact_scores(tmp_path
         SimpleNamespace(
             scores=scores,
             explained_variance_ratio=np.array([0.6, 0.3, 0.1]),
-            sample_labels=["specimen-A", "specimen-B"],
+            sample_labels=["RATIOS", "DATA</script>"],
         ),
     )
     items = json.loads((gallery / "mesh-pca.json").read_text())
-    assert [item["label"] for item in items] == ["specimen-A", "specimen-B"]
+    assert [item["label"] for item in items] == ["RATIOS", "DATA</script>"]
     np.testing.assert_array_equal([item["scores"] for item in items], scores)
     assert "canvas.title=item.label" in (gallery / "mesh-pca.html").read_text()
+    page = (gallery / "mesh-pca.html").read_text()
+    embedded = page.split("const items=", 1)[1].split(",ratios=", 1)[0]
+    assert [item["label"] for item in json.loads(embedded)] == ["RATIOS", "DATA</script>"]
+    assert "DATA</script>" not in page
     _archive_gallery(gallery, tmp_path / "export.zip")
 
 

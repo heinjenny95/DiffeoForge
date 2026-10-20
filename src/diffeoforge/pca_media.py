@@ -661,9 +661,11 @@ document.getElementById('reset').onclick=reset;reset();
     encoded_items = (
         json.dumps(items, allow_nan=False).replace("<", "\\u003c").replace(">", "\\u003e")
     )
-    script = script.replace("DATA", encoded_items).replace(
-        "RATIOS", json.dumps(pca.explained_variance_ratio[:3].tolist())
-    )
+    # Substitute the template before inserting user labels/base64: specimen IDs
+    # may themselves contain words such as RATIOS or DATA.
+    script = script.replace(
+        "RATIOS", json.dumps(pca.explained_variance_ratio[:3].tolist()), 1
+    ).replace("DATA", encoded_items, 1)
     (gallery / "mesh-pca.html").write_text(script, encoding="utf-8")
 
 
