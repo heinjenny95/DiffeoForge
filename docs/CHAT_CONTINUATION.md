@@ -9,7 +9,7 @@ locations; do not copy those details into this repository.
 1. The current private handoff and both applicable `AGENTS.md` files.
 2. Current branch, `git status` and remote state; preserve unrelated work.
 3. [Development continuity](DEVELOPMENT_CONTINUITY.md),
-   [v147 delivery](V147_DELIVERY.md) and the relevant acceptance document.
+   [v148 delivery](V148_DELIVERY.md) and the relevant acceptance document.
 4. The complete [roadmap](../ROADMAP.md), [next-version plan](NEXT_VERSION_PLAN.md),
    [v138 reconciliation](V138_DESKTOP_BACKLOG.md),
    [visualization requirements](PCA_VISUALIZATION_EXPORTS.md),
@@ -25,8 +25,11 @@ authorization or establish current application/job state.
 v148 source repairs pilot preparation after project/method edits; both explicit
 buttons use the current form, preserving overwrite cancellation and preventing
 duplicate preparation. See [verification and boundaries](V148_PILOT_PREPARATION.md).
-The installed v147 snapshot below remains authoritative until v148 delivery is
-verified. Do not close a running owner app or interrupt its recording to install.
+Runtime `f7bdc69` / `dev148` is installed after full backup and fresh idle checks.
+Source/exact frozen/installed actual-opener probes and post-probe project/settings
+preservation pass without native fits. See [delivery](V148_DELIVERY.md), including
+separately reproduced baseline assertions. Older installed snapshots below are
+historical. Do not close a running owner app or interrupt its recording to install.
 
 v147 source implements [automatic Current/Varifold pilot comparison](V147_AUTOMATIC_ATTACHMENT.md).
 New guided desktop projects expose Automatic by default; existing saved pilots

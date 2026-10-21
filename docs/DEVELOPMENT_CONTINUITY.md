@@ -4,8 +4,12 @@ v148 source repairs the explicit pilot action after project-directory or method
 changes. Both buttons prepare the current configuration through the existing
 guarded project/review/readiness chain instead of rejecting the stale binding or
 navigating with an old review. See [cause and verification](V148_PILOT_PREPARATION.md).
-Installed v147 remains the delivery snapshot until a verified successor is
-recorded; do not replace a running app or interrupt owner work.
+Runtime `f7bdc69` / `dev148` is installed after complete verified backup and fresh
+idle guards. Source/exact frozen/installed probes exercise both actual buttons
+through the pilot opener with zero attempted fits; post-probe project/settings
+preservation is verified. See [delivery evidence and baseline test limits](V148_DELIVERY.md).
+Older delivery snapshots below are historical; do not repeat installation or
+interrupt owner work based on a delivery-time idle snapshot.
 
 v147 source adds automatic Current/Varifold comparison for new guided desktop
 projects. Six matched fresh trials use the same pilot originals; independent

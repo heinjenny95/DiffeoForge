@@ -31,7 +31,8 @@ unchanged when all four modified window methods are restored from v147. Tampered
 evidence is still rejected before the downstream loader. These baseline
 assertions are recorded separately and are not repaired or claimed as passing.
 
-The installed v147 cannot acquire this change while running. Installation of
-the tested successor requires a verified backup and an idle application/backend;
-unsaved owner work and an active recording must be preserved. Runtime/delivery
-verification is recorded separately after the candidate build is tested.
+The earlier running v147 could not acquire this change in memory. The tested
+v148 successor is installed after verified backup and fresh idle checks, with
+source/exact frozen/installed actual-opener probes and preservation checks. See
+[delivery evidence and remaining boundaries](V148_DELIVERY.md). Delivery-time
+idle state is a snapshot; never interrupt owner work to repeat installation.
