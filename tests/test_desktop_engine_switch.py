@@ -17,8 +17,9 @@ from diffeoforge.desktop.widgets import (
 
 
 @pytest.fixture
-def window(monkeypatch):
+def window(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("DIFFEOFORGE_STATE_HOME", str(tmp_path / "desktop-state"))
     application = QApplication.instance() or QApplication(["engine-switch-test"])
     instance = DiffeoForgeWindow()
     yield instance

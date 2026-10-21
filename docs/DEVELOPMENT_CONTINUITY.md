@@ -1,4 +1,11 @@
-# Development continuity — v147 automatic matching-method comparison
+# Development continuity — v148 pilot preparation repair
+
+v148 source repairs the explicit pilot action after project-directory or method
+changes. Both buttons prepare the current configuration through the existing
+guarded project/review/readiness chain instead of rejecting the stale binding or
+navigating with an old review. See [cause and verification](V148_PILOT_PREPARATION.md).
+Installed v147 remains the delivery snapshot until a verified successor is
+recorded; do not replace a running app or interrupt owner work.
 
 v147 source adds automatic Current/Varifold comparison for new guided desktop
 projects. Six matched fresh trials use the same pilot originals; independent

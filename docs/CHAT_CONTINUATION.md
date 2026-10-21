@@ -22,6 +22,12 @@ authorization or establish current application/job state.
 
 ## Current software boundary
 
+v148 source repairs pilot preparation after project/method edits; both explicit
+buttons use the current form, preserving overwrite cancellation and preventing
+duplicate preparation. See [verification and boundaries](V148_PILOT_PREPARATION.md).
+The installed v147 snapshot below remains authoritative until v148 delivery is
+verified. Do not close a running owner app or interrupt its recording to install.
+
 v147 source implements [automatic Current/Varifold pilot comparison](V147_AUTOMATIC_ATTACHMENT.md).
 New guided desktop projects expose Automatic by default; existing saved pilots
 retain their explicit method. There is no silent migration or scientific rerun.

@@ -5793,7 +5793,9 @@ class DiffeoForgeWindow(QMainWindow):
 
     def _reference_calibration_completed(self) -> bool:
         path = self._reference_calibrated_config_path
-        return bool(path is not None and path.is_file())
+        return bool(
+            path is not None and path.is_file() and self._bound_project_matches_form()
+        )
 
     def _update_reference_guidance_controls(self) -> None:
         reference = self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
@@ -9051,12 +9053,13 @@ class DiffeoForgeWindow(QMainWindow):
     def _setup_primary_action(self) -> None:
         if self._worker is not None:
             return
-        if self._review is not None:
+        project_is_current = self._bound_project_matches_form()
+        if self._review is not None and project_is_current:
             if self._reference_calibration_pending():
                 self._open_reference_calibration()
             else:
                 self._navigate_to_step(2)
-        elif self._result is not None:
+        elif self._result is not None and project_is_current:
             self._review_project()
         else:
             reference = self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
@@ -9299,6 +9302,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_card.hide()
         self._result = None
         self._review = None
+        self._reference_calibrated_config_path = None
         self._template_preview = None
         self._reference_readiness = None
         self._reference_preparation_status = None
@@ -9980,12 +9984,7 @@ class DiffeoForgeWindow(QMainWindow):
             or self.engine_combo.currentData() != DesktopEngine.DEFORMETRICA_REFERENCE
         ):
             return
-        if not self._bound_project_matches_form():
-            self.status_label.setText(
-                "Inputs changed. Create or open the current project before starting its pilot. "
-                "The previously loaded result remains available."
-            )
-            return
+        project_is_current = self._bound_project_matches_form()
         # Defend this entry point as well as the combo signal: a stale Modern
         # result must never skip Reference creation and reach a no-op check.
         if any(
@@ -9993,7 +9992,7 @@ class DiffeoForgeWindow(QMainWindow):
             for state in (self._result, self._review)
         ):
             self._clear_engine_project_state()
-        if self._reference_calibration_completed():
+        if project_is_current and self._reference_calibration_completed():
             self._review_saved_reference_pilot()
             return
         if not self._reference_calibration_plan_matches_current_inputs():
@@ -10004,6 +10003,13 @@ class DiffeoForgeWindow(QMainWindow):
                 "plan before starting pilot calibration."
             )
             self._sync_ready_state()
+            return
+        if not project_is_current:
+            self._guided_reference_calibration_requested = True
+            self.reference_calibration_execution_status.setText(
+                "Creating and validating the current pilot configuration…"
+            )
+            self._create_project()
             return
         context = self._reference_calibration_context()
         if context is not None and self._reference_readiness is not None:
