@@ -4,8 +4,10 @@
 
 Template suggestions, adaptive diversity-based pilot size, one-target method
 comparison, explicit tie/unfit/uncertain decisions, optional saved comparisons and
-joint-model retention are implemented in source. See [v149 scope and limits](V149_GUIDED_PILOT.md).
-Only software tests and delivery are authorized; no new scientific fits.
+joint-model retention are implemented and installed as dev149. See [v149 scope
+and limits](V149_GUIDED_PILOT.md) and [verified delivery](V149_DELIVERY.md).
+Source/exact frozen/installed workflow and review-video checks pass; prospective
+scientific and selector validation remains open. No new scientific fits started.
 
 ## v147 owner-authorized automatic matching comparison — 21 October 2026
 

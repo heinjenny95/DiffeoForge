@@ -9,7 +9,7 @@ locations; do not copy those details into this repository.
 1. The current private handoff and both applicable `AGENTS.md` files.
 2. Current branch, `git status` and remote state; preserve unrelated work.
 3. [Development continuity](DEVELOPMENT_CONTINUITY.md),
-   [v148 delivery](V148_DELIVERY.md) and the relevant acceptance document.
+   [v149 delivery](V149_DELIVERY.md) and the relevant acceptance document.
 4. The complete [roadmap](../ROADMAP.md), [next-version plan](NEXT_VERSION_PLAN.md),
    [v138 reconciliation](V138_DESKTOP_BACKLOG.md),
    [visualization requirements](PCA_VISUALIZATION_EXPORTS.md),
@@ -27,9 +27,12 @@ and adaptive target-count suggestions, two one-target method trials, explicit
 tie/unfit/uncertain decisions, optional lazy saved comparisons and joint-model
 retention into final numerical checks. Existing studies retain their protocol;
 an explicit successor action preserves their results. Software tests use synthetic
-controllers and do not authorize native fits or biological acceptance. Installation
-and exact-runtime delivery must be verified separately; dev148 below is historical
-only once the v149 delivery record confirms installation.
+controllers and do not authorize native fits or biological acceptance. Runtime
+`6df65f3` / `dev149` is installed after complete backup and fresh idle guards.
+Source/exact frozen/installed workflow and actual 2x review-video probes pass;
+post-probe project/state/settings preservation passes. See [delivery](V149_DELIVERY.md).
+Earlier installed snapshots below are historical. The broader loading/RSS and
+prospective scientific/selector gates remain open.
 
 v148 source repairs pilot preparation after project/method edits; both explicit
 buttons use the current form, preserving overwrite cancellation and preventing

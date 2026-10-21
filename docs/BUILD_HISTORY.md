@@ -6,7 +6,9 @@ v149 (`0.0.0.dev149`) recommends a starting template and a nonredundant pilot
 subset, compares Current/Varifold on one target, handles visual ties/unfit results,
 checks contrasting forms and retains the reviewed joint model for numerical
 qualification. Saved comparisons are opt-in. See [scope and scientific limits](V149_GUIDED_PILOT.md).
-Source, installed runtime and distributed installer require separate verification.
+Runtime `6df65f3` is installed; source/exact frozen/installed workflow and decoded
+review-video checks pass after verified backup and idle guards. See
+[delivery and remaining gates](V149_DELIVERY.md). Drive remains separately at v98.
 
 ## v146 — modal pilot review recording
 
