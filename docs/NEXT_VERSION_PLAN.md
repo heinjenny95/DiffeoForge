@@ -10,6 +10,18 @@ one method throughout subsequent stages/full-cohort preparation. Implementation
 and verification boundaries: [v147](V147_AUTOMATIC_ATTACHMENT.md).
 The owner explicitly requested no new fits during implementation or delivery.
 
+### Pilot method explanation — owner follow-up, 21 October 2026
+
+- [ ] Before the automatic comparison starts, visibly name **Current and
+  Varifold** and briefly explain why both are tested: surface orientation can
+  affect matching, and the pilot checks which representation follows the pilot
+  surfaces better. Explain in plain language that Current uses surface direction
+  while Varifold treats opposite directions alike. Do not require users to open
+  technical help to discover what “both methods” means. Use one concise visible
+  explanation without repeating it across status labels and the action button;
+  keep further detail collapsible. Backlog only; no UI change or fit authorized
+  by this entry.
+
 > v94 supersedes unattended stage advancement: each stage batches its candidates,
 > then waits for recorded visual acceptance of every specimen. The former AFK
 > controls and policies below describe historical behavior. Existing ledgers remain

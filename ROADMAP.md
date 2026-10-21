@@ -605,6 +605,12 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
     Keep one stage, one consistent status and one next action; fold the path and
     consolidate help. This remains open after the v138 copy pass; see
     [UI-27](docs/UI_TEXT_AUDIT_2026-10-19.md#pilot-and-comparison-dialogs).
+    Owner follow-up, 21 October 2026: the automatic pilot says **Compare both
+    methods** without visibly naming Current and Varifold or explaining why
+    they are compared. Add one short, visible explanation of the methods and
+    purpose before starting; keep additional detail collapsible and avoid
+    repeated status/action text. This is open backlog; see the
+    [method-explanation task](docs/NEXT_VERSION_PLAN.md#pilot-method-explanation--owner-follow-up-21-october-2026).
     The [19 October source audit](docs/UI_TEXT_AUDIT_2026-10-19.md) records 26
     concrete open items across pages 1–7 and supporting dialogs, with source
     locations, visibility/state, proposed reductions and checks against false
