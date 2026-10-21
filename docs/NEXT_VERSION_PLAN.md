@@ -1,5 +1,12 @@
 # Next DiffeoForge development version
 
+## v149 — owner-authorized guided pilot, 21 October 2026
+
+Template suggestions, adaptive diversity-based pilot size, one-target method
+comparison, explicit tie/unfit/uncertain decisions, optional saved comparisons and
+joint-model retention are implemented in source. See [v149 scope and limits](V149_GUIDED_PILOT.md).
+Only software tests and delivery are authorized; no new scientific fits.
+
 ## v147 owner-authorized automatic matching comparison — 21 October 2026
 
 New guided pilots compare Current and Varifold with matched fresh trials and
@@ -12,15 +19,15 @@ The owner explicitly requested no new fits during implementation or delivery.
 
 ### Pilot method explanation — owner follow-up, 21 October 2026
 
-- [ ] Before the automatic comparison starts, visibly name **Current and
+- [x] Before the automatic comparison starts, visibly name **Current and
   Varifold** and briefly explain why both are tested: surface orientation can
   affect matching, and the pilot checks which representation follows the pilot
   surfaces better. Explain in plain language that Current uses surface direction
   while Varifold treats opposite directions alike. Do not require users to open
   technical help to discover what “both methods” means. Use one concise visible
   explanation without repeating it across status labels and the action button;
-  keep further detail collapsible. Backlog only; no UI change or fit authorized
-  by this entry.
+  keep further detail collapsible. Implemented for the new v149 guided route;
+  historical studies keep their recorded protocol. Scientific first use remains open.
 
 > v94 supersedes unattended stage advancement: each stage batches its candidates,
 > then waits for recorded visual acceptance of every specimen. The former AFK
@@ -142,8 +149,10 @@ does not establish reuse of geometry already loaded by another step.
   checking files, reusing measurements or measuring shapes. Preserve full-cohort
   coverage for selection and the chosen subset for actual pilot fitting.
 
-Backlog only; no implementation, measured speedup or scientific run is authorized
-by this entry.
+v149 adds scalar metadata reuse after fresh content hashes and shares cached
+template/shape measurements where the transform/settings binding matches. The
+whole-cohort cold/warm workflow/RSS gate above remains open; no universal speedup
+or skipped integrity I/O is claimed. No scientific run is authorized by this entry.
 
 ### Priority: slow pilot previews and invisible QC locks
 

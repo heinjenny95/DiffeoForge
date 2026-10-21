@@ -109,14 +109,19 @@ def comparison_choices(directory):
 
 def record_preference(root, state, snapshot, candidate_id, outcome, comparison):
     """Record a relative decision; never alter any anatomical review or run."""
-    if outcome not in {"better", "worse", "same", "starting_point"}:
+    if outcome not in {"better", "worse", "same", "starting_point", "not_compared"}:
         raise ValueError("Unknown relative fit feedback")
     current = fit_record(snapshot, candidate_id)
     verified_fit(root, state, current)
     key = str(current["index"])
     best = state.get("best_fits", {}).get(key)
     reference = None
-    if outcome != "starting_point":
+    if outcome == "not_compared":
+        if (not isinstance(comparison, dict) or comparison.get("current") != current
+                or comparison.get("best") != best or comparison.get("reference") is not None):
+            raise ValueError("Independent inspection binding changed")
+        selected = best or current
+    elif outcome != "starting_point":
         if not isinstance(comparison, dict) or comparison.get("current") != current:
             raise ValueError("Displayed current fit changed; reopen the comparison")
         if comparison.get("best") != best:

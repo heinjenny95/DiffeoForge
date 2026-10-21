@@ -13,7 +13,7 @@ def wait(app, predicate):
     assert predicate()
 
 
-def inspection(tmp_path, monkeypatch, *, first=False):
+def inspection(tmp_path, monkeypatch, *, first=False, compare=True):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -49,14 +49,20 @@ def inspection(tmp_path, monkeypatch, *, first=False):
         root=str(tmp_path), current=current, choices=[] if first else [previous], best=None
     )
     panel._loaded("choices", descriptor)
+    if compare and not first:
+        panel.show_comparison.setChecked(True)
     original, reconstruction = _model(pair.original_path), _model(pair.reconstruction_path)
     dialog._pair_loaded(0, (original, reconstruction))
-    comparison = dict(current=current, reference=None if first else previous, best=None)
-    models = [original, reconstruction] + ([] if first else [_model(tmp_path / "previous.vtk")])
+    comparison = dict(
+        current=current, reference=previous if compare and not first else None, best=None,
+    )
+    models = [original, reconstruction] + (
+        [_model(tmp_path / "previous.vtk")] if compare and not first else []
+    )
     panel._loaded("surfaces", (models, comparison))
     dialog.resize(1040, 820)
     dialog.show()
-    wait(app, lambda: panel.start_button.isEnabled() if first
+    wait(app, lambda: panel.start_button.isEnabled() if first or not compare
          else panel.feedback_buttons["better"].isEnabled())
     return app, dialog, panel, original, reconstruction, candidate
 
@@ -101,15 +107,26 @@ def test_cancel_after_rating_records_neither_qc_nor_preference(tmp_path, monkeyp
     app.processEvents()
 
 
-def test_first_fit_uses_an_explicit_baseline_before_the_final_decision(tmp_path, monkeypatch):
+def test_first_fit_can_be_reviewed_without_a_relative_ranking(tmp_path, monkeypatch):
     app, dialog, panel, *_ = inspection(tmp_path, monkeypatch, first=True)
     assert panel.reference_panel.isHidden()
-    assert not dialog.fail_button.isEnabled()
-    panel.start_button.click()
+    assert dialog.fail_button.isEnabled()
     assert not dialog.review_recorded
     dialog.fail_button.click()
-    assert dialog.preference_decision[0] == "starting_point"
+    assert dialog.preference_decision[0] == "not_compared"
     assert dialog.review_recorded and not dialog.review_passed
+    app.processEvents()
+
+
+def test_default_single_fit_has_optional_comparison_and_no_forced_winner(tmp_path, monkeypatch):
+    app, dialog, panel, *_ = inspection(tmp_path, monkeypatch, compare=False)
+    assert panel.reference_panel.isHidden()
+    assert panel.feedback_controls.isHidden()
+    assert not panel.show_comparison.isChecked()
+    assert dialog.complete_button.isEnabled() and dialog.fail_button.isEnabled()
+    assert dialog.preference_decision[0] == "not_compared"
+    dialog.close_button.click()
+    assert not dialog.review_recorded
     app.processEvents()
 
 
@@ -157,4 +174,28 @@ def test_invalid_individual_fit_cannot_be_accepted_or_seeded(tmp_path, monkeypat
     assert not dialog.review_recorded
     dialog.fail_button.click()
     assert dialog.review_recorded and not dialog.review_passed
+    app.processEvents()
+
+
+def test_marked_region_notes_are_bound_to_original_without_approving_fit(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QDialog
+
+    from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
+
+    app, dialog, _, original, *_ = inspection(tmp_path, monkeypatch, first=True, compare=False)
+
+    def mark(region_dialog):
+        canvas = region_dialog.findChild(InteractiveMeshCanvas3D)
+        assert canvas._model is original
+        canvas.surfacePointPicked.emit(original.vertices[0])
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(QDialog, "exec", mark)
+    pair = dialog._pairs[0]
+    dialog._region_loaded(pair.pair_id, (original,))
+    notes = dialog.anatomical_notes.text()
+    assert pair.original_path.name in notes and pair.original_sha256 in notes
+    assert "xyz=(" in notes
+    assert not dialog.review_recorded
+    dialog.close()
     app.processEvents()

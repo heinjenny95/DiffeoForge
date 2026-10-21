@@ -56,6 +56,7 @@ def test_desktop_builds_and_binds_transparent_calibration_plan(
     assert "No Deformetrica process starts" in (
         window.reference_calibration_status.text()
     )
+    window.reference_pilot_auto_count.setChecked(False)
     window.reference_pilot_subject_count_spin.setValue(4)
     window.reference_feature_scale_spin.setValue(
         2.0

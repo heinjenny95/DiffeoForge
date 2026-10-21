@@ -746,7 +746,21 @@ class _ReferenceCalibrationOpenWorker(QRunnable):
                     self.config_path, directory, pilot_max_iterations=150
                 )
             directory = latest_reference_calibration_search_extension_directory(directory)
-            from diffeoforge.reference_sequential_fit import current_sequence_directory
+            from diffeoforge.reference_attachment_comparison import pending
+            from diffeoforge.reference_guided_pilot import _pointer, enabled, prepare
+            from diffeoforge.reference_sequential_fit import (
+                current_sequence_directory,
+                resume_directory,
+            )
+
+            manifest = load_config(self.config_path)
+            if (enabled(manifest) and pending(manifest)
+                    and not (directory / "fit-search-latest.json").exists()):
+                snapshot = load_reference_calibration_study(directory)
+                if not snapshot.attachment_comparison and not snapshot.selected_candidate_ids:
+                    child = prepare(directory)
+                    _pointer(directory, child.study_directory)
+            directory = resume_directory(directory)
 
             directory = current_sequence_directory(directory)
             snapshot = load_reference_calibration_study(directory)
@@ -4232,6 +4246,12 @@ class DiffeoForgeWindow(QMainWindow):
         self.pattern_edit.textChanged.connect(self._invalidate_procrustes_preview)
         data_form.addRow("File pattern", self.pattern_edit)
 
+        from diffeoforge.desktop.template_suggestion import TemplateSuggestionPanel
+
+        self.template_suggestion_panel = TemplateSuggestionPanel(self)
+        self.pattern_edit.textChanged.connect(self.template_suggestion_panel.invalidate)
+        data_form.addRow(self.template_suggestion_panel)
+
         self.validate_meshes_button = QPushButton("Run deep mesh validation")
         self.validate_meshes_button.setObjectName("secondary")
         self.validate_meshes_button.setToolTip(
@@ -4708,7 +4728,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_pilot_subject_count_spin = QSpinBox()
         self.reference_pilot_subject_count_spin.setObjectName("referencePilotSubjectCountSpin")
         self.reference_pilot_subject_count_spin.setRange(2, 20)
-        self.reference_pilot_subject_count_spin.setValue(8)
+        self.reference_pilot_subject_count_spin.setValue(3)
         self.reference_pilot_subject_count_spin.setToolTip(
             "Total pilot subjects, including manual choices. Remaining slots use "
             "automatic shape coverage. Capped at the available subject count; "
@@ -4721,6 +4741,13 @@ class DiffeoForgeWindow(QMainWindow):
             "Representative pilot subjects",
             self.reference_pilot_subject_count_spin,
         )
+        self.reference_pilot_auto_count = QCheckBox("Recommend size from form diversity")
+        self.reference_pilot_auto_count.setChecked(True)
+        self.reference_pilot_auto_count.toggled.connect(self._reference_calibration_inputs_changed)
+        self.reference_pilot_auto_count.toggled.connect(
+            lambda checked: self.reference_pilot_subject_count_spin.setEnabled(not checked)
+        )
+        calibration_form.addRow(self.reference_pilot_auto_count)
 
         self.reference_pilot_subject_picker = PilotSubjectPicker(maximum=20)
         self.reference_pilot_subject_picker.selectionChanged.connect(
@@ -5834,7 +5861,8 @@ class DiffeoForgeWindow(QMainWindow):
         pilot_design_ready = bool(recommendation_ready and guided_mode)
         self.measure_reference_feature_button.setEnabled(pilot_design_ready)
         self.reference_feature_scale_spin.setEnabled(pilot_design_ready)
-        self.reference_pilot_subject_count_spin.setEnabled(pilot_design_ready)
+        self.reference_pilot_subject_count_spin.setEnabled(
+            pilot_design_ready and not self.reference_pilot_auto_count.isChecked())
         self.reference_pilot_subject_picker.setEnabled(pilot_design_ready)
         self.reference_pilot_declarations_edit.setEnabled(pilot_design_ready)
         self.load_reference_pilot_declarations_button.setEnabled(pilot_design_ready)
@@ -5935,6 +5963,17 @@ class DiffeoForgeWindow(QMainWindow):
             )
             return
         try:
+            from diffeoforge.pilot_design import coverage_suggestion
+
+            suggestion = coverage_suggestion(
+                recommendation,
+                required=self.reference_pilot_subject_picker.selected_filenames,
+                declarations=self._reference_pilot_subject_declarations,
+            )
+            if self.reference_pilot_auto_count.isChecked():
+                self.reference_pilot_subject_count_spin.blockSignals(True)
+                self.reference_pilot_subject_count_spin.setValue(suggestion["recommended_count"])
+                self.reference_pilot_subject_count_spin.blockSignals(False)
             plan = build_reference_calibration_plan(
                 recommendation,
                 coordinate_unit=str(self.units_combo.currentData() or "unitless"),
@@ -5943,6 +5982,16 @@ class DiffeoForgeWindow(QMainWindow):
                 pilot_subject_declarations=self._reference_pilot_subject_declarations,
                 required_subject_filenames=self.reference_pilot_subject_picker.selected_filenames,
             )
+            from dataclasses import replace
+
+            from diffeoforge.reference_sequential_fit import _fingerprint
+
+            suggestion["accepted_count"] = plan.pilot_subject_count
+            suggestion["automatic_count_accepted"] = self.reference_pilot_auto_count.isChecked()
+            accepted_template = getattr(self, "_template_suggestion_accepted", None)
+            if accepted_template and accepted_template["sha256"] == recommendation.template_sha256:
+                suggestion["template_recommendation"] = accepted_template
+            plan = _fingerprint(replace(plan, design_suggestion=suggestion))
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self._reference_calibration_plan = None
             self._reference_calibration_export = None
@@ -5960,16 +6009,26 @@ class DiffeoForgeWindow(QMainWindow):
             return
         self._reference_calibration_plan = plan
         self._reference_calibration_export = None
-        candidate_count = sum(len(stage.candidates) for stage in plan.stages)
         self.reference_calibration_summary_label.setObjectName("statusSuccess")
         self.reference_calibration_summary_label.setStyleSheet("")
         self.reference_calibration_summary_label.setText(
-            f"Pilot plan ready: {plan.pilot_subject_count} representative subjects, "
-            f"{candidate_count} candidate atlases. No process has started."
+            f"Pilot: {plan.pilot_subject_count} of {plan.subject_count} targets. "
+            "Start with two method trials on one specimen; review before more work."
+            + (f" Suggested count: {suggestion['recommended_count']}; manual count retained."
+               if not self.reference_pilot_auto_count.isChecked() else "")
+            + (" Additional diversity remains; consider adding a specimen."
+               if suggestion["budget_limited"] else "")
         )
         self.reference_calibration_status.setObjectName("statusSuccess")
         self.reference_calibration_status.setStyleSheet("")
-        self.reference_calibration_status.setText(plan.summary_text())
+        coverage_text = "\n".join(
+            f"{r['filename']}: {r['reason']} ({r['represented_by']})"
+            for r in suggestion["omitted"]
+        )
+        self.reference_calibration_status.setText(
+            plan.summary_text() + "\n\nCoverage suggestion (heuristic):\n" + coverage_text
+            + "\n" + suggestion["limitation"]
+        )
         self._update_reference_guidance_controls()
         self._sync_ready_state()
 

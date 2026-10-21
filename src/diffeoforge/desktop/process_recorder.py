@@ -511,6 +511,18 @@ class ProcessRecorder(QObject):
 
     @Slot(object, object)
     def _saved(self, encoder, value):
+        self._after_encoder_exit(encoder, lambda: self._accept_saved(encoder, value))
+
+    def _after_encoder_exit(self, encoder, callback):
+        # The queued signal can arrive before emit() returns in the producer.
+        # Keep its GUI-affine signal QObject owned here until that thread exits;
+        # its last Python reference must never disappear in the encoder thread.
+        if encoder.thread.is_alive():
+            QTimer.singleShot(10, lambda: self._after_encoder_exit(encoder, callback))
+        else:
+            callback()
+
+    def _accept_saved(self, encoder, value):
         self.encoders.discard(encoder)
         self.last_output, gaps, recovered = value
         self.folder_button.setEnabled(True)
@@ -523,6 +535,9 @@ class ProcessRecorder(QObject):
 
     @Slot(object, object)
     def _failed(self, encoder, message):
+        self._after_encoder_exit(encoder, lambda: self._accept_failed(encoder, message))
+
+    def _accept_failed(self, encoder, message):
         self.encoders.discard(encoder)
         if self.current is encoder:
             self.current = None

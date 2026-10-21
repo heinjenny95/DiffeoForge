@@ -65,6 +65,7 @@
               "required": ["version", "mode", "state"],
               "properties": {
                 "version": {"const": "attachment-comparison-v1"},
+                "workflow": {"const": "guided-pilot-v2"},
                 "mode": {"const": "auto"},
                 "state": {"enum": ["pending", "comparing", "selected"]},
                 "selected_method": {"enum": ["current", "varifold"]}
@@ -295,6 +296,7 @@
                     "limitations"
                   ],
                   "properties": {
+                    "design_suggestion": {"type": "object"},
                     "execution_scope": {"enum": ["pilot", "single_specimen_probe", "joint_fit_confirmation"]},
                     "version": {"enum": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6"]},
                     "fingerprint": {

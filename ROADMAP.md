@@ -2,6 +2,11 @@
 
 This roadmap describes evidence gates rather than promised dates.
 
+v149 source implements the [guided pilot](docs/V149_GUIDED_PILOT.md): optional
+initial-template recommendation, adaptive nonredundant target selection, bounded
+one-target Current/Varifold comparison, explicit visual decisions and a shared
+joint check. Prospective scientific/selector validation remains open.
+
 For the immediate publication priorities, use the
 [preprint-readiness checklist](docs/PREPRINT_READINESS.md). It scopes the paper
 to a guided, reproducible Deformetrica workflow and separates essential evidence

@@ -245,9 +245,11 @@ class _CalibrationStageWorker(QRunnable):
         stage_selection_id: str | None = None,
         provisional_override_id: str | None = None,
         integration_tolerances: Mapping[str, float] | None = None,
+        guided_action: tuple[str, str | None, str | None] | None = None,
     ) -> None:
         super().__init__()
         self.runner = runner
+        self.guided_action = guided_action
         self.continuation = continuation
         self.specimen_fit = specimen_fit
         self.specimen_action = specimen_action
@@ -291,7 +293,7 @@ class _CalibrationStageWorker(QRunnable):
             if self._finished:
                 return False
         if (self.finish_candidate_id is not None or self.stage_selection_id is not None
-                or self.provisional_override_id is not None):
+                or self.provisional_override_id is not None or self.guided_action is not None):
             return False  # Atomic completion verifies/saves evidence; no engine is running.
         return self.runner.request_cancel()
 
@@ -307,7 +309,14 @@ class _CalibrationStageWorker(QRunnable):
             self.signals.event.emit(event)
 
         try:
-            if self.stage_selection_id is not None:
+            if self.guided_action is not None:
+                from diffeoforge.reference_guided_pilot import next_action, upgrade
+
+                action, identifier, goal = self.guided_action
+                result = (upgrade(self.runner.study_directory) if action == "upgrade" else
+                          next_action(self.runner.study_directory, action, identifier, goal=goal))
+                self.runner.study_directory = result.study_directory
+            elif self.stage_selection_id is not None:
                 result, _assessment = record_reference_calibration_stage_review(
                     self.runner.study_directory, visual_approvals=self.visual_approvals,
                     selected_candidate_id=self.stage_selection_id,
@@ -486,6 +495,8 @@ class CalibrationCandidateViewerDialog(QDialog):
         allow_plan_b: bool = False,
         read_only: bool = False,
         compare_preferences: bool = False,
+        alternative_pairs: tuple = (),
+        compact_review: bool = False,
     ) -> None:
         super().__init__(parent)
         if candidate.run_directory is None:
@@ -517,14 +528,24 @@ class CalibrationCandidateViewerDialog(QDialog):
         self._keep_as_plan_b = False
         self._allow_plan_b = allow_plan_b
         self._read_only = read_only
+        self._compact_review = compact_review
         self.fit_preferences = None
-        self._valid_individual = not compare_preferences or (
+        self._valid_individual = not (compare_preferences or compact_review) or (
             candidate.status == "completed"
             and bool(candidate.metrics)
             and candidate.metrics.get("invalid_face_count") == 0
         )
         self._allow_plan_b = self._allow_plan_b and self._valid_individual
         self.feature_observations: dict[str, dict[str, object]] = {}
+        self._region_loader = PreviewMeshLoader(self)
+        self._region_loader.loaded.connect(self._region_loaded)
+        self._region_loader.failed.connect(
+            lambda _key, message: self.status.setText("Region marking unavailable: " + message)
+        )
+        self._region_loader.activity_changed.connect(
+            lambda busy: self.setProperty("processRecordingWaiting", busy)
+        )
+        self.finished.connect(self._region_loader.cancel)
         self._mesh_loader = PreviewMeshLoader(self)
         self._mesh_loader.activity_changed.connect(
             lambda busy: self.setProperty("processRecordingWaiting", busy)
@@ -625,7 +646,7 @@ class CalibrationCandidateViewerDialog(QDialog):
             self.fit_preferences = FitPreferencePanel(
                 study_directory, self, current_canvas=self.canvas
             )
-            title.setText("Fit inspection · compare, then decide")
+            title.setText("Fit inspection")
             intro.setText(
                 "Orange: original specimen. Blue: reconstructed surface. "
                 "Both views share camera and scale."
@@ -640,6 +661,14 @@ class CalibrationCandidateViewerDialog(QDialog):
             self._allow_plan_b = False  # Rejected improvements now retain the best automatically.
         else:
             layout.addWidget(self.canvas, 1)
+        if alternative_pairs:
+            from diffeoforge.desktop.saved_fit_comparison import SavedFitComparison
+
+            layout.removeWidget(self.canvas)
+            self.saved_comparison = SavedFitComparison(
+                self.canvas, alternative_pairs, self, cache_directory=self._preview_cache)
+            layout.addWidget(self.saved_comparison, 1)
+            self.finished.connect(self.saved_comparison.loader.cancel)
         canvas_help = QLabel(
             "Controls: drag to rotate; right-drag to pan; use the mouse wheel to "
             "zoom; double-click to reset the view."
@@ -669,6 +698,9 @@ class CalibrationCandidateViewerDialog(QDialog):
         )
         tip_help.setWordWrap(True)
         feature_layout.addWidget(tip_help)
+        self.mark_region_button = QPushButton("Mark a problem region on the original…")
+        self.mark_region_button.clicked.connect(self._mark_region)
+        feature_layout.addWidget(self.mark_region_button)
         self.feature_criterion = QLineEdit()
         self.feature_criterion.setMaxLength(500)
         self.feature_criterion.setPlaceholderText("Feature or region for this dataset")
@@ -710,7 +742,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         if self.fit_preferences:
             self.fit_preferences.layout().removeWidget(self.fit_preferences.feedback_controls)
             decision_layout.addWidget(self.fit_preferences.feedback_controls)
-            decision_layout.addWidget(QLabel("2. Accept or reject this fit"))
+            decision_layout.addWidget(QLabel("Accept or reject this fit"))
             self.fit_preferences.selectionChanged.connect(self._update_review_progress)
         individual_assessment = InfoDisclosure(
             "Optional individual assessment", self.specimen_decision
@@ -727,7 +759,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.anatomical_notes = QLineEdit()
         self.anatomical_notes.setMaxLength(4000)
         self.anatomical_notes.setPlaceholderText(
-            "Optional anatomical notes: specimen, tip/branch or region, and observed mismatch"
+            "Optional notes: specimen, region and observed mismatch"
         )
         self.anatomical_notes.setAccessibleName("Anatomical review notes")
         decision_layout.addWidget(self.anatomical_notes)
@@ -781,6 +813,24 @@ class CalibrationCandidateViewerDialog(QDialog):
             close_comparison = QPushButton("Close comparison")
             close_comparison.clicked.connect(self.reject)
             root.addWidget(close_comparison)
+        if compact_review and not read_only:
+            title.setText("Inspect fit")
+            intro.setText("Orange: original · Blue: reconstruction")
+            instructions_disclosure.hide()
+            canvas_help.hide()
+            individual_assessment.hide()
+            self.status.hide()
+            if len(self._required_pair_indexes) == 1:
+                self.previous_specimen_button.hide()
+                self.next_specimen_button.hide()
+                self.mesh_combo.hide()
+                self.review_progress.hide()
+            self.complete_button.setText(
+                "Accept fit" if len(self._required_pair_indexes) == 1 else "Accept joint fit")
+            self.fail_button.setText("Reject fit")
+            if self.fit_preferences is None:
+                decision_layout.removeWidget(self.anatomical_notes)
+                feature_layout.addWidget(self.anatomical_notes)
         if self._required_pair_indexes:
             first_required = self._required_pair_indexes[0]
             combo_index = self.mesh_combo.findData(first_required)
@@ -928,6 +978,58 @@ class CalibrationCandidateViewerDialog(QDialog):
             self.feature_observations[name] = values
         self._update_review_progress()
 
+    def _mark_region(self) -> None:
+        index = self.mesh_combo.currentData()
+        if index is None or not self.canvas.comparison_ready:
+            return
+        pair = self._pairs[int(index)]
+        self.status.setText("Loading original detail for precise region marking…")
+        self._region_loader.request_paths(pair.pair_id, (pair.original_path,),
+                                          expected=(pair.original_sha256,))
+
+    def _region_loaded(self, key, models) -> None:
+        from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
+
+        index = self.mesh_combo.currentData()
+        if index is None:
+            return
+        pair = self._pairs[int(index)]
+        if key != pair.pair_id:
+            return
+        dialog = QDialog(self)
+        dialog.setProperty("processRecordingPilotReview", True)
+        dialog.setWindowTitle("Mark a problem region")
+        dialog.resize(760, 650)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Rotate the original, then click the problem region."))
+        canvas = InteractiveMeshCanvas3D()
+        canvas.set_model(models[0])
+        layout.addWidget(canvas, 1)
+        status = QLabel("No region selected")
+        layout.addWidget(status)
+        chosen = []
+
+        def picked(point):
+            chosen[:] = [tuple(float(v) for v in point)]
+            canvas.set_markers({"Region": chosen[0]})
+            status.setText("Region selected on the original surface")
+
+        canvas.surfacePointPicked.connect(picked)
+        save = QPushButton("Keep marked region")
+        save.clicked.connect(dialog.accept)
+        layout.addWidget(save)
+        dialog.finished.connect(canvas.cancel_pending_pick)
+        if dialog.exec() == QDialog.DialogCode.Accepted and chosen:
+            coordinates = ", ".join(format(v, ".8g") for v in chosen[0])
+            note = (f"Region {pair.original_path.name}: xyz=({coordinates}); "
+                    f"source SHA-256 {pair.original_sha256}")
+            previous = self.anatomical_notes.text().strip()
+            combined = (previous + "; " if previous else "") + note
+            if len(combined) > self.anatomical_notes.maxLength():
+                self.status.setText("Shorten the review notes before adding another marked region.")
+                return
+            self.anatomical_notes.setText(combined)
+
     def _feature_conflicts(self) -> list[str]:
         return [
             name
@@ -959,10 +1061,11 @@ class CalibrationCandidateViewerDialog(QDialog):
             self.canvas.original_detail.setChecked(True)
         else:
             self.canvas.reset_view()
-        if self.fit_preferences:
+        if self.fit_preferences or self._compact_review:
             self._comparison_intro.setText(
                 f"{pair.original_path.name} · Orange: original · Blue: reconstruction"
             )
+        if self.fit_preferences:
             self.fit_preferences.set_current_models(pair, (original, reconstruction))
         self.status.setText(
             f"Original: {pair.original_path.name} ({original.triangle_count} faces)  |  "
@@ -1084,6 +1187,8 @@ class CalibrationCandidateViewerDialog(QDialog):
             self.review_gate.setText(
                 "Technically invalid fit: reject it; it cannot become the starting point."
             )
+        if self._compact_review:
+            self.review_gate.setVisible(not (all_pass and not conflicts and self._valid_individual))
         if self._read_only:
             self.complete_button.hide()
             self.decision_panel.hide()
@@ -1650,6 +1755,10 @@ class ReferenceCalibrationDialog(QDialog):
                 return
         self._view_loading = False
         self._prepared_view = prepared
+        for control, visible in getattr(self, "_guided_hidden_visibility", {}).items():
+            control.setVisible(visible)
+        self._guided_hidden_visibility = {}
+        self.progress.show()
         self.content.setEnabled(True)
         self.pilot_tools.setEnabled(True)
         for control, visible in getattr(self, "_density_hidden_visibility", {}).items():
@@ -1760,6 +1869,13 @@ class ReferenceCalibrationDialog(QDialog):
                 self._visually_approved_candidates.discard(candidate_id)
         self._clear_content()
         running = self._worker is not None or self._restoring_search
+        from diffeoforge.reference_guided_pilot import record as guided_record
+
+        if guided_record(self._snapshot) and stage and stage.order == 1:
+            from diffeoforge.desktop.guided_pilot import render
+
+            render(self, prepared)
+            return
         context = prepared.manifest
         directory = context["inputs"].get("full_cohort", {}).get("directory")
         if directory:
@@ -1997,6 +2113,13 @@ class ReferenceCalibrationDialog(QDialog):
                 caution="Regional distances and shrinkage checks guide review; "
                 "anatomy needs your approval.",
             )
+            upgrade = QPushButton("Prepare new guided pilot · keep this pilot's results")
+            upgrade.setEnabled(not running and not self._snapshot.selected_candidate_ids)
+            upgrade.setToolTip("Recommends a smaller diverse cohort and prepares two trials "
+                               "on one specimen. No fits start; saved results remain unchanged.")
+            upgrade.clicked.connect(lambda: self._start_pilot(
+                adaptive=False, guided_action=("upgrade", None, None)))
+            self.content_layout.addWidget(upgrade)
         if stage.order == 4:
             heading.setText("Stage 4 of 4 — Check time resolution and finish")
             guidance = replace(
@@ -3264,6 +3387,12 @@ class ReferenceCalibrationDialog(QDialog):
     def _start(self) -> None:
         if self._worker is not None or self._view_loading:
             return
+        from diffeoforge.reference_guided_pilot import record as guided_record
+
+        if (guided_record(self._snapshot) and self._snapshot.current_stage
+                and self._snapshot.current_stage.order == 1):
+            self._start_pilot(adaptive=False)
+            return
         if getattr(self, "_density_record", None) and any(
             c.status != "completed" for c in self._snapshot.candidates
         ):
@@ -3409,6 +3538,7 @@ class ReferenceCalibrationDialog(QDialog):
         density_next: bool = False,
         stage_selection_id: str | None = None,
         provisional_override_id: str | None = None,
+        guided_action: tuple[str, str | None, str | None] | None = None,
     ) -> None:
         if self._restoring_search or self._view_loading or self._review_saving:
             raise ValueError("Wait until the saved search has finished loading")
@@ -3429,6 +3559,7 @@ class ReferenceCalibrationDialog(QDialog):
                 raise ValueError("Choose a saved fit from the current stage before checking it")
         worker = _CalibrationStageWorker(
             runner,
+            guided_action=guided_action,
             continuation=continuation,
             specimen_fit=specimen_fit,
             specimen_action=specimen_action,
@@ -3493,8 +3624,8 @@ class ReferenceCalibrationDialog(QDialog):
         self.selection_combo.setEnabled(False)
         self.start_button.setEnabled(False)
         _set_action_emphasis(self.start_button, False)
-        self.cancel_button.setEnabled(finish_candidate_id is None)
-        self.cancel_button.setVisible(finish_candidate_id is None)
+        self.cancel_button.setEnabled(finish_candidate_id is None and guided_action is None)
+        self.cancel_button.setVisible(finish_candidate_id is None and guided_action is None)
         self.cancel_button.setObjectName("danger")
         self.cancel_button.style().unpolish(self.cancel_button)
         self.cancel_button.style().polish(self.cancel_button)
@@ -4126,6 +4257,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.status.setText("Preparing comparison in background… The pilot can continue.")
 
         def prepare():
+            from diffeoforge.desktop.saved_fit_comparison import alternatives
             from diffeoforge.reference_calibration_study import calibration_verification_scope
 
             with calibration_verification_scope():
@@ -4137,6 +4269,7 @@ class ReferenceCalibrationDialog(QDialog):
                 return (
                     snapshot, collect_calibration_qc_pairs(root, current),
                     normalized_candidate_subject_fit(snapshot, current),
+                    alternatives(snapshot, current.candidate_id),
                 )
 
         self._viewer_preparation.request_operation(
@@ -4185,20 +4318,24 @@ class ReferenceCalibrationDialog(QDialog):
             screen_parent = key[1]
             if screen_parent != self.study_directory or self._worker is not None:
                 return
-            reviewed_snapshot, pairs, fit = prepared
+            reviewed_snapshot, pairs, fit = prepared[:3]
             root, candidate = reviewed_snapshot.study_directory, reviewed_snapshot.candidates[0]
         else:
             root, candidate = key
             if self._view_closed or root != self.study_directory:
                 return
-            reviewed_snapshot, pairs, fit = prepared
+            reviewed_snapshot, pairs, fit = prepared[:3]
         try:
+            from diffeoforge.reference_guided_pilot import record as guided_record
+
             dialog = CalibrationCandidateViewerDialog(
                 root,
                 candidate,
                 self,
                 subject_fit=fit,
                 pairs=pairs,
+                alternative_pairs=prepared[3] if len(prepared) == 4 else (),
+                compact_review=bool(guided_record(reviewed_snapshot)),
                 allow_plan_b=self._individual_checkpoint()
                 and Path(root).resolve() == self.study_directory.resolve(),
                 compare_preferences=self._individual_checkpoint()

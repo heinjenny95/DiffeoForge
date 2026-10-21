@@ -1,5 +1,13 @@
 # Private-alpha build numbering
 
+## v149 — guided template and adaptive pilot decisions
+
+v149 (`0.0.0.dev149`) recommends a starting template and a nonredundant pilot
+subset, compares Current/Varifold on one target, handles visual ties/unfit results,
+checks contrasting forms and retains the reviewed joint model for numerical
+qualification. Saved comparisons are opt-in. See [scope and scientific limits](V149_GUIDED_PILOT.md).
+Source, installed runtime and distributed installer require separate verification.
+
 ## v146 — modal pilot review recording
 
 v146 (`0.0.0.dev146`) clears completed comparison loading before its result

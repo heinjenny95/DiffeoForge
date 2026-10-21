@@ -113,6 +113,38 @@ def test_pilot_attempts_and_atlas_steps_stay_in_one_real_video(application, tmp_
         stop(application, window, rec)
 
 
+@pytest.mark.parametrize("outcome", ["saved", "failed"])
+def test_encoder_remains_owned_until_publishing_thread_exits(application, tmp_path, outcome):
+    window, rec, _settings = setup(tmp_path)
+    release = threading.Event()
+
+    class Encoder:
+        pass
+
+    encoder = Encoder()
+    encoder.thread = threading.Thread(target=lambda: release.wait(5))
+    rec.encoders.add(encoder)
+    encoder.thread.start()
+    try:
+        if outcome == "saved":
+            rec._saved(encoder, (tmp_path / "video.mp4", 0, False))
+        else:
+            rec._failed(encoder, "Synthetic encoder failure")
+        assert encoder in rec.encoders
+        assert rec.last_output is None
+        release.set()
+        encoder.thread.join(2)
+        wait(application, lambda: encoder not in rec.encoders)
+        if outcome == "saved":
+            assert rec.last_output == tmp_path / "video.mp4"
+        else:
+            assert "failed" in rec.status.text()
+    finally:
+        release.set()
+        encoder.thread.join(2)
+        stop(application, window, rec)
+
+
 def test_owned_dialog_capture_excludes_foreign_windows_and_wait_mode(application, tmp_path):
     window, rec, _settings = setup(tmp_path)
     foreign = QWidget()

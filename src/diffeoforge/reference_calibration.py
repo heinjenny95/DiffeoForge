@@ -284,6 +284,7 @@ class ReferenceCalibrationPlan:
     selection_method: str | None = None
     required_subject_filenames: tuple[str, ...] = ()
     execution_scope: str = "pilot"
+    design_suggestion: Mapping[str, object] | None = None
 
     @property
     def pilot_subject_count(self) -> int:
@@ -328,6 +329,8 @@ class ReferenceCalibrationPlan:
             provenance["search_extension_lineage"] = dict(self.search_extension_lineage)
         if self.execution_scope != "pilot":
             provenance["execution_scope"] = self.execution_scope
+        if self.design_suggestion is not None:
+            provenance["design_suggestion"] = dict(self.design_suggestion)
         if self.qc_recalibration_source:
             provenance["qc_recalibration_source"] = dict(self.qc_recalibration_source)
         if self.selection_method is not None:
@@ -1482,6 +1485,7 @@ def reference_calibration_plan_from_provenance(
             ),
             selection_method=provenance.get("selection_method"),
             execution_scope=str(provenance.get("execution_scope", "pilot")),
+            design_suggestion=provenance.get("design_suggestion"),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ConfigurationError(

@@ -3257,6 +3257,13 @@ def _record_reference_calibration_stage_selection(
     root = Path(study_directory).expanduser().resolve()
     snapshot = load_reference_calibration_study(root)
     retaining = selection_mode == "researcher_retained_approved_fit"
+    guided = (snapshot.attachment_comparison or {}).get("guided")
+    if (guided and snapshot.current_stage and snapshot.current_stage.order == 1
+            and guided["phase"] != "joint"):
+        raise ReferenceCalibrationStudyError(
+            "Use the guided method/coverage transition; an individual screen cannot "
+            "replace the joint pilot and its numerical qualification"
+        )
     if snapshot.current_stage is None or (
         snapshot.status != "awaiting_review" and not (retaining and snapshot.status == "ready")
     ):

@@ -45,6 +45,11 @@ def prepare(directory):
     source = study.load_reference_calibration_study(directory)
     manifest = study._verify_manifest(source.study_directory)
     config = copy.deepcopy(load_config(source.study_directory / manifest["source_config"]["copy"]))
+    from diffeoforge.reference_guided_pilot import enabled
+    from diffeoforge.reference_guided_pilot import prepare as prepare_guided
+
+    if enabled(config):
+        return prepare_guided(directory)
     if not pending(config) or manifest.get("fit_search") or source.selected_candidate_ids:
         raise ValueError("Automatic method comparison requires a new, unselected pilot")
     cohort = manifest["inputs"]["full_cohort"]
@@ -153,11 +158,41 @@ def verify(root, manifest):
         or source == root.resolve()
         or sha256_file(source / study.STUDY_MANIFEST) != record["source_manifest_sha256"]
         or sha256_file(control) != record["controls"]["sha256"]
-        or set(record["methods"].values()) != set(METHODS)
+        or (not record.get("guided") and set(record["methods"].values()) != set(METHODS))
+        or not set(record["methods"].values()) <= set(METHODS)
         or set(record["methods"])
         != {row["candidate_id"] for row in manifest["plan"]["stages"][0]["candidates"]}
     ):
         raise ValueError("Method comparison input/protocol binding changed")
+    if record.get("guided"):
+        from diffeoforge.reference_guided_pilot import VERSION as GUIDED_VERSION
+        from diffeoforge.reference_guided_pilot import verify_approvals
+
+        info = record["guided"]
+        original = study._verify_manifest(source)
+        expected = {r["filename"]: r["sha256"] for r in original["inputs"]["subjects"]}
+        actual = {r["filename"]: r["sha256"] for r in manifest["inputs"]["subjects"]}
+        if (info.get("version") != GUIDED_VERSION or Path(info["origin"]).resolve() != source
+                or info["phase"] not in {"screen", "validate", "joint"}
+                or set(info["pilot_order"]) != set(expected)
+                or len(info["pilot_order"]) != len(expected)
+                or not 0 <= info["screen_trials_spent"] <= info["screen_trial_limit"]
+                == max(12, len(expected) + 2)
+                or (info["phase"] == "joint" and actual != expected)
+                or (info["phase"] != "joint" and actual != {
+                    info["target"]: expected.get(info["target"])})):
+            raise ValueError("Guided pilot scope or budget binding changed")
+        verify_approvals(info["approved"])
+        if info["phase"] == "joint":
+            approved = info["approved"]
+            values = manifest["plan"]["baseline_effective_values"]
+            if (len(set(record["methods"].values())) != 1
+                    or {r["filename"] for r in approved} != set(expected)
+                    or any(r["method"] not in record["methods"].values() or r["values"] != values
+                           for r in approved)):
+                raise ValueError(
+                    "Joint pilot lacks complete approved coverage on one configuration"
+                )
 
 
 def context(root, manifest):
@@ -210,6 +245,8 @@ def configure(config, root, manifest, candidate_id):
         config["optimization"].update(
             freeze_template=True, freeze_control_points=True, max_iterations=record["iterations"]
         )
+        if record.get("guided", {}).get("phase") == "joint":
+            config["optimization"].update(record["confirmation_freeze_settings"])
         deformation = config["model"]["deformation"]
         for key in ("initial_momenta", "initial_momenta_subjects"):
             deformation.pop(key, None)

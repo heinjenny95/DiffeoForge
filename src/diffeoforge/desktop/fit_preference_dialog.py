@@ -46,7 +46,9 @@ class FitPreferencePanel(QWidget):
         intro.setVisible(not self._shared_canvas)
         layout.addWidget(intro)
         controls = QHBoxLayout()
-        controls.addWidget(QLabel("Compare with"))
+        self.show_comparison = QCheckBox("Show best fit so far / alternatives")
+        self.show_comparison.toggled.connect(self._load_comparison)
+        controls.addWidget(self.show_comparison)
         self.reference_combo = QComboBox()
         self.reference_combo.setAccessibleName("Saved fit to compare")
         controls.addWidget(self.reference_combo, 1)
@@ -144,7 +146,10 @@ class FitPreferencePanel(QWidget):
         self.reference_canvas.clear()
         self._update_actions()
         descriptor = self._descriptor
-        reference = self.reference_combo.currentData()
+        reference = self.reference_combo.currentData() if self.show_comparison.isChecked() else None
+        self.reference_panel.setVisible(reference is not None)
+        self.reference_combo.setVisible(self.show_comparison.isChecked())
+        self.feedback_controls.setVisible(self.show_comparison.isChecked())
         detail = (
             self.current_canvas.original_detail.isChecked()
             if self._shared_canvas else self.detail.isChecked()
@@ -247,8 +252,9 @@ class FitPreferencePanel(QWidget):
                 )
             self.reference_combo.blockSignals(False)
             has_reference = bool(self.reference_combo.count())
-            self.reference_panel.setVisible(has_reference)
-            self.reference_combo.setVisible(has_reference)
+            self.show_comparison.setVisible(has_reference)
+            self.reference_panel.setVisible(has_reference and self.show_comparison.isChecked())
+            self.reference_combo.setVisible(has_reference and self.show_comparison.isChecked())
             self.start_button.setVisible(not has_reference)
             if already_best:
                 self.start_button.setText("Keep saved best as starting point")
@@ -266,7 +272,8 @@ class FitPreferencePanel(QWidget):
         # the loader's generation token. Never label a late result as a newer fit.
         if not self._descriptor or comparison != dict(
             current=self._descriptor["current"],
-            reference=self.reference_combo.currentData(),
+            reference=(self.reference_combo.currentData()
+                       if self.show_comparison.isChecked() else None),
             best=self._descriptor["best"],
         ):
             return
@@ -324,6 +331,10 @@ class FitPreferencePanel(QWidget):
         for button in self.feedback_buttons.values():
             button.setEnabled(bool(ready and ranked_reference))
         self.start_button.setEnabled(bool(ready and not reference))
+        if ready and not self.show_comparison.isChecked() and self._descriptor:
+            self.decision = (
+                "not_compared", self._descriptor["current"]["candidate_id"], comparison,
+            )
         if self._ready:
             self.status.setText(
                 ("These separate runs exported identical surfaces. " if self._same_surface else "")
@@ -333,7 +344,7 @@ class FitPreferencePanel(QWidget):
                     if reference and not ranked_reference
                     else "Choose relative fit, then accept or reject to save."
                     if reference
-                    else "Keep this starting point, then accept or reject the fit."
+                    else "Inspect this fit, then accept or reject. Saved comparisons are optional."
                 )
             )
         self.selectionChanged.emit()

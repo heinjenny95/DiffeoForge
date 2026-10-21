@@ -371,6 +371,7 @@ def initialize_project(
             )
         provisional["project"]["parameter_provenance"]["attachment_selection"] = {
             "version": "attachment-comparison-v1", "mode": "auto", "state": "pending",
+            "workflow": "guided-pilot-v2",
         }
     validate_schema(provisional)
     inputs = validate_input_paths(provisional, destination)

@@ -1,5 +1,10 @@
 # Transparent Deformetrica parameter calibration
 
+New automatic desktop pilots use the [v149 guided route](V149_GUIDED_PILOT.md):
+template/coverage suggestions, two one-target method trials, visual checkpoints,
+targeted parameter changes and a joint check. The broad grids and AFK policies
+below remain documentation of legacy/expert studies, not the new default route.
+
 Status: **implemented deterministic planning, broad combined kernel screening,
 automatic candidate execution, subject-level and reconstruction-wide QC,
 weight-sensitivity and subject-bootstrap robustness gates, optional visual QC,

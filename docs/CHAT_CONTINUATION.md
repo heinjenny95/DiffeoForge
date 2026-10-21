@@ -22,6 +22,15 @@ authorization or establish current application/job state.
 
 ## Current software boundary
 
+v149 source implements the [guided pilot](V149_GUIDED_PILOT.md): initial-template
+and adaptive target-count suggestions, two one-target method trials, explicit
+tie/unfit/uncertain decisions, optional lazy saved comparisons and joint-model
+retention into final numerical checks. Existing studies retain their protocol;
+an explicit successor action preserves their results. Software tests use synthetic
+controllers and do not authorize native fits or biological acceptance. Installation
+and exact-runtime delivery must be verified separately; dev148 below is historical
+only once the v149 delivery record confirms installation.
+
 v148 source repairs pilot preparation after project/method edits; both explicit
 buttons use the current form, preserving overwrite cancellation and preventing
 duplicate preparation. See [verification and boundaries](V148_PILOT_PREPARATION.md).

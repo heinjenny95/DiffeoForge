@@ -38,6 +38,7 @@ def setup_dialog(tmp_path, monkeypatch, *, best=True):
         root=str(tmp_path), current=current, choices=[previous, saved], best=saved if best else None
     )
     dialog._loaded("choices", descriptor)
+    dialog.show_comparison.setChecked(True)  # This suite exercises the optional comparison.
     original, current_model, saved_model = [
         _model(tmp_path / name) for name in ["target.vtk", "current.vtk", "saved.vtk"]
     ]

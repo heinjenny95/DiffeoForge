@@ -6,8 +6,10 @@ import hashlib
 import math
 import re
 import struct
+import threading
+from collections import OrderedDict
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from numbers import Integral, Real
 from pathlib import Path
 
@@ -32,6 +34,8 @@ _CONNECTIVITY_RE = re.compile(
     rb"\r?\nCONNECTIVITY\s+(vtktypeint32|vtktypeint64|int|long)[ \t]*\r?\n",
     re.IGNORECASE,
 )
+_METADATA_CACHE: OrderedDict[str, MeshMetadata] = OrderedDict()
+_METADATA_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -198,6 +202,36 @@ def _read_vtk51_offsets(
 
 
 def inspect_vtk(path: Path | str) -> MeshMetadata:
+    """Reuse bounded scalar metadata after a fresh streaming content hash.
+
+    Repeated project/pilot preparation never retains a mesh cohort or reparses
+    unchanged coordinates merely to rediscover counts and bounds. Fresh hashes
+    remain mandatory; stat/mtime alone never establish scientific identity.
+    """
+    source = Path(path).resolve()
+    try:
+        before = source.stat()
+        digest = sha256_file(source)
+        with _METADATA_LOCK:
+            cached = _METADATA_CACHE.get(digest)
+            if cached is not None:
+                _METADATA_CACHE.move_to_end(digest)
+        if cached is None:
+            cached = _inspect_vtk_uncached(source)
+        after = source.stat()
+        if (cached.sha256 != digest or cached.bytes != after.st_size
+                or (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns)):
+            raise ConfigurationError(f"VTK mesh changed during inspection: {source}")
+        with _METADATA_LOCK:
+            _METADATA_CACHE[digest] = cached
+            while len(_METADATA_CACHE) > 256:
+                _METADATA_CACHE.popitem(last=False)
+        return replace(cached, path=str(source))
+    except OSError as error:
+        raise ConfigurationError(f"Could not read VTK mesh {source}: {error}") from error
+
+
+def _inspect_vtk_uncached(path: Path | str) -> MeshMetadata:
     """Validate and inventory one legacy VTK triangular PolyData mesh.
 
     Legacy binary VTK coordinates are big-endian by specification. Reading the
