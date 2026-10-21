@@ -82,6 +82,12 @@ original configuration and execution path. There is no automatic migration or
 change to existing results. The expert selector still offers explicit Current or
 Varifold; Automatic requires guided calibration.
 
+Opening a saved project restores its actual stored method in the selector. A
+method edit invalidates the prepared-project binding until configuration is
+explicitly prepared again. A new automatic pilot receives a configuration-hash
+suffix, keeping earlier manually configured pilot directories intact. Explicit
+trial selections cannot silently expand into all comparison trials.
+
 ## Verification boundary
 
 Software tests use public synthetic geometry and simulated controller receipts;

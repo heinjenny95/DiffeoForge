@@ -4069,6 +4069,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_attachment_type_combo.addItem(
             "Varifold (orientation-insensitive)", "varifold"
         )
+        self.reference_attachment_type_combo.currentIndexChanged.connect(self._sync_ready_state)
         self.reference_timepoints_spin = QSpinBox()
         self.reference_timepoints_spin.setRange(2, 1000)
         self.reference_timepoints_spin.setValue(10)
@@ -9347,6 +9348,15 @@ class DiffeoForgeWindow(QMainWindow):
     def _project_succeeded(self, result: ProjectSetupResult) -> None:
         self._worker = None
         self._result = result
+        if result.engine is DesktopEngine.DEFORMETRICA_REFERENCE:
+            from diffeoforge.reference_attachment_comparison import pending
+
+            saved = load_config(result.config_path)
+            mode = "auto" if pending(saved) else saved["model"]["attachment"]["type"]
+            index = self.reference_attachment_type_combo.findData(mode)
+            self.reference_attachment_type_combo.blockSignals(True)
+            self.reference_attachment_type_combo.setCurrentIndex(index)
+            self.reference_attachment_type_combo.blockSignals(False)
         self._parameter_project_form_binding = self._parameter_project_form_signature()
         self.active_parameter_project_label.setText(
             f"Parameter project: {result.config_path.parent.name}"
@@ -9654,10 +9664,13 @@ class DiffeoForgeWindow(QMainWindow):
         except (KeyError, OSError, RuntimeError, TypeError, ValueError):
             return None
         if directory is None:
+            from diffeoforge.reference_attachment_comparison import pending
+
+            suffix = f"-methods-{review.config_sha256[:12]}" if pending(config) else ""
             directory = (
                 review.config_path.parent
                 / "calibration"
-                / f"reference-pilot-{plan.fingerprint[:12]}"
+                / f"reference-pilot-{plan.fingerprint[:12]}{suffix}"
             ).resolve()
         # Resolving a saved sequence can verify all approved individual fits.
         # It belongs in the background status/open operations, never a repaint.
@@ -9673,6 +9686,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.pattern_edit.text().strip(), self.landmarks_edit.text().strip(),
             self.procrustes_apply_check.isChecked(), self.already_gpa_check.isChecked(),
             getattr(self._procrustes_preview, "fingerprint", None),
+            self.reference_attachment_type_combo.currentData(),
         )
 
     def _bound_project_matches_form(self):
@@ -10104,6 +10118,7 @@ class DiffeoForgeWindow(QMainWindow):
             "Pilot-calibrated selection (read-only)",
         )
         self.reference_parameter_profile_combo.blockSignals(False)
+        self._parameter_project_form_binding = self._parameter_project_form_signature()
         self._update_reference_parameter_profile()
 
     @Slot()

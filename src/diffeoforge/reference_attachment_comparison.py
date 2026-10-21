@@ -471,11 +471,17 @@ def assess(snapshot, assessment):
     )
 
 
-def run(runner, event_callback=None):
+def run(runner, event_callback=None, *, candidate_ids=None):
     from diffeoforge import reference_calibration_study as study
 
     origin = runner.study_directory
     manifest = study._verify_manifest(origin)
+    config = load_config(origin / manifest["source_config"]["copy"])
+    if candidate_ids is not None and pending(config):
+        raise ValueError("Start the complete automatic method comparison before selecting trials")
+    if candidate_ids is not None and manifest.get("attachment_comparison"):
+        if not candidate_ids <= set(manifest["attachment_comparison"]["methods"]):
+            raise ValueError("Unknown automatic comparison trial selection")
     pointer = origin / "fit-search-latest.json"
     if runner._cancel_requested:
         return study.load_reference_calibration_study(origin)
@@ -507,7 +513,9 @@ def run(runner, event_callback=None):
     lock.mkdir()  # Existing lock requires explicit recovery, never duplicate work.
     try:
         runner._method_comparison_dispatch = True
-        result = runner.run_current_stage(event_callback=event_callback)
+        result = runner.run_current_stage(
+            event_callback=event_callback, candidate_ids=candidate_ids
+        )
         if result.current_stage and result.current_stage.order == 1:
             decision = recommendation(result)
             payload = dict(

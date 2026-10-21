@@ -2117,7 +2117,7 @@ class ReferenceCalibrationStudyRunner:
                 and not _selected_state(_load_events(self.study_directory))[1]
             )
         ):
-            return run_comparison(self, event_callback)
+            return run_comparison(self, event_callback, candidate_ids=candidate_ids)
         if snapshot.status == "completed":
             raise ReferenceCalibrationStudyError("Calibration study is already complete")
         if snapshot.status == "awaiting_review" and all(
