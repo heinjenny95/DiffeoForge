@@ -7,8 +7,13 @@ recommendation. Every-specimen visual approval remains required. The categorical
 method persists through later stages and full-cohort configuration; saved manual
 pilots are unchanged. See [protocol and verification limits](V147_AUTOMATIC_ATTACHMENT.md).
 Native prospective comparison and independent first use remain open. No optimizer
-is executed during implementation or delivery. The installed v146 snapshot below
-remains authoritative until separate v147 delivery verification is recorded.
+is executed during implementation or delivery. Runtime `6938897` / `dev147` is
+installed after complete verified backup and fresh idle guards. All 57 final
+focused source cases and source/exact frozen/installed comparison probes pass;
+post-probe project/settings preservation is verified. Existing project methods
+are restored accurately and new automatic studies use separate configuration-bound
+folders. See [verified delivery](V147_DELIVERY.md). The v146 snapshots below are
+historical.
 
 Owner first use exposed a missing modal-opening case in v145: the correct fit
 window was selected, but preparation stayed marked busy until that window closed,

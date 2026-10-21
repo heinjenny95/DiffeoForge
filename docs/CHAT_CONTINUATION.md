@@ -1,6 +1,6 @@
 # Continuing in a new chat
 
-Snapshot: 20 October 2026. This is a public, software-only entry point. The owner's
+Snapshot: 21 October 2026. This is a public, software-only entry point. The owner's
 private handoff contains exact dataset, account, automation and local artifact
 locations; do not copy those details into this repository.
 
@@ -9,7 +9,7 @@ locations; do not copy those details into this repository.
 1. The current private handoff and both applicable `AGENTS.md` files.
 2. Current branch, `git status` and remote state; preserve unrelated work.
 3. [Development continuity](DEVELOPMENT_CONTINUITY.md),
-   [v146 delivery](V146_DELIVERY.md) and the relevant acceptance document.
+   [v147 delivery](V147_DELIVERY.md) and the relevant acceptance document.
 4. The complete [roadmap](../ROADMAP.md), [next-version plan](NEXT_VERSION_PLAN.md),
    [v138 reconciliation](V138_DESKTOP_BACKLOG.md),
    [visualization requirements](PCA_VISUALIZATION_EXPORTS.md),
@@ -25,11 +25,15 @@ authorization or establish current application/job state.
 v147 source implements [automatic Current/Varifold pilot comparison](V147_AUTOMATIC_ATTACHMENT.md).
 New guided desktop projects expose Automatic by default; existing saved pilots
 retain their explicit method. There is no silent migration or scientific rerun.
-Installation/delivery verification is separate; the installed snapshot below
-remains valid until the v147 delivery addendum records a replacement.
+Runtime `6938897` / `dev147` is installed after complete verified backup and fresh
+idle guards. All 57 final focused source cases and source/exact frozen/installed
+comparison probes pass without a native fit. Post-probe project/settings
+preservation checks pass. Existing projects restore their stored method; new
+automatic studies have separate configuration-bound folders. See
+[delivery and remaining boundaries](V147_DELIVERY.md).
 
-The installed Windows runtime is `ced5e4d` / `dev146`; recording uses normal actions,
-paths and landmarks 10×; ready pilot fit evaluation 2×; calculation/loading 1000×.
+The preceding v146 runtime `ced5e4d` fixed recording. Normal actions, paths and
+landmarks retain 10×; ready pilot fit evaluation 2×; calculation/loading 1000×.
 Owner use of v145 found that the normal modal opening path retained the busy flag
 through review; earlier direct-viewer probes missed it. v146 fixes that callback
 ordering. Source, exact frozen/installed actual-opener mesh recording and
