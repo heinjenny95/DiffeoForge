@@ -714,7 +714,9 @@ def resume_directory(directory, _seen=None):
             return directory
         root = Path(info["root"]) if info else directory
     if not (root / STATE).exists():
-        if study._verify_manifest(root).get("attachment_comparison"):
+        if (root / study.STUDY_MANIFEST).is_file() and study._verify_manifest(root).get(
+            "attachment_comparison"
+        ):
             return root
         return directory
     state = _read(root)

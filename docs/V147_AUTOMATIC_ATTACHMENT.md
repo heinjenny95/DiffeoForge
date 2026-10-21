@@ -99,4 +99,12 @@ six equal iteration caps do not prove equal numerical accuracy. Native prospecti
 comparison and independent first use remain open. No private or synthetic native
 fit, atlas or PCA run is started as part of this software delivery.
 
+The broader legacy suite also exposes two AFK startup-control enablement
+assertions. Both failures reproduce when the unchanged pre-v147 dialog
+implementation is loaded against the same fixtures/environment. They are recorded
+separately from the new comparison checks; this change does not reactivate AFK or
+claim to repair those legacy assertions. Bare-directory successor discovery, an
+actual regression found by the expanded suite, retains its previous behavior
+after an explicit compatibility repair.
+
 Method background: [Charon and Trouve, 2013](https://arxiv.org/abs/1304.6108).
