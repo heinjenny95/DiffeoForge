@@ -24,7 +24,7 @@ TARGET_FACES = 20_000
 SAMPLES = 2048
 
 
-def surface_samples(vertices, faces, count=SAMPLES):
+def surface_samples(vertices, faces, count=SAMPLES, *, seed=20261001):
     """Fixed-seed equal-area samples; independent of source vertex density."""
     v, f = np.asarray(vertices, float), np.asarray(faces, int)
     a, b, c = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
@@ -32,7 +32,7 @@ def surface_samples(vertices, faces, count=SAMPLES):
     if not np.isfinite(areas).all() or not areas.sum() > 0:
         raise ValueError("Surface sampling needs finite positive area")
     # Stratified area selection avoids randomly missing entire large faces.
-    rng = np.random.default_rng(20261001)
+    rng = np.random.default_rng(seed)
     idx = np.searchsorted(np.cumsum(areas), (np.arange(count) + 0.5) * areas.sum() / count)
     u, w = rng.random((2, count))
     u = np.sqrt(u)

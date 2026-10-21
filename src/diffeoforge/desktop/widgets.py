@@ -4062,6 +4062,9 @@ class DiffeoForgeWindow(QMainWindow):
         expert_form.setHorizontalSpacing(18)
         expert_form.setVerticalSpacing(7)
         self.reference_attachment_type_combo = QComboBox()
+        self.reference_attachment_type_combo.addItem(
+            "Automatic — compare both methods (recommended)", "auto"
+        )
         self.reference_attachment_type_combo.addItem("Current (orientation-sensitive)", "current")
         self.reference_attachment_type_combo.addItem(
             "Varifold (orientation-insensitive)", "varifold"
@@ -10069,8 +10072,10 @@ class DiffeoForgeWindow(QMainWindow):
         )
         for widget, value in values:
             widget.setValue(value)
+        from diffeoforge.reference_attachment_comparison import pending
+
         attachment_index = self.reference_attachment_type_combo.findData(
-            model["attachment"]["type"]
+            "auto" if pending(config) else model["attachment"]["type"]
         )
         if attachment_index >= 0:
             self.reference_attachment_type_combo.setCurrentIndex(attachment_index)

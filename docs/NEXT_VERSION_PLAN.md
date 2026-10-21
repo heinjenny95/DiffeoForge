@@ -1,5 +1,15 @@
 # Next DiffeoForge development version
 
+## v147 owner-authorized automatic matching comparison — 21 October 2026
+
+New guided pilots compare Current and Varifold with matched fresh trials and
+common geometry measurements before further calibration. Provide a concise
+recommendation only for a stable advantage without subject/regional regressions;
+keep inconclusive results for visual selection. Preserve existing pilots and
+one method throughout subsequent stages/full-cohort preparation. Implementation
+and verification boundaries: [v147](V147_AUTOMATIC_ATTACHMENT.md).
+The owner explicitly requested no new fits during implementation or delivery.
+
 > v94 supersedes unattended stage advancement: each stage batches its candidates,
 > then waits for recorded visual acceptance of every specimen. The former AFK
 > controls and policies below describe historical behavior. Existing ledgers remain

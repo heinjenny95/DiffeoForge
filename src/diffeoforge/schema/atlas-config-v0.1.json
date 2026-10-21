@@ -60,6 +60,16 @@
           "additionalProperties": false,
           "required": ["profile", "scale_reference", "ratios", "sources"],
           "properties": {
+            "attachment_selection": {
+              "type": "object", "additionalProperties": false,
+              "required": ["version", "mode", "state"],
+              "properties": {
+                "version": {"const": "attachment-comparison-v1"},
+                "mode": {"const": "auto"},
+                "state": {"enum": ["pending", "comparing", "selected"]},
+                "selected_method": {"enum": ["current", "varifold"]}
+              }
+            },
             "profile": {
               "enum": [
                 "recommended",

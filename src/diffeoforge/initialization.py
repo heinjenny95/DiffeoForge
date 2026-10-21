@@ -324,7 +324,8 @@ def initialize_project(
             "type": "deterministic_atlas",
             "dimension": 3,
             "object_id": "surface",
-            "attachment": {"type": attachment_type, "kernel_width": 1.0},
+            "attachment": {"type": "current" if attachment_type == "auto" else attachment_type,
+                           "kernel_width": 1.0},
             "deformation": {
                 "kernel_width": 1.0,
                 "timepoints": timepoints,
@@ -363,6 +364,14 @@ def initialize_project(
         },
         "output": {"directory": run_path_value, "retain_flow_meshes": True},
     }
+    if attachment_type == "auto":
+        if parameter_profile != "data_assisted":
+            raise ConfigurationError(
+                "Automatic matching comparison requires guided pilot calibration"
+            )
+        provisional["project"]["parameter_provenance"]["attachment_selection"] = {
+            "version": "attachment-comparison-v1", "mode": "auto", "state": "pending",
+        }
     validate_schema(provisional)
     inputs = validate_input_paths(provisional, destination)
     template_metadata, subjects = inspect_inputs(inputs)

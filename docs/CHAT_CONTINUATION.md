@@ -22,6 +22,12 @@ authorization or establish current application/job state.
 
 ## Current software boundary
 
+v147 source implements [automatic Current/Varifold pilot comparison](V147_AUTOMATIC_ATTACHMENT.md).
+New guided desktop projects expose Automatic by default; existing saved pilots
+retain their explicit method. There is no silent migration or scientific rerun.
+Installation/delivery verification is separate; the installed snapshot below
+remains valid until the v147 delivery addendum records a replacement.
+
 The installed Windows runtime is `ced5e4d` / `dev146`; recording uses normal actions,
 paths and landmarks 10×; ready pilot fit evaluation 2×; calculation/loading 1000×.
 Owner use of v145 found that the normal modal opening path retained the busy flag

@@ -234,6 +234,11 @@ def render_engine_file_bytes(
 ) -> dict[str, bytes]:
     """Render the exact three Deformetrica XML inputs without writing files."""
 
+    method_policy = config["project"].get("parameter_provenance", {}).get(
+        "attachment_selection", {}
+    )
+    if method_policy.get("mode") == "auto" and method_policy.get("state") == "pending":
+        raise ConfigurationError("Complete the automatic pilot method comparison before execution")
     validate_reference_config(config)
     rendered = {
         "model.xml": _model_xml(config, staged_template, staged_control_points, staged_momenta),

@@ -109,6 +109,14 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 ## Pilot usability follow-up
 
+- [x] Add a default automatic Current/Varifold comparison for new guided pilots,
+  using matched fresh trials, common original-surface/regional measurements,
+  explicit shrinkage diagnostics and an inconclusive outcome. Keep the chosen
+  method common to the cohort and retain every-specimen visual approval.
+  Existing saved pilots are unchanged. See [v147 behavior and validation
+  boundaries](docs/V147_AUTOMATIC_ATTACHMENT.md); native prospective qualification
+  and independent first use remain open.
+
 - [x] Adopt a verified finer evaluation of the same saved field without another
   optimization: reuse checked grids, compute only the missing nested grid, bind
   a separate immutable candidate and require fresh anatomy review plus explicit

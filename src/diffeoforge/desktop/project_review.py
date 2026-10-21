@@ -485,8 +485,11 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         ReviewItem(
             "Attachment",
             (
-                f"{model['attachment']['type']} · width "
-                f"{_number(model['attachment']['kernel_width'])}"
+                "Automatic · compare Current and Varifold · 6 pilot trials"
+                if config["project"].get("parameter_provenance", {}).get(
+                    "attachment_selection", {}).get("state") == "pending"
+                else f"{model['attachment']['type']} · width "
+                     f"{_number(model['attachment']['kernel_width'])}"
             ),
             "Compares template and subject surfaces; the width controls the spatial scale.",
         ),

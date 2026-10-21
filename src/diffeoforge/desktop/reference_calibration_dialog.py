@@ -1957,9 +1957,16 @@ class ReferenceCalibrationDialog(QDialog):
             return
         stage = self._snapshot.current_stage
         assert stage is not None
+        from diffeoforge.config import load_config
+        from diffeoforge.reference_attachment_comparison import pending
+
+        auto_pending = pending(load_config(
+            self.study_directory / prepared.manifest["source_config"]["copy"]
+        ))
         automatic_mode = False
         fresh_guided = (
             stage.order == 1 and not self._sequence_info
+            and not self._snapshot.attachment_comparison
             and not self.advanced_mode.isChecked()
             and not self._snapshot.plan.qc_recalibration_source
             and all(c.status == "pending" and c.attempts == 0 for c in self._snapshot.candidates)
@@ -1978,6 +1985,18 @@ class ReferenceCalibrationDialog(QDialog):
             heading.setText("1 · Find an individual fit")
         self.content_layout.addWidget(heading)
         guidance = stage_guidance(stage)
+        method_comparison = bool(self._snapshot.attachment_comparison and stage.order == 1)
+        if method_comparison or auto_pending:
+            heading.setText("1 · Compare matching methods")
+            guidance = replace(
+                guidance, question="Which method follows all pilot surfaces more closely?",
+                explanation="The pilot tests both methods on your selected specimens: "
+                "six trials, using the same originals.",
+                action="Inspect the recommended fit. If there is no clear advantage, compare "
+                "the alternatives before choosing.",
+                caution="Regional distances and shrinkage checks guide review; "
+                "anatomy needs your approval.",
+            )
         if stage.order == 4:
             heading.setText("Stage 4 of 4 — Check time resolution and finish")
             guidance = replace(
@@ -2098,6 +2117,19 @@ class ReferenceCalibrationDialog(QDialog):
             )
             summary.setWordWrap(True)
             summary.setObjectName("statusWarning")
+            if method_comparison:
+                from diffeoforge.reference_attachment_comparison import recommendation
+
+                comparison = recommendation(self._snapshot)
+                method = comparison["recommended_method"]
+                summary.setText(
+                    f"Two methods compared · {method.title()} recommended. Inspect every specimen."
+                    if method else (
+                        "No recommendation · Some trials lack usable evidence. Inspect the results."
+                        if comparison["status"] == "review_required"
+                        else "Two methods compared · No clear advantage. Compare the fits."
+                    )
+                )
             if stage.order == 4:
                 summary.hide()  # One contextual next step replaces generic ranking advice.
             if can_keep and stage_options_rejected(self._snapshot):
@@ -2167,8 +2199,22 @@ class ReferenceCalibrationDialog(QDialog):
         candidate_container = QWidget()
         candidate_layout = QVBoxLayout(candidate_container)
         candidate_layout.setContentsMargins(0, 0, 0, 0)
+        extra_container = QWidget()
+        extra_layout = QVBoxLayout(extra_container)
+        extra_layout.setContentsMargins(0, 0, 0, 0)
+        shortlist = set()
+        if method_comparison:
+            from diffeoforge.reference_attachment_comparison import recommendation
+
+            method_result = recommendation(self._snapshot)
+            shortlist = set(method_result["best_candidates"].values())
         self._candidate_state_labels = {}
-        for index, candidate in enumerate(self._snapshot.candidates, start=1):
+        indexed_candidates = list(enumerate(self._snapshot.candidates, start=1))
+        if method_comparison:
+            indexed_candidates.sort(key=lambda pair: (
+                pair[1].candidate_id != method_result["recommended_candidate_id"], pair[0]
+            ))
+        for index, candidate in indexed_candidates:
             if fresh_guided:
                 continue
             if (
@@ -2177,19 +2223,29 @@ class ReferenceCalibrationDialog(QDialog):
                 and not (candidate.candidate_id.startswith("qualification-"))
             ):
                 continue  # Historical refit grid is not part of the new check.
-            candidate_layout.addWidget(
+            target_layout = (
+                extra_layout if shortlist and candidate.candidate_id not in shortlist
+                else candidate_layout
+            )
+            target_layout.addWidget(
                 self._candidate_card(
                     candidate,
                     planned_by_id[candidate.candidate_id],
                     option_index=index,
-                    tradeoffs=tradeoffs[candidate.candidate_id],
+                    tradeoffs=() if method_comparison else tradeoffs[candidate.candidate_id],
                 )
             )
+        if extra_layout.count():
+            candidate_layout.addWidget(InfoDisclosure("Other tested settings", extra_container))
+        else:
+            extra_container.deleteLater()
         if fresh_guided:
             candidate_container.hide()
             candidate_container.deleteLater()
             self.progress.setRange(0, 1)
             self.progress.setFormat("Ready for the first specimen")
+            if auto_pending:
+                self.progress.setFormat("Ready to compare two methods · 6 trials")
         elif automatic_mode:
             self.content_layout.addWidget(
                 InfoDisclosure(
@@ -2240,6 +2296,15 @@ class ReferenceCalibrationDialog(QDialog):
             if self._sequence_info
             else "Find fit"
         )
+        if method_comparison:
+            self.find_fit_button.setVisible(False)
+            self.collect_evidence_button.setVisible(False)
+            self.start_button.setText("Compare both methods · 6 trials")
+        else:
+            self.find_fit_button.setVisible(True)
+            if auto_pending:
+                self.find_fit_button.setText("Compare both methods · 6 trials")
+                self.start_button.setText("Compare both methods · 6 trials")
         self.saved_searches_button.setEnabled(not running)
         self.denser_model_button.setVisible(self._individual_checkpoint())
         self.denser_model_button.setEnabled(not running)
@@ -2366,6 +2431,10 @@ class ReferenceCalibrationDialog(QDialog):
         self._render_screening()
         self._update_retained_fit_action()
         self._update_final_next_step()
+        if method_comparison:
+            self.collect_evidence_button.hide()
+            if not running and awaiting:
+                self.status.setText("Ready for visual review.")
         if self._density_record:
             from diffeoforge.desktop.control_density import render_density
 
@@ -2779,6 +2848,11 @@ class ReferenceCalibrationDialog(QDialog):
                     )
                     else "Relative comparison appears after all candidates finish."
                 )
+                if metrics.get("attachment_comparison"):
+                    comparison.setText(
+                        "Method comparison uses original-surface and regional distances. "
+                        "Native objective values are context only."
+                    )
                 comparison.setObjectName("status")
                 comparison.setWordWrap(True)
                 option_help_layout.addWidget(comparison)
@@ -2868,7 +2942,11 @@ class ReferenceCalibrationDialog(QDialog):
             continuation.clicked.connect(
                 lambda _checked=False, value=candidate: self._start_selected_continuation(value)
             )
-            continuation.setVisible(not bool(getattr(self, "_density_record", None)))
+            continuation.setVisible(
+                not bool(getattr(self, "_density_record", None))
+                and not (self._snapshot.attachment_comparison
+                         and self._snapshot.current_stage.order == 1)
+            )
             if self._snapshot.current_stage.order == 4:
                 layout.addWidget(InfoDisclosure("Optional optimizer continuation", continuation))
             else:
@@ -3439,6 +3517,11 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot(object)
     def _event(self, event: Mapping[str, object]) -> None:
+        if event["event"] == "attachment_comparison_started":
+            self.study_directory = event["snapshot"].study_directory
+            self._render(event["snapshot"])
+            self.status.setText("Comparing two matching methods · 3 settings each. Review follows.")
+            return
         if (
             self._worker is not None
             and getattr(getattr(self._worker, "runner", None), "_cancel_requested", False)

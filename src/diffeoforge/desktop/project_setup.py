@@ -299,8 +299,10 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
             "Recommendation provenance is allowed only for the data-assisted profile"
         )
     attachment_type = str(request.reference_attachment_type).strip().lower()
-    if attachment_type not in {"current", "varifold"}:
-        raise ConfigurationError("Deformetrica attachment type must be current or varifold")
+    if attachment_type not in {"current", "varifold", "auto"}:
+        raise ConfigurationError("Deformetrica attachment type must be auto, current or varifold")
+    if attachment_type == "auto" and request.reference_parameter_profile != "data_assisted":
+        raise ConfigurationError("Automatic matching comparison requires guided pilot calibration")
     for label, value, minimum in (
         ("reference_timepoints", request.reference_timepoints, 2),
         (

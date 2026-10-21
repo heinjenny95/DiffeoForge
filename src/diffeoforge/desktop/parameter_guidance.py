@@ -316,6 +316,13 @@ DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         ),
         sections=(
             (
+                "Automatic comparison",
+                "Tests Current and Varifold with three matched settings each on all selected "
+                "pilot originals. Independent regional surface distances guide a recommendation; "
+                "inconclusive results remain available for visual comparison. "
+                "No anatomy is approved.",
+            ),
+            (
                 "Current",
                 "Is orientation-sensitive. Use it only when face orientation and normals "
                 "are meaningful and consistent across all meshes.",

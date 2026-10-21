@@ -661,6 +661,17 @@ def _dispatch_sequence(runner, *, action=None, event_callback=None):
 
 
 def run_specimen_sequence(runner, *, action=None, event_callback=None):
+    from diffeoforge.reference_attachment_comparison import pending
+    from diffeoforge.reference_attachment_comparison import run as run_comparison
+
+    manifest = study._verify_manifest(runner.study_directory)
+    config = load_config(runner.study_directory / manifest["source_config"]["copy"])
+    if not action and pending(config) and not manifest.get("fit_search"):
+        return run_comparison(runner, event_callback)
+    if manifest.get("attachment_comparison"):
+        if action:
+            raise ValueError("Review the method comparison before continuing parameter calibration")
+        return runner.run_current_stage(event_callback=event_callback)
     info = sequence_info(runner.study_directory)
     if not info:
         return _dispatch_sequence(runner, action=action, event_callback=event_callback)
@@ -695,12 +706,16 @@ def resume_directory(directory, _seen=None):
             raise ValueError("Saved fit-search pointer changed")
         if (root / "fit-search-latest.json").exists():
             return resume_directory(root, seen)
+        if study._verify_manifest(root).get("attachment_comparison"):
+            return study.latest_reference_calibration_search_extension_directory(root)
     else:
         info = sequence_info(directory)
         if info and info["phase"] == "joint":
             return directory
         root = Path(info["root"]) if info else directory
     if not (root / STATE).exists():
+        if study._verify_manifest(root).get("attachment_comparison"):
+            return root
         return directory
     state = _read(root)
     current = root / state["current"]

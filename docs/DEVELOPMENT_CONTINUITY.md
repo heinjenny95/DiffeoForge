@@ -1,4 +1,14 @@
-# Development continuity — v146 modal pilot review recording
+# Development continuity — v147 automatic matching-method comparison
+
+v147 source adds automatic Current/Varifold comparison for new guided desktop
+projects. Six matched fresh trials use the same pilot originals; independent
+regional geometry, shrinkage diagnostics and repeat ranges guide a cautious
+recommendation. Every-specimen visual approval remains required. The categorical
+method persists through later stages and full-cohort configuration; saved manual
+pilots are unchanged. See [protocol and verification limits](V147_AUTOMATIC_ATTACHMENT.md).
+Native prospective comparison and independent first use remain open. No optimizer
+is executed during implementation or delivery. The installed v146 snapshot below
+remains authoritative until separate v147 delivery verification is recorded.
 
 Owner first use exposed a missing modal-opening case in v145: the correct fit
 window was selected, but preparation stayed marked busy until that window closed,

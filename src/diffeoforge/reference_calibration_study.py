@@ -199,6 +199,7 @@ class ReferenceCalibrationStudySnapshot:
     adaptive_search_status: Mapping[str, Any] = field(default_factory=dict)
     early_screening: Mapping[str, Any] = field(default_factory=dict)
     integration_tolerances: Mapping[str, float] = field(default_factory=dict)
+    attachment_comparison: Mapping[str, Any] = field(default_factory=dict)
 
 
 def _normalized_search_extension_safety_limits(
@@ -626,6 +627,9 @@ def _prepare_stage(
             from diffeoforge.reference_control_density import configure_trial as configure_density
 
             configure_density(config, root, manifest, candidate.candidate_id)
+        from diffeoforge.reference_attachment_comparison import configure as configure_method
+
+        configure_method(config, root, manifest, candidate.candidate_id)
         config_path = candidate_directory / "atlas.yaml"
         _write_yaml(config_path, config, overwrite=False)
         records.append(
@@ -661,6 +665,7 @@ def create_reference_calibration_study(
     pilot_max_iterations: int = 150,
     fit_search: Mapping[str, Any] | None = None,
     plan_override: ReferenceCalibrationPlan | None = None,
+    attachment_comparison: Mapping[str, Any] | None = None,
 ) -> ReferenceCalibrationStudySnapshot:
     """Create an immutable-input staged study without launching Deformetrica."""
 
@@ -763,6 +768,12 @@ def create_reference_calibration_study(
             from diffeoforge.reference_fit_search import prepare_working_targets
 
             manifest["fit_search"] = prepare_working_targets(root, manifest, dict(fit_search))
+        if attachment_comparison is not None:
+            from diffeoforge.reference_attachment_comparison import prepare_controls
+
+            manifest["attachment_comparison"] = prepare_controls(
+                root, manifest, dict(attachment_comparison)
+            )
         _write_json(root / STUDY_MANIFEST, manifest, overwrite=False)
         write_text_safely(
             root / STUDY_DIGEST,
@@ -1364,6 +1375,10 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
         from diffeoforge.reference_control_density import verify_source
 
         verify_source(root, manifest)
+    if manifest.get("attachment_comparison"):
+        from diffeoforge.reference_attachment_comparison import verify as verify_comparison
+
+        verify_comparison(root, manifest)
     return manifest
 
 
@@ -1847,6 +1862,7 @@ def _load_verified_calibration_study(
             study_id=str(manifest["study_id"]),
             plan=plan,
             status="completed",
+            attachment_comparison=manifest.get("attachment_comparison", {}),
             current_stage=None,
             candidates=(),
             selected_values=selected_values,
@@ -2033,6 +2049,7 @@ def _load_verified_calibration_study(
         report_html_path=None,
         search_extension_safety_limits=extension_limits,
         search_extension_round=extension_round,
+        attachment_comparison=manifest.get("attachment_comparison", {}),
     )
 
 
@@ -2088,7 +2105,19 @@ class ReferenceCalibrationStudyRunner:
         integration_tolerances: Mapping[str, float] | None = None,
         candidate_ids: set[str] | None = None,
     ) -> ReferenceCalibrationStudySnapshot:
+        from diffeoforge.reference_attachment_comparison import pending
+        from diffeoforge.reference_attachment_comparison import run as run_comparison
+
         snapshot = load_reference_calibration_study(self.study_directory)
+        initial = _read_json(self.study_directory / STUDY_MANIFEST, "study")
+        initial_config = load_config(self.study_directory / initial["source_config"]["copy"])
+        if not getattr(self, "_method_comparison_dispatch", False) and (
+            pending(initial_config) or (
+                initial.get("attachment_comparison")
+                and not _selected_state(_load_events(self.study_directory))[1]
+            )
+        ):
+            return run_comparison(self, event_callback)
         if snapshot.status == "completed":
             raise ReferenceCalibrationStudyError("Calibration study is already complete")
         if snapshot.status == "awaiting_review" and all(
@@ -2167,6 +2196,12 @@ class ReferenceCalibrationStudyRunner:
                                 self.study_directory, manifest, candidate, request.destination
                             )
                         )
+                    if manifest.get("attachment_comparison") and snapshot.current_stage.order == 1:
+                        from diffeoforge.reference_attachment_comparison import measure
+
+                        measured.update(measure(
+                            self.study_directory, manifest, candidate, request.destination
+                        ))
                     terminal = _append_event(
                         self.study_directory,
                         "candidate_completed",
@@ -2504,7 +2539,9 @@ def assess_reference_calibration_snapshot(
         qualification_preview or declarations(_load_events(snapshot.study_directory))
     ):
         return assess(snapshot, assessment)
-    return assessment
+    from diffeoforge.reference_attachment_comparison import assess as assess_methods
+
+    return assess_methods(snapshot, assessment)
 
 
 def assess_reference_calibration_current_stage(
@@ -2531,6 +2568,9 @@ def _final_configuration(
 ) -> Path:
     source = load_config(_safe_study_path(root, manifest["source_config"]["copy"]))
     config = copy.deepcopy(dict(source))
+    from diffeoforge.reference_attachment_comparison import configure as configure_method
+
+    configure_method(config, root, manifest, None)
     config["input"]["directory"] = str(manifest["inputs"]["full_cohort"]["directory"])
     config["input"]["template"] = str(manifest["inputs"]["full_cohort"]["template"])
     config["input"]["subject_pattern"] = str(manifest["inputs"]["full_cohort"]["subject_pattern"])
@@ -2708,6 +2748,13 @@ def _selection_reason(
     assessment: CalibrationStageAssessment,
     selected_candidate_id: str,
 ) -> str:
+    if assessment.version == "attachment-comparison-v1":
+        return (
+            "Researcher selected one matching method/settings candidate after recorded "
+            "every-specimen visual review. The method comparison uses independent original-"
+            "surface and regional distances, not native objective values. The categorical "
+            "choice is retained for the whole cohort; this is not automatic anatomical approval."
+        )
     if assessment.metric_weights == (("timepoints", 1.0),):
         return (
             "Selected a timepoint option meeting the prospectively recorded numerical "

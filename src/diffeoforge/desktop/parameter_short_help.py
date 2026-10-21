@@ -46,8 +46,8 @@ SHORT_HELP = {
         "longer. Convergence does not approve anatomy."
     ),
     "attachment_type": (
-        "Varifolds compare unoriented surface elements; currents also use orientation. Keep the"
-        " chosen surface representation consistent across the project."
+        "Automatic compares both methods on the same pilot originals. Inspect the suggested "
+        "fit before using one method for the entire cohort."
     ),
     "time_points": (
         "Samples along each deformation path. More improves time resolution at greater cost. A "
