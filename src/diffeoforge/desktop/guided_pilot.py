@@ -1,7 +1,6 @@
 """Compact guided actions, separate method cards and visible recovery after rejection."""
 
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QFrame,
     QLabel,
@@ -10,7 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
-from diffeoforge.guided_strategy import remaining_forms, starting_allowed
+from diffeoforge.guided_strategy import remaining_forms
 from diffeoforge.guided_strategy import state as guidance_state
 from diffeoforge.reference_guided_pilot import record
 
@@ -103,11 +102,17 @@ def render(window, prepared):
     _set_action_emphasis(window.start_button, bool(pending) and not running)
     window.cancel_button.setVisible(running)
     window.cancel_button.setEnabled(running)
+    inspected_feedback = any(
+        value and value.get("current_inspected")
+        for value in guidance.get("feedback", {}).values()
+    )
     window.status.setText(
         "Computing the confirmed batch…"
         if running
         else "A trial failed. Inspect details, retry, or choose an approved alternative."
         if failed
+        else "Feedback saved. Choose the next step below."
+        if completed and inspected_feedback
         else "Inspect the fit, then choose the next step below."
         if completed
         else "Ready. Preparing this plan has started no fits."
@@ -139,11 +144,15 @@ def render(window, prepared):
         method_title.setObjectName("sectionTitle")
         layout.addWidget(method_title)
         decision = snapshot.visual_reviews.get(candidate.candidate_id)
+        feedback = guidance.get("feedback", {}).get(candidate.candidate_id)
+        already_inspected = bool(feedback and feedback.get("current_inspected"))
         state = (
             "Suitable for this form"
             if decision is True
             else "Needs improvement"
             if decision is False
+            else "Inspected · suitability not yet approved"
+            if already_inspected
             else "Ready to inspect"
             if candidate.status == "completed"
             else "Computing / queued"
@@ -167,7 +176,7 @@ def render(window, prepared):
             inspect.setAccessibleName(inspect.text())
             inspect.setProperty("pilotCandidate", candidate.candidate_id)
             inspect.clicked.connect(lambda _checked=False, c=candidate: window._open_candidate(c))
-            _set_action_emphasis(inspect, decision is None)
+            _set_action_emphasis(inspect, decision is None and not already_inspected)
             layout.addWidget(inspect)
             subjects = (
                 (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
@@ -188,8 +197,15 @@ def render(window, prepared):
                 label.setWordWrap(True)
                 layout.addWidget(label)
             method = snapshot.attachment_comparison["methods"][candidate.candidate_id]
-            valid = (starting_allowed(snapshot, candidate.candidate_id)
-                     if decision is not None else False)
+            valid = guidance.get("allowed", {}).get(candidate.candidate_id, False)
+            if info["phase"] != "screen":
+                from diffeoforge.desktop.guided_feedback import (
+                    render_feedback,
+                    render_starting_fits,
+                )
+
+                render_feedback(window, snapshot, candidate.candidate_id, layout, feedback)
+                render_starting_fits(window, snapshot, candidate.candidate_id, layout, feedback)
             if decision is False and not valid:
                 explanation = QLabel(
                     "This result is technically invalid. Check the failure, input meshes and "
@@ -200,8 +216,9 @@ def render(window, prepared):
                     and guidance["preferred"] != method and info["phase"] != "joint"):
                 action(layout, "Use " + candidate.label + " as starting method → improve",
                        "prefer", candidate.candidate_id)
-            if (decision is False and valid and not unresolved
-                    and (guidance["preferred"] == method or info["phase"] == "joint")):
+            has_start = bool(feedback and feedback["selected"])
+            if ((decision is False or has_start) and (valid or has_start) and not unresolved
+                    and (guidance["preferred"] == method or has_start or info["phase"] == "joint")):
                 _recovery(window, snapshot, candidate, layout, guidance)
             if decision is True and info["phase"] != "joint":
                 remaining = remaining_forms(snapshot, candidate.candidate_id, context=guidance)
@@ -268,9 +285,12 @@ def _recovery(window, snapshot, candidate, layout, guidance):
     symptoms.setAccessibleName("What is wrong with " + candidate.label + "?")
     for key, label in SYMPTOMS.items():
         symptoms.addItem(label, key)
-    regions = snapshot.problem_regions.get(identifier, {})
+    saved_feedback = guidance.get("feedback", {}).get(identifier) or {}
+    recorded = saved_feedback.get("feedback") or {}
+    regions = recorded.get("problem_regions") or snapshot.problem_regions.get(identifier, {})
     first = next((r for rows in regions.values() for r in rows), None)
-    symptoms.setCurrentIndex(symptoms.findData(first["symptom"] if first else "unsure"))
+    symptoms.setCurrentIndex(symptoms.findData(
+        recorded.get("symptom") or (first["symptom"] if first else "unsure")))
     layout.addWidget(symptoms)
     explanation = QLabel()
     explanation.setWordWrap(True)
@@ -283,21 +303,14 @@ def _recovery(window, snapshot, candidate, layout, guidance):
     alternatives.addItem("Use the suggested next step", None)
     for key, (title, _reason) in DESCRIPTIONS.items():
         alternatives.addItem(title, key)
-    previous = QCheckBox("Start from the settings before this last test")
-    previous.setVisible(bool((record(snapshot).get("strategy") or {}).get("baseline")))
     options = QFrame()
     options_layout = QVBoxLayout(options)
     options_layout.addWidget(alternatives)
-    options_layout.addWidget(previous)
-    layout.addWidget(InfoDisclosure("Other approaches / previous settings", options))
+    layout.addWidget(InfoDisclosure("Other adjustments", options))
 
     def update(*_):
         selected = alternatives.currentData()
-        if previous.isChecked():
-            selected = selected or trial_proposal(
-                snapshot, identifier, symptoms.currentData(), context=guidance)["goal"]
-        request = ("base:" if previous.isChecked() else "goal:") + selected \
-            if selected else symptoms.currentData()
+        request = "goal:" + selected if selected else symptoms.currentData()
         proposed = trial_proposal(snapshot, identifier, request, context=guidance)
         state.clear()
         state.update(proposed)
@@ -316,10 +329,16 @@ def _recovery(window, snapshot, candidate, layout, guidance):
         prepare.setText(proposed["title"] + " · prepare 1 trial on 1 specimen")
         prepare.setEnabled(proposed["available"])
         _set_action_emphasis(prepare, proposed["available"])
+        data = guidance.get("feedback", {}).get(identifier)
+        if data and data["needs_direction"]:
+            prepare.setEnabled(False)
+            _set_action_emphasis(prepare, False)
+            explanation.setText(
+                "Tell us whether the last change helped, or choose an earlier starting fit above. "
+                "This prevents another change from building blindly on a worse attempt.")
 
     symptoms.currentIndexChanged.connect(update)
     alternatives.currentIndexChanged.connect(update)
-    previous.toggled.connect(update)
     prepare.clicked.connect(
         lambda: window._start_pilot(
             adaptive=False, guided_action=("adaptive_recover", identifier, state["request"])
@@ -329,7 +348,8 @@ def _recovery(window, snapshot, candidate, layout, guidance):
     if len(snapshot.candidates) == 1:
         other = QPushButton("Alternatively: check the other method here · prepare 1 trial")
         other_proposal = trial_proposal(snapshot, identifier, "other_method", context=guidance)
-        other.setEnabled(other_proposal["available"])
+        data = guidance.get("feedback", {}).get(identifier)
+        other.setEnabled(other_proposal["available"] and not (data and data["needs_direction"]))
         if not other_proposal["available"]:
             other.setText("Other method already tested here — compare saved alternatives")
         other.clicked.connect(

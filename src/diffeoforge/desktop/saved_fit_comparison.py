@@ -1,5 +1,6 @@
 """Load a saved alternative only when requested; current-fit QC stays separate."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,10 @@ def alternatives(snapshot, identifier):
     info = record(snapshot)
     if not info or info["phase"] == "joint":
         return ()
+    from diffeoforge.guided_feedback import presentation, verify_reference
+
+    feedback = presentation(snapshot, identifier)
+    starting = feedback["comparison"] if feedback else None
     result = []
     sources = [
         snapshot,
@@ -42,11 +47,24 @@ def alternatives(snapshot, identifier):
                 for p in collect_calibration_qc_pairs(other.study_directory, candidate)
                 if p.required
             )
-            result.append(
-                (other.visual_reviews.get(candidate.candidate_id) is True, candidate.label, pair)
-            )
+            pair = replace(pair, pair_id=(
+                f"{other.study_directory.name}/{candidate.candidate_id}/{pair.pair_id}"))
+            is_start = bool(starting and starting["directory"] == str(other.study_directory)
+                            and starting["candidate_id"] == candidate.candidate_id)
+            label = f"Test {record(other)['screen_trials_spent']} · {candidate.label}"
+            result.append((other.visual_reviews.get(candidate.candidate_id) is True,
+                           ("Starting fit · " if is_start else "") + label, pair))
+    if starting and not any(r[1].startswith("Starting fit · ") for r in result):
+        other = verify_reference(starting)
+        candidate = next(c for c in other.candidates if c.candidate_id == starting["candidate_id"])
+        pair = next(p for p in collect_calibration_qc_pairs(other.study_directory, candidate)
+                    if p.required and p.original_path.name == starting["target"])
+        pair = replace(pair, pair_id=(
+            f"{other.study_directory.name}/{candidate.candidate_id}/{pair.pair_id}"))
+        result.append((other.visual_reviews.get(candidate.candidate_id) is True,
+                       "Starting fit · " + candidate.label, pair))
     # An explicit approval is preferred. Never label an unreviewed fit approved/best.
-    return tuple(sorted(result, key=lambda r: not r[0]))
+    return tuple(sorted(result, key=lambda r: (not r[1].startswith("Starting fit · "), not r[0])))
 
 
 class SavedFitComparison(QWidget):

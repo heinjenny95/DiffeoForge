@@ -10,10 +10,13 @@ from diffeoforge.mesh import sha256_file
 from diffeoforge.pilot_recovery import DESCRIPTIONS, capture, proposal
 
 
-def _candidate(snapshot, identifier):
+def _candidate(snapshot, identifier, *, allow_unreviewed=False):
+    from diffeoforge.guided_feedback import inspected
+
     candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
     metrics = candidate.metrics or {}
-    if (candidate.status != "completed" or identifier not in snapshot.visual_reviews
+    if (candidate.status != "completed"
+            or (not allow_unreviewed and not inspected(snapshot, identifier))
             or metrics.get("completed") is not True
             or type(metrics.get("invalid_face_count")) is not int
             or metrics["invalid_face_count"] != 0
@@ -125,8 +128,14 @@ def state(snapshot):
                 and snapshot.attachment_comparison["methods"][candidate.candidate_id] == preferred
                 and info["target"]):
             covered.add(info["target"])
+    from diffeoforge.guided_feedback import presentation
+
     return dict(preferred=preferred, checked=len(covered), total=len(info["pilot_order"]),
-                phase=info["phase"], preference=preference, cases=cases, last_adjustment=last)
+                phase=info["phase"], preference=preference, cases=cases, last_adjustment=last,
+                feedback={c.candidate_id: presentation(snapshot, c.candidate_id)
+                          for c in snapshot.candidates if c.status == "completed"},
+                allowed={c.candidate_id: starting_allowed(snapshot, c.candidate_id)
+                         for c in snapshot.candidates if c.status == "completed"})
 
 
 def remaining_forms(snapshot, identifier, *, context):
@@ -140,9 +149,14 @@ def remaining_forms(snapshot, identifier, *, context):
 
 def trial_proposal(snapshot, identifier, symptom, *, context=None):
     """Explain one hypothesis and its downstream checks; no global trial cap."""
-    _candidate(snapshot, identifier)
+    from diffeoforge.guided_feedback import regions, selection
+
+    anchor = selection(snapshot, identifier)
+    _candidate(snapshot, identifier, allow_unreviewed=bool(anchor))
+    marked = regions(snapshot, identifier, _target(snapshot, identifier))
     proposed = proposal(snapshot, identifier, "unsure" if ":" in symptom else symptom,
-                        adaptive=True)
+                        adaptive=True, starting_from_saved=bool(anchor),
+                        regions_override=marked)
     info = guided.record(snapshot)
     strategy = info.get("strategy") or {}
     baseline = strategy.get("baseline")
@@ -164,6 +178,8 @@ def trial_proposal(snapshot, identifier, symptom, *, context=None):
                    else snapshot.attachment_comparison["methods"][identifier])
     goal = proposed["goal"]
     target = baseline["target"] if from_base else _target(snapshot, identifier)
+    if anchor and not from_base:
+        base_values, base_method, target = anchor["values"], anchor["method"], anchor["target"]
 
     def choice(key):
         method = ("varifold" if base_method == "current" else "current") \
@@ -184,6 +200,7 @@ def trial_proposal(snapshot, identifier, symptom, *, context=None):
     approved = _compatible(snapshot, method, values, cases)
     covered = {r["filename"] for r in approved} | {target}
     proposed.update(method=method, values=values, target=target, from_base=from_base,
+                    anchor=anchor if not from_base else baseline,
                     remaining_checks=len(set(info["pilot_order"]) - covered),
                     available=not seen, hypothesis_count=strategy.get("hypothesis_count", 0))
     return proposed
@@ -214,6 +231,10 @@ def verify_strategy(info, record, manifest):
     for key in ("preference", "baseline"):
         if strategy.get(key):
             _verify_reference(strategy[key])
+    if strategy.get("anchor"):
+        from diffeoforge.guided_feedback import verify_reference
+
+        verify_reference(strategy["anchor"])
     values = manifest["plan"]["baseline_effective_values"]
     if info["phase"] in {"validate", "joint"} and any(
             r["values"] != values or r["method"] not in record["methods"].values()
@@ -242,24 +263,40 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
             raise ValueError("This unchanged combination was already tested. Inspect saved "
                              "alternatives or choose another adjustment; no fit was prepared.")
         baseline_snapshot, baseline_id = snapshot, identifier
-        if proposed["from_base"]:
-            reference = strategy["baseline"]
-            baseline_snapshot = _verify_reference(reference)
+        if proposed["anchor"]:
+            from diffeoforge.guided_feedback import verify_reference
+
+            reference = proposed["anchor"]
+            baseline_snapshot = verify_reference(reference)
             baseline_id = reference["candidate_id"]
         target, values, methods = proposed["target"], proposed["values"], (proposed["method"],)
-        feedback = capture(baseline_snapshot, baseline_id, target)
+        from diffeoforge.guided_feedback import regions
+
+        feedback = capture(baseline_snapshot, baseline_id, target,
+                           regions=regions(snapshot, identifier, target))
         strategy["baseline"] = _reference(baseline_snapshot, baseline_id, target)
+        if proposed["anchor"]:
+            strategy["anchor"] = proposed["anchor"]
         strategy["difficult_targets"] = list(dict.fromkeys(
             [target, *strategy.get("difficult_targets", [])]))
         strategy["hypothesis_count"] = strategy.get("hypothesis_count", 0) + 1
         preference = preference if preference and preference["method"] == methods[0] else None
         approved = _compatible(snapshot, methods[0], values, cases)
         phase, goal = "refine", proposed["goal"]
-    elif action == "confirm":
-        row = guided._approved_record(snapshot, identifier)
-        preference = _reference(snapshot, identifier)
+    elif action in {"confirm", "confirm_start"}:
+        accepted, accepted_id = snapshot, identifier
+        if action == "confirm_start":
+            from diffeoforge.guided_feedback import selection, verify_reference
+
+            anchor = selection(snapshot, identifier)
+            if not anchor:
+                raise ValueError("Choose an inspected starting fit first")
+            accepted, accepted_id = verify_reference(anchor), anchor["candidate_id"]
+        row = guided._approved_record(accepted, accepted_id)
+        preference = _reference(accepted, accepted_id)
         values, methods = row["values"], (row["method"],)
-        approved = [*_compatible(snapshot, methods[0], values, cases), row]
+        approved = list({r["filename"]: r for r in
+            [*_compatible(snapshot, methods[0], values, cases), row]}.values())
         covered = {r["filename"] for r in approved}
         order = list(dict.fromkeys([*strategy.get("difficult_targets", []), *info["pilot_order"]]))
         target = next((n for n in order if n not in covered), None)
@@ -284,6 +321,11 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
 
 def transition(snapshot, action, identifier, *, goal=None):
     """Called under the existing transition lock; never dispatch an optimizer."""
+    if action in {"select_start", "feedback"}:
+        from diffeoforge.guided_feedback import save_feedback, select
+
+        return (select(snapshot.study_directory, identifier, goal) if action == "select_start"
+                else save_feedback(snapshot.study_directory, identifier, goal))
     if action == "prefer":
         reference = _reference(snapshot, identifier)
         study._append_event(snapshot.study_directory, "guided_method_preference", dict(

@@ -24,13 +24,15 @@ DESCRIPTIONS = {
 }
 
 
-def proposal(snapshot, identifier, symptom, *, adaptive=False):
+def proposal(snapshot, identifier, symptom, *, adaptive=False, starting_from_saved=False,
+             regions_override=None):
     """A heuristic hypothesis, not a diagnosis or promise of anatomical recovery."""
     from diffeoforge.reference_guided_pilot import record
 
     info = record(snapshot)
     candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
-    if not info or snapshot.visual_reviews.get(identifier) is not False:
+    if not info or (snapshot.visual_reviews.get(identifier) is not False
+                    and not starting_from_saved):
         raise ValueError("Inspect and reject this fit before preparing a recovery test")
     if symptom not in {"detail", "missing", "shape", "distortion", "unsure", "other_method"}:
         raise ValueError("Choose the visible problem, or say you are unsure")
@@ -41,7 +43,8 @@ def proposal(snapshot, identifier, symptom, *, adaptive=False):
         if v in {"fail", "uncertain"}
     ]
     target = info["target"] or next(iter(rejected), names[0])
-    regions = snapshot.problem_regions.get(identifier, {}).get(target, [])
+    regions = (regions_override if regions_override is not None
+               else snapshot.problem_regions.get(identifier, {}).get(target, []))
     method = snapshot.attachment_comparison["methods"][identifier]
     count = len(snapshot.candidates)
     if symptom == "detail":
@@ -88,7 +91,7 @@ def proposal(snapshot, identifier, symptom, *, adaptive=False):
     )
 
 
-def capture(snapshot, identifier, target):
+def capture(snapshot, identifier, target, *, regions=None):
     """Called in transition preparation, away from the GUI thread."""
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.pilot_regions import measure
@@ -96,7 +99,8 @@ def capture(snapshot, identifier, target):
     from diffeoforge.result_report import collect_run_report
     from diffeoforge.surface_io import load_surface_mesh
 
-    regions = snapshot.problem_regions.get(identifier, {}).get(target, [])
+    regions = (regions if regions is not None
+               else snapshot.problem_regions.get(identifier, {}).get(target, []))
     if not regions:
         return None
     candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)

@@ -1,5 +1,11 @@
 # Next DiffeoForge development version
 
+Owner scope, 22 October 2026: v154 repairs the worsening-improvement chain with
+independent relative feedback, symptoms/notes and explicit earlier-fit selection.
+Suggestions retain a useful baseline; anatomical approval stays separate.
+See [scope](V154_PILOT_FEEDBACK.md) and [delivery state](V154_DELIVERY.md).
+No owner/native fit is started. Older version snapshots below are historical.
+
 Owner scope, 22 October 2026: v153 source redesigns the blocked pilot around
 provisional method preference, one-form improvement, compatible coverage and the
 joint check. Rejection always exposes a guided next hypothesis or an explicit

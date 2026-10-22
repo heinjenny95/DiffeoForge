@@ -497,6 +497,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         compare_preferences: bool = False,
         alternative_pairs: tuple = (),
         compact_review: bool = False,
+        guided_feedback_context: dict | None = None,
     ) -> None:
         super().__init__(parent)
         if candidate.run_directory is None:
@@ -530,6 +531,8 @@ class CalibrationCandidateViewerDialog(QDialog):
         self._read_only = read_only
         self._compact_review = compact_review
         self.fit_preferences = None
+        self.guided_feedback = None
+        self._guided_feedback_only = False
         self._valid_individual = not (compare_preferences or compact_review) or (
             candidate.status == "completed"
             and bool(candidate.metrics)
@@ -857,7 +860,16 @@ class CalibrationCandidateViewerDialog(QDialog):
             decision_layout.insertWidget(0, quality)
             if self.fit_preferences is None:
                 decision_layout.removeWidget(self.anatomical_notes)
-                feature_layout.addWidget(self.anatomical_notes)
+                if guided_feedback_context and guided_feedback_context.get("comparison"):
+                    from diffeoforge.desktop.guided_feedback import GuidedFeedbackControls
+
+                    self.guided_feedback = GuidedFeedbackControls(guided_feedback_context)
+                    self.guided_feedback.saveRequested.connect(self._record_guided_feedback)
+                    decision_layout.insertWidget(1, self.guided_feedback)
+                    feature_layout.addWidget(self.anatomical_notes)
+                else:
+                    self.anatomical_notes.setPlaceholderText("What needs work? (optional)")
+                    decision_layout.insertWidget(1, self.anatomical_notes)
         if self._required_pair_indexes:
             first_required = self._required_pair_indexes[0]
             combo_index = self.mesh_combo.findData(first_required)
@@ -878,6 +890,32 @@ class CalibrationCandidateViewerDialog(QDialog):
     @property
     def preference_decision(self):
         return self.fit_preferences.decision if self.fit_preferences else None
+
+    @property
+    def guided_feedback_decision(self):
+        if not self.guided_feedback or not self.guided_feedback.decision:
+            return None
+        decision = dict(self.guided_feedback.decision)
+        names = [p.original_path.name for p in self._pairs
+                 if p.required and p.pair_id in self._reviewed_pair_ids]
+        decision.update(inspected_subjects=names, display_scopes={
+            n: self.display_scopes.get(n, "original_and_reconstruction_displayed") for n in names},
+            comparison_displayed=False,
+            problem_regions={n: self.problem_regions[n]
+                             for n in names if n in self.problem_regions})
+        saved = getattr(self, "saved_comparison", None)
+        if saved and saved.toggle.isChecked() and saved.canvas.comparison_ready:
+            model = saved.canvas.reconstruction_model
+            data = self.guided_feedback.data
+            decision["comparison_displayed"] = bool(model
+                and str(model.path) == data.get("comparison_reconstruction_path")
+                and model.sha256 == data.get("comparison_reconstruction_sha256"))
+        return decision
+
+    def _record_guided_feedback(self, _decision=None):
+        if self.canvas.comparison_ready and self.guided_feedback_decision and not self._read_only:
+            self._guided_feedback_only = True
+            self.accept()
 
     def _ranking_ready(self):
         return self.fit_preferences is None or self.fit_preferences.selection_ready
@@ -1162,6 +1200,8 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.next_specimen_button.setEnabled(total > 1)
         pair = self._pairs[int(pair_index)] if pair_index is not None else None
         current_seen = bool(pair and pair.required and self.canvas.comparison_ready)
+        if self.guided_feedback:
+            self.guided_feedback.set_ready(current_seen and self._valid_individual)
         self.mark_region_button.setEnabled(current_seen)
         count = len(self.problem_regions.get(pair.original_path.name, [])) if pair else 0
         self.clear_regions_button.setVisible(count > 0)
@@ -3543,7 +3583,7 @@ class ReferenceCalibrationDialog(QDialog):
         )
 
     def _start_pilot(self, **kwargs) -> None:
-        if self._worker is not None:
+        if self._worker is not None or self._review_saving or self._view_loading:
             return  # Repeated clicks must not replace a still-active worker.
         try:
             self._dispatch_pilot(**kwargs)
@@ -4311,6 +4351,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.status.setText("Preparing comparison in background… The pilot can continue.")
 
         def prepare():
+            from diffeoforge.desktop.guided_feedback import prepare_context
             from diffeoforge.desktop.saved_fit_comparison import alternatives
             from diffeoforge.reference_calibration_study import calibration_verification_scope
 
@@ -4324,11 +4365,30 @@ class ReferenceCalibrationDialog(QDialog):
                     snapshot, collect_calibration_qc_pairs(root, current),
                     normalized_candidate_subject_fit(snapshot, current),
                     alternatives(snapshot, current.candidate_id),
+                    prepare_context(snapshot, current.candidate_id),
                 )
 
         self._viewer_preparation.request_operation(
             (root, candidate), prepare,
         )
+
+    def _open_guided_saved_fit(self, reference):
+        if self._view_loading or self._view_closed or self._review_saving or self._worker:
+            return
+        origin = self.study_directory
+
+        def prepare():
+            from diffeoforge.guided_feedback import verify_reference
+            from diffeoforge.reference_calibration_study import calibration_verification_scope
+
+            with calibration_verification_scope():
+                parent = verify_reference(reference)
+                candidate = next(c for c in parent.candidates
+                                 if c.candidate_id == reference["candidate_id"])
+                return (parent, collect_calibration_qc_pairs(parent.study_directory, candidate),
+                        normalized_candidate_subject_fit(parent, candidate), (), None)
+
+        self._viewer_preparation.request_operation(("guided-saved", origin, reference), prepare)
 
     def _review_early_screen(self) -> None:
         state = self._snapshot.early_screening
@@ -4368,7 +4428,14 @@ class ReferenceCalibrationDialog(QDialog):
             dialog.exec()
             return
         screen_parent = None
-        if key[0] == "early-screen":
+        if key[0] == "guided-saved":
+            if key[1] != self.study_directory or self._worker:
+                return
+            reviewed_snapshot, pairs, fit = prepared[:3]
+            root, candidate = reviewed_snapshot.study_directory, reviewed_snapshot.candidates[0]
+            candidate = next(c for c in reviewed_snapshot.candidates
+                             if c.candidate_id == key[2]["candidate_id"])
+        elif key[0] == "early-screen":
             screen_parent = key[1]
             if screen_parent != self.study_directory or self._worker is not None:
                 return
@@ -4388,7 +4455,8 @@ class ReferenceCalibrationDialog(QDialog):
                 self,
                 subject_fit=fit,
                 pairs=pairs,
-                alternative_pairs=prepared[3] if len(prepared) == 4 else (),
+                alternative_pairs=prepared[3] if len(prepared) >= 4 else (),
+                guided_feedback_context=prepared[4] if len(prepared) >= 5 else None,
                 compact_review=bool(guided_record(reviewed_snapshot)),
                 allow_plan_b=self._individual_checkpoint()
                 and Path(root).resolve() == self.study_directory.resolve(),
@@ -4452,7 +4520,10 @@ class ReferenceCalibrationDialog(QDialog):
                 if not dialog.preference_decision:
                     raise ValueError("Choose relative fit feedback before the final decision")
                 preference = dialog.preference_decision
-            if not dialog.review_recorded and not dialog.keep_as_plan_b:
+            guided_decision = (dialog.guided_feedback_decision if dialog.review_recorded
+                               or dialog._guided_feedback_only else None)
+            record_review = dialog.review_recorded
+            if not record_review and not dialog.keep_as_plan_b and guided_decision is None:
                 return
             review = dict(
                     candidate_id=candidate.candidate_id,
@@ -4481,19 +4552,25 @@ class ReferenceCalibrationDialog(QDialog):
             origin = self.study_directory
 
             def save():
+                if guided_decision is not None:
+                    from diffeoforge.guided_feedback import save_feedback
+
+                    save_feedback(root, candidate.candidate_id, guided_decision)
                 if preference is not None:
                     from diffeoforge.reference_fit_preferences import save_inspection_preference
 
                     save_inspection_preference(root, preference)
                 if keep:
                     return None
-                saved = record_reference_calibration_candidate_review(root, **review)
+                saved = (record_reference_calibration_candidate_review(root, **review)
+                         if record_review else load_reference_calibration_study(root))
                 if screen_parent:
                     from diffeoforge.reference_stage_screening import record_screen_review
 
                     record_screen_review(screen_parent, root)
                     saved = load_reference_calibration_study(screen_parent)
-                return saved
+                return (saved if root == origin or screen_parent
+                        else load_reference_calibration_study(origin))
 
             self._review_saving = True
             self.content.setEnabled(False)
@@ -4503,7 +4580,8 @@ class ReferenceCalibrationDialog(QDialog):
             self.selection_combo.setEnabled(False)
             self.status.setText("Saving your review in background…")
             self._review_save_loader.request_operation(
-                (origin, root, candidate.candidate_id, review["approved"], keep, screen_parent),
+                (origin, root, candidate.candidate_id,
+                 review["approved"] if record_review else None, keep, screen_parent),
                 save,
             )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
@@ -4523,7 +4601,7 @@ class ReferenceCalibrationDialog(QDialog):
             return
         if screen_parent:
             self._pending_screen_review = True
-        else:
+        elif root == origin and approved is not None:
             self._pending_specimen_review = (root, candidate_id, approved)
         self._render(snapshot)
 

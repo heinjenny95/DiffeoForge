@@ -1,4 +1,12 @@
-# Development continuity — v153 interactive pilot
+# Development continuity — v154 recoverable pilot refinement
+
+v154 source adds independent better/same/worse/unsure feedback, symptoms, notes
+and a visible earlier-fit starting-point chooser. Non-improvements retain the
+earlier baseline; explicit historical approval can be reused without refitting
+that form. No approval is inferred from preference. See [behavior](V154_PILOT_FEEDBACK.md)
+and [delivery state](V154_DELIVERY.md). Runtime dev153 remains installed until
+the v154 frozen and installation gates pass. No owner/native fit is started.
+The v153 and older snapshots below are historical.
 
 The owner's rejected coverage fit exposed the limit of the v152 allowance.
 v153 source separates starting-method preference from anatomical approval,
