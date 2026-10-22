@@ -1,5 +1,13 @@
 # Next DiffeoForge development version
 
+Owner scope, 22 October 2026: v153 source redesigns the blocked pilot around
+provisional method preference, one-form improvement, compatible coverage and the
+joint check. Rejection always exposes a guided next hypothesis or an explicit
+input/template check. Preparation never runs a fit; cumulative trial accounting
+does not block further owner-confirmed tests. See [v153](V153_INTERACTIVE_PILOT.md).
+Runtime verification and delivery are pending; dev152 remains installed.
+The version snapshots below are historical.
+
 Runtime dev152 is installed; [delivery verification](V152_DELIVERY.md)
 records source/exact frozen/installed checks and preserved owner files/settings.
 No owner/native fit or installer upload.

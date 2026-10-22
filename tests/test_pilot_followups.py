@@ -86,7 +86,7 @@ def test_primary_run_and_reviewed_continuation_are_prominent(tmp_path, monkeypat
         dialog._render(done)
         wait_pilot_view(dialog)
         tie = next(b for b in dialog.content.findChildren(QPushButton)
-                   if b.text().startswith("Both good"))
+                   if b.text().startswith("No clear preference"))
         assert not tie.isHidden() and tie.isEnabled() and tie.objectName() == "primary"
         assert dialog.start_button.isHidden()
     finally:

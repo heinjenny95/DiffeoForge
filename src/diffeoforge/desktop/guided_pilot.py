@@ -1,6 +1,7 @@
 """Compact guided actions, separate method cards and visible recovery after rejection."""
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFrame,
     QLabel,
@@ -9,7 +10,9 @@ from PySide6.QtWidgets import (
 )
 
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
-from diffeoforge.reference_guided_pilot import coverage_step, record
+from diffeoforge.guided_strategy import remaining_forms, starting_allowed
+from diffeoforge.guided_strategy import state as guidance_state
+from diffeoforge.reference_guided_pilot import record
 
 
 def render(window, prepared):
@@ -17,6 +20,7 @@ def render(window, prepared):
 
     snapshot = prepared.snapshot
     info = record(snapshot)
+    guidance = getattr(prepared, "guidance", None) or guidance_state(snapshot)
     running = window._worker is not None or window._restoring_search
     controls = (
         window.find_fit_button,
@@ -42,20 +46,23 @@ def render(window, prepared):
     title = QLabel(
         "Joint pilot check"
         if info["phase"] == "joint"
-        else "Review targeted test"
-        if info.get("goal")
+        else "Improve the fit"
+        if info.get("goal") or (guidance["preferred"] and any(
+            value is False for value in snapshot.visual_reviews.values()))
         else "Check another form"
         if info["phase"] == "validate"
-        else "Compare Current and Varifold"
+        else "Choose a starting method: Current or Varifold"
     )
     title.setObjectName("sectionTitle")
     window.content_layout.addWidget(title)
     explanation = QLabel(
         f"One common configuration · {snapshot.plan.pilot_subject_count} pilot specimens."
         if info["phase"] == "joint"
-        else f"{info['target']} · {len(snapshot.candidates)} trial(s). "
-        f"Screening budget: {info['screen_trials_spent']} of {info['screen_trial_limit']} planned."
+        else f"{info['target']}\n{guidance['total']} selected pilot forms · "
+        f"{guidance['checked']} checked with these settings · "
+        f"{info['screen_trials_spent']} tests prepared so far."
     )
+    explanation.setObjectName("pilotScope")
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
     if info.get("goal"):
@@ -69,7 +76,8 @@ def render(window, prepared):
     if info["phase"] == "screen":
         why = QLabel(
             "Current uses oriented surfaces; Varifold ignores normal direction. "
-            "The pilot checks which follows your surfaces more reliably."
+            "Choose a useful starting method even if details still need improvement. "
+            "A method preference does not approve a poor fit."
         )
         why.setWordWrap(True)
         window.content_layout.addWidget(why)
@@ -100,12 +108,10 @@ def render(window, prepared):
         if running
         else "A trial failed. Inspect details, retry, or choose an approved alternative."
         if failed
-        else "Review the completed fits."
+        else "Inspect the fit, then choose the next step below."
         if completed
         else "Ready. Preparing this plan has started no fits."
     )
-    reviewed = all(c.candidate_id in snapshot.visual_reviews for c in completed)
-    decisions_ready = not running and not unresolved and reviewed
 
     def action(layout, label, kind, identifier, *, goal=None, available=True):
         button = QPushButton(label, window.content)
@@ -114,7 +120,8 @@ def render(window, prepared):
         button.setEnabled(enabled)
         _set_action_emphasis(button, enabled)
         button.clicked.connect(
-            lambda: window._start_pilot(adaptive=False, guided_action=(kind, identifier, goal))
+            lambda: window._start_pilot(adaptive=False, guided_action=(
+                kind if kind == "finish_joint" else "adaptive_" + kind, identifier, goal))
         )
         layout.addWidget(button)
         return button
@@ -133,9 +140,9 @@ def render(window, prepared):
         layout.addWidget(method_title)
         decision = snapshot.visual_reviews.get(candidate.candidate_id)
         state = (
-            "Accepted"
+            "Suitable for this form"
             if decision is True
-            else "Not accepted"
+            else "Needs improvement"
             if decision is False
             else "Ready to inspect"
             if candidate.status == "completed"
@@ -180,27 +187,31 @@ def render(window, prepared):
                 label = QLabel(message)
                 label.setWordWrap(True)
                 layout.addWidget(label)
-            if decision is False and decisions_ready:
-                _recovery(window, snapshot, candidate, layout)
+            method = snapshot.attachment_comparison["methods"][candidate.candidate_id]
+            valid = (starting_allowed(snapshot, candidate.candidate_id)
+                     if decision is not None else False)
+            if decision is False and not valid:
+                explanation = QLabel(
+                    "This result is technically invalid. Check the failure, input meshes and "
+                    "alignment before retrying; it cannot be a starting fit.")
+                explanation.setWordWrap(True)
+                layout.addWidget(explanation)
+            if (decision is False and valid and not unresolved
+                    and guidance["preferred"] != method and info["phase"] != "joint"):
+                action(layout, "Use " + candidate.label + " as starting method → improve",
+                       "prefer", candidate.candidate_id)
+            if (decision is False and valid and not unresolved
+                    and (guidance["preferred"] == method or info["phase"] == "joint")):
+                _recovery(window, snapshot, candidate, layout, guidance)
             if decision is True and info["phase"] != "joint":
-                step = coverage_step(snapshot, candidate.candidate_id)
-                extra = step["extra_trials"]
-                if extra:
-                    notice = QLabel(
-                        f"{len(step['remaining'])} form(s) still need checking; "
-                        f"{info['screen_trial_limit'] - info['screen_trials_spent']} test(s) "
-                        f"remain in the budget. Add {extra} test(s) with unchanged settings. "
-                        "Earlier fits stay saved. Run starts separately.")
-                    notice.setWordWrap(True)
-                    layout.addWidget(notice)
+                remaining = remaining_forms(snapshot, candidate.candidate_id, context=guidance)
                 action(
                     layout,
-                    f"Add {extra} coverage trial(s) → prepare next form" if extra else
-                    "Use " + candidate.label + " → check remaining forms" if step["remaining"]
+                    "Use " + candidate.label + " → check remaining forms" if remaining
                     else "Use " + candidate.label + " → prepare joint check",
-                    "extend_coverage" if extra else "choose",
+                    "confirm",
                     candidate.candidate_id,
-                    available=decisions_ready,
+                    available=not unresolved and valid,
                 )
         window.content_layout.addWidget(card)
     if running or not completed:
@@ -220,31 +231,32 @@ def render(window, prepared):
         remaining = set(info["pilot_order"]) - covered
         action(
             window.content_layout,
-            "Both good → compare on another form (2 trials)",
-            "both_good",
+            "No clear preference → compare another form (2 tests)",
+            "tie",
             None,
-            available=len(approved) == 2 and bool(remaining)
-            and info["screen_trials_spent"] + 2 + max(0, len(remaining) - 1)
-            <= info["screen_trial_limit"],
+            available=len(approved) == 2 and bool(remaining),
         )
         if len(approved) == 2 and not remaining:
             tie = QLabel(
-                "Both methods passed the tested forms. Choose an approved method; "
+                "Both methods passed the tested forms. Choose a starting method; "
                 "recorded runtime can guide an efficiency choice."
             )
             tie.setWordWrap(True)
             window.content_layout.addWidget(tie)
     unsure = QLabel(
-        "Reopen a fit, rotate it, toggle the original or show a saved alternative. "
-        "You can mark a problem area there. Close without recording to leave the decision open."
+        "Mark a fit suitable when the shape features relevant to your study are represented. "
+        "Missing shape or local detail means Needs improvement, even if the main outline fits. "
+        "You can still choose that method as a starting point and improve it first. "
+        "Close without recording if unsure."
     )
     unsure.setWordWrap(True)
     window.content_layout.addWidget(InfoDisclosure("Help with visual assessment", unsure))
 
 
-def _recovery(window, snapshot, candidate, layout):
+def _recovery(window, snapshot, candidate, layout, guidance):
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
-    from diffeoforge.pilot_recovery import proposal
+    from diffeoforge.guided_strategy import trial_proposal
+    from diffeoforge.pilot_recovery import DESCRIPTIONS
     from diffeoforge.pilot_regions import SYMPTOMS
 
     identifier = candidate.candidate_id
@@ -266,36 +278,63 @@ def _recovery(window, snapshot, candidate, layout):
     prepare = QPushButton()
     layout.addWidget(prepare)
     state = {}
+    alternatives = QComboBox()
+    alternatives.setAccessibleName("Alternative adjustment for " + candidate.label)
+    alternatives.addItem("Use the suggested next step", None)
+    for key, (title, _reason) in DESCRIPTIONS.items():
+        alternatives.addItem(title, key)
+    previous = QCheckBox("Start from the settings before this last test")
+    previous.setVisible(bool((record(snapshot).get("strategy") or {}).get("baseline")))
+    options = QFrame()
+    options_layout = QVBoxLayout(options)
+    options_layout.addWidget(alternatives)
+    options_layout.addWidget(previous)
+    layout.addWidget(InfoDisclosure("Other approaches / previous settings", options))
 
     def update(*_):
-        proposed = proposal(snapshot, identifier, symptoms.currentData())
+        selected = alternatives.currentData()
+        if previous.isChecked():
+            selected = selected or trial_proposal(
+                snapshot, identifier, symptoms.currentData(), context=guidance)["goal"]
+        request = ("base:" if previous.isChecked() else "goal:") + selected \
+            if selected else symptoms.currentData()
+        proposed = trial_proposal(snapshot, identifier, request, context=guidance)
         state.clear()
         state.update(proposed)
+        state["request"] = request
         explanation.setText(
-            f"{proposed['reason']} {proposed['note']} "
-            f"{len(proposed['regions'])} marked area(s). Whole-shape quality is also checked."
-            if proposed["available"]
-            else "No further search trials are available in this budget. "
-            "Check alignment, mesh quality and the starting "
-            "template before explicitly preparing a new pilot. All previous fits remain saved."
+            f"{proposed['reason']} Next: 1 test on this form. If suitable, "
+            f"{proposed['remaining_checks']} other form(s) need checking, then one joint fit. "
+            "Earlier results stay saved. Whole-shape quality is also checked."
+            + (" Several adjustments have been tried; inspect alignment, mesh quality and "
+               "the starting template before investing in further tests."
+               if proposed["hypothesis_count"] >= 3 else "")
+            if proposed["available"] else
+            "This unchanged combination has already been tested. Inspect saved alternatives "
+            "or select another adjustment below; no repeat is prepared."
         )
         prepare.setText(proposed["title"] + " · prepare 1 trial on 1 specimen")
         prepare.setEnabled(proposed["available"])
         _set_action_emphasis(prepare, proposed["available"])
 
     symptoms.currentIndexChanged.connect(update)
+    alternatives.currentIndexChanged.connect(update)
+    previous.toggled.connect(update)
     prepare.clicked.connect(
         lambda: window._start_pilot(
-            adaptive=False, guided_action=("recover", identifier, symptoms.currentData())
+            adaptive=False, guided_action=("adaptive_recover", identifier, state["request"])
         )
     )
     update()
     if len(snapshot.candidates) == 1:
         other = QPushButton("Alternatively: check the other method here · prepare 1 trial")
-        other.setEnabled(state["available"])
+        other_proposal = trial_proposal(snapshot, identifier, "other_method", context=guidance)
+        other.setEnabled(other_proposal["available"])
+        if not other_proposal["available"]:
+            other.setText("Other method already tested here — compare saved alternatives")
         other.clicked.connect(
             lambda: window._start_pilot(
-                adaptive=False, guided_action=("recover", identifier, "other_method")
+                adaptive=False, guided_action=("adaptive_recover", identifier, "other_method")
             )
         )
         layout.addWidget(other)

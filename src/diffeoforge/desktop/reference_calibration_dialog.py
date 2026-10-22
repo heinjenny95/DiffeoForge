@@ -842,8 +842,19 @@ class CalibrationCandidateViewerDialog(QDialog):
                 self.mesh_combo.hide()
                 self.review_progress.hide()
             self.complete_button.setText(
-                "Accept fit" if len(self._required_pair_indexes) == 1 else "Accept joint fit")
-            self.fail_button.setText("Reject fit")
+                "Suitable fit" if len(self._required_pair_indexes) == 1 else "All fits suitable")
+            self.fail_button.setText("Needs improvement")
+            self.fail_button.setToolTip(
+                "Save the concern and return to guided next steps. You can choose this method "
+                "as a starting point without approving this fit. No new fit starts.")
+            self.complete_button.setToolTip(
+                "I inspected the required forms and their relevant shape features are "
+                "represented sufficiently.")
+            quality = QLabel(
+                "Check the overall shape and relevant local details. Missing or distorted "
+                "features mean Needs improvement; the method can still be a starting point.")
+            quality.setWordWrap(True)
+            decision_layout.insertWidget(0, quality)
             if self.fit_preferences is None:
                 decision_layout.removeWidget(self.anatomical_notes)
                 feature_layout.addWidget(self.anatomical_notes)
@@ -3532,6 +3543,8 @@ class ReferenceCalibrationDialog(QDialog):
         )
 
     def _start_pilot(self, **kwargs) -> None:
+        if self._worker is not None:
+            return  # Repeated clicks must not replace a still-active worker.
         try:
             self._dispatch_pilot(**kwargs)
         except Exception as error:
@@ -3639,6 +3652,7 @@ class ReferenceCalibrationDialog(QDialog):
         worker.signals.failed.connect(self._failed)
         worker.signals.finished.connect(self._worker_finished)
         self._worker = worker
+        self.content.setEnabled(False)
         self._fit_search_stop_text = None
         self.operation_error.clear()
         self.operation_error.hide()

@@ -165,21 +165,31 @@ def verify(root, manifest):
     ):
         raise ValueError("Method comparison input/protocol binding changed")
     if record.get("guided"):
+        from diffeoforge.guided_strategy import verify_strategy
+        from diffeoforge.reference_guided_pilot import (
+            ADAPTIVE_VERSION,
+            verify_approvals,
+            verify_coverage_extension,
+        )
         from diffeoforge.reference_guided_pilot import VERSION as GUIDED_VERSION
-        from diffeoforge.reference_guided_pilot import verify_approvals, verify_coverage_extension
 
         info = record["guided"]
         original = study._verify_manifest(source)
         expected = {r["filename"]: r["sha256"] for r in original["inputs"]["subjects"]}
         actual = {r["filename"]: r["sha256"] for r in manifest["inputs"]["subjects"]}
-        if (info.get("version") != GUIDED_VERSION or Path(info["origin"]).resolve() != source
-                or info["phase"] not in {"screen", "validate", "joint"}
+        adaptive = info.get("version") == ADAPTIVE_VERSION
+        if (info.get("version") not in {GUIDED_VERSION, ADAPTIVE_VERSION}
+                or Path(info["origin"]).resolve() != source
+                or info["phase"] not in ({"screen", "refine", "validate", "joint"} if adaptive
+                                         else {"screen", "validate", "joint"})
                 or set(info["pilot_order"]) != set(expected)
                 or len(info["pilot_order"]) != len(expected)
-                or not 0 <= info["screen_trials_spent"] <= info["screen_trial_limit"]
-                or not verify_coverage_extension(
+                or (not adaptive and (not 0 <= info["screen_trials_spent"]
+                                      <= info["screen_trial_limit"]
+                                      or not verify_coverage_extension(
                     info, original, record["methods"],
-                    manifest["plan"]["baseline_effective_values"])
+                    manifest["plan"]["baseline_effective_values"])))
+                or (adaptive and not verify_strategy(info, record, manifest))
                 or (info["phase"] == "joint" and actual != expected)
                 or (info["phase"] != "joint" and actual != {
                     info["target"]: expected.get(info["target"])})):

@@ -16,6 +16,7 @@ from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_calibration import CalibrationCandidate
 
 VERSION = "guided-pilot-v2"
+ADAPTIVE_VERSION = "guided-pilot-v3"
 MAX_SCREEN_TRIALS = 12
 
 
@@ -26,7 +27,7 @@ def screening_limit(plan):
 def enabled(config):
     from diffeoforge.reference_attachment_comparison import selection
 
-    return selection(config).get("workflow") == VERSION
+    return selection(config).get("workflow") in {VERSION, ADAPTIVE_VERSION}
 
 
 def record(snapshot):
@@ -110,7 +111,7 @@ def upgrade(directory, *, cache_directory=None):
         subject_pattern=cohort["subject_pattern"],
     )
     config["project"]["parameter_provenance"]["attachment_selection"] = dict(
-        version="attachment-comparison-v1", mode="auto", state="pending", workflow=VERSION
+        version="attachment-comparison-v1", mode="auto", state="pending", workflow=ADAPTIVE_VERSION
     )
     source_path = old.study_directory.parent / ("guided-source-" + uuid4().hex[:12] + ".yaml")
     inputs = validate_input_paths(config, source_path)
@@ -188,12 +189,14 @@ def prepare(directory):
         approved=(),
         history=(),
         spent=0,
+        strategy={} if config["project"]["parameter_provenance"]["attachment_selection"].get(
+            "workflow") == ADAPTIVE_VERSION else None,
     )
 
 
 def _batch(
     source, previous, *, phase, target, methods, values, approved, history, spent, goal=None,
-    feedback=None, coverage_extension=None,
+    feedback=None, coverage_extension=None, strategy=None,
 ):
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.reference_attachment_comparison import ITERATIONS
@@ -211,6 +214,9 @@ def _batch(
         subject_pattern=cohort["subject_pattern"],
     )
     config["project"]["parameter_provenance"]["attachment_selection"].update(state="comparing")
+    if strategy is not None:
+        config["project"]["parameter_provenance"]["attachment_selection"]["workflow"] = (
+            ADAPTIVE_VERSION)
     for key in ("initial_momenta", "initial_momenta_subjects", "initial_control_points"):
         config["model"]["deformation"].pop(key, None)
     template = load_surface_mesh(source.study_directory / manifest["inputs"]["template"]["copy"])
@@ -226,9 +232,10 @@ def _batch(
     methods = tuple(methods)
     if not methods or not set(methods) <= {"current", "varifold"}:
         raise ValueError("Unknown matching method")
-    limit = screening_limit(source.plan) + (
+    limit = (screening_limit(source.plan) + (
         coverage_extension["added_trials"] if coverage_extension else 0)
-    if spent + len(methods) > limit and phase != "joint":
+        if strategy is None else None)
+    if limit is not None and spent + len(methods) > limit and phase != "joint":
         raise ValueError(
             f"The {limit}-trial screening budget is exhausted. Revisit inputs/template "
             "or explicitly prepare a new pilot; all earlier results remain saved."
@@ -299,7 +306,7 @@ def _batch(
             },
             scope="All original pilot targets" if phase == "joint" else "One original target only",
             guided=dict(
-                version=VERSION,
+                version=ADAPTIVE_VERSION if strategy is not None else VERSION,
                 origin=str(source.study_directory),
                 phase=phase,
                 target=target,
@@ -312,6 +319,7 @@ def _batch(
                 screen_trial_limit=limit,
                 selected_method=methods[0] if len(methods) == 1 else None,
                 **({"coverage_extension": coverage_extension} if coverage_extension else {}),
+                **({"strategy": strategy} if strategy is not None else {}),
             ),
         ),
     )
@@ -363,14 +371,15 @@ def _approved_record(snapshot, identifier):
 def verify_approvals(rows):
     from diffeoforge import reference_calibration_study as study
 
-    for row in rows:
-        root = Path(row["directory"])
-        if sha256_file(root / study.STUDY_MANIFEST) != row["manifest_sha256"]:
-            raise ValueError("Guided pilot source manifest changed")
-        snapshot = study.load_reference_calibration_study(root)
-        actual = _approved_record(snapshot, row["candidate_id"])
-        if actual != row:
-            raise ValueError("An earlier visual approval, run or settings binding changed")
+    with study.calibration_verification_scope():
+        for row in rows:
+            root = Path(row["directory"])
+            if sha256_file(root / study.STUDY_MANIFEST) != row["manifest_sha256"]:
+                raise ValueError("Guided pilot source manifest changed")
+            snapshot = study.load_reference_calibration_study(root)
+            actual = _approved_record(snapshot, row["candidate_id"])
+            if actual != row:
+                raise ValueError("An earlier visual approval, run or settings binding changed")
 
 
 def next_action(directory, action, candidate_id=None, *, goal=None):
@@ -400,6 +409,10 @@ def _next_action(directory, action, candidate_id=None, *, goal=None):
         raise ValueError("Complete or resolve the current batch before preparing more work")
     if action == "finish_joint":
         return finish_joint(snapshot, candidate_id)
+    if action.startswith("adaptive_") or info["version"] == ADAPTIVE_VERSION:
+        from diffeoforge.guided_strategy import transition
+
+        return transition(snapshot, action.removeprefix("adaptive_"), candidate_id, goal=goal)
     if info.get("coverage_extension") and action not in {"choose", "approve"}:
         raise ValueError(
             "The extra allowance is reserved for unchanged coverage checks. "

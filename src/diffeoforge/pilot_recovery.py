@@ -24,7 +24,7 @@ DESCRIPTIONS = {
 }
 
 
-def proposal(snapshot, identifier, symptom):
+def proposal(snapshot, identifier, symptom, *, adaptive=False):
     """A heuristic hypothesis, not a diagnosis or promise of anatomical recovery."""
     from diffeoforge.reference_guided_pilot import record
 
@@ -65,7 +65,8 @@ def proposal(snapshot, identifier, symptom):
             "other_method": "other_method",
         }[symptom]
     title, reason = DESCRIPTIONS[goal]
-    remaining = info["screen_trial_limit"] - info["screen_trials_spent"]
+    remaining = (info["screen_trial_limit"] - info["screen_trials_spent"]
+                 if info["screen_trial_limit"] is not None else None)
     note = ""
     if (candidate.metrics or {}).get("converged") is False:
         note = "The previous trial reached its iteration limit; its result is provisional. "
@@ -78,7 +79,8 @@ def proposal(snapshot, identifier, symptom):
         if goal == "other_method"
         else method,
         trials=1,
-        available=remaining >= 1 and not info.get("coverage_extension"),
+        available=adaptive or (remaining is not None and remaining >= 1
+                               and not info.get("coverage_extension")),
         symptom=symptom,
         note=note
         + "This tests a possible cause. Earlier fits stay saved; no fit starts until Run.",

@@ -1,4 +1,14 @@
-# Development continuity — v152 pilot budget transition
+# Development continuity — v153 interactive pilot
+
+The owner's rejected coverage fit exposed the limit of the v152 allowance.
+v153 source separates starting-method preference from anatomical approval,
+refines one form before checking the remaining selected forms, and returns a
+failed individual or joint fit to visible targeted recovery. Every batch still
+requires an explicit Run; there is no arbitrary cumulative trial cap. Exact
+compatible historical approvals can be reused, with fresh source/review checks.
+See [behavior and boundaries](V153_INTERACTIVE_PILOT.md). Runtime delivery is
+pending verification; dev152 remains installed at this source checkpoint.
+The v152 and older snapshots below are historical.
 
 The owner's accepted fit exposed a budget dead end. v152 adds a source-bound,
 explicit minimal allowance for remaining unchanged coverage checks and persistent

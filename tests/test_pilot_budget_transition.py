@@ -112,9 +112,9 @@ def test_actual_exhausted_button_prepares_one_test_and_errors_survive_async_rend
     try:
         wait_pilot_view(dialog)
         button = next(b for b in dialog.content.findChildren(QPushButton)
-                      if b.text().startswith("Add 1 coverage"))
+                      if b.text().startswith("Use Varifold"))
         assert button.isVisible() and button.isEnabled() and button.objectName() == "primary"
-        assert not any(b.isVisible() and "check remaining forms" in b.text()
+        assert not any(b.isVisible() and b.text().startswith("Add 1 coverage")
                        for b in dialog.content.findChildren(QPushButton))
         monkeypatch.setattr(study.ReferenceCalibrationStudyRunner, "run_current_stage",
                             lambda *_a, **_k: pytest.fail("Preparation dispatched an optimizer"))

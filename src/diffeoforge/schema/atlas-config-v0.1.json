@@ -65,7 +65,7 @@
               "required": ["version", "mode", "state"],
               "properties": {
                 "version": {"const": "attachment-comparison-v1"},
-                "workflow": {"const": "guided-pilot-v2"},
+                "workflow": {"enum": ["guided-pilot-v2", "guided-pilot-v3"]},
                 "mode": {"const": "auto"},
                 "state": {"enum": ["pending", "comparing", "selected"]},
                 "selected_method": {"enum": ["current", "varifold"]}

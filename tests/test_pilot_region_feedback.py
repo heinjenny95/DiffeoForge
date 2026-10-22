@@ -212,7 +212,7 @@ def test_visible_recovery_and_both_bound_method_actions_survive_refresh(tmp_path
         buttons = [
             b
             for b in dialog.content.findChildren(QPushButton)
-            if "prepare 1 trial on 1 specimen" in b.text()
+            if "as starting method" in b.text()
         ]
         assert len(buttons) == 2 and all(b.isVisible() for b in buttons)
         assert all(b.objectName() == "primary" for b in buttons)
@@ -225,7 +225,7 @@ def test_visible_recovery_and_both_bound_method_actions_survive_refresh(tmp_path
         monkeypatch.setattr(dialog, "_start_pilot", lambda **kw: queued.append(kw))
         buttons[1].click()
         assert queued == [
-            dict(adaptive=False, guided_action=("recover", "guided-varifold", "unsure"))
+            dict(adaptive=False, guided_action=("adaptive_prefer", "guided-varifold", None))
         ]
     finally:
         dialog.close()

@@ -256,7 +256,8 @@ def test_guided_dialog_opens_inert_and_tie_prepares_only_the_next_pair(tmp_path,
         labels = [w.text() for w in dialog.findChildren(QLabel)]
         assert any("Current uses oriented surfaces" in t for t in labels)
         button = next(
-            b for b in dialog.findChildren(QPushButton) if b.text().startswith("Both good")
+            b for b in dialog.findChildren(QPushButton)
+            if b.text().startswith("No clear preference")
         )
         assert button.isEnabled()
         queued = []
@@ -312,7 +313,7 @@ def test_legacy_upgrade_is_explicit_inert_separate_and_preserves_old_evidence(
         lambda *_a, **_k: pytest.fail("Upgrade dispatched an optimizer"),
     )
     child = guided.upgrade(old.study_directory, cache_directory=tmp_path / "cache")
-    assert guided.record(child)["version"] == guided.VERSION
+    assert guided.record(child)["version"] == guided.ADAPTIVE_VERSION
     assert len(child.candidates) == 2 and child.plan.pilot_subject_count == 1
     assert child.study_directory != old.study_directory
     assert not child.visual_reviews and not child.selected_candidate_ids

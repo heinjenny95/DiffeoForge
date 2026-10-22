@@ -17,6 +17,7 @@ class PilotView:
     sequence_info: dict | None
     sequence_progress: dict | None
     density_rows: tuple | None
+    guidance: dict | None = None
 
 
 def prepare_pilot_view(directory: Path, snapshot=None) -> PilotView:
@@ -58,4 +59,13 @@ def prepare_pilot_view(directory: Path, snapshot=None) -> PilotView:
         return PilotView(
             snapshot, manifest, assessment, fits, frozenset(provisional), report,
             sequence_info(root), sequence_progress(root), density_rows,
+            _guidance(snapshot),
         )
+
+
+def _guidance(snapshot):
+    from diffeoforge.guided_strategy import state
+    from diffeoforge.reference_guided_pilot import record
+
+    return state(snapshot) if record(snapshot) and snapshot.current_stage \
+        and snapshot.current_stage.order == 1 else None
