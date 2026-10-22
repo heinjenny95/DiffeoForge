@@ -56,6 +56,12 @@ class GuidedFeedbackControls(QWidget):
         for index, (key, text) in enumerate(OUTCOMES.items()):
             button = QPushButton(text)
             button.setCheckable(True)
+            button.setStyleSheet(
+                "QPushButton { background: #f2f8f6; border: 1px solid #cee3dd; "
+                "border-radius: 6px; min-height: 28px; padding: 2px 10px; }"
+                "QPushButton:checked { background: #167c6b; border-color: #167c6b; color: white; }"
+                "QPushButton:disabled { color: #78918d; background: #f2f5f4; }"
+            )
             self.buttons.addButton(button)
             self.outcomes[key] = button
             grid.addWidget(button, index // 2, index % 2)
