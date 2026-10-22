@@ -13,6 +13,9 @@ premature decisions, unclear primary actions, repeated geometry parsing before
 saved-alignment reuse and limited template guidance. Source/frozen/installed checks
 pass; see [verified delivery](docs/V150_DELIVERY.md) and
 [implementation and remaining gates](docs/V150_PILOT_REPAIRS.md).
+New first-use feedback remains open: visibly guide the next step when the chosen
+method fails a contrasting form, without requiring discovery of collapsed tools.
+See the [tracking-only follow-up](docs/NEXT_VERSION_PLAN.md#guide-recovery-after-an-unsuccessful-contrasting-form-check--open).
 
 For the immediate publication priorities, use the
 [preprint-readiness checklist](docs/PREPRINT_READINESS.md). It scopes the paper

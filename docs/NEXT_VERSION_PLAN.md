@@ -139,6 +139,35 @@ The earlier manual refinement proposal below is superseded by the direct
 
 ## Delivery order and acceptance gates
 
+### Guide recovery after an unsuccessful contrasting-form check — open
+
+Owner first-use feedback after v150, 22 October 2026: both methods fitted the
+first form well; one was better on the second form. The pilot then used only
+that method on a new form, whose fit was unsatisfactory. The user could continue
+only by finding the collapsed targeted-options panel, identifying missing local
+detail and requesting a denser follow-up. The ordinary guided route did not
+make the next step clear. Tracking only at the owner's request; no implementation
+or new fits authorized by this entry.
+
+- [ ] After rejection of a contrasting-form fit, visibly explain that this
+  configuration has not passed that form and present an obvious next action to
+  improve it. Do not leave the user dependent on discovering collapsed tools.
+  Ask a short visual question about what fails (local detail, overall shape or
+  uncertainty) and recommend a bounded, targeted next comparison in plain
+  language. Explain what the proposed change is intended to address; missing
+  detail must not automatically imply that denser control points are the answer.
+- [ ] Keep method preference conditional on the tested forms/settings. When a
+  previously preferred method fails a new form, offer a suitable targeted change
+  or a comparison with the other method on that difficult form, rather than
+  treating the earlier choice as universally settled. Preserve earlier fits and
+  reviews, reset dependent cross-check eligibility after parameter changes, and
+  show the planned specimen/trial count before an explicit Run action. Do not
+  silently approve, restart the whole pilot or launch a full-cohort grid.
+- [ ] Verify the complete reported route: first pair both good, second pair one
+  preferred, chosen-method check on another form rejected, then a visible guided
+  recovery path (including local-detail and unsure responses). The user must be
+  able to continue without knowing LDDMM terms or opening optional technical tools.
+
 ### Pilot layout clipping and unclear next action — v150 source
 
 Owner feedback, 22 October 2026: the running pilot view shows an apparently

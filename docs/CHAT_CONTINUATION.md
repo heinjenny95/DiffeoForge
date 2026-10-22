@@ -22,6 +22,12 @@ authorization or establish current application/job state.
 
 ## Current software boundary
 
+New first-use follow-up after v150: an unsatisfactory chosen-method check on a
+new form leaves users searching collapsed tools for the next step. Record visible,
+plain-language recovery guidance and conditional method choice in the
+[open pilot backlog](NEXT_VERSION_PLAN.md#guide-recovery-after-an-unsuccessful-contrasting-form-check--open).
+This follow-up is tracking only; no implementation or new fits requested.
+
 Current owner scope, 22 October: the owner has now authorized implementing the
 recently collected pilot follow-ups, superseding collection-only scope. v150
 source repairs the view transitions, decision readiness, action emphasis, saved
