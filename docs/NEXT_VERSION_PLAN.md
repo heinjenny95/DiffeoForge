@@ -1,5 +1,9 @@
 # Next DiffeoForge development version
 
+v152 repairs the accepted-fit screening-budget dead end with an explicit minimal
+coverage allowance, a correctly named joint-check action and persistent errors.
+See [scope and gates](V152_PILOT_BUDGET.md). No owner/native fits are started.
+
 Owner scope, 22 October 2026: v151 implements the two subsequent pilot follow-ups
 and regional visual feedback, superseding their collection-only status below.
 Runtime dev151 is installed; [verified delivery](V151_DELIVERY.md) records

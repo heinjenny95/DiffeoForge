@@ -1,4 +1,10 @@
-# Development continuity — v151 regional feedback and pilot recovery
+# Development continuity — v152 pilot budget transition
+
+The owner's accepted fit exposed a budget dead end. v152 adds a source-bound,
+explicit minimal allowance for remaining unchanged coverage checks and persistent
+transition errors. Preparation never starts fits; complete visual coverage and
+the joint check remain required. See [cause and behavior](V152_PILOT_BUDGET.md).
+The installed runtime remains dev151 until separate verified delivery.
 
 Owner scope now includes the subsequent pilot follow-ups and regional feedback.
 v151 source adds separate method cards, visible recovery after rejection and

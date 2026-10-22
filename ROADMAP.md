@@ -1,5 +1,9 @@
 # Roadmap
 
+- [x] Repair the accepted-fit screening-budget dead end: explicit minimal
+  unchanged-configuration coverage allowance, separate Run, required joint check,
+  and errors that survive background refresh. See [v152](docs/V152_PILOT_BUDGET.md).
+
 This roadmap describes evidence gates rather than promised dates.
 
 v149 source implements the [guided pilot](docs/V149_GUIDED_PILOT.md): optional

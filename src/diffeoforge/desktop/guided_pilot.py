@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
-from diffeoforge.reference_guided_pilot import record
+from diffeoforge.reference_guided_pilot import coverage_step, record
 
 
 def render(window, prepared):
@@ -183,10 +183,22 @@ def render(window, prepared):
             if decision is False and decisions_ready:
                 _recovery(window, snapshot, candidate, layout)
             if decision is True and info["phase"] != "joint":
+                step = coverage_step(snapshot, candidate.candidate_id)
+                extra = step["extra_trials"]
+                if extra:
+                    notice = QLabel(
+                        f"{len(step['remaining'])} form(s) still need checking; "
+                        f"{info['screen_trial_limit'] - info['screen_trials_spent']} test(s) "
+                        f"remain in the budget. Add {extra} test(s) with unchanged settings. "
+                        "Earlier fits stay saved. Run starts separately.")
+                    notice.setWordWrap(True)
+                    layout.addWidget(notice)
                 action(
                     layout,
-                    "Use " + candidate.label + " → check remaining forms",
-                    "choose",
+                    f"Add {extra} coverage trial(s) → prepare next form" if extra else
+                    "Use " + candidate.label + " → check remaining forms" if step["remaining"]
+                    else "Use " + candidate.label + " → prepare joint check",
+                    "extend_coverage" if extra else "choose",
                     candidate.candidate_id,
                     available=decisions_ready,
                 )
@@ -211,7 +223,9 @@ def render(window, prepared):
             "Both good → compare on another form (2 trials)",
             "both_good",
             None,
-            available=len(approved) == 2 and bool(remaining),
+            available=len(approved) == 2 and bool(remaining)
+            and info["screen_trials_spent"] + 2 + max(0, len(remaining) - 1)
+            <= info["screen_trial_limit"],
         )
         if len(approved) == 2 and not remaining:
             tie = QLabel(
@@ -261,8 +275,8 @@ def _recovery(window, snapshot, candidate, layout):
             f"{proposed['reason']} {proposed['note']} "
             f"{len(proposed['regions'])} marked area(s). Whole-shape quality is also checked."
             if proposed["available"]
-            else "The screening budget is exhausted. Check alignment, mesh quality and the "
-            "starting "
+            else "No further search trials are available in this budget. "
+            "Check alignment, mesh quality and the starting "
             "template before explicitly preparing a new pilot. All previous fits remain saved."
         )
         prepare.setText(proposed["title"] + " · prepare 1 trial on 1 specimen")

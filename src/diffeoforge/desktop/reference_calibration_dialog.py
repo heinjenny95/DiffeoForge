@@ -1570,6 +1570,11 @@ class ReferenceCalibrationDialog(QDialog):
         self.status.setObjectName("statusSuccess")
         self.status.setWordWrap(True)
         root.addWidget(self.status)
+        self.operation_error = QLabel()
+        self.operation_error.setObjectName("statusError")
+        self.operation_error.setWordWrap(True)
+        self.operation_error.hide()
+        root.addWidget(self.operation_error)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -3490,6 +3495,8 @@ class ReferenceCalibrationDialog(QDialog):
             self.cancel_button.hide()
             message = f"Pilot start failed: {type(error).__name__}: {error}"
             self.status.setText(message)
+            self.operation_error.setText(message)
+            self.operation_error.show()
             QMessageBox.critical(self, "Pilot could not start", message)
 
     def _start_selected_continuation(self, candidate: CalibrationStudyCandidateState) -> None:
@@ -3535,6 +3542,8 @@ class ReferenceCalibrationDialog(QDialog):
             self.cancel_button.hide()
             message = f"Pilot start failed: {type(error).__name__}: {error}"
             self.status.setText(message)
+            self.operation_error.setText(message)
+            self.operation_error.show()
             QMessageBox.critical(self, "Pilot could not start", message)
 
     def _dispatch_pilot(
@@ -3631,6 +3640,8 @@ class ReferenceCalibrationDialog(QDialog):
         worker.signals.finished.connect(self._worker_finished)
         self._worker = worker
         self._fit_search_stop_text = None
+        self.operation_error.clear()
+        self.operation_error.hide()
         self.advanced_mode.setEnabled(False)
         self.afk_mode.setEnabled(False)
         self.adaptive_fit_search.setEnabled(False)
@@ -3936,6 +3947,8 @@ class ReferenceCalibrationDialog(QDialog):
     @Slot(str)
     def _failed(self, message: str) -> None:
         self._worker = None
+        self.operation_error.setText(f"Calibration stage could not continue: {message}")
+        self.operation_error.show()
         self._render()
         self.status.setText(f"Calibration stage could not continue: {message}")
         self._notify_review_ready(failure=message)
@@ -4012,6 +4025,10 @@ class ReferenceCalibrationDialog(QDialog):
         if self._worker is worker:
             self._worker = None
             self._pending_specimen_review = None
+            self.operation_error.setText(
+                worker.error_message
+                or "The background task ended. Saved fits are retained; retry or close.")
+            self.operation_error.show()
             self._render()
             self.status.setText(
                 worker.error_message

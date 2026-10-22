@@ -33,6 +33,49 @@ def record(snapshot):
     return (snapshot.attachment_comparison or {}).get("guided")
 
 
+def coverage_step(snapshot, identifier):
+    """Describe accepted settings' remaining checks without preparing work."""
+    info = record(snapshot)
+    values = next(c.values for c in snapshot.current_stage.candidates
+                  if c.candidate_id == identifier)
+    method = snapshot.attachment_comparison["methods"][identifier]
+    covered = {r["filename"] for r in info["approved"]
+               if r["method"] == method and r["values"] == values}
+    covered.add(info["target"])
+    remaining = [n for n in info["pilot_order"] if n not in covered]
+    return dict(remaining=remaining, method=method, values=values,
+                extra_trials=max(0, info["screen_trials_spent"] + len(remaining)
+                                 - info["screen_trial_limit"]))
+
+
+def verify_coverage_extension(info, source_manifest, methods, values):
+    """Verify one explicit allowance reserved for unchanged coverage checks."""
+    from diffeoforge import reference_calibration_study as study
+
+    base = max(MAX_SCREEN_TRIALS, len(source_manifest["inputs"]["subjects"]) + 2)
+    extension = info.get("coverage_extension")
+    if not extension:
+        return info["screen_trial_limit"] == base
+    parent_root = Path(extension["directory"])
+    if sha256_file(parent_root / study.STUDY_MANIFEST) != extension["manifest_sha256"]:
+        raise ValueError("Coverage allowance source changed")
+    parent = study.load_reference_calibration_study(parent_root)
+    previous = record(parent)
+    row = _approved_record(parent, extension["candidate_id"])
+    step = coverage_step(parent, extension["candidate_id"])
+    return bool(
+        previous and not previous.get("coverage_extension")
+        and previous["origin"] == info["origin"]
+        and step["extra_trials"] > 0
+        and extension["added_trials"] == step["extra_trials"]
+        and info["screen_trial_limit"] == base + step["extra_trials"]
+        and set(methods.values()) == {row["method"]}
+        and values == row["values"] and row in info["approved"]
+        and info["phase"] in {"validate", "joint"}
+        and (info["phase"] == "joint" or info["target"] in step["remaining"])
+    )
+
+
 def _pilot_order(plan):
     subjects = plan.selected_pilot_subjects
     representative = next(
@@ -150,7 +193,7 @@ def prepare(directory):
 
 def _batch(
     source, previous, *, phase, target, methods, values, approved, history, spent, goal=None,
-    feedback=None,
+    feedback=None, coverage_extension=None,
 ):
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.reference_attachment_comparison import ITERATIONS
@@ -183,7 +226,8 @@ def _batch(
     methods = tuple(methods)
     if not methods or not set(methods) <= {"current", "varifold"}:
         raise ValueError("Unknown matching method")
-    limit = screening_limit(source.plan)
+    limit = screening_limit(source.plan) + (
+        coverage_extension["added_trials"] if coverage_extension else 0)
     if spent + len(methods) > limit and phase != "joint":
         raise ValueError(
             f"The {limit}-trial screening budget is exhausted. Revisit inputs/template "
@@ -267,6 +311,7 @@ def _batch(
                 screen_trials_spent=spent + (len(methods) if phase != "joint" else 0),
                 screen_trial_limit=limit,
                 selected_method=methods[0] if len(methods) == 1 else None,
+                **({"coverage_extension": coverage_extension} if coverage_extension else {}),
             ),
         ),
     )
@@ -355,6 +400,10 @@ def _next_action(directory, action, candidate_id=None, *, goal=None):
         raise ValueError("Complete or resolve the current batch before preparing more work")
     if action == "finish_joint":
         return finish_joint(snapshot, candidate_id)
+    if info.get("coverage_extension") and action not in {"choose", "approve"}:
+        raise ValueError(
+            "The extra allowance is reserved for unchanged coverage checks. "
+            "Revisit inputs/template if this configuration fails; earlier fits remain saved.")
     source, _ = _origin(directory)
     approved = list(info["approved"])
     verify_approvals(approved)
@@ -362,6 +411,7 @@ def _next_action(directory, action, candidate_id=None, *, goal=None):
     methods = tuple(snapshot.attachment_comparison["methods"].values())
     phase, target = info["phase"], info["target"]
     feedback = None
+    coverage_extension = info.get("coverage_extension")
     history = [
         *info["history"],
         dict(
@@ -422,8 +472,21 @@ def _next_action(directory, action, candidate_id=None, *, goal=None):
             raise ValueError("Choose the observed mismatch before adjusting a parameter")
         values = adjusted_values(values, goal)
         approved = []
-    elif action in {"choose", "approve"}:
+    elif action in {"choose", "approve", "extend_coverage"}:
         row = _approved_record(snapshot, candidate_id)
+        step = coverage_step(snapshot, candidate_id)
+        if action == "extend_coverage":
+            if coverage_extension or step["extra_trials"] <= 0:
+                raise ValueError("No additional coverage allowance is needed or available")
+            coverage_extension = dict(
+                directory=str(snapshot.study_directory),
+                manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST),
+                candidate_id=candidate_id, added_trials=step["extra_trials"],
+            )
+        elif step["extra_trials"]:
+            raise ValueError(
+                f"Coverage needs {step['extra_trials']} additional trial(s). "
+                "Use the explicit coverage allowance; no new fit has started.")
         approved.append(row)
         values, methods = row["values"], (row["method"],)
         approved = [r for r in approved if r["method"] == methods[0] and r["values"] == values]
@@ -444,6 +507,7 @@ def _next_action(directory, action, candidate_id=None, *, goal=None):
         spent=info["screen_trials_spent"],
         goal=goal,
         feedback=feedback,
+        coverage_extension=coverage_extension,
     )
     study._append_event(
         snapshot.study_directory,

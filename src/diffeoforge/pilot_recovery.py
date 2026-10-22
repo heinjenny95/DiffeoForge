@@ -78,7 +78,7 @@ def proposal(snapshot, identifier, symptom):
         if goal == "other_method"
         else method,
         trials=1,
-        available=remaining >= 1,
+        available=remaining >= 1 and not info.get("coverage_extension"),
         symptom=symptom,
         note=note
         + "This tests a possible cause. Earlier fits stay saved; no fit starts until Run.",

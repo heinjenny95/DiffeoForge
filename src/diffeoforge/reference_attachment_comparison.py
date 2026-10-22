@@ -166,7 +166,7 @@ def verify(root, manifest):
         raise ValueError("Method comparison input/protocol binding changed")
     if record.get("guided"):
         from diffeoforge.reference_guided_pilot import VERSION as GUIDED_VERSION
-        from diffeoforge.reference_guided_pilot import verify_approvals
+        from diffeoforge.reference_guided_pilot import verify_approvals, verify_coverage_extension
 
         info = record["guided"]
         original = study._verify_manifest(source)
@@ -177,7 +177,9 @@ def verify(root, manifest):
                 or set(info["pilot_order"]) != set(expected)
                 or len(info["pilot_order"]) != len(expected)
                 or not 0 <= info["screen_trials_spent"] <= info["screen_trial_limit"]
-                == max(12, len(expected) + 2)
+                or not verify_coverage_extension(
+                    info, original, record["methods"],
+                    manifest["plan"]["baseline_effective_values"])
                 or (info["phase"] == "joint" and actual != expected)
                 or (info["phase"] != "joint" and actual != {
                     info["target"]: expected.get(info["target"])})):

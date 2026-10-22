@@ -22,6 +22,10 @@ authorization or establish current application/job state.
 
 ## Current software boundary
 
+v152 addresses the accepted-fit budget dead end. See [cause and guarded
+continuation](V152_PILOT_BUDGET.md). Source and installed delivery remain separate;
+do not run scientific work or repeat an installation from historical receipts.
+
 The subsequent owner request authorizes v151 implementation of visible recovery
 after rejected contrasting-form fits, two separate method cards and regional
 visual feedback. Source implements a rotatable 3D brush, source/run-bound review
