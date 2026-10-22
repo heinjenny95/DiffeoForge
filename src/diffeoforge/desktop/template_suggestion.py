@@ -3,7 +3,7 @@
 from pathlib import Path
 from threading import Event
 
-from PySide6.QtCore import QStandardPaths
+from PySide6.QtCore import QStandardPaths, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -47,7 +47,15 @@ class TemplateSuggestionPanel(QWidget):
         layout.addWidget(self.status)
         self.alternatives = QComboBox()
         self.alternatives.setAccessibleName("Alternative initial templates")
-        self.more = InfoDisclosure("Alternative templates and explanation", self.alternatives)
+        details = QWidget(self)
+        details_layout = QVBoxLayout(details)
+        details_layout.addWidget(self.alternatives)
+        self.explanation = QLabel()
+        self.explanation.setWordWrap(True)
+        self.explanation.setTextFormat(Qt.TextFormat.PlainText)
+        details_layout.addWidget(self.explanation)
+        self.alternatives.currentIndexChanged.connect(self._explain)
+        self.more = InfoDisclosure("Alternative templates and previous reviews", details)
         layout.addWidget(self.more)
         self.preview.hide()
         self.use.hide()
@@ -112,12 +120,42 @@ class TemplateSuggestionPanel(QWidget):
         )
         self.suggest.setEnabled(False)
         self.status.setText(f"Comparing {len(paths)} surfaces in background; no fitting…")
+        project_edit = getattr(self._owner, "project_edit", None)
+        project = project_edit.text().strip() if project_edit else None
         self.loader.request_operation(
             paths,
-            lambda: suggest_templates(
-                paths, cache_directory=cache, cancel_requested=cancelled.is_set
-            ),
+            lambda: self._measure(paths, cache, cancelled, project),
         )
+
+    @staticmethod
+    def _measure(paths, cache, cancelled, project):
+        from diffeoforge.template_reviews import previous_template_reviews
+
+        reviews = previous_template_reviews(project, cancel_requested=cancelled.is_set)
+        return suggest_templates(paths, cache_directory=cache,
+                                 cancel_requested=cancelled.is_set, review_evidence=reviews)
+
+    def _explain(self, *_args):
+        row = self.alternatives.currentData()
+        if not row:
+            return
+        lines = [row["reason"],
+                 f"Overall distance {row['global_distance']:.2f} · local distance "
+                 f"{row['local_distance']:.2f} (smaller means more central)."]
+        for review in row.get("previous_reviews", []):
+            targets = ", ".join(r["filename"] for r in review["targets"])
+            lines.append(
+                f"Previous {'approved' if review['approved'] else 'unfit'} fit · "
+                f"{review['method']} · targets: {targets}\n"
+                f"Settings: {review['settings']}\nSource: {review['source_study']}"
+            )
+        if not row.get("previous_reviews"):
+            lines.append("No compatible recorded review found in the selected project.")
+        lines.append("Past reviews concern those targets and settings; they do not approve "
+                     "or rule out this template for other fits.")
+        lines.append("Review lookup covers up to 64 studies in the selected project; "
+                     "it is not a complete history across projects.")
+        self.explanation.setText("\n".join(lines))
 
     def _loaded(self, paths, result):
         if paths and paths[0] == "preview":
@@ -146,14 +184,21 @@ class TemplateSuggestionPanel(QWidget):
             return
         self.result = result
         self.alternatives.clear()
-        for index, row in enumerate(result["candidates"]):
+        ranked = result["candidates"]
+        contrasting = [r for r in ranked[1:] if r["contrasting_alternative"]]
+        alternatives = [ranked[0], *contrasting, *[r for r in ranked[1:]
+                                                if not r["contrasting_alternative"]]]
+        for index, row in enumerate(alternatives):
             self.alternatives.addItem(
-                ("Recommended · " if index == 0 else "Alternative · ") + row["filename"], row
+                ("Starting suggestion · " if index == 0 else "Contrasting form · "
+                 if row["contrasting_alternative"] else "Alternative · ") + row["filename"], row
             )
         self.status.setText(
             result["candidates"][0]["filename"]
             + ": "
             + result["candidates"][0]["reason"]
+            + (" Similar scores: inspect alternatives before choosing."
+               if result["uncertain"] else "")
             + (
                 f" {len(result['unreadable_meshes'])} meshes need inspection."
                 if result["unreadable_meshes"]
@@ -161,6 +206,7 @@ class TemplateSuggestionPanel(QWidget):
             )
         )
         self.status.setToolTip(result["limitation"])
+        self._explain()
         self.use.show()
         self.preview.show()
         self.more.show()

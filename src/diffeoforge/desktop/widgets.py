@@ -4264,6 +4264,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.input_preflight_status_label.setObjectName("status")
 
         self.project_edit = QLineEdit()
+        self.project_edit.textChanged.connect(self.template_suggestion_panel.invalidate)
         self.project_edit.setObjectName("projectDirectoryEdit")
         self.project_edit.setPlaceholderText("Folder for configuration and later results")
         self.project_edit.textChanged.connect(self._clear_run_lookup_notice)
@@ -9403,8 +9404,7 @@ class DiffeoForgeWindow(QMainWindow):
             return
         completed, total, filename = progress
         self.status_label.setText(
-            f"Preparing full-resolution GPA-aligned meshes: {completed} of {total} "
-            f"complete — {filename}. Only one complete mesh is held in memory at a time."
+            f"Preparing inputs · {completed} of {total} · {filename}"
         )
 
     @Slot(object)

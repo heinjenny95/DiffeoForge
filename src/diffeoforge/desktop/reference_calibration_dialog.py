@@ -737,6 +737,9 @@ class CalibrationCandidateViewerDialog(QDialog):
         layout.addWidget(InfoDisclosure("Optional anatomical checks", feature_box))
 
         self.decision_panel = QFrame()
+        policy = self.decision_panel.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self.decision_panel.setSizePolicy(policy)
         self.decision_panel.setObjectName("card")
         decision_layout = QVBoxLayout(self.decision_panel)
         if self.fit_preferences:
@@ -804,11 +807,12 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.complete_button.setEnabled(False)
         self.complete_button.clicked.connect(self._record_visual_qc_pass)
         controls.addStretch()
-        controls.addWidget(self.close_button)
         controls.addWidget(self.fail_button)
         controls.addWidget(self.complete_button)
         decision_layout.addLayout(controls)
         root.addWidget(self.decision_panel)
+        # Closing must remain possible while geometry is loading or unavailable.
+        root.addWidget(self.close_button, alignment=Qt.AlignmentFlag.AlignRight)
         if read_only:
             close_comparison = QPushButton("Close comparison")
             close_comparison.clicked.connect(self.reject)
@@ -1152,6 +1156,14 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.next_specimen_button.setEnabled(total > 1)
         pair = self._pairs[int(pair_index)] if pair_index is not None else None
         current_seen = bool(pair and pair.required and self.canvas.comparison_ready)
+        geometry = (id(self.canvas.original_model), id(self.canvas.reconstruction_model))
+        if current_seen:
+            self._decision_geometry = geometry
+        self.decision_panel.setVisible(bool(
+            not self._read_only and pair and pair.required
+            and self.canvas.original_model is not None
+            and getattr(self, "_decision_geometry", None) == geometry
+        ))
         self.specimen_decision.setEnabled(current_seen)
         self.review_progress.setText(f"Inspected: {reviewed} / {total} specimens.")
         self.review_gate.setText(
@@ -1711,11 +1723,21 @@ class ReferenceCalibrationDialog(QDialog):
         self.content_layout.removeWidget(self.screen_comparison)
         self.screen_comparison.setParent(self)
         self.screen_comparison.hide()
-        while self.content_layout.count():
-            item = self.content_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        def clear(layout):
+            while layout.count():
+                item = layout.takeAt(0)
+                if item.widget() is not None:
+                    widget = item.widget()
+                    # deleteLater alone leaves visible children until the next event
+                    # turn; nested layout widgets otherwise survive every refresh.
+                    widget.hide()
+                    widget.setParent(None)
+                    widget.deleteLater()
+                elif item.layout() is not None:
+                    clear(item.layout())
+                    item.layout().deleteLater()
+
+        clear(self.content_layout)
         self._approval_checks = {}
         self._review_buttons = {}
         self._continuation_buttons = {}

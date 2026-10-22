@@ -89,6 +89,9 @@ class FitPreferencePanel(QWidget):
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.feedback_controls = QWidget()
+        policy = self.feedback_controls.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self.feedback_controls.setSizePolicy(policy)
         self.feedback_controls.setStyleSheet(
             "QPushButton { background: #f2f8f6; border: 1px solid #cee3dd; "
             "border-radius: 6px; min-height: 28px; padding: 2px 10px; }"
@@ -325,6 +328,15 @@ class FitPreferencePanel(QWidget):
         ready = self._ready and self.current_canvas.comparison_ready
         if reference:
             ready = ready and self.reference_canvas.comparison_ready
+        geometry = tuple(id(m) for canvas in (self.current_canvas, self.reference_canvas)
+                         for m in (canvas.original_model, canvas.reconstruction_model))
+        if ready:
+            self._feedback_geometry = geometry
+        # Keep the layout stable during rotation/repainting of an inspected pair.
+        # New/cleared geometry must reach its own first displayed frame.
+        self.feedback_controls.setVisible(bool(
+            self._ready and getattr(self, "_feedback_geometry", None) == geometry
+        ))
         ranked_reference = bool(
             reference and (not comparison["best"] or reference == comparison["best"])
         )

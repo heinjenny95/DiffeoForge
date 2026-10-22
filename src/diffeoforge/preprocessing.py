@@ -359,12 +359,17 @@ def preview_landmark_alignment(
     )
     normalized_target_size = validate_target_size(target_size)
     if source_metadata is None:
-        loaded_sources = tuple(load_surface_mesh(path) for path in source_paths)
-        resolved_metadata = tuple(item.metadata for item in loaded_sources)
-        resolved_scale_metrics = tuple(
-            compute_mesh_scale_metrics(item.geometry.vertices, item.geometry.triangles)
-            for item in loaded_sources
-        )
+        # Stream scalar evidence, never retain the entire full-resolution cohort.
+        metadata_items, metric_items = [], []
+        for path in source_paths:
+            loaded = load_surface_mesh(path)
+            metadata_items.append(loaded.metadata)
+            metric_items.append(compute_mesh_scale_metrics(
+                loaded.geometry.vertices, loaded.geometry.triangles
+            ))
+            del loaded
+        resolved_metadata = tuple(metadata_items)
+        resolved_scale_metrics = tuple(metric_items)
     else:
         resolved_metadata = tuple(source_metadata)
         if len(resolved_metadata) != len(source_paths):
@@ -570,6 +575,77 @@ def _load_existing(
     )
 
 
+def _reuse_aligned_inputs(project, directory, landmarks, template, pattern, settings,
+                          expected_fingerprint, progress_callback):
+    """Verify existing publication against fresh source bytes before any mesh parse."""
+    preprocessing = project / "preprocessing"
+    if not preprocessing.exists():
+        return None
+    if preprocessing.is_symlink():
+        raise ConfigurationError("Refusing symbolic-link preprocessing directory")
+    template_path, subjects = _select_inputs(directory, template, pattern)
+    paths = (template_path, *subjects)
+    hashes = []
+    for index, path in enumerate(paths):
+        if progress_callback:
+            progress_callback(index, len(paths), Path(f"Checking files · {path.name}"))
+        hashes.append(sha256_file(path))
+    landmark_hash = sha256_file(landmarks)
+    labels, _ = read_landmark_csv(landmarks, tuple(p.name for p in paths))
+    names = tuple(canonical_vtk_filename(p) for p in paths)
+    candidates = (
+        [preprocessing / f"aligned-{expected_fingerprint[:16]}"]
+        if expected_fingerprint else sorted(preprocessing.glob("aligned-*"))
+    )
+    for destination in candidates:
+        if not destination.exists():
+            continue
+        if not destination.is_dir() or destination.is_symlink():
+            raise ConfigurationError("Aligned-input destination is not a regular directory")
+        try:
+            evidence = json.loads((destination / "procrustes.json").read_text(encoding="utf-8"))
+            records = evidence["meshes"]
+            if (evidence["preprocessing_version"] != PREPROCESSING_VERSION
+                    or {k: v for k, v in evidence["settings"].items()
+                        if k != "scaling_label"} != settings
+                    or evidence["landmark_source_sha256"] != landmark_hash
+                    or evidence["landmark_labels"] != list(labels)
+                    or len(records) != len(paths)):
+                continue
+            source_records = []
+            for path, digest, name, record in zip(paths, hashes, names, records, strict=True):
+                if record["source_filename"] != path.name or record["source_sha256"] != digest:
+                    break
+                source_records.append({
+                    "source_filename": path.name, "source_sha256": digest,
+                    "source_format": record["source_format"],
+                    "source_encoding": record["source_encoding"], "aligned_filename": name,
+                })
+            if len(source_records) != len(paths):
+                continue
+            fingerprint = _canonical_hash({
+                "preprocessing_version": PREPROCESSING_VERSION,
+                "landmark_sha256": landmark_hash, "landmark_labels": labels,
+                "meshes": tuple(source_records), "settings": settings,
+            })
+            if (evidence["fingerprint"] != fingerprint
+                    or destination.name != f"aligned-{fingerprint[:16]}"
+                    or expected_fingerprint and expected_fingerprint != fingerprint
+                    or evidence.get("converged") is not True):
+                raise ConfigurationError("Existing aligned-input fingerprint is inconsistent")
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise ConfigurationError(f"Could not verify aligned-input evidence: {error}") from error
+        cohort = _load_existing(destination, fingerprint=fingerprint,
+                                source_names=tuple(p.name for p in paths), aligned_names=names)
+        if (sha256_file(landmarks) != landmark_hash
+                or tuple(sha256_file(p) for p in paths) != tuple(hashes)):
+            raise ConfigurationError("Inputs changed while checking saved alignment")
+        if progress_callback:
+            progress_callback(len(paths), len(paths), Path("Reusing verified alignment"))
+        return cohort
+    return None
+
+
 def prepare_landmark_aligned_inputs(
     mesh_directory: Path | str,
     *,
@@ -595,6 +671,26 @@ def prepare_landmark_aligned_inputs(
 
     project = Path(project_directory).expanduser().resolve()
     if approved_preview is None:
+        selected_mode = _resolve_scaling_mode(scaling_mode, scale_to_unit_centroid_size)
+        settings = {
+            "scaling_mode": selected_mode.value,
+            "scaling_label": scaling_mode_label(selected_mode),
+            "target_size": validate_target_size(target_size),
+            "scale_to_unit_centroid_size": selected_mode not in {
+                MeshScalingMode.PRESERVE_SIZE, MeshScalingMode.LANDMARK_RIGID_LEGACY,
+            },
+            "allow_reflection": allow_reflection, "tolerance": float(tolerance),
+            "max_iterations": int(max_iterations),
+        }
+        # The historical fingerprint excludes the display-only scaling label.
+        reuse_settings = {k: v for k, v in settings.items() if k != "scaling_label"}
+        reused = _reuse_aligned_inputs(
+            project, Path(mesh_directory).expanduser().resolve(),
+            Path(landmarks_file).expanduser().resolve(), template, subject_pattern,
+            reuse_settings, expected_fingerprint, progress_callback,
+        )
+        if reused is not None:
+            return reused
         preview = preview_landmark_alignment(
             mesh_directory,
             landmarks_file=landmarks_file,
@@ -680,6 +776,9 @@ def prepare_landmark_aligned_inputs(
     preprocessing_root.mkdir(parents=True, exist_ok=True)
     destination = preprocessing_root / f"aligned-{fingerprint[:16]}"
     if destination.exists():
+        if (sha256_file(landmark_source) != preview.landmark_sha256
+                or tuple(sha256_file(p) for p in source_paths) != preview.mesh_sha256):
+            raise ConfigurationError("Inputs changed after the approved preview (Procrustes)")
         if not destination.is_dir() or destination.is_symlink():
             raise ConfigurationError(
                 f"Aligned-input destination exists but is not a regular directory: {destination}"

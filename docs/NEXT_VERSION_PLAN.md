@@ -1,8 +1,8 @@
 # Next DiffeoForge development version
 
-Owner scope, 22 October 2026: currently collect observations and to-dos only.
-The open entries below do not authorize implementation, rebuilding, installation
-or scientific runs; wait for a new development request.
+Owner scope, 22 October 2026: the owner subsequently authorized implementing all
+recently collected pilot follow-ups. v150 addresses their software changes below;
+scientific fits remain excluded. See [scope and verification](V150_PILOT_REPAIRS.md).
 
 ## v149 — owner-authorized guided pilot, 21 October 2026
 
@@ -138,14 +138,14 @@ The earlier manual refinement proposal below is superseded by the direct
 
 ## Delivery order and acceptance gates
 
-### Pilot layout clipping and unclear next action — open
+### Pilot layout clipping and unclear next action — v150 source
 
 Owner feedback, 22 October 2026: the running pilot view shows an apparently
 clipped control region (a narrow colored fragment) above extensive empty space.
 The owner also reports that the required button for continuing was not green.
 The screenshot contains ongoing iteration progress, not a displayed backend
 failure; the layout cause and the preceding actionable-button state need
-reproduction. Tracking only; no repair requested now.
+reproduction. The subsequent development request authorizes the v150 repair.
 
 Additional completed-view evidence from the same owner session: selector rows
 and duplicate Inspect fit buttons overlap, with another clipped control fragment.
@@ -153,7 +153,7 @@ Check whether controls from the previous view remain during refresh; the exact
 cause and any candidate-binding effect are unverified. Extend this existing
 layout issue rather than create a separate duplicate.
 
-- [ ] Diagnose and repair clipped/partly hidden pilot controls and inappropriate
+- [x] Diagnose and repair clipped/partly hidden pilot controls and inappropriate
   empty space. Verify layout after batch/state transitions, window resizing and
   relevant display scaling; labels and available actions must remain readable
   and reachable. Verify that previous-view controls are removed or replaced and
@@ -161,21 +161,21 @@ layout issue rather than create a separate duplicate.
   Inspect fit opens the selected candidate and saved alternatives remain clearly
   distinguished from the current fit. Do not infer a failed scientific fit from
   this UI symptom.
-- [ ] Make the currently required, available next action consistently prominent
+- [x] Make the currently required, available next action consistently prominent
   with the established green primary style and a clear label. Do not highlight
   an unavailable Run/Continue button while a batch is already computing; show
   progress and the relevant safe cancellation instead. Verify both the ready
   state before clicking and the running state afterward, without auto-advancing
   or recording an approval.
 
-### Pilot decisions appear before visual assessment is possible — open
+### Pilot decisions appear before visual assessment is possible — v150 source
 
 Owner feedback, 22 October 2026: while the method batch is still computing, the
 overview already presents decision paths such as Both good / Both unfit. Showing
 unavailable or premature decisions makes the required order unclear. The owner
-requested a to-do entry only, not an implementation in this follow-up.
+initially requested tracking only, then authorized the v150 repair.
 
-- [ ] Reveal accept/reject controls only after the relevant original and
+- [x] Reveal accept/reject controls only after the relevant original and
   reconstruction have actually rendered in a usable comparison. Hide premature
   actions instead of merely disabling them during loading or when no comparison
   can be displayed. Reveal aggregate decisions such as Both good / Both unfit
@@ -186,7 +186,7 @@ requested a to-do entry only, not an implementation in this follow-up.
   Check computing, initial loading, render failure, specimen switching and the
   transition to a reviewable fit. No new fits are authorized by this entry.
 
-### Initial-template recommendation misses local fit risks — open
+### Initial-template recommendation misses local fit risks — v150 source
 
 Owner first-use feedback, 22 October 2026: the v149 suggestion can return the
 same kind of locally distinctive form that previously fitted poorly. Current
@@ -194,7 +194,7 @@ ranking uses coarse radial/spectral centrality; it does not establish deformatio
 suitability and does not consult previous fit reviews. The delivered heuristic
 does not close this issue.
 
-- [ ] Improve and validate template suggestions using local shape differences
+- [x] Improve and validate template suggestions using local shape differences
   at multiple scales as well as overall cohort coverage. Keep the method general
   across surface datasets; do not hard-code anatomy or prefer fewer protrusions.
   Where compatible previous fit/review evidence exists, present it with its
@@ -203,7 +203,7 @@ does not close this issue.
   alternatives, preserve manual choice, and test local-detail sensitivity and
   mesh-sampling robustness before claiming a suitable starting template.
 
-### Repeated cohort loading before pilot selection — pending
+### Repeated cohort loading before pilot selection — v150 source
 
 Owner feedback, 20 October 2026: preparing the pilot reads the whole cohort
 again after earlier input/GPA steps. Full-cohort shape measurements support
@@ -217,7 +217,7 @@ the alignment preview before checking for existing aligned outputs; without an
 approved preview this can parse the entire source cohort again. The v149 scalar/
 VTK-metadata cache is a partial improvement, not a completed fix for this path.
 
-- [ ] Profile and remove avoidable repeated mesh loading between input checks,
+- [x] Profile and remove avoidable repeated mesh loading between input checks,
   GPA and pilot parameter analysis. Reuse verified geometry or aligned
   measurements with exact source/transform/settings binding and bounded memory.
   Check reusable saved alignment evidence before rebuilding geometry, including
@@ -229,10 +229,12 @@ VTK-metadata cache is a partial improvement, not a completed fix for this path.
   checking files, reusing measurements or measuring shapes. Preserve full-cohort
   coverage for selection and the chosen subset for actual pilot fitting.
 
-v149 adds scalar metadata reuse after fresh content hashes and shares cached
-template/shape measurements where the transform/settings binding matches. The
-whole-cohort cold/warm workflow/RSS gate above remains open; no universal speedup
-or skipped integrity I/O is claimed. No scientific run is authorized by this entry.
+v150 checks saved alignment before preview construction, including reopening and
+non-VTK sources, and streams cold-preview geometry one mesh at a time. Synthetic
+parse/lifetime and invalidation checks qualify those repairs. v149 scalar caches
+remain in use. Large-cohort wall-time/RSS and independent first-use gates remain
+open; no universal speedup or skipped integrity I/O is claimed. Template ranking
+remains provisional. See [limits and verification](V150_PILOT_REPAIRS.md).
 
 ### Priority: slow pilot previews and invisible QC locks
 

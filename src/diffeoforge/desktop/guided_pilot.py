@@ -7,9 +7,11 @@ from diffeoforge.reference_guided_pilot import record
 
 
 def render(window, prepared):
+    from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
+
     snapshot = prepared.snapshot
     info = record(snapshot)
-    running = window._worker is not None
+    running = window._worker is not None or window._restoring_search
     # Restore these before returning to the ordinary final qualification view.
     controls = (
         window.find_fit_button,
@@ -75,6 +77,7 @@ def render(window, prepared):
     )
     window.start_button.setVisible(bool(pending))
     window.start_button.setEnabled(not running)
+    _set_action_emphasis(window.start_button, bool(pending) and not running)
     window.cancel_button.setVisible(running)
     window.cancel_button.setEnabled(running)
     window.status.setText(
@@ -92,7 +95,7 @@ def render(window, prepared):
                 candidate.label + " · technical failure", candidate.error or "No usable result"
             )
         )
-    if not completed:
+    if running or not completed:
         return
     choice = QComboBox()
     choice.setAccessibleName("Fit to inspect")
@@ -117,7 +120,7 @@ def render(window, prepared):
     if recommendation and recommendation["recommended_candidate_id"]:
         choice.setCurrentIndex(max(0, choice.findData(recommendation["recommended_candidate_id"])))
     inspect = QPushButton("Inspect fit")
-    inspect.setObjectName("primary")
+    _set_action_emphasis(inspect, True)
     inspect.setEnabled(not running)
     inspect.clicked.connect(
         lambda: window._open_candidate(
@@ -130,8 +133,11 @@ def render(window, prepared):
     window.content_layout.addLayout(row)
 
     def action(label, kind, *, identifier=None, goal=None, available=True):
-        button = QPushButton(label)
-        button.setEnabled(not running and not unresolved and available)
+        button = QPushButton(label, window.content)
+        enabled = not running and not unresolved and available
+        button.setEnabled(enabled)
+        button.setVisible(enabled)
+        _set_action_emphasis(button, enabled)
         button.clicked.connect(
             lambda: window._start_pilot(
                 adaptive=False, guided_action=(kind, identifier or choice.currentData(), goal)
@@ -176,7 +182,7 @@ def render(window, prepared):
             )
             tie.setWordWrap(True)
             window.content_layout.addWidget(tie)
-    diagnostic = QWidget()
+    diagnostic = QWidget(window.content)
     from PySide6.QtWidgets import QVBoxLayout
 
     diagnostic_layout = QVBoxLayout(diagnostic)
@@ -193,7 +199,8 @@ def render(window, prepared):
     goals.addItem("Overall weak fit → stronger surface-matching weight", "weight")
     diagnostic_layout.addWidget(goals)
     retry = QPushButton(f"Prepare targeted follow-up · {len(snapshot.candidates)} trial(s)")
-    retry.setEnabled(not running and not pending)
+    reviewed = all(c.candidate_id in snapshot.visual_reviews for c in completed)
+    retry.setEnabled(not running and not unresolved and reviewed)
     both_bad = len(snapshot.candidates) == 2 and all(
         snapshot.visual_reviews.get(c.candidate_id) is False for c in snapshot.candidates
     )
@@ -206,10 +213,13 @@ def render(window, prepared):
     diagnostic_layout.addWidget(retry)
     diagnostic_disclosure = InfoDisclosure("Targeted next steps", diagnostic)
     if len(snapshot.candidates) == 2:
-        bad_button = QPushButton("Both unfit → check common causes")
+        bad_button = QPushButton("Both unfit → check common causes", window.content)
+        bad_button.setVisible(both_bad and not running)
         bad_button.setEnabled(both_bad and not running)
+        _set_action_emphasis(bad_button, both_bad and not running)
         bad_button.clicked.connect(lambda: diagnostic_disclosure.toggle_button.setChecked(True))
         window.content_layout.addWidget(bad_button)
+    diagnostic_disclosure.setVisible(reviewed and not unresolved)
     window.content_layout.addWidget(diagnostic_disclosure)
     unsure = QLabel(
         "Unsure? Reopen a fit, rotate it, toggle the original or show a saved alternative. "

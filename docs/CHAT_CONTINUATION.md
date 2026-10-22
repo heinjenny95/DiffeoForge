@@ -22,17 +22,19 @@ authorization or establish current application/job state.
 
 ## Current software boundary
 
-Current owner scope, 22 October: collect observations and to-dos only. Do not
-implement, rebuild, install or start scientific runs from these backlog entries;
-wait for a new development request.
+Current owner scope, 22 October: the owner has now authorized implementing the
+recently collected pilot follow-ups, superseding collection-only scope. v150
+source repairs the view transitions, decision readiness, action emphasis, saved
+alignment reuse and template guidance. No new scientific fits are authorized.
+See [scope, checks and limits](V150_PILOT_REPAIRS.md); delivery state is separate.
 
 Owner first-use feedback on 22 October records open v149 follow-ups:
 insufficient local-detail/fit-risk awareness in template suggestions, repeated
 whole-cohort loading during pilot preparation, and premature decision controls
 before a fit is visually assessable, plus layout clipping/empty space and unclear
-green-primary styling of the required next action. These are unchecked in the
-[backlog](NEXT_VERSION_PLAN.md#delivery-order-and-acceptance-gates). This update
-records work to do at the owner's request; it implements no repair and starts no fit.
+green-primary styling of the required next action. Their v150 implementation and
+remaining scientific/performance gates are recorded in the
+[backlog](NEXT_VERSION_PLAN.md#delivery-order-and-acceptance-gates).
 
 v149 source implements the [guided pilot](V149_GUIDED_PILOT.md): initial-template
 and adaptive target-count suggestions, two one-target method trials, explicit

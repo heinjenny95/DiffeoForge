@@ -13,7 +13,8 @@ Owner first use on 22 October leaves explicit open follow-ups in the
 template ranking misses local fit risks, and pilot preparation still repeats
 whole-cohort loading; decision controls also appear before visual assessment is
 possible. Pilot layout clipping/empty space and missing primary-action emphasis
-are also open. The owner is currently collecting to-dos only; no repairs now.
+are also recorded there. The subsequent owner request authorizes those pilot
+repairs in v150; see [implementation and remaining gates](docs/V150_PILOT_REPAIRS.md).
 
 For the immediate publication priorities, use the
 [preprint-readiness checklist](docs/PREPRINT_READINESS.md). It scopes the paper

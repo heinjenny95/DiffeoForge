@@ -306,8 +306,8 @@ def recommend_reference_parameters(
     )
 
 
-def _measure_surface(path, transform, triangle_budget):
-        loaded = load_surface_mesh(path)
+def _measure_surface(path, transform, triangle_budget, *, loaded=None):
+        loaded = loaded if loaded is not None else load_surface_mesh(path)
         points = np.asarray(loaded.geometry.vertices, dtype=np.float64)
         if transform is not None:
             points = transform.apply(points)

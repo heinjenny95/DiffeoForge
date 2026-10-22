@@ -11,6 +11,9 @@ from diffeoforge.measurement_cache import measurement_key, read_measurement, wri
 from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_recommendation import MeshGeometryObservation, _measure_surface
 from diffeoforge.shape_descriptor import SHAPE_DESCRIPTOR_VERSION
+from diffeoforge.surface_io import load_surface_mesh
+from diffeoforge.template_shape import VERSION as LOCAL_VERSION
+from diffeoforge.template_shape import distance_matrix, local_shape_descriptor
 
 VERSION = "adaptive-pilot-design-v1"
 # Coverage heuristics, not anatomical accuracy or validated sample-size limits.
@@ -81,27 +84,36 @@ def coverage_suggestion(recommendation, *, required=(), declarations=(), budget=
 
 
 def suggest_templates(
-    paths, *, cache_directory=None, progress_callback=None, cancel_requested=None
+    paths, *, cache_directory=None, progress_callback=None, cancel_requested=None,
+    review_evidence=(),
 ):
     """Stream originals once; retain cached scalars/descriptors, never a mesh cohort.
 
-    Before anatomical alignment only intrinsic size-normalized radial/spectral
-    features are ranked. Directional descriptors are used later for aligned pilot
-    coverage. This initial recommendation is deliberately a coarse heuristic.
+    Global and local intrinsic summaries contribute equally before alignment.
+    Reviews remain contextual evidence, never a universal template blacklist.
     """
     paths = tuple(sorted({Path(p).resolve() for p in paths}, key=lambda p: str(p).casefold()))
     if len(paths) < 3:
         raise ValueError("Select at least three surface meshes")
-    observations, failures = [], []
+    observations, local, failures = [], [], []
     for index, path in enumerate(paths):
         if cancel_requested and cancel_requested():
             raise InterruptedError("Template suggestion cancelled")
         try:
             digest = sha256_file(path)
-            key = measurement_key(path, digest, None, 20_000, SHAPE_DESCRIPTOR_VERSION)
+            key = measurement_key(path, digest, None, 20_000,
+                                  SHAPE_DESCRIPTOR_VERSION + "/" + LOCAL_VERSION)
             cached = read_measurement(cache_directory, key)
+            if cached is not None:
+                detail = cached.get("local_descriptor")
+                if (not isinstance(detail, (list, tuple)) or len(detail) != 32
+                        or not all(isinstance(v, (float, int)) and np.isfinite(v) for v in detail)):
+                    cached = None
             if cached is None:
-                observation, centroid = _measure_surface(path, None, 20_000)
+                loaded = load_surface_mesh(path)
+                observation, centroid = _measure_surface(path, None, 20_000, loaded=loaded)
+                detail = local_shape_descriptor(loaded.geometry.vertices, loaded.geometry.triangles)
+                del loaded
                 if sha256_file(path) != digest:
                     raise ValueError("Mesh changed during template suggestion")
                 write_measurement(
@@ -110,13 +122,18 @@ def suggest_templates(
                     {
                         "observation": asdict(observation),
                         "centroid": centroid.tolist(),
+                        "local_descriptor": detail,
                     },
                 )
             else:
                 observation = MeshGeometryObservation(**cached["observation"])
+                detail = tuple(cached["local_descriptor"])
+                if len(detail) != 32 or not np.isfinite(detail).all():
+                    raise ValueError("Invalid local shape measurement; request a fresh suggestion")
                 if observation.sha256 != digest or sha256_file(path) != digest:
                     raise ValueError("Cached mesh identity changed")
             observations.append((path, observation))
+            local.append(detail)
         except (OSError, ValueError, RuntimeError) as error:
             failures.append(dict(path=str(path), reason=str(error)))
         if progress_callback:
@@ -130,9 +147,9 @@ def suggest_templates(
     raw = np.asarray(
         [(*o.shape_descriptor[:3], *o.shape_descriptor[29:38]) for _, o in observations]
     )
-    scale = np.maximum(0.05, 1.4826 * np.median(abs(raw - np.median(raw, axis=0)), axis=0))
-    values = (raw - np.median(raw, axis=0)) / scale
-    distances = np.linalg.norm(values[:, None] - values[None, :], axis=2)
+    global_distances = distance_matrix(raw)
+    local_distances = distance_matrix(local)
+    distances = (global_distances + local_distances) / 2
     ranking = sorted(
         range(len(observations)),
         key=lambda i: (
@@ -146,17 +163,29 @@ def suggest_templates(
             filename=observations[i][0].name,
             sha256=observations[i][1].sha256,
             mean_descriptor_distance=float(distances[i].mean()),
-            reason="Central coarse shape with finite, nondegenerate surface geometry; "
-            "confirm mesh quality, alignment and fit in the pilot.",
+            global_distance=float(global_distances[i].mean()),
+            local_distance=float(local_distances[i].mean()),
+            previous_reviews=[r for r in review_evidence
+                              if r.get("source_sha256") == observations[i][1].sha256],
+            reason="Central across overall shape and local surface differences. "
+            "Starting candidate; suitability still needs visual pilot review.",
         )
         for i in ranking
     ]
+    # Put a contrasting option near the top instead of a list of near-identical medoids.
+    alternative = max(ranking[1:], key=lambda i: (distances[ranking[0], i], -i))
+    for row in records:
+        row["contrasting_alternative"] = row["path"] == str(observations[alternative][0])
+    gap = (records[1]["mean_descriptor_distance"] - records[0]["mean_descriptor_distance"])
+    uncertain = gap <= max(0.05, records[0]["mean_descriptor_distance"] * 0.1)
     return dict(
-        version=VERSION,
+        version=VERSION + "/" + LOCAL_VERSION,
         candidates=records,
         unreadable_meshes=failures,
         input_binding=[dict(path=str(p), sha256=o.sha256) for p, o in observations],
-        limitation="Coarse radial/spectral similarity is not anatomical correspondence or "
-        "a complete mesh-quality check. Aligned directional coverage is checked separately. "
+        uncertain=uncertain,
+        limitation="Global/local surface summaries cannot prove deformation suitability or "
+        "anatomical correspondence. Previous reviews apply only to their target/settings. "
+        "No confident winner is implied by close scores. Aligned coverage is checked separately. "
         "No mesh repaired, transformed, excluded from the atlas or fitted.",
     )
