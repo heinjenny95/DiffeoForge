@@ -149,7 +149,8 @@ def prepare(directory):
 
 
 def _batch(
-    source, previous, *, phase, target, methods, values, approved, history, spent, goal=None
+    source, previous, *, phase, target, methods, values, approved, history, spent, goal=None,
+    feedback=None,
 ):
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.reference_attachment_comparison import ITERATIONS
@@ -262,6 +263,7 @@ def _batch(
                 approved=list(approved),
                 history=list(history),
                 goal=goal,
+                feedback=feedback,
                 screen_trials_spent=spent + (len(methods) if phase != "joint" else 0),
                 screen_trial_limit=limit,
                 selected_method=methods[0] if len(methods) == 1 else None,
@@ -359,6 +361,7 @@ def _next_action(directory, action, candidate_id=None, *, goal=None):
     values = snapshot.plan.effective_values
     methods = tuple(snapshot.attachment_comparison["methods"].values())
     phase, target = info["phase"], info["target"]
+    feedback = None
     history = [
         *info["history"],
         dict(
@@ -367,7 +370,24 @@ def _next_action(directory, action, candidate_id=None, *, goal=None):
             outcome=action,
         ),
     ]
-    if action == "both_good":
+    if action == "recover":
+        from diffeoforge.pilot_recovery import capture, proposal
+
+        proposed = proposal(snapshot, candidate_id, goal)
+        if not proposed["available"]:
+            raise ValueError(
+                "Screening budget exhausted. Revisit alignment, mesh quality or template; "
+                "all results remain saved. No extra trials have been prepared.")
+        goal, target = proposed["goal"], proposed["target"]
+        feedback = capture(snapshot, candidate_id, target)
+        methods = (proposed["method"],)
+        if goal == "other_method":
+            approved = [r for r in approved if r["method"] == methods[0] and r["values"] == values]
+        else:
+            values = adjusted_values(values, goal)
+            approved = []
+        phase = "validate"
+    elif action == "both_good":
         if len(methods) != 2:
             raise ValueError("Both-good requires two methods")
         approved.extend(_approved_record(snapshot, c.candidate_id) for c in snapshot.candidates)
@@ -423,6 +443,7 @@ def _next_action(directory, action, candidate_id=None, *, goal=None):
         history=history,
         spent=info["screen_trials_spent"],
         goal=goal,
+        feedback=feedback,
     )
     study._append_event(
         snapshot.study_directory,
@@ -446,6 +467,8 @@ def adjusted_values(values, goal):
         "detail": ("attachment_kernel_width", 0.5),
         "motion": ("deformation_kernel_width", 2.0),
         "weight": ("noise_std", 0.5),
+        "local_motion": ("deformation_kernel_width", 0.5),
+        "smooth": ("noise_std", 2.0),
     }[goal]
     values[parameter] *= factor
     return values

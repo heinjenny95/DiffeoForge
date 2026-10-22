@@ -183,6 +183,10 @@ def verify(root, manifest):
                     info["target"]: expected.get(info["target"])})):
             raise ValueError("Guided pilot scope or budget binding changed")
         verify_approvals(info["approved"])
+        if info.get("feedback"):
+            from diffeoforge.pilot_recovery import verify as verify_feedback
+
+            verify_feedback(info["feedback"], actual)
         if info["phase"] == "joint":
             approved = info["approved"]
             values = manifest["plan"]["baseline_effective_values"]
@@ -370,11 +374,23 @@ def measure(root, manifest, candidate, run):
         ]
         if len(matches) != 1:
             raise ValueError("Method comparison reconstruction identity mismatch")
+        original = load_surface_mesh(root / row["copy"]).geometry
+        fitted = load_surface_mesh(matches[0]).geometry
         subjects[row["filename"]] = compare_geometry(
-            load_surface_mesh(root / row["copy"]).geometry,
-            load_surface_mesh(matches[0]).geometry,
+            original, fitted,
             original_key=row["sha256"],
         )
+        feedback = manifest["attachment_comparison"].get("guided", {}).get("feedback")
+        if feedback and feedback["target"] == row["filename"]:
+            from diffeoforge.pilot_regions import comparison
+            from diffeoforge.pilot_regions import measure as measure_regions
+
+            regional = measure_regions(original, fitted, feedback["regions"])
+            subjects[row["filename"]]["marked_regions"] = dict(
+                measurements=regional,
+                outcome=comparison(feedback["baseline"], regional,
+                                   feedback["global_baseline"], subjects[row["filename"]]),
+            )
     return dict(
         attachment_comparison=dict(version=VERSION, subjects=subjects),
         original_surface_fit={

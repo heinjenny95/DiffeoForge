@@ -1,4 +1,12 @@
-# Development continuity — v150 pilot first-use repairs
+# Development continuity — v151 regional feedback and pilot recovery
+
+Owner scope now includes the subsequent pilot follow-ups and regional feedback.
+v151 source adds separate method cards, visible recovery after rejection and
+source-bound 3D surface-brush feedback with measured patch/global follow-up checks.
+Every hypothesis prepares one trial; Run, visual approval, renewed cross-checks
+and joint confirmation remain explicit. See [scope](V151_REGIONAL_PILOT.md).
+No new owner/native fit is launched. Current installation/delivery evidence is
+separate from source implementation. The v150 snapshot below is historical.
 
 The owner's 22 October follow-up authorizes the collected pilot repairs. v150
 recursively clears nested view controls, gates decisions on displayed geometry,

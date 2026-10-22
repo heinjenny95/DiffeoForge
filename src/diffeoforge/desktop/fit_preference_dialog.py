@@ -336,6 +336,7 @@ class FitPreferencePanel(QWidget):
         # New/cleared geometry must reach its own first displayed frame.
         self.feedback_controls.setVisible(bool(
             self._ready and getattr(self, "_feedback_geometry", None) == geometry
+            and (self.show_comparison.isChecked() or not self.reference_combo.count())
         ))
         ranked_reference = bool(
             reference and (not comparison["best"] or reference == comparison["best"])

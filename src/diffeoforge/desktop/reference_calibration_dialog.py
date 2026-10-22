@@ -537,10 +537,11 @@ class CalibrationCandidateViewerDialog(QDialog):
         )
         self._allow_plan_b = self._allow_plan_b and self._valid_individual
         self.feature_observations: dict[str, dict[str, object]] = {}
+        self.problem_regions: dict[str, list[dict]] = {}
         self._region_loader = PreviewMeshLoader(self)
         self._region_loader.loaded.connect(self._region_loaded)
         self._region_loader.failed.connect(
-            lambda _key, message: self.status.setText("Region marking unavailable: " + message)
+            lambda _key, message: self.review_gate.setText("Region marking unavailable: " + message)
         )
         self._region_loader.activity_changed.connect(
             lambda busy: self.setProperty("processRecordingWaiting", busy)
@@ -742,6 +743,17 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.decision_panel.setSizePolicy(policy)
         self.decision_panel.setObjectName("card")
         decision_layout = QVBoxLayout(self.decision_panel)
+        feature_layout.removeWidget(self.mark_region_button)
+        self.mark_region_button.setText("Show where this fit needs improvement…")
+        region_controls = QHBoxLayout()
+        region_controls.addWidget(self.mark_region_button)
+        self.clear_regions_button = QPushButton("Clear marked areas")
+        self.clear_regions_button.clicked.connect(self._clear_regions)
+        region_controls.addWidget(self.clear_regions_button)
+        decision_layout.addLayout(region_controls)
+        self.region_summary = QLabel()
+        self.region_summary.setWordWrap(True)
+        decision_layout.addWidget(self.region_summary)
         if self.fit_preferences:
             self.fit_preferences.layout().removeWidget(self.fit_preferences.feedback_controls)
             decision_layout.addWidget(self.fit_preferences.feedback_controls)
@@ -987,12 +999,16 @@ class CalibrationCandidateViewerDialog(QDialog):
         if index is None or not self.canvas.comparison_ready:
             return
         pair = self._pairs[int(index)]
-        self.status.setText("Loading original detail for precise region marking…")
+        if len(self.problem_regions.get(pair.original_path.name, [])) >= 8:
+            self.review_gate.setText(
+                "Eight areas already marked. Clear areas before replacing them.")
+            return
+        self.review_gate.setText("Loading original detail for precise area marking…")
         self._region_loader.request_paths(pair.pair_id, (pair.original_path,),
                                           expected=(pair.original_sha256,))
 
     def _region_loaded(self, key, models) -> None:
-        from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
+        from diffeoforge.desktop.region_feedback_dialog import RegionFeedbackDialog
 
         index = self.mesh_combo.currentData()
         if index is None:
@@ -1000,39 +1016,18 @@ class CalibrationCandidateViewerDialog(QDialog):
         pair = self._pairs[int(index)]
         if key != pair.pair_id:
             return
-        dialog = QDialog(self)
-        dialog.setProperty("processRecordingPilotReview", True)
-        dialog.setWindowTitle("Mark a problem region")
-        dialog.resize(760, 650)
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("Rotate the original, then click the problem region."))
-        canvas = InteractiveMeshCanvas3D()
-        canvas.set_model(models[0])
-        layout.addWidget(canvas, 1)
-        status = QLabel("No region selected")
-        layout.addWidget(status)
-        chosen = []
+        if not self.canvas.comparison_ready or models[0].sha256 != pair.original_sha256:
+            return
+        dialog = RegionFeedbackDialog(models[0], self)
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.region:
+            self.problem_regions.setdefault(pair.original_path.name, []).append(dialog.region)
+        self._update_review_progress()
 
-        def picked(point):
-            chosen[:] = [tuple(float(v) for v in point)]
-            canvas.set_markers({"Region": chosen[0]})
-            status.setText("Region selected on the original surface")
-
-        canvas.surfacePointPicked.connect(picked)
-        save = QPushButton("Keep marked region")
-        save.clicked.connect(dialog.accept)
-        layout.addWidget(save)
-        dialog.finished.connect(canvas.cancel_pending_pick)
-        if dialog.exec() == QDialog.DialogCode.Accepted and chosen:
-            coordinates = ", ".join(format(v, ".8g") for v in chosen[0])
-            note = (f"Region {pair.original_path.name}: xyz=({coordinates}); "
-                    f"source SHA-256 {pair.original_sha256}")
-            previous = self.anatomical_notes.text().strip()
-            combined = (previous + "; " if previous else "") + note
-            if len(combined) > self.anatomical_notes.maxLength():
-                self.status.setText("Shorten the review notes before adding another marked region.")
-                return
-            self.anatomical_notes.setText(combined)
+    def _clear_regions(self):
+        index = self.mesh_combo.currentData()
+        if index is not None:
+            self.problem_regions.pop(self._pairs[int(index)].original_path.name, None)
+        self._update_review_progress()
 
     def _feature_conflicts(self) -> list[str]:
         return [
@@ -1156,6 +1151,12 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.next_specimen_button.setEnabled(total > 1)
         pair = self._pairs[int(pair_index)] if pair_index is not None else None
         current_seen = bool(pair and pair.required and self.canvas.comparison_ready)
+        self.mark_region_button.setEnabled(current_seen)
+        count = len(self.problem_regions.get(pair.original_path.name, [])) if pair else 0
+        self.clear_regions_button.setVisible(count > 0)
+        self.region_summary.setVisible(count > 0)
+        self.region_summary.setText(f"{count} marked area(s) for this specimen. "
+                                    "Reject to request a guided follow-up; closing discards edits.")
         geometry = (id(self.canvas.original_model), id(self.canvas.reconstruction_model))
         if current_seen:
             self._decision_geometry = geometry
@@ -4372,6 +4373,15 @@ class ReferenceCalibrationDialog(QDialog):
                     candidate.candidate_id, {}
                 ).items()
             }
+            dialog.problem_regions = {
+                name: [dict(row) for row in rows]
+                for name, rows in reviewed_snapshot.problem_regions.get(
+                    candidate.candidate_id, {}).items()
+            }
+            feedback = (guided_record(reviewed_snapshot) or {}).get("feedback")
+            if feedback and candidate.candidate_id not in reviewed_snapshot.problem_regions:
+                dialog.problem_regions[feedback["target"]] = [
+                    dict(row) for row in feedback["regions"]]
             # Re-review is a new human decision. Previous decisions remain in the
             # journal but must not silently pre-pass specimens or lock bulk approval.
             dialog.subject_decisions = {}
@@ -4423,6 +4433,12 @@ class ReferenceCalibrationDialog(QDialog):
                     ),
                     anatomical_notes=dialog.anatomical_notes.text(),
                     feature_observations=dialog.feature_observations,
+                    problem_regions={
+                        p.original_path.name: dialog.problem_regions[p.original_path.name]
+                        for p in dialog._pairs if p.required
+                        and p.pair_id in dialog._reviewed_pair_ids
+                        and p.original_path.name in dialog.problem_regions
+                    },
                     subject_decisions=dialog.subject_decisions,
                     display_scopes={
                         p.original_path.name: dialog.display_scopes[p.original_path.name]

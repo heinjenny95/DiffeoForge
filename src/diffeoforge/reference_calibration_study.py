@@ -195,6 +195,7 @@ class ReferenceCalibrationStudySnapshot:
     visual_review_notes: Mapping[str, str] = field(default_factory=dict)
     subject_decisions: Mapping[str, dict[str, str]] = field(default_factory=dict)
     feature_observations: Mapping[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
+    problem_regions: Mapping[str, dict[str, list[dict]]] = field(default_factory=dict)
     visual_display_scopes: Mapping[str, dict[str, str]] = field(default_factory=dict)
     adaptive_search_status: Mapping[str, Any] = field(default_factory=dict)
     early_screening: Mapping[str, Any] = field(default_factory=dict)
@@ -1550,6 +1551,7 @@ def record_reference_calibration_candidate_review(
     feature_observations: Mapping[str, Mapping[str, Any]] | None = None,
     subject_decisions: Mapping[str, str] | None = None,
     display_scopes: Mapping[str, str] | None = None,
+    problem_regions: dict | None = None,
 ) -> ReferenceCalibrationStudySnapshot:
     """Persist an explicit complete visual decision before any stage selection."""
     root = Path(study_directory).expanduser().resolve()
@@ -1626,6 +1628,12 @@ def record_reference_calibration_candidate_review(
     if candidate is None:
         raise ReferenceCalibrationStudyError("Unknown candidate for visual review")
     source = _candidate_review_binding(candidate)
+    from diffeoforge.pilot_regions import validate as validate_regions
+
+    regions = validate_regions(problem_regions or {}, {
+        s.filename: s.sha256 for s in snapshot.plan.selected_pilot_subjects
+        if s.filename in reviewed
+    })
     payload = {
         "stage_id": snapshot.current_stage.stage_id,
         "candidate_id": candidate_id,
@@ -1636,6 +1644,7 @@ def record_reference_calibration_candidate_review(
         "feature_observations": counts,
         "subject_decisions": decisions,
         "policy": "researcher_every_specimen_fit_v2",
+        "problem_regions": regions,
     }
     if display_scopes is None:
         _append_event(root, "candidate_visual_review", payload)
@@ -2026,6 +2035,12 @@ def _load_verified_calibration_study(
         },
         feature_observations={
             event["candidate_id"]: event.get("feature_observations", {})
+            for event in review_events
+            if event["event"] == "candidate_visual_review"
+            and event.get("stage_id") == stage.stage_id
+        },
+        problem_regions={
+            event["candidate_id"]: event.get("problem_regions", {})
             for event in review_events
             if event["event"] == "candidate_visual_review"
             and event.get("stage_id") == stage.stage_id
@@ -3372,6 +3387,7 @@ def _record_reference_calibration_stage_selection(
             ),
             **({"retained_source": retained_event["retained_source"]} if retained_event else {}),
             "visual_display_scopes": dict(snapshot.visual_display_scopes),
+            "problem_regions": dict(snapshot.problem_regions),
             "visual_review_status": {
                 candidate.candidate_id: (
                     "passed"

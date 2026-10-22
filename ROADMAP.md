@@ -13,11 +13,11 @@ premature decisions, unclear primary actions, repeated geometry parsing before
 saved-alignment reuse and limited template guidance. Source/frozen/installed checks
 pass; see [verified delivery](docs/V150_DELIVERY.md) and
 [implementation and remaining gates](docs/V150_PILOT_REPAIRS.md).
-New first-use feedback remains open: visibly guide the next step when the chosen
-method fails a contrasting form, without requiring discovery of collapsed tools.
-See the [tracking-only follow-up](docs/NEXT_VERSION_PLAN.md#guide-recovery-after-an-unsuccessful-contrasting-form-check--open).
-Also pending: [two visible method areas](docs/NEXT_VERSION_PLAN.md#show-the-initial-methods-in-two-distinct-areas--open)
-with separate inspection actions, replacing the initial shared dropdown.
+v151 source implements the subsequent pilot feedback: visible recovery after
+rejection, two independently inspectable method cards and a source-bound 3D brush
+that guides small parameter/method hypotheses. Regional and whole-shape distances
+inform visual review without changing the scientific objective or granting
+approval. See [scope, checks and limits](docs/V151_REGIONAL_PILOT.md).
 
 For the immediate publication priorities, use the
 [preprint-readiness checklist](docs/PREPRINT_READINESS.md). It scopes the paper

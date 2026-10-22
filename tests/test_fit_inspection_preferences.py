@@ -177,7 +177,8 @@ def test_invalid_individual_fit_cannot_be_accepted_or_seeded(tmp_path, monkeypat
     app.processEvents()
 
 
-def test_marked_region_notes_are_bound_to_original_without_approving_fit(tmp_path, monkeypatch):
+def test_marked_3d_region_is_bound_to_original_without_approving_fit(tmp_path, monkeypatch):
+    import numpy as np
     from PySide6.QtWidgets import QDialog
 
     from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
@@ -187,15 +188,17 @@ def test_marked_region_notes_are_bound_to_original_without_approving_fit(tmp_pat
     def mark(region_dialog):
         canvas = region_dialog.findChild(InteractiveMeshCanvas3D)
         assert canvas._model is original
-        canvas.surfacePointPicked.emit(original.vertices[0])
+        points = np.asarray(original.vertices)[np.asarray(original.triangles)[0]]
+        canvas.surfacePointPicked.emit(points.mean(axis=0))
+        region_dialog._save()
         return QDialog.DialogCode.Accepted
 
     monkeypatch.setattr(QDialog, "exec", mark)
     pair = dialog._pairs[0]
     dialog._region_loaded(pair.pair_id, (original,))
-    notes = dialog.anatomical_notes.text()
-    assert pair.original_path.name in notes and pair.original_sha256 in notes
-    assert "xyz=(" in notes
+    region = dialog.problem_regions[pair.original_path.name][0]
+    assert region["source_sha256"] == pair.original_sha256
+    assert region["space"] == "original_mesh_coordinates" and region["radius"] > 0
     assert not dialog.review_recorded
     dialog.close()
     app.processEvents()

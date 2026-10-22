@@ -1,6 +1,12 @@
-"""Compact guided-pilot actions. Each next batch still needs an explicit Run."""
+"""Compact guided actions, separate method cards and visible recovery after rejection."""
 
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+)
 
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.reference_guided_pilot import record
@@ -12,7 +18,6 @@ def render(window, prepared):
     snapshot = prepared.snapshot
     info = record(snapshot)
     running = window._worker is not None or window._restoring_search
-    # Restore these before returning to the ordinary final qualification view.
     controls = (
         window.find_fit_button,
         window.saved_searches_button,
@@ -37,6 +42,8 @@ def render(window, prepared):
     title = QLabel(
         "Joint pilot check"
         if info["phase"] == "joint"
+        else "Review targeted test"
+        if info.get("goal")
         else "Check another form"
         if info["phase"] == "validate"
         else "Compare Current and Varifold"
@@ -51,6 +58,14 @@ def render(window, prepared):
     )
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
+    if info.get("goal"):
+        from diffeoforge.pilot_recovery import DESCRIPTIONS
+
+        reason = DESCRIPTIONS.get(info["goal"])
+        if reason:
+            description = QLabel(reason[0] + ". " + reason[1])
+            description.setWordWrap(True)
+            window.content_layout.addWidget(description)
     if info["phase"] == "screen":
         why = QLabel(
             "Current uses oriented surfaces; Varifold ignores normal direction. "
@@ -73,7 +88,7 @@ def render(window, prepared):
         if info["phase"] == "joint"
         else f"Compare Current / Varifold · {len(pending)} trials on 1 specimen"
         if len(snapshot.candidates) == 2
-        else "Run selected method · 1 specimen"
+        else "Run prepared test · 1 trial on 1 specimen"
     )
     window.start_button.setVisible(bool(pending))
     window.start_button.setEnabled(not running)
@@ -89,142 +104,191 @@ def render(window, prepared):
         if completed
         else "Ready. Preparing this plan has started no fits."
     )
-    for candidate in failed:
-        window.content_layout.addWidget(
-            InfoDisclosure(
-                candidate.label + " · technical failure", candidate.error or "No usable result"
-            )
+    reviewed = all(c.candidate_id in snapshot.visual_reviews for c in completed)
+    decisions_ready = not running and not unresolved and reviewed
+
+    def action(layout, label, kind, identifier, *, goal=None, available=True):
+        button = QPushButton(label, window.content)
+        enabled = not running and not unresolved and available
+        button.setVisible(enabled)
+        button.setEnabled(enabled)
+        _set_action_emphasis(button, enabled)
+        button.clicked.connect(
+            lambda: window._start_pilot(adaptive=False, guided_action=(kind, identifier, goal))
         )
-    if running or not completed:
-        return
-    choice = QComboBox()
-    choice.setAccessibleName("Fit to inspect")
-    for candidate in completed:
+        layout.addWidget(button)
+        return button
+
+    # Candidate identity is captured by each card's callbacks, never a shared selector.
+    for candidate in snapshot.candidates:
+        card = QFrame(window.content)
+        card.setObjectName("card")
+        card.setProperty(
+            "pilotMethod", snapshot.attachment_comparison["methods"][candidate.candidate_id]
+        )
+        card.setProperty("pilotCandidate", candidate.candidate_id)
+        layout = QVBoxLayout(card)
+        method_title = QLabel(candidate.label)
+        method_title.setObjectName("sectionTitle")
+        layout.addWidget(method_title)
         decision = snapshot.visual_reviews.get(candidate.candidate_id)
-        suffix = (
-            " · approved"
+        state = (
+            "Accepted"
             if decision is True
-            else " · unfit"
+            else "Not accepted"
             if decision is False
-            else " · review needed"
+            else "Ready to inspect"
+            if candidate.status == "completed"
+            else "Computing / queued"
+            if running
+            else candidate.status.title()
         )
         runtime = (candidate.metrics or {}).get("runtime_seconds")
         if runtime is not None:
-            suffix += f" · {runtime / 60:.1f} min"
+            state += f" · {runtime / 60:.1f} min"
         if (candidate.metrics or {}).get("converged") is False:
-            suffix += " · iteration limit, provisional"
-        choice.addItem(candidate.label + suffix, candidate.candidate_id)
-    from diffeoforge.reference_attachment_comparison import recommendation as recommend
-
-    recommendation = recommend(snapshot)
-    if recommendation and recommendation["recommended_candidate_id"]:
-        choice.setCurrentIndex(max(0, choice.findData(recommendation["recommended_candidate_id"])))
-    inspect = QPushButton("Inspect fit")
-    _set_action_emphasis(inspect, True)
-    inspect.setEnabled(not running)
-    inspect.clicked.connect(
-        lambda: window._open_candidate(
-            next(c for c in completed if c.candidate_id == choice.currentData())
-        )
-    )
-    row = QHBoxLayout()
-    row.addWidget(choice, 1)
-    row.addWidget(inspect)
-    window.content_layout.addLayout(row)
-
-    def action(label, kind, *, identifier=None, goal=None, available=True):
-        button = QPushButton(label, window.content)
-        enabled = not running and not unresolved and available
-        button.setEnabled(enabled)
-        button.setVisible(enabled)
-        _set_action_emphasis(button, enabled)
-        button.clicked.connect(
-            lambda: window._start_pilot(
-                adaptive=False, guided_action=(kind, identifier or choice.currentData(), goal)
+            state += " · iteration limit, provisional"
+        label = QLabel(state)
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        if candidate in failed:
+            layout.addWidget(
+                InfoDisclosure("Technical failure", candidate.error or "No usable result")
             )
-        )
-        window.content_layout.addWidget(button)
-        return button
-
+        if candidate in completed and not running:
+            inspect = QPushButton("Inspect " + candidate.label + " fit")
+            inspect.setAccessibleName(inspect.text())
+            inspect.setProperty("pilotCandidate", candidate.candidate_id)
+            inspect.clicked.connect(lambda _checked=False, c=candidate: window._open_candidate(c))
+            _set_action_emphasis(inspect, decision is None)
+            layout.addWidget(inspect)
+            subjects = (
+                (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
+            )
+            outcomes = [
+                r["marked_regions"]["outcome"] for r in subjects.values() if r.get("marked_regions")
+            ]
+            if outcomes:
+                message = (
+                    "Marked-area or whole-shape distances worsened. Inspect the trade-off."
+                    if "regression" in outcomes
+                    else "Marked-area distances improved without a measured whole-shape "
+                    "regression. Inspect to confirm."
+                    if all(v == "improved" for v in outcomes)
+                    else "Marked-area measurements are inconclusive. Visual review is still needed."
+                )
+                label = QLabel(message)
+                label.setWordWrap(True)
+                layout.addWidget(label)
+            if decision is False and decisions_ready:
+                _recovery(window, snapshot, candidate, layout)
+            if decision is True and info["phase"] != "joint":
+                action(
+                    layout,
+                    "Use " + candidate.label + " → check remaining forms",
+                    "choose",
+                    candidate.candidate_id,
+                    available=decisions_ready,
+                )
+        window.content_layout.addWidget(card)
+    if running or not completed:
+        return
     approved = [c for c in completed if snapshot.visual_reviews.get(c.candidate_id) is True]
     if info["phase"] == "joint":
         action(
+            window.content_layout,
             "Use reviewed joint fit → check time resolution",
             "finish_joint",
+            approved[0].candidate_id if approved else None,
             available=len(approved) == 1,
         )
-        hint = QLabel(
-            "The same joint reconstruction is retained. No parameter grid runs. "
-            "An iteration-limit warning remains provisional."
-        )
-        hint.setWordWrap(True)
-        window.content_layout.addWidget(hint)
         return
-    for candidate in approved:
-        action(
-            "Use " + candidate.label + " → check remaining forms",
-            "choose",
-            identifier=candidate.candidate_id,
-        )
     if len(snapshot.candidates) == 2:
-        covered = {r["filename"] for r in info["approved"]}
-        covered.add(info["target"])
+        covered = {r["filename"] for r in info["approved"]} | {info["target"]}
         remaining = set(info["pilot_order"]) - covered
         action(
+            window.content_layout,
             "Both good → compare on another form (2 trials)",
             "both_good",
+            None,
             available=len(approved) == 2 and bool(remaining),
         )
         if len(approved) == 2 and not remaining:
             tie = QLabel(
                 "Both methods passed the tested forms. Choose an approved method; "
-                "recorded runtime can guide an efficiency choice. No visual winner is claimed."
+                "recorded runtime can guide an efficiency choice."
             )
             tie.setWordWrap(True)
             window.content_layout.addWidget(tie)
-    diagnostic = QWidget(window.content)
-    from PySide6.QtWidgets import QVBoxLayout
-
-    diagnostic_layout = QVBoxLayout(diagnostic)
-    text = QLabel(
-        "Both unfit? Check alignment, mesh quality and the starting template first. "
-        "Then request one targeted change. Earlier fits stay saved; changed settings "
-        "need fresh cross-checks."
-    )
-    text.setWordWrap(True)
-    diagnostic_layout.addWidget(text)
-    goals = QComboBox()
-    goals.addItem("Missing local detail → finer matching scale", "detail")
-    goals.addItem("Large-scale mismatch → broader deformation scale", "motion")
-    goals.addItem("Overall weak fit → stronger surface-matching weight", "weight")
-    diagnostic_layout.addWidget(goals)
-    retry = QPushButton(f"Prepare targeted follow-up · {len(snapshot.candidates)} trial(s)")
-    reviewed = all(c.candidate_id in snapshot.visual_reviews for c in completed)
-    retry.setEnabled(not running and not unresolved and reviewed)
-    both_bad = len(snapshot.candidates) == 2 and all(
-        snapshot.visual_reviews.get(c.candidate_id) is False for c in snapshot.candidates
-    )
-    retry.clicked.connect(
-        lambda: window._start_pilot(
-            adaptive=False,
-            guided_action=("both_bad" if both_bad else "adjust", None, goals.currentData()),
-        )
-    )
-    diagnostic_layout.addWidget(retry)
-    diagnostic_disclosure = InfoDisclosure("Targeted next steps", diagnostic)
-    if len(snapshot.candidates) == 2:
-        bad_button = QPushButton("Both unfit → check common causes", window.content)
-        bad_button.setVisible(both_bad and not running)
-        bad_button.setEnabled(both_bad and not running)
-        _set_action_emphasis(bad_button, both_bad and not running)
-        bad_button.clicked.connect(lambda: diagnostic_disclosure.toggle_button.setChecked(True))
-        window.content_layout.addWidget(bad_button)
-    diagnostic_disclosure.setVisible(reviewed and not unresolved)
-    window.content_layout.addWidget(diagnostic_disclosure)
     unsure = QLabel(
-        "Unsure? Reopen a fit, rotate it, toggle the original or show a saved alternative. "
-        "Close without recording to leave the decision open."
+        "Reopen a fit, rotate it, toggle the original or show a saved alternative. "
+        "You can mark a problem area there. Close without recording to leave the decision open."
     )
     unsure.setWordWrap(True)
-    uncertain = InfoDisclosure("Unsure → help with visual assessment", unsure)
-    window.content_layout.addWidget(uncertain)
+    window.content_layout.addWidget(InfoDisclosure("Help with visual assessment", unsure))
+
+
+def _recovery(window, snapshot, candidate, layout):
+    from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
+    from diffeoforge.pilot_recovery import proposal
+    from diffeoforge.pilot_regions import SYMPTOMS
+
+    identifier = candidate.candidate_id
+    heading = QLabel("This configuration has not passed this form. What needs improvement?")
+    heading.setWordWrap(True)
+    heading.setObjectName("status")
+    layout.addWidget(heading)
+    symptoms = QComboBox()
+    symptoms.setAccessibleName("What is wrong with " + candidate.label + "?")
+    for key, label in SYMPTOMS.items():
+        symptoms.addItem(label, key)
+    regions = snapshot.problem_regions.get(identifier, {})
+    first = next((r for rows in regions.values() for r in rows), None)
+    symptoms.setCurrentIndex(symptoms.findData(first["symptom"] if first else "unsure"))
+    layout.addWidget(symptoms)
+    explanation = QLabel()
+    explanation.setWordWrap(True)
+    layout.addWidget(explanation)
+    prepare = QPushButton()
+    layout.addWidget(prepare)
+    state = {}
+
+    def update(*_):
+        proposed = proposal(snapshot, identifier, symptoms.currentData())
+        state.clear()
+        state.update(proposed)
+        explanation.setText(
+            f"{proposed['reason']} {proposed['note']} "
+            f"{len(proposed['regions'])} marked area(s). Whole-shape quality is also checked."
+            if proposed["available"]
+            else "The screening budget is exhausted. Check alignment, mesh quality and the "
+            "starting "
+            "template before explicitly preparing a new pilot. All previous fits remain saved."
+        )
+        prepare.setText(proposed["title"] + " · prepare 1 trial on 1 specimen")
+        prepare.setEnabled(proposed["available"])
+        _set_action_emphasis(prepare, proposed["available"])
+
+    symptoms.currentIndexChanged.connect(update)
+    prepare.clicked.connect(
+        lambda: window._start_pilot(
+            adaptive=False, guided_action=("recover", identifier, symptoms.currentData())
+        )
+    )
+    update()
+    if len(snapshot.candidates) == 1:
+        other = QPushButton("Alternatively: check the other method here · prepare 1 trial")
+        other.setEnabled(state["available"])
+        other.clicked.connect(
+            lambda: window._start_pilot(
+                adaptive=False, guided_action=("recover", identifier, "other_method")
+            )
+        )
+        layout.addWidget(other)
+    checks = QLabel(
+        "Check alignment and mesh quality if either method misses the same area. "
+        "A marked area identifies the problem location, not its unique cause. "
+        "Changed settings require renewed checks on the other pilot forms."
+    )
+    checks.setWordWrap(True)
+    layout.addWidget(InfoDisclosure("Input and template checks", checks))

@@ -25,6 +25,7 @@ class SurfaceLayer:
     wireframe: bool = False
     orange: bool = False
     color: tuple[int, int, int, int] | None = None
+    face_colors: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -53,10 +54,14 @@ def render_surface_scene(scene: SurfaceScene, cancelled: threading.Event) -> QIm
             if cancelled.is_set():
                 return None
             indices = layer.indices
+            face_colors = layer.face_colors
             if scene.navigation:
                 budget = NAVIGATION_EDGES if layer.wireframe else NAVIGATION_FACES
                 if len(indices) > budget:
-                    indices = indices[np.linspace(0, len(indices) - 1, budget, dtype=np.int64)]
+                    selected_faces = np.linspace(0, len(indices) - 1, budget, dtype=np.int64)
+                    indices = indices[selected_faces]
+                    if face_colors is not None:
+                        face_colors = face_colors[selected_faces]
             # Transform only referenced vertices in a navigation frame.
             if scene.navigation and indices.size:
                 selected, inverse = np.unique(indices, return_inverse=True)
@@ -101,12 +106,14 @@ def render_surface_scene(scene: SurfaceScene, cancelled: threading.Event) -> QIm
                 shade = int(
                     (218 + 27 * light[index]) if layer.orange else (198 + 38 * light[index])
                 )
+                color = (tuple(int(v) for v in face_colors[index])
+                         if face_colors is not None else layer.color)
                 painter.setBrush(
                     QColor(
-                        *(int(c * (0.82 + 0.18 * light[index])) for c in layer.color[:3]),
-                        layer.color[3],
+                        *(int(c * (0.82 + 0.18 * light[index])) for c in color[:3]),
+                        color[3],
                     )
-                    if layer.color is not None
+                    if color is not None
                     else QColor(242, max(150, shade - 42), 116, 190)
                     if layer.orange
                     else QColor(shade - 38, shade, shade - 16, 255)

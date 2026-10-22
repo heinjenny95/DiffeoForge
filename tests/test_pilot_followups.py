@@ -19,7 +19,7 @@ from diffeoforge.template_shape import local_shape_descriptor
 def test_refresh_removes_nested_controls_without_waiting_for_deferred_delete(tmp_path, monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from pilot_view_helpers import wait_pilot_view
-    from PySide6.QtWidgets import QApplication, QComboBox, QPushButton
+    from PySide6.QtWidgets import QApplication, QComboBox, QFrame, QPushButton
 
     from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
 
@@ -38,21 +38,22 @@ def test_refresh_removes_nested_controls_without_waiting_for_deferred_delete(tmp
             dialog._render(prepared=prepared)
             # Must hold even before deleteLater is processed.
             buttons = [b for b in dialog.content.findChildren(QPushButton)
-                       if b.text() == "Inspect fit"]
+                       if b.property("pilotCandidate")]
             choices = [c for c in dialog.content.findChildren(QComboBox)
                        if c.accessibleName() == "Fit to inspect"]
-            assert len(buttons) == len(choices) == 1
+            assert len(buttons) == 2 and not choices
             app.processEvents()
-            assert not buttons[0].isHidden()
-            choices[0].setCurrentIndex(1)
-            buttons[0].click()
-            assert opened[-1].candidate_id == snapshot.candidates[1].candidate_id
-            app.processEvents()
-            assert not choices[0].geometry().intersects(buttons[0].geometry())
+            for button, candidate in zip(buttons, snapshot.candidates, strict=True):
+                assert not button.isHidden()
+                button.click()
+                assert opened[-1].candidate_id == candidate.candidate_id
+            cards = [c for c in dialog.content.findChildren(QFrame)
+                     if c.property("pilotCandidate")]
+            assert len(cards) == 2 and not cards[0].geometry().intersects(cards[1].geometry())
         dialog._worker = object()
         dialog._render(prepared=prepared)
         assert not [b for b in dialog.content.findChildren(QPushButton)
-                    if b.text() == "Inspect fit"]
+                    if b.property("pilotCandidate")]
         assert not dialog.start_button.isEnabled()
         assert dialog.start_button.objectName() == "secondary"
         assert dialog.cancel_button.isEnabled()

@@ -163,12 +163,15 @@ class InteractiveMeshCanvas3D(QWidget):
         self._zoom = 1.0
         self._pan = (0.0, 0.0)
         self._markers: dict[str, tuple[float, float, float]] = {}
+        self._surface_region = None
+        self._region_colors = None
         self._press_position: QPointF | None = None
         self._last_position: QPointF | None = None
         self._drag_button: Qt.MouseButton | None = None
         self._drag_distance = 0.0
         self._interacting = False
         self._picking_enabled = True
+        self.pick_instruction = "Click: place/replace landmark"
         self.original_detail = QCheckBox("Original detail (slower)", self)
         self.original_detail.move(12, 38)
         self.original_detail.setToolTip(
@@ -198,6 +201,8 @@ class InteractiveMeshCanvas3D(QWidget):
     def set_model(self, model: MeshPreviewModel | None) -> None:
         self.cancel_pending_pick()
         self._model = model
+        self._surface_region = None
+        self._region_colors = None
         self._frames.clear()
         self._presented_key = None
         self.original_detail.setChecked(False)
@@ -224,6 +229,25 @@ class InteractiveMeshCanvas3D(QWidget):
         self._markers = dict(markers)
         self.update()
 
+    def set_surface_region(self, center, radius) -> None:
+        """Highlight the same 3D face-centre brush used by feedback measurements."""
+        self._surface_region = (tuple(center), float(radius)) if center is not None else None
+        self._region_colors = None
+        self.update()
+
+    def _surface_layer(self, vertices, triangles):
+        if self._surface_region is None:
+            return SurfaceLayer(vertices, triangles)
+        from diffeoforge.pilot_regions import face_mask
+
+        key = (id(vertices), id(triangles), self._surface_region)
+        if self._region_colors is None or self._region_colors[0] != key:
+            mask = face_mask(vertices, triangles, *self._surface_region)
+            colors = np.tile((160, 208, 192, 255), (len(triangles), 1))
+            colors[mask] = (242, 115, 45, 255)
+            self._region_colors = key, colors
+        return SurfaceLayer(vertices, triangles, face_colors=self._region_colors[1])
+
     def cancel_pending_pick(self) -> None:
         self._pick_cancel.set()
         self._pick_loader.cancel()
@@ -244,6 +268,7 @@ class InteractiveMeshCanvas3D(QWidget):
             self._zoom,
             self._pan,
             self.original_detail.isChecked(),
+            self._surface_region,
             self._interacting or self._wheel_timer.isActive(),
         )
 
@@ -489,7 +514,7 @@ class InteractiveMeshCanvas3D(QWidget):
             self._rotation.copy(),
             self._zoom,
             self._pan,
-            (SurfaceLayer(vertices, triangles),),
+            (self._surface_layer(vertices, triangles),),
             navigation=navigation,
             margin=64.0,
         )
@@ -546,7 +571,7 @@ class InteractiveMeshCanvas3D(QWidget):
         painter.drawText(
             self.rect().adjusted(14, 10, -14, -10),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
-            ("Click: place/replace landmark  ·  " if self._picking_enabled else "")
+            (self.pick_instruction + "  ·  " if self._picking_enabled else "")
             + "Drag: rotate  ·  Right-drag: pan  "
             "·  Wheel: zoom  ·  Double-click: reset view",
         )
