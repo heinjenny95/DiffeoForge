@@ -220,6 +220,24 @@ def test_previous_template_reviews_verify_decisions_and_skip_changed_evidence(
                 if r["source_study"] == str(snapshot.study_directory)]
 
 
+def test_original_aligned_template_mapping_uses_root_preprocessing_and_checks_hash(tmp_path):
+    from diffeoforge.template_reviews import _original_template_hash
+
+    path = tmp_path / "alignment.json"
+    path.write_text(json.dumps({"meshes": [
+        dict(aligned_sha256="a" * 64, source_sha256="b" * 64),
+    ]}))
+    manifest = dict(inputs=dict(template=dict(sha256="a" * 64)),
+                    source_config=dict(original_path=str(tmp_path / "atlas.yaml")))
+    config = dict(preprocessing=dict(procrustes=dict(
+        evidence_file=path.name, evidence_sha256=sha256_file(path),
+    )))
+    assert _original_template_hash(tmp_path, manifest, config) == "b" * 64
+    path.write_bytes(path.read_bytes() + b"\n")
+    with pytest.raises(ValueError, match="mapping changed"):
+        _original_template_hash(tmp_path, manifest, config)
+
+
 def test_decisions_hidden_until_first_frame_and_again_on_switch_or_failure(tmp_path, monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication

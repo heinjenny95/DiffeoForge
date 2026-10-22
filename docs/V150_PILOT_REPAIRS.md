@@ -61,6 +61,8 @@ retain source study, targets/hashes, method and model settings. Changed evidence
 ignored. Rejected fits do not blacklist templates or alter ranking; evidence from
 other targets/settings is not treated as a universal verdict. Changing projects
 invalidates the displayed suggestion. This bounded lookup is not all-project history.
+The original/aligned mapping uses the configuration's root preprocessing record;
+its evidence hash and containment are checked before attaching past reviews.
 
 ## Verification and limits
 

@@ -8,6 +8,23 @@ from diffeoforge.config import load_config
 from diffeoforge.mesh import sha256_file
 
 
+def _original_template_hash(project, manifest, source_config):
+    digest = manifest["inputs"]["template"]["sha256"]
+    preprocessing = source_config.get("preprocessing", {}).get("procrustes", {})
+    if not preprocessing:
+        return digest
+    original_config = Path(manifest["source_config"]["original_path"])
+    evidence_path = (original_config.parent / preprocessing["evidence_file"]).resolve()
+    if (not evidence_path.is_relative_to(project) or evidence_path.is_symlink()
+            or sha256_file(evidence_path) != preprocessing["evidence_sha256"]):
+        raise ValueError("Original/aligned template mapping changed or is outside this project")
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    mapping = [r for r in evidence["meshes"] if r["aligned_sha256"] == digest]
+    if len(mapping) != 1:
+        raise ValueError("Original/aligned template mapping is ambiguous")
+    return mapping[0]["source_sha256"]
+
+
 def previous_template_reviews(project, *, cancel_requested=None):
     """Inspect up to 64 saved studies under the selected project, without fitting.
 
@@ -44,21 +61,8 @@ def previous_template_reviews(project, *, cancel_requested=None):
         try:
             manifest = _verify_manifest(root)
             snapshot = load_reference_calibration_study(root)
-            source_hash = manifest["inputs"]["template"]["sha256"]
-            original_config = Path(manifest["source_config"]["original_path"])
             source_config = load_config(_safe_study_path(root, manifest["source_config"]["copy"]))
-            preprocessing = source_config.get("project", {}).get("preprocessing", {}).get(
-                "procrustes", {}
-            )
-            if preprocessing:
-                evidence_path = (original_config.parent / preprocessing["evidence_file"]).resolve()
-                if (not evidence_path.is_relative_to(project) or evidence_path.is_symlink()
-                        or sha256_file(evidence_path) != preprocessing["evidence_sha256"]):
-                    continue
-                evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
-                mapping = [r for r in evidence["meshes"] if r["aligned_sha256"] == source_hash]
-                if len(mapping) == 1:
-                    source_hash = mapping[0]["source_sha256"]
+            source_hash = _original_template_hash(project, manifest, source_config)
             for candidate in snapshot.candidates:
                 decision = snapshot.visual_reviews.get(candidate.candidate_id)
                 if decision is None:
