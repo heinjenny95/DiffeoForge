@@ -147,10 +147,20 @@ The screenshot contains ongoing iteration progress, not a displayed backend
 failure; the layout cause and the preceding actionable-button state need
 reproduction. Tracking only; no repair requested now.
 
+Additional completed-view evidence from the same owner session: selector rows
+and duplicate Inspect fit buttons overlap, with another clipped control fragment.
+Check whether controls from the previous view remain during refresh; the exact
+cause and any candidate-binding effect are unverified. Extend this existing
+layout issue rather than create a separate duplicate.
+
 - [ ] Diagnose and repair clipped/partly hidden pilot controls and inappropriate
   empty space. Verify layout after batch/state transitions, window resizing and
   relevant display scaling; labels and available actions must remain readable
-  and reachable. Do not infer a failed scientific fit from this UI symptom.
+  and reachable. Verify that previous-view controls are removed or replaced and
+  current selectors/actions form one coherent, non-overlapping view. Check that
+  Inspect fit opens the selected candidate and saved alternatives remain clearly
+  distinguished from the current fit. Do not infer a failed scientific fit from
+  this UI symptom.
 - [ ] Make the currently required, available next action consistently prominent
   with the established green primary style and a clear label. Do not highlight
   an unavailable Run/Continue button while a batch is already computing; show
