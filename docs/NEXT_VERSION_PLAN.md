@@ -3,7 +3,8 @@
 Owner scope, 22 October 2026: v154 repairs the worsening-improvement chain with
 independent relative feedback, symptoms/notes and explicit earlier-fit selection.
 Suggestions retain a useful baseline; anatomical approval stays separate.
-See [scope](V154_PILOT_FEEDBACK.md) and [delivery state](V154_DELIVERY.md).
+Runtime `0f37dd4` / `dev154` is installed.
+See [scope](V154_PILOT_FEEDBACK.md) and [verified delivery](V154_DELIVERY.md).
 No owner/native fit is started. Older version snapshots below are historical.
 
 Owner scope, 22 October 2026: v153 source redesigns the blocked pilot around

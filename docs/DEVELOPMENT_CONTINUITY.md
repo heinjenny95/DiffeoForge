@@ -4,8 +4,10 @@ v154 source adds independent better/same/worse/unsure feedback, symptoms, notes
 and a visible earlier-fit starting-point chooser. Non-improvements retain the
 earlier baseline; explicit historical approval can be reused without refitting
 that form. No approval is inferred from preference. See [behavior](V154_PILOT_FEEDBACK.md)
-and [delivery state](V154_DELIVERY.md). Runtime dev153 remains installed until
-the v154 frozen and installation gates pass. No owner/native fit is started.
+and [verified delivery](V154_DELIVERY.md). Runtime `0f37dd4` /
+`dev154` is installed; source/exact frozen/installed workflow, feedback, saved-fit
+reuse and review-video checks pass with preserved owner files/settings.
+No owner/native fit or installer upload.
 The v153 and older snapshots below are historical.
 
 The owner's rejected coverage fit exposed the limit of the v152 allowance.
