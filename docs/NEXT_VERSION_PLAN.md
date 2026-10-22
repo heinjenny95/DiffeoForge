@@ -134,6 +134,23 @@ The earlier manual refinement proposal below is superseded by the direct
 
 ## Delivery order and acceptance gates
 
+### Initial-template recommendation misses local fit risks — open
+
+Owner first-use feedback, 22 October 2026: the v149 suggestion can return the
+same kind of locally distinctive form that previously fitted poorly. Current
+ranking uses coarse radial/spectral centrality; it does not establish deformation
+suitability and does not consult previous fit reviews. The delivered heuristic
+does not close this issue.
+
+- [ ] Improve and validate template suggestions using local shape differences
+  at multiple scales as well as overall cohort coverage. Keep the method general
+  across surface datasets; do not hard-code anatomy or prefer fewer protrusions.
+  Where compatible previous fit/review evidence exists, present it with its
+  source, target, method and settings context; a rejected fit must not become an
+  unconditional template blacklist. Expose uncertainty and meaningfully different
+  alternatives, preserve manual choice, and test local-detail sensitivity and
+  mesh-sampling robustness before claiming a suitable starting template.
+
 ### Repeated cohort loading before pilot selection — pending
 
 Owner feedback, 20 October 2026: preparing the pilot reads the whole cohort
@@ -142,9 +159,18 @@ representative pilot selection; repeated full geometry parsing across these
 steps is the performance follow-up. The existing scalar measurement cache
 does not establish reuse of geometry already loaded by another step.
 
+Owner reaffirmed on 22 October after v149 first use: the repeated-loading problem
+is still observed. Source inspection identifies a preparation path that builds
+the alignment preview before checking for existing aligned outputs; without an
+approved preview this can parse the entire source cohort again. The v149 scalar/
+VTK-metadata cache is a partial improvement, not a completed fix for this path.
+
 - [ ] Profile and remove avoidable repeated mesh loading between input checks,
   GPA and pilot parameter analysis. Reuse verified geometry or aligned
   measurements with exact source/transform/settings binding and bounded memory.
+  Check reusable saved alignment evidence before rebuilding geometry, including
+  application reopening and non-VTK originals. Do not equate enumerating/checking
+  every input with needing to parse every full mesh again.
   Keep fresh file hashes and stale-input rejection. Verify cold/warm transitions,
   reopening, cache invalidation and unchanged measurements/pilot selection;
   separate hash I/O from parsing/transformation costs. Show whether the app is

@@ -1,6 +1,6 @@
 # Continuing in a new chat
 
-Snapshot: 21 October 2026. This is a public, software-only entry point. The owner's
+Snapshot: 22 October 2026. This is a public, software-only entry point. The owner's
 private handoff contains exact dataset, account, automation and local artifact
 locations; do not copy those details into this repository.
 
@@ -21,6 +21,12 @@ Read current delivery evidence before treating an old unchecked parent or an old
 authorization or establish current application/job state.
 
 ## Current software boundary
+
+Owner first-use feedback on 22 October records two open v149 follow-ups:
+insufficient local-detail/fit-risk awareness in template suggestions, and repeated
+whole-cohort loading during pilot preparation. Both are unchecked in the
+[backlog](NEXT_VERSION_PLAN.md#delivery-order-and-acceptance-gates). This update
+records work to do; it implements neither repair and starts no fit.
 
 v149 source implements the [guided pilot](V149_GUIDED_PILOT.md): initial-template
 and adaptive target-count suggestions, two one-target method trials, explicit
