@@ -1,5 +1,9 @@
 # Next DiffeoForge development version
 
+Owner scope, 22 October 2026: currently collect observations and to-dos only.
+The open entries below do not authorize implementation, rebuilding, installation
+or scientific runs; wait for a new development request.
+
 ## v149 — owner-authorized guided pilot, 21 October 2026
 
 Template suggestions, adaptive diversity-based pilot size, one-target method
@@ -133,6 +137,26 @@ The earlier manual refinement proposal below is superseded by the direct
 **Improve fit automatically** action; the other backlog items remain separate.
 
 ## Delivery order and acceptance gates
+
+### Pilot layout clipping and unclear next action — open
+
+Owner feedback, 22 October 2026: the running pilot view shows an apparently
+clipped control region (a narrow colored fragment) above extensive empty space.
+The owner also reports that the required button for continuing was not green.
+The screenshot contains ongoing iteration progress, not a displayed backend
+failure; the layout cause and the preceding actionable-button state need
+reproduction. Tracking only; no repair requested now.
+
+- [ ] Diagnose and repair clipped/partly hidden pilot controls and inappropriate
+  empty space. Verify layout after batch/state transitions, window resizing and
+  relevant display scaling; labels and available actions must remain readable
+  and reachable. Do not infer a failed scientific fit from this UI symptom.
+- [ ] Make the currently required, available next action consistently prominent
+  with the established green primary style and a clear label. Do not highlight
+  an unavailable Run/Continue button while a batch is already computing; show
+  progress and the relevant safe cancellation instead. Verify both the ready
+  state before clicking and the running state afterward, without auto-advancing
+  or recording an approval.
 
 ### Pilot decisions appear before visual assessment is possible — open
 

@@ -22,10 +22,15 @@ authorization or establish current application/job state.
 
 ## Current software boundary
 
-Owner first-use feedback on 22 October records three open v149 follow-ups:
+Current owner scope, 22 October: collect observations and to-dos only. Do not
+implement, rebuild, install or start scientific runs from these backlog entries;
+wait for a new development request.
+
+Owner first-use feedback on 22 October records open v149 follow-ups:
 insufficient local-detail/fit-risk awareness in template suggestions, repeated
 whole-cohort loading during pilot preparation, and premature decision controls
-before a fit is visually assessable. All three are unchecked in the
+before a fit is visually assessable, plus layout clipping/empty space and unclear
+green-primary styling of the required next action. These are unchecked in the
 [backlog](NEXT_VERSION_PLAN.md#delivery-order-and-acceptance-gates). This update
 records work to do at the owner's request; it implements no repair and starts no fit.
 
