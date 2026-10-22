@@ -1,4 +1,12 @@
-# Development continuity — v154 recoverable pilot refinement
+# Development continuity — v155 selected landmark correction
+
+v155 source adds **Correct/change existing landmarks…** in Step 1, with searchable
+multiple selection and loaded existing points. Save merges only selected points
+into a separate complete CSV, activates it and invalidates prior GPA/input review.
+Other coordinates, original files and saved fits remain preserved. No scientific
+job starts. See [behavior](V155_LANDMARK_CORRECTION.md) and [delivery state](V155_DELIVERY.md).
+Runtime dev154 remains installed until the v155 build and installation gates pass.
+The v154 and older snapshots below are historical.
 
 v154 source adds independent better/same/worse/unsure feedback, symptoms, notes
 and a visible earlier-fit starting-point chooser. Non-improvements retain the

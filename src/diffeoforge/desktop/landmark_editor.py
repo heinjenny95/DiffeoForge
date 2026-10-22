@@ -45,9 +45,10 @@ class LandmarkEditorDialog(QDialog):
         *,
         initial_landmark_count: int = 3,
         auto_advance_mesh: bool = True,
+        correction=None,
     ) -> None:
         super().__init__(parent)
-        if len(mesh_paths) < 2:
+        if len(mesh_paths) < (1 if correction else 2):
             raise ValueError("Landmark placement requires a template and at least one subject")
         if (
             isinstance(initial_landmark_count, bool)
@@ -63,6 +64,8 @@ class LandmarkEditorDialog(QDialog):
         if len({path.name for path in self.mesh_paths}) != len(self.mesh_paths):
             raise ValueError("Landmark placement requires unique mesh filenames")
         self.output_path = output_path.expanduser().resolve()
+        self.correction = correction
+        self._correction_worker = None
         self._draft_owned = True
         self.labels = [f"LM{index}" for index in range(1, initial_landmark_count + 1)]
         self.placements: dict[str, dict[str, SurfacePoint]] = {
@@ -74,7 +77,19 @@ class LandmarkEditorDialog(QDialog):
         self._mesh_loader.loaded.connect(self._mesh_loaded)
         self._mesh_loader.failed.connect(self._mesh_failed)
         self._known_mesh_hashes: dict[str, str] = {}
+        if correction:
+            from diffeoforge.landmark_correction import placements
+
+            if (set(p.name for p in self.mesh_paths) != set(correction.selected)
+                    or self.output_path != correction.output):
+                raise ValueError("Correction editor does not match its selected specimens")
+            self.labels = list(correction.labels)
+            self.placements = placements(correction)
+            self._known_mesh_hashes = dict(correction.selected_hashes)
         self.setWindowTitle(f"Place homologous landmarks — DiffeoForge {display_version()}")
+        if correction:
+            self.setWindowTitle(
+                f"Correct/change existing landmarks — DiffeoForge {display_version()}")
         self.resize(1180, 840)
 
         layout = QVBoxLayout(self)
@@ -93,12 +108,16 @@ class LandmarkEditorDialog(QDialog):
         )
         summary.setWordWrap(True)
         layout.addWidget(summary)
+        if correction:
+            summary.setText(
+                f"Correct {len(self.mesh_paths)} selected specimen(s). Choose a landmark and "
+                "click to replace it. Other specimens keep their saved coordinates.")
         layout.addWidget(InfoDisclosure("Placement, editing and autosave", explanation))
 
         selectors = QHBoxLayout()
         self.mesh_combo = QComboBox()
         for index, path in enumerate(self.mesh_paths):
-            role = "Template" if index == 0 else f"Subject {index}"
+            role = "Specimen" if correction else "Template" if index == 0 else f"Subject {index}"
             self.mesh_combo.addItem(f"{role}: {path.name}", path.name)
         self.mesh_combo.currentIndexChanged.connect(self._load_current_mesh)
         self.label_combo = QComboBox()
@@ -143,6 +162,9 @@ class LandmarkEditorDialog(QDialog):
         label_buttons.addWidget(clear_current)
         label_buttons.addWidget(self.undo_button)
         label_buttons.addStretch()
+        if correction:
+            for button in (add_label, rename_label, remove_label):
+                button.hide()
         layout.addLayout(label_buttons)
 
         self.auto_advance_mesh_check = QCheckBox(
@@ -183,6 +205,10 @@ class LandmarkEditorDialog(QDialog):
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
         self.buttons.button(QDialogButtonBox.StandardButton.Save).setText("Save landmark CSV")
+        if correction:
+            self.buttons.button(QDialogButtonBox.StandardButton.Save).setText(
+                "Save corrected landmarks")
+            self.buttons.button(QDialogButtonBox.StandardButton.Save).setObjectName("primary")
         self.buttons.accepted.connect(self._save_and_accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
@@ -195,7 +221,7 @@ class LandmarkEditorDialog(QDialog):
         return self.output_path.with_suffix(f"{self.output_path.suffix}.draft.json")
 
     def _draft_payload(self) -> dict[str, object]:
-        return {
+        payload = {
             "schema_version": 2,
             "saved_at_utc": datetime.now(UTC).isoformat(),
             "output_path": str(self.output_path),
@@ -208,6 +234,9 @@ class LandmarkEditorDialog(QDialog):
                 for mesh_name, mesh_placements in sorted(self.placements.items())
             },
         }
+        if self.correction:
+            payload["correction"] = self.correction.binding
+        return payload
 
     def _save_draft(self) -> None:
         if not self._draft_owned:
@@ -250,6 +279,8 @@ class LandmarkEditorDialog(QDialog):
             return
         try:
             payload = json.loads(self.draft_path.read_text(encoding="utf-8"))
+            if payload.get("correction") != (self.correction.binding if self.correction else None):
+                raise ValueError("the draft belongs to a different landmark correction source")
             schema_version = payload.get("schema_version")
             if schema_version not in (1, 2):
                 raise ValueError("unsupported draft schema version")
@@ -286,7 +317,9 @@ class LandmarkEditorDialog(QDialog):
                     expected_hash = hashes.get(mesh_name)
                     if not isinstance(expected_hash, str):
                         raise ValueError(f"the draft has no hash for {mesh_name}")
-                    if sha256_file(path_by_name[mesh_name]) != expected_hash:
+                    current_hash = (self.correction.selected_hashes[mesh_name] if self.correction
+                                    else sha256_file(path_by_name[mesh_name]))
+                    if current_hash != expected_hash:
                         raise ValueError(f"source mesh changed since the draft: {mesh_name}")
                 for label, point in mesh_placements.items():
                     if label not in labels or not isinstance(point, list) or len(point) != 3:
@@ -329,6 +362,8 @@ class LandmarkEditorDialog(QDialog):
     @Slot()
     def _load_current_mesh(self) -> None:
         path = self.mesh_paths[self.mesh_combo.currentIndex()]
+        if self.correction:
+            self.buttons.button(QDialogButtonBox.StandardButton.Save).setEnabled(False)
         self.canvas.set_model(None)
         self.status_label.setText("Loading source and preparing its reduced display…")
         self._mesh_loader.request_paths(
@@ -376,10 +411,13 @@ class LandmarkEditorDialog(QDialog):
         self.undo_button.setEnabled(bool(self._placement_history))
         self.buttons.button(QDialogButtonBox.StandardButton.Save).setEnabled(
             placed == total and len(self.labels) >= 3
+            and (not self.correction or self.canvas._model is not None)
         )
 
     @Slot(object)
     def _place_surface_point(self, point: object) -> None:
+        if self._correction_worker:
+            return
         model = self.models.get(self._current_mesh_name())
         if model is None or self.canvas._model is not model:
             return  # A previous canvas/queued click must not place on the next specimen.
@@ -514,12 +552,28 @@ class LandmarkEditorDialog(QDialog):
 
     @Slot()
     def _save_and_accept(self) -> None:
+        if self._correction_worker:
+            return
         if self.canvas._pick_pending:
             self.status_label.setText(
                 "Transferring the last landmark — save again when it appears."
             )
             return
         if not self.buttons.button(QDialogButtonBox.StandardButton.Save).isEnabled():
+            return
+        if self.correction:
+            from PySide6.QtCore import QThreadPool
+
+            from diffeoforge.desktop.landmark_correction import CorrectionTask
+            from diffeoforge.landmark_correction import save
+
+            points = {name: dict(row) for name, row in self.placements.items()}
+            self._correction_worker = CorrectionTask(save, self.correction, points)
+            self._correction_worker.signals.succeeded.connect(self._correction_saved)
+            self._correction_worker.signals.failed.connect(self._correction_failed)
+            self.status_label.setText("Checking sources and saving corrected landmarks…")
+            self.setEnabled(False)
+            QThreadPool.globalInstance().start(self._correction_worker)
             return
         for path in self.mesh_paths:
             expected_hash = self._known_mesh_hashes.get(path.name)
@@ -568,3 +622,23 @@ class LandmarkEditorDialog(QDialog):
         if self._draft_owned:
             self.draft_path.unlink(missing_ok=True)
         self.accept()
+
+    @Slot(object)
+    def _correction_saved(self, output):
+        self._correction_worker = None
+        self.setEnabled(True)
+        self.output_path = output
+        if self._draft_owned:
+            self.draft_path.unlink(missing_ok=True)
+        self.accept()
+
+    @Slot(str)
+    def _correction_failed(self, message):
+        self._correction_worker = None
+        self.setEnabled(True)
+        self.status_label.setText(message)
+
+    def reject(self):
+        if self._correction_worker:
+            return
+        super().reject()

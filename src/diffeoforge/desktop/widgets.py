@@ -4340,6 +4340,17 @@ class DiffeoForgeWindow(QMainWindow):
         landmarks_row.addWidget(self.import_landmark_txt_button)
         landmarks_row.addWidget(self.place_landmarks_button)
         data_form.addRow("Landmarks", landmarks_row)
+        self.correct_landmarks_button = QPushButton("Correct/change existing landmarks…")
+        self.correct_landmarks_button.setObjectName("secondary")
+        self.correct_landmarks_button.setAccessibleName("Correct/change existing landmarks")
+        self.correct_landmarks_button.setToolTip(
+            "Load the selected landmark CSV and choose one or more specimens to correct. "
+            "Other specimens retain their points; saving creates a separate corrected CSV.")
+        self.correct_landmarks_button.clicked.connect(self._correct_existing_landmarks)
+        correction_row = QHBoxLayout()
+        correction_row.addWidget(self.correct_landmarks_button)
+        correction_row.addStretch()
+        data_form.addRow("", correction_row)
 
         self.landmark_count_spin = QSpinBox()
         self.landmark_count_spin.setObjectName("landmarkCountSpin")
@@ -5354,6 +5365,46 @@ class DiffeoForgeWindow(QMainWindow):
         ):
             self._refresh_run_readiness()
         self._sync_ready_state()
+
+    @Slot()
+    def _correct_existing_landmarks(self) -> None:
+        if self._worker is not None or getattr(self, "_landmark_correction_open", False):
+            return
+        from diffeoforge.desktop.landmark_correction import LandmarkCorrectionPicker
+
+        self._landmark_correction_open = True
+        try:
+            if not self.landmarks_edit.text().strip() or not self.project_edit.text().strip():
+                raise ValueError("Select the existing landmark CSV and project folder first.")
+            source = Path(self.landmarks_edit.text().strip()).expanduser().resolve()
+            mesh_directory = Path(self.mesh_edit.text().strip()).expanduser().resolve()
+            template = (Path(self.template_edit.text().strip()).expanduser().resolve()
+                        if self.template_edit.text().strip() else detect_template(mesh_directory))
+            if template is None or not source.is_file():
+                raise ValueError("Select the existing landmark CSV and template mesh first.")
+            paths = (template, *tuple(p.resolve() for p in sorted(
+                mesh_directory.glob(self.pattern_edit.text().strip()))
+                if p.is_file() and p.resolve() != template and is_supported_surface_path(p)))
+            picker = LandmarkCorrectionPicker(
+                source, paths, Path(self.project_edit.text().strip()), self)
+            if picker.exec() != QDialog.DialogCode.Accepted:
+                return
+            session = picker.session
+            selected = tuple(p for p in paths if p.name in session.selected)
+            dialog = LandmarkEditorDialog(selected, session.output, self,
+                initial_landmark_count=len(session.labels), auto_advance_mesh=False,
+                correction=session)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.landmarks_edit.setText(str(dialog.output_path))
+                self._invalidate_input_preflight()
+                self._invalidate_procrustes_preview()
+                self.status_label.setText(
+                    "Corrected landmarks saved. Recheck GPA/alignment before preparing "
+                    "the pilot. Previous landmark files and saved fits remain preserved.")
+        except (OSError, TypeError, ValueError, MeshPreviewError) as error:
+            QMessageBox.warning(self, "Landmark correction unavailable", str(error))
+        finally:
+            self._landmark_correction_open = False
 
     @Slot()
     def _place_landmarks(self) -> None:
