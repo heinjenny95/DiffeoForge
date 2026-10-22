@@ -4,7 +4,8 @@ Owner scope, 22 October 2026: v155 adds an explicit existing-landmark correction
 button and selection of one or more specimens. Existing points are loaded, other
 coordinates retained and a separate complete corrected CSV selected after Save.
 GPA/input review must be renewed; no alignment or fit starts automatically.
-See [scope](V155_LANDMARK_CORRECTION.md) and [delivery state](V155_DELIVERY.md).
+Runtime `fee2856` / `dev155` is installed.
+See [scope](V155_LANDMARK_CORRECTION.md) and [verified delivery](V155_DELIVERY.md).
 Older version snapshots below are historical.
 
 Owner scope, 22 October 2026: v154 repairs the worsening-improvement chain with

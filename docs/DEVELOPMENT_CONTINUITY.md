@@ -5,7 +5,9 @@ multiple selection and loaded existing points. Save merges only selected points
 into a separate complete CSV, activates it and invalidates prior GPA/input review.
 Other coordinates, original files and saved fits remain preserved. No scientific
 job starts. See [behavior](V155_LANDMARK_CORRECTION.md) and [delivery state](V155_DELIVERY.md).
-Runtime dev154 remains installed until the v155 build and installation gates pass.
+Runtime `fee2856` / `dev155` is installed.
+Source/exact frozen/installed correction and retained pilot/video checks pass;
+owner project/settings remain unchanged. See [verified delivery](V155_DELIVERY.md).
 The v154 and older snapshots below are historical.
 
 v154 source adds independent better/same/worse/unsure feedback, symptoms, notes
