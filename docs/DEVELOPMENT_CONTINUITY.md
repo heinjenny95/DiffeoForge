@@ -4,7 +4,10 @@ The owner's accepted fit exposed a budget dead end. v152 adds a source-bound,
 explicit minimal allowance for remaining unchanged coverage checks and persistent
 transition errors. Preparation never starts fits; complete visual coverage and
 the joint check remain required. See [cause and behavior](V152_PILOT_BUDGET.md).
-The installed runtime remains dev151 until separate verified delivery.
+Runtime `590ef04` / `dev152` is installed after verified backup and fresh idle
+guards. Source/exact frozen/installed workflow checks and owner-file/settings
+preservation pass. See [verified delivery](V152_DELIVERY.md). No owner/native fit
+or installer upload. The v151 snapshots below are historical.
 
 Owner scope now includes the subsequent pilot follow-ups and regional feedback.
 v151 source adds separate method cards, visible recovery after rejection and

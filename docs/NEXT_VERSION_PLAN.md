@@ -1,5 +1,9 @@
 # Next DiffeoForge development version
 
+Runtime dev152 is installed; [delivery verification](V152_DELIVERY.md)
+records source/exact frozen/installed checks and preserved owner files/settings.
+No owner/native fit or installer upload.
+
 v152 repairs the accepted-fit screening-budget dead end with an explicit minimal
 coverage allowance, a correctly named joint-check action and persistent errors.
 See [scope and gates](V152_PILOT_BUDGET.md). No owner/native fits are started.

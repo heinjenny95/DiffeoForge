@@ -1,5 +1,9 @@
 # Roadmap
 
+Runtime dev152 is installed; [delivery verification](docs/V152_DELIVERY.md)
+records source/exact frozen/installed checks and preserved owner files/settings.
+No owner/native fit or installer upload.
+
 - [x] Repair the accepted-fit screening-budget dead end: explicit minimal
   unchanged-configuration coverage allowance, separate Run, required joint check,
   and errors that survive background refresh. See [v152](docs/V152_PILOT_BUDGET.md).

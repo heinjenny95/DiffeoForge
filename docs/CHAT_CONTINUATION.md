@@ -22,6 +22,10 @@ authorization or establish current application/job state.
 
 ## Current software boundary
 
+Runtime dev152 is installed; [delivery verification](V152_DELIVERY.md)
+records source/exact frozen/installed checks and preserved owner files/settings.
+No owner/native fit or installer upload.
+
 v152 addresses the accepted-fit budget dead end. See [cause and guarded
 continuation](V152_PILOT_BUDGET.md). Source and installed delivery remain separate;
 do not run scientific work or repeat an installation from historical receipts.
