@@ -5,7 +5,8 @@ provisional method preference, one-form improvement, compatible coverage and the
 joint check. Rejection always exposes a guided next hypothesis or an explicit
 input/template check. Preparation never runs a fit; cumulative trial accounting
 does not block further owner-confirmed tests. See [v153](V153_INTERACTIVE_PILOT.md).
-Runtime verification and delivery are pending; dev152 remains installed.
+Runtime `f3bf780` / `dev153` is installed; [delivery](V153_DELIVERY.md) records
+source/exact frozen/installed checks and preserved owner files/settings.
 The version snapshots below are historical.
 
 Runtime dev152 is installed; [delivery verification](V152_DELIVERY.md)

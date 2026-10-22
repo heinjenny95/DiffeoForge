@@ -5,7 +5,8 @@
   recovery, reuse only exact compatible approvals, and require an explicit Run
   for every declared batch. v153 source removes the cumulative trial cap without
   weakening visual or numerical gates. See [scope](docs/V153_INTERACTIVE_PILOT.md).
-  Exact runtime verification/delivery remains pending; dev152 is installed.
+  Runtime dev153 is installed; source/exact frozen/installed checks pass with
+  unchanged owner files/settings. See [delivery](docs/V153_DELIVERY.md).
 
 Runtime dev152 is installed; [delivery verification](docs/V152_DELIVERY.md)
 records source/exact frozen/installed checks and preserved owner files/settings.

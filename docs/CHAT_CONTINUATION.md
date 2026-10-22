@@ -26,8 +26,9 @@ v153 source separates starting-method preference from fit approval and adds
 visible one-form recovery before and after coverage/joint checks. The interactive
 protocol replaces the cumulative cap with explicit preparation/Run per action;
 unchanged compatible approvals remain reusable and source-bound. See
-[v153 scope](V153_INTERACTIVE_PILOT.md). Runtime verification/delivery is pending;
-dev152 remains installed. No owner/native fit is authorized by this update.
+[v153 scope](V153_INTERACTIVE_PILOT.md). Runtime `f3bf780` / `dev153` is installed;
+[delivery](V153_DELIVERY.md) records source/exact frozen/installed workflow/video
+checks and preserved owner files/settings. No owner/native fit or installer upload.
 The following installed snapshots are historical.
 
 Runtime dev152 is installed; [delivery verification](V152_DELIVERY.md)

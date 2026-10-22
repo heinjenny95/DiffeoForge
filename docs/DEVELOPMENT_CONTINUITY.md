@@ -6,8 +6,10 @@ refines one form before checking the remaining selected forms, and returns a
 failed individual or joint fit to visible targeted recovery. Every batch still
 requires an explicit Run; there is no arbitrary cumulative trial cap. Exact
 compatible historical approvals can be reused, with fresh source/review checks.
-See [behavior and boundaries](V153_INTERACTIVE_PILOT.md). Runtime delivery is
-pending verification; dev152 remains installed at this source checkpoint.
+See [behavior and boundaries](V153_INTERACTIVE_PILOT.md). Runtime `f3bf780` /
+`dev153` is installed; source/exact frozen/installed workflow and review-video
+checks pass with preserved owner files/settings. See [delivery](V153_DELIVERY.md).
+No owner/native fit or installer upload.
 The v152 and older snapshots below are historical.
 
 The owner's accepted fit exposed a budget dead end. v152 adds a source-bound,
