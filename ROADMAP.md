@@ -16,6 +16,8 @@ pass; see [verified delivery](docs/V150_DELIVERY.md) and
 New first-use feedback remains open: visibly guide the next step when the chosen
 method fails a contrasting form, without requiring discovery of collapsed tools.
 See the [tracking-only follow-up](docs/NEXT_VERSION_PLAN.md#guide-recovery-after-an-unsuccessful-contrasting-form-check--open).
+Also pending: [two visible method areas](docs/NEXT_VERSION_PLAN.md#show-the-initial-methods-in-two-distinct-areas--open)
+with separate inspection actions, replacing the initial shared dropdown.
 
 For the immediate publication priorities, use the
 [preprint-readiness checklist](docs/PREPRINT_READINESS.md). It scopes the paper

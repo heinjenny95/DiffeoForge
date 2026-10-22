@@ -139,6 +139,23 @@ The earlier manual refinement proposal below is superseded by the direct
 
 ## Delivery order and acceptance gates
 
+### Show the initial methods in two distinct areas — open
+
+Owner feedback after v150, 22 October 2026: in the first method-comparison step,
+the second fit is accessible only by changing a dropdown. The owner wants two
+clearly separated areas so both results and their inspection actions are easy
+to find. Tracking only; no implementation or new fits requested.
+
+- [ ] Present Current and Varifold as two distinct, simultaneously visible
+  sections, each naming the method and showing its own computation/review status
+  and clearly bound Inspect fit action. Reaching either fit must not require
+  changing a shared dropdown. Keep both areas readable at supported window sizes
+  and display scales, with no ambiguous shared selection or overlapping controls.
+- [ ] Preserve individual visual-review readiness and recorded decisions, the
+  reduced inspection view, optional Best so far comparison and on-demand geometry
+  loading. Verify that each section opens its own candidate through refreshes and
+  that the user can find and inspect both variants without searching menus.
+
 ### Guide recovery after an unsuccessful contrasting-form check — open
 
 Owner first-use feedback after v150, 22 October 2026: both methods fitted the
