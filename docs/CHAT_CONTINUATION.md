@@ -28,6 +28,13 @@ source repairs the view transitions, decision readiness, action emphasis, saved
 alignment reuse and template guidance. No new scientific fits are authorized.
 See [scope, checks and limits](V150_PILOT_REPAIRS.md); delivery state is separate.
 
+Runtime `9307cbe` / `dev150` is now installed after complete backup and fresh idle
+guards. Final source/exact frozen/exact installed workflow and review-video
+probes pass, with zero native fits. Project/state/settings preservation passes
+after installation and the installed probe. See [verified delivery](V150_DELIVERY.md).
+The app is left closed; no scientific run or installer upload was started.
+Earlier installed snapshots below are historical.
+
 Owner first-use feedback on 22 October records open v149 follow-ups:
 insufficient local-detail/fit-risk awareness in template suggestions, repeated
 whole-cohort loading during pilot preparation, and premature decision controls

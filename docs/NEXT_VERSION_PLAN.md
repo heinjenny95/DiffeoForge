@@ -2,7 +2,8 @@
 
 Owner scope, 22 October 2026: the owner subsequently authorized implementing all
 recently collected pilot follow-ups. v150 addresses their software changes below;
-scientific fits remain excluded. See [scope and verification](V150_PILOT_REPAIRS.md).
+scientific fits remain excluded. See [scope and verification](V150_PILOT_REPAIRS.md)
+and [verified dev150 installation](V150_DELIVERY.md).
 
 ## v149 — owner-authorized guided pilot, 21 October 2026
 

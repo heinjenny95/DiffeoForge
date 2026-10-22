@@ -8,13 +8,11 @@ one-target Current/Varifold comparison, explicit visual decisions and a shared
 joint check. Runtime dev149 is installed; [delivery checks](docs/V149_DELIVERY.md)
 pass without owner/native fits. Prospective scientific/selector validation remains open.
 
-Owner first use on 22 October leaves explicit open follow-ups in the
-[development backlog](docs/NEXT_VERSION_PLAN.md#delivery-order-and-acceptance-gates):
-template ranking misses local fit risks, and pilot preparation still repeats
-whole-cohort loading; decision controls also appear before visual assessment is
-possible. Pilot layout clipping/empty space and missing primary-action emphasis
-are also recorded there. The subsequent owner request authorizes those pilot
-repairs in v150; see [implementation and remaining gates](docs/V150_PILOT_REPAIRS.md).
+v150 addresses the owner's 22 October pilot reports: duplicate/clipped controls,
+premature decisions, unclear primary actions, repeated geometry parsing before
+saved-alignment reuse and limited template guidance. Source/frozen/installed checks
+pass; see [verified delivery](docs/V150_DELIVERY.md) and
+[implementation and remaining gates](docs/V150_PILOT_REPAIRS.md).
 
 For the immediate publication priorities, use the
 [preprint-readiness checklist](docs/PREPRINT_READINESS.md). It scopes the paper

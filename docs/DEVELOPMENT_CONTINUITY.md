@@ -6,6 +6,9 @@ restores primary-action emphasis and reuses verified alignment before rebuilding
 previews. Template suggestions add multiscale local summaries, contextual reviews
 and explicit uncertainty. See [scope and verification](V150_PILOT_REPAIRS.md).
 No scientific fit is launched. The previous delivery snapshots below are historical.
+Runtime `9307cbe` / `dev150` is installed; source/exact frozen/installed workflow,
+2x review-video and owner-file/settings preservation checks pass. See
+[verified delivery](V150_DELIVERY.md). No installer upload or scientific fit.
 
 v148 source repairs the explicit pilot action after project-directory or method
 changes. Both buttons prepare the current configuration through the existing
