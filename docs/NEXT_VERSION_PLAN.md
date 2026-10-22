@@ -134,6 +134,24 @@ The earlier manual refinement proposal below is superseded by the direct
 
 ## Delivery order and acceptance gates
 
+### Pilot decisions appear before visual assessment is possible — open
+
+Owner feedback, 22 October 2026: while the method batch is still computing, the
+overview already presents decision paths such as Both good / Both unfit. Showing
+unavailable or premature decisions makes the required order unclear. The owner
+requested a to-do entry only, not an implementation in this follow-up.
+
+- [ ] Reveal accept/reject controls only after the relevant original and
+  reconstruction have actually rendered in a usable comparison. Hide premature
+  actions instead of merely disabling them during loading or when no comparison
+  can be displayed. Reveal aggregate decisions such as Both good / Both unfit
+  only after the required fits are available and their individual visual reviews
+  have been recorded. Keep relevant progress, error/retry, safe cancellation and
+  close controls accessible. Readiness must follow displayed geometry rather
+  than file existence or optimizer completion alone; never infer visual approval.
+  Check computing, initial loading, render failure, specimen switching and the
+  transition to a reviewable fit. No new fits are authorized by this entry.
+
 ### Initial-template recommendation misses local fit risks — open
 
 Owner first-use feedback, 22 October 2026: the v149 suggestion can return the

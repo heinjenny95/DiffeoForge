@@ -8,10 +8,11 @@ one-target Current/Varifold comparison, explicit visual decisions and a shared
 joint check. Runtime dev149 is installed; [delivery checks](docs/V149_DELIVERY.md)
 pass without owner/native fits. Prospective scientific/selector validation remains open.
 
-Owner first use on 22 October leaves two explicit open follow-ups in the
+Owner first use on 22 October leaves three explicit open follow-ups in the
 [development backlog](docs/NEXT_VERSION_PLAN.md#delivery-order-and-acceptance-gates):
 template ranking misses local fit risks, and pilot preparation still repeats
-whole-cohort loading. Neither is closed by the v149 heuristic or partial caches.
+whole-cohort loading; decision controls also appear before visual assessment is
+possible. These remain open; the owner requested to-do tracking, not repairs now.
 
 For the immediate publication priorities, use the
 [preprint-readiness checklist](docs/PREPRINT_READINESS.md). It scopes the paper

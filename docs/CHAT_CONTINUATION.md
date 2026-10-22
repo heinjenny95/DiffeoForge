@@ -22,11 +22,12 @@ authorization or establish current application/job state.
 
 ## Current software boundary
 
-Owner first-use feedback on 22 October records two open v149 follow-ups:
-insufficient local-detail/fit-risk awareness in template suggestions, and repeated
-whole-cohort loading during pilot preparation. Both are unchecked in the
+Owner first-use feedback on 22 October records three open v149 follow-ups:
+insufficient local-detail/fit-risk awareness in template suggestions, repeated
+whole-cohort loading during pilot preparation, and premature decision controls
+before a fit is visually assessable. All three are unchecked in the
 [backlog](NEXT_VERSION_PLAN.md#delivery-order-and-acceptance-gates). This update
-records work to do; it implements neither repair and starts no fit.
+records work to do at the owner's request; it implements no repair and starts no fit.
 
 v149 source implements the [guided pilot](V149_GUIDED_PILOT.md): initial-template
 and adaptive target-count suggestions, two one-target method trials, explicit
