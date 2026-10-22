@@ -5,8 +5,10 @@ v151 source adds separate method cards, visible recovery after rejection and
 source-bound 3D surface-brush feedback with measured patch/global follow-up checks.
 Every hypothesis prepares one trial; Run, visual approval, renewed cross-checks
 and joint confirmation remain explicit. See [scope](V151_REGIONAL_PILOT.md).
-No new owner/native fit is launched. Current installation/delivery evidence is
-separate from source implementation. The v150 snapshot below is historical.
+Runtime `dfb88de` / `dev151` is installed. Source/exact frozen/installed workflow,
+regional geometry and 2x review-video checks pass; owner files/settings remain
+unchanged. See [verified delivery](V151_DELIVERY.md). No new owner/native fit or
+installer upload. The v150 snapshot below is historical.
 
 The owner's 22 October follow-up authorizes the collected pilot repairs. v150
 recursively clears nested view controls, gates decisions on displayed geometry,

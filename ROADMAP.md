@@ -17,7 +17,8 @@ v151 source implements the subsequent pilot feedback: visible recovery after
 rejection, two independently inspectable method cards and a source-bound 3D brush
 that guides small parameter/method hypotheses. Regional and whole-shape distances
 inform visual review without changing the scientific objective or granting
-approval. See [scope, checks and limits](docs/V151_REGIONAL_PILOT.md).
+approval. Runtime dev151 is installed; see [verified delivery](docs/V151_DELIVERY.md)
+and [scope, checks and limits](docs/V151_REGIONAL_PILOT.md).
 
 For the immediate publication priorities, use the
 [preprint-readiness checklist](docs/PREPRINT_READINESS.md). It scopes the paper

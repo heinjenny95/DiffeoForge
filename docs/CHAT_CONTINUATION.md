@@ -27,7 +27,10 @@ after rejected contrasting-form fits, two separate method cards and regional
 visual feedback. Source implements a rotatable 3D brush, source/run-bound review
 records, bounded one-specimen hypotheses, regional/global measurements and renewed
 coverage after changed settings. See [scope and limitations](V151_REGIONAL_PILOT.md).
-No scientific fit is started. Package/installation evidence is tracked separately.
+Runtime `dfb88de` / `dev151` is installed after complete backup and fresh idle
+guards. Source/exact frozen/installed GUI, regional geometry and 2x review-video
+checks pass, with unchanged owner files/settings. See [delivery](V151_DELIVERY.md).
+No owner/native scientific fits or installer upload. The v150 snapshots below are historical.
 
 Current owner scope, 22 October: the owner has now authorized implementing the
 recently collected pilot follow-ups, superseding collection-only scope. v150

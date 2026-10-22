@@ -2,8 +2,9 @@
 
 Owner scope, 22 October 2026: v151 implements the two subsequent pilot follow-ups
 and regional visual feedback, superseding their collection-only status below.
-See [behavior and limits](V151_REGIONAL_PILOT.md). Preparation/review starts no
-scientific fits; source, package and installation verification remain separate.
+Runtime dev151 is installed; [verified delivery](V151_DELIVERY.md) records
+source/exact frozen/installed checks and preserved owner files/settings. See
+[behavior and limits](V151_REGIONAL_PILOT.md). No new owner/native scientific fit.
 
 Owner scope, 22 October 2026: the owner subsequently authorized implementing all
 recently collected pilot follow-ups. v150 addresses their software changes below;
