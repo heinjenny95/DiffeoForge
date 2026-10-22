@@ -10,7 +10,8 @@ in a background task; only the chosen specimens enter the correction editor.
 Existing labels and coordinates appear immediately. Choose a label and click its
 new original-surface position; clear and undo remain available. Label addition,
 renaming and removal are hidden in correction mode so that subset editing cannot
-change cohort-wide homology. Automatic specimen advancement defaults off. The
+change cohort-wide homology. Repeated clicks adjust the same selected landmark;
+specimen changes use explicit navigation. The
 normal new-placement editor retains its existing behavior.
 
 Save merges edited positions into a complete Float64 cohort CSV in a separate

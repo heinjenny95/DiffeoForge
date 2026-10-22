@@ -172,6 +172,9 @@ class LandmarkEditorDialog(QDialog):
         )
         self.auto_advance_mesh_check.setObjectName("autoAdvanceLandmarkMeshCheck")
         self.auto_advance_mesh_check.setChecked(auto_advance_mesh)
+        if correction:
+            self.auto_advance_mesh_check.setChecked(False)
+            self.auto_advance_mesh_check.hide()
         self.auto_advance_mesh_check.setToolTip(
             "When disabled, the completed mesh remains visible until you use Next mesh "
             "or select another mesh."
@@ -431,6 +434,8 @@ class LandmarkEditorDialog(QDialog):
         self.placements[mesh_name][label] = values
         self._sync_canvas_markers()
         self._save_draft()
+        if self.correction:
+            return  # Repeated adjustment must never change another landmark implicitly.
         next_label = self.label_combo.currentIndex() + 1
         if next_label < self.label_combo.count():
             self.label_combo.setCurrentIndex(next_label)

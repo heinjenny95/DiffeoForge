@@ -95,12 +95,16 @@ def test_single_specimen_editor_loads_existing_points_and_saves_without_visiting
     assert not dialog.auto_advance_mesh_check.isChecked()
     _wait(app, lambda: dialog.canvas._model is not None)
     dialog._place_surface_point((.25, .5, .75))
+    assert dialog._current_label() == "LM1"
+    dialog._place_surface_point((.5, .75, 1.0))
+    assert dialog._current_label() == "LM1"
+    assert dialog.placements[paths[1].name]["LM2"] == tuple(original[1, 1])
     assert dialog.draft_path.is_file()
     dialog.reject()
     monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
     resumed = LandmarkEditorDialog((paths[1],), session.output, correction=session,
                                    auto_advance_mesh=False)
-    assert resumed.placements[paths[1].name]["LM1"] == (.25, .5, .75)
+    assert resumed.placements[paths[1].name]["LM1"] == (.5, .75, 1.0)
     _wait(app, lambda: resumed.canvas._model is not None)
     for _ in range(8):
         resumed._save_and_accept()
@@ -108,7 +112,7 @@ def test_single_specimen_editor_loads_existing_points_and_saves_without_visiting
     _, values = read_landmark_csv(resumed.output_path, tuple(p.name for p in paths))
     assert np.array_equal(values[0], original[0])
     assert np.array_equal(values[2], original[2])
-    assert np.array_equal(values[1, 0], [.25, .5, .75])
+    assert np.array_equal(values[1, 0], [.5, .75, 1.0])
     assert not resumed.draft_path.exists()
     dialog.close()
     resumed.close()
