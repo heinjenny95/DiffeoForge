@@ -54,7 +54,7 @@ def propose(snapshot, identifier, request, data):
     if symptom == "unsure" and marked:
         symptom = next((r["symptom"] for r in marked if r["symptom"] != "unsure"), symptom)
     result = proposal(snapshot, identifier, symptom, adaptive=True,
-                      starting_from_saved=bool(data["anchor"]), regions_override=marked)
+                      starting_from_saved=bool(reference), regions_override=marked)
     goal = request.split(":", 1)[1] if ":" in request else result["goal"]
     if goal not in DESCRIPTIONS:
         raise ValueError("Unknown targeted adjustment")

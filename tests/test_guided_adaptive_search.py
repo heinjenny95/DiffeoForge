@@ -76,6 +76,16 @@ def test_marked_scale_changes_explanation_without_local_objective_claim(monkeypa
     assert row["anchor"] == reference
 
 
+def test_approved_starting_fit_can_have_previews_without_granting_new_approval(monkeypatch):
+    snapshot, data, reference = model(monkeypatch)
+    snapshot.visual_reviews = {"fit": True}
+    data["anchor"] = None
+    data["references"] = {"latest": data["references"]["retained"]}
+    row = guided_search.propose(snapshot, "fit", "goal:detail", data)
+    assert row["available"] and row["anchor"] == data["current_reference"]
+    assert snapshot.visual_reviews == {"fit": True}
+
+
 def test_capped_new_field_keeps_old_comparison_and_cannot_loop_unchanged(monkeypatch):
     snapshot, data, reference = model(monkeypatch, outcome="same", goal="density", capped=True)
     snapshot.plan.pilot_subject_count = 1
