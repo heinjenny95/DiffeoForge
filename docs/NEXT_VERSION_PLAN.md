@@ -1,5 +1,20 @@
 # Next DiffeoForge development version
 
+## Pending: distinguish buttons from explanatory text — 23 October 2026
+
+Owner request after v156: record only; do not implement or start fits.
+
+- [ ] Make every action button visually recognizable as a button in its normal
+  state, with a visible outline or clearly bounded button surface. Secondary
+  actions must also stand apart from explanatory text; hover/focus alone is not
+  sufficient. Audit the pilot's inspect, return-to-first-fit, earlier-fit chooser
+  and alternative-adjustment actions, then apply the convention consistently
+  across the application. Keep primary/secondary emphasis and disabled states
+  distinct, with readable boundaries in the existing light/dark themes.
+- [ ] Verify that users can distinguish actionable controls from instructions
+  before interacting, including ordinary and enlarged text/window sizes. Preserve
+  existing behavior and the separate preparation/run/review gates.
+
 Owner implementation authorization, 23 October 2026, supersedes collection-only
 status for the immediate refinement, persistent validation, repeated preparation
 and heatmap software follow-ups below. v156 implements their scoped changes;

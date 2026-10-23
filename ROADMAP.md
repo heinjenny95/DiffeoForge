@@ -62,6 +62,12 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 ## Owner-requested cleanup
 
+- [ ] Give all action buttons a visible normal-state outline or bounded surface
+  so they are clearly distinct from explanatory text, including secondary pilot
+  actions currently presented as plain text. Preserve action hierarchy, disabled
+  states and light/dark readability. Owner request, 23 October 2026: backlog only,
+  no implementation or new fits. See [acceptance](docs/NEXT_VERSION_PLAN.md#pending-distinguish-buttons-from-explanatory-text--23-october-2026).
+
 - [ ] Repair pilot refinement that turns an almost-correct first fit into grossly
   incorrect alternatives after local-detail feedback. Audit actual initialization
   and parameter deltas, retain the useful fit, bound changes and flag whole-shape
