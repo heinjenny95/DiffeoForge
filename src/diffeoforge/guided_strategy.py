@@ -7,7 +7,7 @@ from pathlib import Path
 from diffeoforge import reference_calibration_study as study
 from diffeoforge import reference_guided_pilot as guided
 from diffeoforge.mesh import sha256_file
-from diffeoforge.pilot_recovery import DESCRIPTIONS, capture, proposal
+from diffeoforge.pilot_recovery import DESCRIPTIONS, capture
 
 
 def _candidate(snapshot, identifier, *, allow_unreviewed=False):
@@ -114,9 +114,14 @@ def _read_context(snapshot):
                     target=info["target"],
                     goal=info.get("goal"),
                     reference=other.attachment_comparison.get("refinement", {}).get("reference"),
+                    comparison=(info.get("strategy") or {}).get("anchor"),
+                    family=(info.get("strategy") or {}).get("search_family", info.get("goal")),
                     iterations=other.attachment_comparison["iterations"],
                     stop=(candidate.metrics or {}).get("optimizer_stop_signal"),
                     control_count=other.attachment_comparison["controls"]["count"],
+                    severe=any(r.get("refinement_guard", {}).get("severe") is True for r in
+                        (candidate.metrics or {}).get("attachment_comparison", {}).get(
+                            "subjects", {}).values()),
                     fit=_reference(other, candidate.candidate_id)
                     if starting_allowed(other, candidate.candidate_id) else None,
                     region_outcomes=[r["marked_regions"]["outcome"] for r in
@@ -163,119 +168,37 @@ def remaining_forms(snapshot, identifier, *, context):
     return [n for n in guided.record(snapshot)["pilot_order"] if n not in covered]
 
 
+def prepare_proposals(snapshot, context):
+    """Verify every selectable preview in the background read scope, never in a Qt slot.
+
+    These are presentation data only. Preparation/dispatch still recalculates the
+    selected request against fresh bound evidence in its existing worker.
+    """
+    from diffeoforge.pilot_regions import SYMPTOMS
+
+    from diffeoforge.guided_search import inputs, propose
+
+    requests = [*SYMPTOMS, "other_method", *("goal:" + k for k in DESCRIPTIONS)]
+    with study.calibration_verification_scope():
+        context["proposals"] = {}
+        for candidate in snapshot.candidates:
+            identifier = candidate.candidate_id
+            if not (context["allowed"].get(identifier)
+                    or (context["feedback"].get(identifier) or {}).get("selected")):
+                continue
+            verified = inputs(snapshot, identifier, context)
+            context["proposals"][identifier] = {
+                request: propose(snapshot, identifier, request, verified) for request in requests}
+    return context
+
+
 def trial_proposal(snapshot, identifier, symptom, *, context=None):
-    """Explain one hypothesis and its downstream checks; no global trial cap."""
-    from diffeoforge.guided_feedback import regions, selection
-    from diffeoforge.guided_progress import iteration_limited, next_hypothesis
+    """Fresh preparation check; cached GUI previews never authorize a transition."""
+    from diffeoforge.guided_search import inputs, propose
 
-    anchor = selection(snapshot, identifier)
-    _candidate(snapshot, identifier, allow_unreviewed=bool(anchor))
-    marked = regions(snapshot, identifier, _target(snapshot, identifier))
-    proposed = proposal(snapshot, identifier, "unsure" if ":" in symptom else symptom,
-                        adaptive=True, starting_from_saved=bool(anchor),
-                        regions_override=marked)
-    info = guided.record(snapshot)
-    strategy = info.get("strategy") or {}
-    baseline = strategy.get("baseline")
-    cases, last = (context["cases"], context["last_adjustment"]) if context else _context(snapshot)
-    from_base = symptom.startswith("base:")
-    if from_base and not baseline:
-        raise ValueError("No earlier settings are bound to this test")
-    if ":" in symptom:
-        goal = symptom.split(":", 1)[1]
-        if goal not in DESCRIPTIONS:
-            raise ValueError("Unknown targeted adjustment")
-        proposed.update(goal=goal, title=DESCRIPTIONS[goal][0], reason=DESCRIPTIONS[goal][1])
-    base_values = baseline["values"] if from_base else snapshot.plan.effective_values
-    base_method = (baseline["method"] if from_base
-                   else snapshot.attachment_comparison["methods"][identifier])
-    goal = proposed["goal"]
-    target = baseline["target"] if from_base else _target(snapshot, identifier)
-    if anchor and not from_base:
-        base_values, base_method, target = anchor["values"], anchor["method"], anchor["target"]
-
-    reference = anchor if not from_base else baseline
-    reference_snapshot = snapshot
-    reference_id = identifier
-    if reference:
-        from diffeoforge.guided_feedback import verify_reference
-
-        reference_snapshot = verify_reference(reference)
-        reference_id = reference["candidate_id"]
-    retained = next(c for c in reference_snapshot.candidates if c.candidate_id == reference_id)
-    retained_reference = reference or _reference(snapshot, identifier, target)
-    already_extended = any(r.get("goal") == "optimize"
-                           and r.get("reference") == retained_reference for r in cases)
-    can_optimize = (reference_snapshot.plan.pilot_subject_count == 1
-                    and iteration_limited(retained) and not already_extended)
-    explicit = ":" in symptom or symptom == "other_method"
-    note = ""
-    if not explicit and can_optimize and symptom != "distortion":
-        goal = "optimize"
-    elif not explicit and symptom in {"detail", "unsure"}:
-        goal, note = next_hypothesis(cases, base_method, target, goal)
-    if goal == "optimize" and not can_optimize:
-        goal = None
-        note = ("This saved field has already had a longer optimization test. Inspect that "
-                "saved alternative or choose a different adjustment."
-                if already_extended else
-                "Longer optimization requires an inspected single-form fit with an "
-                "explicit iteration-limit stop.")
-
-    if goal is None:
-        proposed.update(goal="detail", available=False, reason=note, blocked_reason=note,
-                        method=base_method, values=base_values, target=target,
-                        anchor=reference, from_base=from_base, remaining_checks=0,
-                        hypothesis_count=strategy.get("hypothesis_count", 0),
-                        initialization="learned", numerical_extension=False)
-        return proposed
-
-    def choice(key, step=0):
-        method = ("varifold" if base_method == "current" else "current") \
-            if key == "other_method" else base_method
-        values = base_values if key in {"other_method", "optimize"} else guided.adjusted_values(
-            base_values, key, conservative=True, step=step)
-        seen = key != "optimize" and any(
-                   r["method"] == method and r["target"] == target and r["values"] == values
-                   for r in cases)
-        return method, values, seen
-
-    # Detail-only feedback stays on the same deformation basis. After failure,
-    # make a smaller hypothesis from the retained reference, never a broad reset.
-    if symptom == "detail" and not note and goal != "optimize":
-        goal = "detail"
-    elif symptom == "unsure" and anchor and not note and goal != "optimize":
-        goal = "weight"
-    method, values, seen = choice(goal)
-    if seen and ":" not in symptom and symptom != "other_method":
-        for alternative, step in ((g, s) for s in range(3) for g in
-                                  (("detail", "weight") if symptom == "detail" and not note
-                                   else (goal,))):
-            method, values, seen = choice(alternative, step)
-            if not seen:
-                goal = alternative
-                break
-    proposed.update(goal=goal, title=DESCRIPTIONS[goal][0], reason=note + DESCRIPTIONS[goal][1])
-    approved = _compatible(snapshot, method, values, cases)
-    covered = {r["filename"] for r in approved} | {target}
-    proposed.update(method=method, values=values, target=target, from_base=from_base,
-                    anchor=reference,
-                    remaining_checks=len(set(info["pilot_order"]) - covered),
-                    available=not seen, hypothesis_count=strategy.get("hypothesis_count", 0),
-                    numerical_extension=goal == "optimize",
-                    initialization="nested" if goal == "density"
-                    and reference_snapshot.plan.pilot_subject_count == 1 else
-                    "learned" if goal in {"optimize", "detail", "weight", "smooth"}
-                    and reference_snapshot.plan.pilot_subject_count == 1 else "fresh",
-                    optimization_iterations=(retained.metrics["maximum_iterations"] * 2
-                                             if goal == "optimize" else None))
-    if goal == "density" and (reference_snapshot.plan.pilot_subject_count != 1 or
-                             reference_snapshot.attachment_comparison[
-                                 "controls"]["count"] * 1.5 > 2000):
-        proposed.update(available=False, blocked_reason="This bounded density test requires "
-                        "a saved single-form fit with fewer than 1,334 control points. "
-                        "Review the saved fits and inputs below.")
-    return proposed
+    with study.calibration_verification_scope():
+        context = context or state(snapshot)
+        return propose(snapshot, identifier, symptom, inputs(snapshot, identifier, context))
 
 
 def verify_strategy(info, record, manifest):
@@ -357,20 +280,24 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
                 "already tested. Inspect saved alternatives or choose another adjustment; "
                 "no fit was prepared."))
         baseline_snapshot, baseline_id = snapshot, identifier
-        if proposed["anchor"]:
+        if proposed["initialization_reference"]:
             from diffeoforge.guided_feedback import verify_reference
 
-            reference = proposed["anchor"]
+            reference = proposed["initialization_reference"]
             baseline_snapshot = verify_reference(reference)
             baseline_id = reference["candidate_id"]
         target, values, methods = proposed["target"], proposed["values"], (proposed["method"],)
         from diffeoforge.guided_feedback import regions
 
-        feedback = capture(baseline_snapshot, baseline_id, target,
+        comparison = proposed["anchor"]
+        comparison_snapshot = verify_reference(comparison)
+        feedback = capture(comparison_snapshot, comparison["candidate_id"], target,
                            regions=regions(snapshot, identifier, target))
         strategy["baseline"] = _reference(baseline_snapshot, baseline_id, target)
-        strategy["anchor"] = strategy["baseline"]
+        strategy["anchor"] = comparison
         strategy["control_basis"] = strategy["baseline"]
+        strategy["search_family"] = (info.get("strategy") or {}).get(
+            "search_family", info.get("goal")) if proposed["numerical_extension"] else proposed["goal"]
         if proposed["numerical_extension"]:
             strategy["optimization"] = dict(reference=strategy["baseline"],
                 iterations=proposed["optimization_iterations"])

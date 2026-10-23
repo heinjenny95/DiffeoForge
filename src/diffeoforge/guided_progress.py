@@ -16,30 +16,22 @@ def iteration_limited(candidate):
 
 
 def next_hypothesis(cases, method, target, fallback):
-    """Try another explanation after rejected detail tests, not endless width cuts."""
+    """Revisit hypotheses at larger contrasts; no one-test-per-family dead end."""
     relevant = [r for r in cases if r["method"] == method and r["target"] == target
                 and not r.get("approval")]
-    details = [r for r in relevant if r.get("goal") == "detail"]
-    failed_detail = any(r.get("outcome") in {"same", "worse", "unsure", "rejected"}
-                        for r in details)
-    if len(details) < 2 and not failed_detail:
+    if not relevant:
         return fallback, ""
-    tested = {r.get("goal") for r in relevant}
-    reason = (
-        "Finer surface matching has already been tried without a suitable fit. "
-        "Test a different explanation while keeping the saved reference. "
-    )
-    if "weight" not in tested:
-        return "weight", reason
-    if "local_motion" not in tested:
-        return "local_motion", reason
-    if "density" not in tested:
-        return "density", (
-            "The previous parameter changes did not resolve the missing detail. "
-            "Control-point density has not been tested on this form. "
-        )
-    return None, (
-        "These guided hypotheses have not produced a suitable fit. Review the saved "
-        "attempts and the original template alignment below before choosing another test. "
-        "A completed test does not establish that its parameter cannot help."
+    families = ("detail", "weight", "local_motion", "density")
+    counts = {g: sum(r.get("goal") == g for r in relevant) for g in families}
+    last = relevant[-1]
+    family, outcome = last.get("goal"), last.get("outcome")
+    if (outcome == "same" and family in families and counts[family] < 2
+            and len({r.get("goal") for r in relevant} & set(families)) == 1):
+        return family, "Test a larger contrast from the retained fit. "
+    if outcome == "better":
+        return fallback, ""
+    alternatives = [g for g in families if g != family or outcome != "worse"]
+    return min(alternatives, key=lambda g: counts[g]), (
+        "Try another explanation from the retained fit. Previous tests remain available; "
+        "each parameter can be revisited at a different scale. "
     )

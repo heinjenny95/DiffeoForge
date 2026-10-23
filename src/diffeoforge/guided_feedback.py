@@ -160,6 +160,7 @@ def presentation(snapshot, identifier):
         return dict(choices=rows, comparison=comparison, selected=selected,
                     current_inspected=bool(current and inspected(snapshot, identifier)),
                     feedback=feedback[-1] if feedback else None,
+                    problem_regions={info["target"]: regions(snapshot, identifier, info["target"])},
                     # An old chain without feedback starts with an explicit user choice.
                     needs_direction=bool(comparison and not feedback and not explicitly_selected))
 
@@ -199,8 +200,13 @@ def save_feedback(directory, identifier, decision):
 
 def regions(snapshot, identifier, target):
     feedback = list(_local_events(snapshot, identifier))
-    return (feedback[-1].get("problem_regions", {}).get(target)
-            if feedback else None) or snapshot.problem_regions.get(identifier, {}).get(target, [])
+    # A present empty mapping is an explicit Clear, not permission to resurrect a patch.
+    if feedback and "problem_regions" in feedback[-1]:
+        return feedback[-1]["problem_regions"].get(target, [])
+    if identifier in snapshot.problem_regions:
+        return snapshot.problem_regions[identifier].get(target, [])
+    inherited = guided.record(snapshot).get("feedback") or {}
+    return inherited.get("regions", []) if inherited.get("target") == target else []
 
 
 def select(directory, identifier, ref):

@@ -565,8 +565,9 @@ def adjusted_values(values, goal, *, conservative=False, step=0):
         "density": ("initial_control_point_spacing", 0.8),
     }[goal]
     if conservative and goal != "density":
-        delta = .1 / (2 ** step)
-        factor = 1 - delta if factor < 1 else 1 + delta
+        # SAME needs a larger contrast, not a sequence tending back to no change.
+        # The first test stays gentle; successive tests are meaningfully separated.
+        factor = (.9 * (.7 ** step)) if factor < 1 else (1.1 / (.7 ** step))
     values[parameter] *= factor
     return values
 

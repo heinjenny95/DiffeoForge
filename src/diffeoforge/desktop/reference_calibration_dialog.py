@@ -4501,6 +4501,12 @@ class ReferenceCalibrationDialog(QDialog):
                     and candidate.candidate_id not in reviewed_snapshot.problem_regions):
                 dialog.problem_regions[feedback["target"]] = [
                     dict(row) for row in feedback["regions"]]
+            if len(prepared) >= 5 and prepared[4]:
+                # Includes latest feedback-only edits and an explicit Clear; do not
+                # replace them with older review patches when reopening the viewer.
+                dialog.problem_regions = {
+                    name: [dict(row) for row in rows]
+                    for name, rows in prepared[4].get("problem_regions", {}).items()}
             # Re-review is a new human decision. Previous decisions remain in the
             # journal but must not silently pre-pass specimens or lock bulk approval.
             dialog.subject_decisions = {}

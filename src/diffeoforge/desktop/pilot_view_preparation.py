@@ -64,8 +64,8 @@ def prepare_pilot_view(directory: Path, snapshot=None) -> PilotView:
 
 
 def _guidance(snapshot):
-    from diffeoforge.guided_strategy import state
+    from diffeoforge.guided_strategy import prepare_proposals, state
     from diffeoforge.reference_guided_pilot import record
 
-    return state(snapshot) if record(snapshot) and snapshot.current_stage \
+    return prepare_proposals(snapshot, state(snapshot)) if record(snapshot) and snapshot.current_stage \
         and snapshot.current_stage.order == 1 else None

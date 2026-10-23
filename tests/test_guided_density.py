@@ -82,7 +82,7 @@ def test_exhausted_route_prepares_nested_density_and_retains_initial_velocity(
     assert next_form.plan.effective_values == seed.plan.effective_values
 
 
-def test_unsuitable_density_exposes_diagnostics_not_a_stale_disabled_action(tmp_path, monkeypatch):
+def test_unsuitable_density_still_offers_parameter_tests_and_input_checks(tmp_path, monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from pilot_view_helpers import wait_pilot_view
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton
@@ -98,16 +98,16 @@ def test_unsuitable_density_exposes_diagnostics_not_a_stale_disabled_action(tmp_
     child = guided_feedback.save_feedback(child.study_directory, "guided-varifold",
                                           decision(base, child, "same"))
     plan = guided_strategy.trial_proposal(child, "guided-varifold", "detail")
-    assert not plan["available"]
+    assert plan["available"] and plan["goal"] == "detail" and plan["contrast_level"] == 1
     dialog = ReferenceCalibrationDialog(child.study_directory)
     dialog.show()
     try:
         wait_pilot_view(dialog)
-        assert not any(b.isVisible() and "prepare 1 trial" in b.text()
+        assert any(b.isVisible() and "prepare 1 trial" in b.text()
                        for b in dialog.content.findChildren(QPushButton))
         diagnostic = next(d for d in dialog.findChildren(InfoDisclosure)
                           if d.title == "Saved attempts and input checks")
-        assert diagnostic.toggle_button.isChecked()
+        diagnostic.toggle_button.setChecked(True)
         assert diagnostic.panel.isVisible()
         assert any("control points" in x.text() for x in diagnostic.findChildren(QLabel))
         other = next(b for b in dialog.content.findChildren(QPushButton)
@@ -144,3 +144,21 @@ def test_density_rejects_tampered_appended_momentum(tmp_path, monkeypatch):
         file.write("1 1 1\n")
     with pytest.raises(ValueError, match="field bytes changed"):
         study.load_reference_calibration_study(child.study_directory)
+
+
+def test_density_can_expand_repeatedly_while_comparison_stays_retained(tmp_path, monkeypatch):
+    base = reject(run_batch(initial(tmp_path), monkeypatch), "guided-varifold")
+    retained = guided_feedback.reference(base, "guided-varifold")
+    child, count = base, base.attachment_comparison["controls"]["count"]
+    for _ in range(3):
+        prepared = guided.next_action(child.study_directory, "adaptive_recover", "guided-varifold",
+                                       goal="goal:density")
+        assert prepared.attachment_comparison["refinement"]["initialization"] == "nested"
+        assert guided.record(prepared)["strategy"]["anchor"] == retained
+        assert prepared.attachment_comparison["controls"]["count"] == math.ceil(count * 1.5)
+        assert prepared.candidates[0].attempts == 0 and not prepared.visual_reviews
+        count = prepared.attachment_comparison["controls"]["count"]
+        child = run_batch(prepared, monkeypatch)
+        child = guided_feedback.save_feedback(child.study_directory, "guided-varifold",
+                                              decision(base, child, "same"))
+    assert study.load_reference_calibration_study(child.study_directory)

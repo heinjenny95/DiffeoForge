@@ -1,4 +1,15 @@
-# Development continuity — v158 exhausted-pilot diagnosis
+# Development continuity — v159 adaptive pilot recovery
+
+v159 replaces one-test-per-hypothesis recovery with feedback-driven contrast
+levels and revisitable families. Selector previews are prepared in a worker;
+actual preparation retains fresh evidence checks. A good comparison can remain
+separate from an unfinished field's numerical initialization. See
+[behavior and qualification boundaries](V159_ADAPTIVE_RECOVERY.md).
+Source regression and actual Qt workflow checks pass; Windows delivery is in
+progress. Do not infer installation or improved anatomy from this entry.
+No owner/native fit is authorized.
+
+## Historical v158 delivery
 
 v158 source addresses the owner's exhausted guided recovery: a bounded nested
 control-point test retains the saved initial field and propagates the chosen

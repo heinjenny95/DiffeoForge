@@ -44,8 +44,10 @@ def test_non_improvement_returns_to_bound_start_without_any_approval(
     assert feedback.selection(selected, "guided-varifold") == feedback.reference(
         base, "guided-varifold"
     )
-    duplicate = strategy.trial_proposal(selected, "guided-varifold", "goal:detail")
-    assert not duplicate["available"]
+    stronger = strategy.trial_proposal(selected, "guided-varifold", "goal:detail")
+    assert stronger["available"] and stronger["contrast_level"] == 1
+    assert stronger["values"]["attachment_kernel_width"] == pytest.approx(
+        base.plan.effective_values["attachment_kernel_width"] * .63)
     proposed = strategy.trial_proposal(selected, "guided-varifold", "goal:local_motion")
     assert (
         proposed["values"]["attachment_kernel_width"]
@@ -88,6 +90,28 @@ def test_better_can_be_a_preferred_unapproved_fit_and_regions_are_not_lost(tmp_p
     )
     with pytest.raises(ValueError, match="approve"):
         guided.next_action(selected.study_directory, "adaptive_confirm", "guided-varifold")
+
+
+def test_inherited_patch_survives_feedback_only_reopen_and_clear_is_respected(tmp_path, monkeypatch):
+    from test_interactive_pilot import geometry_receipt
+
+    base = reject(run_batch(initial(tmp_path), monkeypatch), "guided-varifold", marked=True)
+    geometry_receipt(base, "guided-varifold", monkeypatch)
+    child = guided.next_action(base.study_directory, "adaptive_recover", "guided-varifold",
+                               goal="goal:detail")
+    child = run_batch(child, monkeypatch)
+    form = child.plan.selected_pilot_subjects[0]
+    inherited = feedback.regions(child, "guided-varifold", form.filename)
+    assert inherited == base.problem_regions["guided-varifold"][form.filename]
+    assert feedback.presentation(child, "guided-varifold")["problem_regions"][form.filename] == inherited
+    report = decision(base, child, "same") | dict(problem_regions={form.filename: inherited})
+    child = feedback.save_feedback(child.study_directory, "guided-varifold", report)
+    reopened = study.load_reference_calibration_study(child.study_directory)
+    assert feedback.regions(reopened, "guided-varifold", form.filename) == inherited
+    cleared = feedback.save_feedback(child.study_directory, "guided-varifold",
+                                     report | dict(problem_regions={}))
+    assert not feedback.regions(cleared, "guided-varifold", form.filename)
+    assert not feedback.presentation(cleared, "guided-varifold")["problem_regions"][form.filename]
 
 
 def test_explicit_older_fit_escapes_multiple_rejected_improvements(tmp_path, monkeypatch):

@@ -1,5 +1,12 @@
 # Roadmap
 
+v159 implements [feedback-driven recovery](docs/V159_ADAPTIVE_RECOVERY.md): larger
+contrasts after unchanged attempts, revisitable hypotheses, persistent marked
+patches, separate retained comparison/numerical seed, and worker-prepared selector
+previews. Source and actual Qt workflow checks pass without native fits. Windows
+build/installation verification is in progress; anatomical first-use acceptance
+remains open.
+
 v157 source adds [cap-aware pilot guidance](docs/V157_CAP_AWARE_PILOT.md): give an
 explicitly unfinished saved single-form fit more optimization time before another
 automatic parameter change; avoid repeated unsuitable detail hypotheses. New

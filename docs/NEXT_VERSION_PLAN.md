@@ -1,5 +1,12 @@
 # Next DiffeoForge development version
 
+v159 addresses the owner's repeated Same/Worse and selector-freeze reports.
+See [adaptive recovery behavior and limits](V159_ADAPTIVE_RECOVERY.md). Repeated
+parameter families now use distinct contrasts rather than one-use gates; the
+good comparison remains separate from a numerical continuation's seed. Source
+workflow checks pass without owner/native fits. Windows delivery is in progress.
+Anatomical benefit remains unverified until independent owner-run assessment.
+
 v158 owner follow-up addresses an exhausted pilot with a field-preserving nested
 control-point hypothesis, exact common-basis retention and actionable saved-attempt
 and original-input diagnosis. See [behavior and boundaries](V158_PILOT_DIAGNOSIS.md).

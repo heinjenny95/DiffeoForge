@@ -83,7 +83,8 @@ def test_saved_exhausted_rejection_keeps_regions_and_can_refine_again(tmp_path, 
                if p.name != study.STUDY_EVENTS)
     follow = reject(run_batch(follow, monkeypatch))
     next_proposal = strategy.trial_proposal(follow, "guided-varifold", "detail")
-    assert next_proposal["goal"] == "weight"
+    assert next_proposal["goal"] in {"detail", "weight"}
+    assert next_proposal["goal"] != info["goal"]
     assert next_proposal["values"]["deformation_kernel_width"] == (
         info["strategy"]["baseline"]["values"]["deformation_kernel_width"])
     second = guided.next_action(follow.study_directory, "adaptive_recover", "guided-varifold",
@@ -123,11 +124,10 @@ def test_previous_settings_can_fund_different_hypothesis_but_no_duplicate_fit(
     follow = guided.next_action(snapshot.study_directory, "adaptive_recover", "guided-varifold",
                                goal="goal:detail")
     follow = reject(run_batch(follow, monkeypatch))
-    duplicate = strategy.trial_proposal(follow, "guided-varifold", "base:detail")
-    assert not duplicate["available"]
-    with pytest.raises(ValueError, match="already tested"):
-        guided.next_action(follow.study_directory, "adaptive_recover", "guided-varifold",
-                           goal="base:detail")
+    stronger = strategy.trial_proposal(follow, "guided-varifold", "base:detail")
+    assert stronger["available"] and stronger["contrast_level"] == 1
+    assert stronger["values"]["attachment_kernel_width"] == pytest.approx(
+        snapshot.plan.effective_values["attachment_kernel_width"] * .63)
     alternative = guided.next_action(follow.study_directory, "adaptive_recover", "guided-varifold",
                                     goal="base:local_motion")
     assert alternative.plan.effective_values["attachment_kernel_width"] == (

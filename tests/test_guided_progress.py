@@ -102,21 +102,47 @@ def test_newly_better_cap_limited_field_can_get_more_headroom(tmp_path, monkeypa
     assert plan["anchor"] == guided_feedback.reference(child, "guided-varifold")
 
 
+def test_capped_new_density_field_is_seed_without_replacing_good_comparison(tmp_path, monkeypatch):
+    base = reject(fixtures.run_batch(initial(tmp_path), monkeypatch), "guided-varifold")
+    child = guided.next_action(base.study_directory, "adaptive_recover", "guided-varifold",
+                               goal="goal:density")
+    child = limited(child, monkeypatch)
+    child = guided_feedback.save_feedback(child.study_directory, "guided-varifold",
+                                          decision(base, child, "same"))
+    proposed = guided_strategy.trial_proposal(child, "guided-varifold", "detail")
+    assert proposed["goal"] == "optimize"
+    assert proposed["anchor"] == guided_feedback.reference(base, "guided-varifold")
+    assert proposed["initialization_reference"] == guided_feedback.reference(child, "guided-varifold")
+    longer = guided.next_action(child.study_directory, "adaptive_recover", "guided-varifold",
+                                goal="detail")
+    info = guided.record(longer)
+    assert info["strategy"]["anchor"] == proposed["anchor"]
+    assert info["strategy"]["baseline"] == proposed["initialization_reference"]
+    assert info["strategy"]["search_family"] == "density"
+    assert info["feedback"]["directory"] == str(base.study_directory)
+    assert longer.plan.effective_values == child.plan.effective_values
+    assert longer.attachment_comparison["controls"]["sha256"] == child.attachment_comparison[
+        "controls"]["sha256"]
+    assert longer.attachment_comparison["refinement"]["initialization"] == "learned"
+    assert longer.candidates[0].attempts == 0 and not longer.visual_reviews
+    assert study.load_reference_calibration_study(longer.study_directory)
+
+
 def test_repeated_detail_switches_explanation_and_ignores_other_targets():
     case = dict(method="current", target="form.vtk", goal="detail", outcome="better")
     assert next_hypothesis([case], "current", "form.vtk", "detail")[0] == "detail"
-    assert next_hypothesis([case, case], "current", "form.vtk", "detail")[0] == "weight"
+    assert next_hypothesis([case, case], "current", "form.vtk", "detail")[0] == "detail"
     rejected = case | dict(outcome="worse")
     assert next_hypothesis([rejected], "current", "form.vtk", "detail")[0] == "weight"
     assert next_hypothesis([rejected], "varifold", "form.vtk", "detail")[0] == "detail"
     approved = case | dict(approval={"explicit": True})
     assert next_hypothesis([approved, approved], "current", "form.vtk", "detail")[0] == "detail"
-    cases = [case, case, case | dict(goal="weight")]
+    cases = [rejected, rejected, rejected | dict(goal="weight")]
     assert next_hypothesis(cases, "current", "form.vtk", "detail")[0] == "local_motion"
-    assert next_hypothesis(cases + [case | dict(goal="local_motion")],
+    assert next_hypothesis(cases + [rejected | dict(goal="local_motion")],
                            "current", "form.vtk", "detail")[0] == "density"
-    assert next_hypothesis(cases + [case | dict(goal="local_motion"), case | dict(goal="density")],
-                           "current", "form.vtk", "detail")[0] is None
+    assert next_hypothesis(cases + [rejected | dict(goal="local_motion"), rejected | dict(goal="density")],
+                           "current", "form.vtk", "detail")[0] == "weight"
 
 
 def test_actual_cap_button_prepares_only_one_successor(tmp_path, monkeypatch):

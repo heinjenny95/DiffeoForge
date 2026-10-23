@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
 
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.guided_strategy import remaining_forms
-from diffeoforge.guided_strategy import state as guidance_state
 from diffeoforge.reference_guided_pilot import record
 
 
@@ -23,7 +22,7 @@ def render(window, prepared):
     # Let the scroll area grow its content rather than compressing recovery cards.
     window.content_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
     info = record(snapshot)
-    guidance = getattr(prepared, "guidance", None) or guidance_state(snapshot)
+    guidance = prepared.guidance
     running = window._worker is not None or window._restoring_search
     controls = (
         window.find_fit_button,
@@ -299,7 +298,6 @@ def render(window, prepared):
 
 def _recovery(window, snapshot, candidate, layout, guidance):
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
-    from diffeoforge.guided_strategy import trial_proposal
     from diffeoforge.pilot_recovery import DESCRIPTIONS
     from diffeoforge.pilot_regions import SYMPTOMS
 
@@ -314,10 +312,13 @@ def _recovery(window, snapshot, candidate, layout, guidance):
         symptoms.addItem(label, key)
     saved_feedback = guidance.get("feedback", {}).get(identifier) or {}
     recorded = saved_feedback.get("feedback") or {}
-    regions = recorded.get("problem_regions") or snapshot.problem_regions.get(identifier, {})
+    regions = saved_feedback.get("problem_regions", {})
     first = next((r for rows in regions.values() for r in rows), None)
+    symptom = recorded.get("symptom", "unsure")
+    if symptom == "unsure" and first:
+        symptom = first["symptom"]
     symptoms.setCurrentIndex(symptoms.findData(
-        recorded.get("symptom") or (first["symptom"] if first else "unsure")))
+        symptom))
     layout.addWidget(symptoms)
     explanation = QLabel()
     explanation.setWordWrap(True)
@@ -342,7 +343,7 @@ def _recovery(window, snapshot, candidate, layout, guidance):
     def update(*_):
         selected = alternatives.currentData()
         request = "goal:" + selected if selected else symptoms.currentData()
-        proposed = trial_proposal(snapshot, identifier, request, context=guidance)
+        proposed = guidance["proposals"][identifier][request]
         state.clear()
         state.update(proposed)
         state["request"] = request
@@ -388,7 +389,7 @@ def _recovery(window, snapshot, candidate, layout, guidance):
     update()
     if len(snapshot.candidates) == 1:
         other = QPushButton("Alternatively: check the other method here · prepare 1 trial")
-        other_proposal = trial_proposal(snapshot, identifier, "other_method", context=guidance)
+        other_proposal = guidance["proposals"][identifier]["other_method"]
         data = guidance.get("feedback", {}).get(identifier)
         other.setEnabled(other_proposal["available"] and not (data and data["needs_direction"]))
         if not other_proposal["available"]:
