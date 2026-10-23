@@ -14,6 +14,7 @@ import numpy as np
 from diffeoforge.desktop.mesh_view import checked_rotation
 from diffeoforge.mesh import sha256_file
 from diffeoforge.pca_media import (
+    MEDIA_VERSION,
     MediaCancelled,
     _check,
     _record,
@@ -50,7 +51,7 @@ def prepare_oriented_media(directory, rotation, name, cancelled=None, progress=l
     metadata = verify_media(directory)
     key = hashlib.sha256(
         json.dumps(
-            ["all-media-v1", identity, rotation.tolist(), name],
+            ["all-media-v1", MEDIA_VERSION, identity, rotation.tolist(), name],
             allow_nan=False,
         ).encode()
     ).hexdigest()

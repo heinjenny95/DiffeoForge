@@ -169,10 +169,6 @@ def trial_proposal(snapshot, identifier, symptom, *, context=None):
         if goal not in DESCRIPTIONS:
             raise ValueError("Unknown targeted adjustment")
         proposed.update(goal=goal, title=DESCRIPTIONS[goal][0], reason=DESCRIPTIONS[goal][1])
-    elif symptom == "detail" and last in {"detail", "local_motion"}:
-        next_goal = "local_motion" if last == "detail" else "weight"
-        proposed.update(goal=next_goal, title=DESCRIPTIONS[next_goal][0],
-                        reason=DESCRIPTIONS[next_goal][1])
     base_values = baseline["values"] if from_base else snapshot.plan.effective_values
     base_method = (baseline["method"] if from_base
                    else snapshot.attachment_comparison["methods"][identifier])
@@ -181,18 +177,27 @@ def trial_proposal(snapshot, identifier, symptom, *, context=None):
     if anchor and not from_base:
         base_values, base_method, target = anchor["values"], anchor["method"], anchor["target"]
 
-    def choice(key):
+    def choice(key, step=0):
         method = ("varifold" if base_method == "current" else "current") \
             if key == "other_method" else base_method
-        values = base_values if key == "other_method" else guided.adjusted_values(base_values, key)
+        values = base_values if key == "other_method" else guided.adjusted_values(
+            base_values, key, conservative=True, step=step)
         seen = any(r["method"] == method and r["target"] == target and r["values"] == values
                    for r in cases)
         return method, values, seen
 
+    # Detail-only feedback stays on the same deformation basis. After failure,
+    # make a smaller hypothesis from the retained reference, never a broad reset.
+    if symptom == "detail":
+        goal = "detail"
+    elif symptom == "unsure" and anchor:
+        goal = "weight"
     method, values, seen = choice(goal)
     if seen and ":" not in symptom and symptom != "other_method":
-        for alternative in ("local_motion", "detail", "weight", "motion", "smooth"):
-            method, values, seen = choice(alternative)
+        for alternative, step in ((g, s) for s in range(3) for g in
+                                  (("detail", "weight") if symptom == "detail"
+                                   else (goal,))):
+            method, values, seen = choice(alternative, step)
             if not seen:
                 goal = alternative
                 break
@@ -275,8 +280,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         feedback = capture(baseline_snapshot, baseline_id, target,
                            regions=regions(snapshot, identifier, target))
         strategy["baseline"] = _reference(baseline_snapshot, baseline_id, target)
-        if proposed["anchor"]:
-            strategy["anchor"] = proposed["anchor"]
+        strategy["anchor"] = strategy["baseline"]
         strategy["difficult_targets"] = list(dict.fromkeys(
             [target, *strategy.get("difficult_targets", [])]))
         strategy["hypothesis_count"] = strategy.get("hypothesis_count", 0) + 1

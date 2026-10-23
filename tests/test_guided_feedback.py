@@ -53,7 +53,7 @@ def test_non_improvement_returns_to_bound_start_without_any_approval(
     )
     assert (
         proposed["values"]["deformation_kernel_width"]
-        == base.plan.effective_values["deformation_kernel_width"] / 2
+        == base.plan.effective_values["deformation_kernel_width"] * .9
     )
     next_trial = guided.next_action(
         selected.study_directory, "adaptive_recover", "guided-varifold", goal="goal:local_motion"

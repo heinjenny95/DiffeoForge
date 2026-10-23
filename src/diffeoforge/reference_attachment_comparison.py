@@ -139,18 +139,24 @@ def prepare_controls(root, manifest, record):
     controls, spacing = control_grid(template.metadata.bounds)
     path = root / "method-controls.txt"
     np.savetxt(path, controls, fmt="%.17g")
-    return dict(
+    result = dict(
         record,
         controls=dict(
             copy=path.name, sha256=sha256_file(path), count=len(controls), spacing=spacing
         ),
     )
+    from diffeoforge.guided_refinement import bind
+
+    return bind(root, manifest, result)
 
 
 def verify(root, manifest):
     from diffeoforge import reference_calibration_study as study
 
     record = manifest["attachment_comparison"]
+    from diffeoforge.guided_refinement import verify as verify_refinement
+
+    verify_refinement(root, manifest, record)
     source = Path(record["source_directory"]).resolve()
     control = study._safe_study_path(root, record["controls"]["copy"])
     if (
@@ -270,6 +276,10 @@ def configure(config, root, manifest, candidate_id):
             initial_control_points=str(root / controls["copy"]),
             initial_control_point_spacing=controls["spacing"],
         )
+        refinement = record.get("refinement")
+        if refinement and refinement["initialization"] == "learned":
+            deformation.update(initial_momenta=str(root / refinement["momenta"]["copy"]),
+                               initial_momenta_subjects=[refinement["reference"]["target"]])
     else:
         _, comparison = context(root, manifest)
         config["optimization"].update(comparison["confirmation_freeze_settings"])
@@ -394,15 +404,20 @@ def measure(root, manifest, candidate, run):
         )
         feedback = manifest["attachment_comparison"].get("guided", {}).get("feedback")
         if feedback and feedback["target"] == row["filename"]:
+            from diffeoforge.guided_refinement import geometry_guard
+
+            subjects[row["filename"]]["refinement_guard"] = geometry_guard(
+                feedback["global_baseline"], subjects[row["filename"]])
             from diffeoforge.pilot_regions import comparison
             from diffeoforge.pilot_regions import measure as measure_regions
 
             regional = measure_regions(original, fitted, feedback["regions"])
-            subjects[row["filename"]]["marked_regions"] = dict(
+            if feedback["regions"]:
+                subjects[row["filename"]]["marked_regions"] = dict(
                 measurements=regional,
                 outcome=comparison(feedback["baseline"], regional,
                                    feedback["global_baseline"], subjects[row["filename"]]),
-            )
+                )
     return dict(
         attachment_comparison=dict(version=VERSION, subjects=subjects),
         original_surface_fit={

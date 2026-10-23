@@ -87,11 +87,15 @@ def restore_setup_checkpoint(
         )
     if not current_report:
         try:
+            from diffeoforge.mesh_inspection_cache import desktop_locations
+
+            shared, sources = desktop_locations()
             report = inspect_mesh_input_cohort(
                 mesh_paths, template_path=mesh_paths[0], landmark_csv=landmark_csv,
                 procrustes_enabled=bool(form["apply_alignment"] and landmark_csv),
                 scale_to_unit_centroid_size=bool(form["remove_size"]),
                 scaling_mode=form["scaling_mode"], cache_project=project, cache_only=True,
+                shared_cache=shared, cache_sources=sources,
             )
         except CheckpointUnavailable as error:
             return RestoredSetup(None, None, None, False, str(error))

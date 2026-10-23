@@ -1,7 +1,7 @@
 """Actual Qt controls for feedback-only inspection and returning to earlier fits."""
 
 from test_fit_preference_dialog import wait
-from test_guided_feedback import attempted
+from test_guided_feedback import attempted, decision
 from test_reference_calibration_dialog import _model
 
 from diffeoforge import guided_feedback as feedback
@@ -74,11 +74,13 @@ def test_ready_compact_viewer_can_save_feedback_without_approving_or_rejecting(
     assert not viewer.guided_feedback.outcomes["worse"].isEnabled()
     viewer._pair_loaded(0, (_model(original), _model(fitted)))
     wait(app, lambda: viewer.canvas.comparison_ready and viewer.decision_panel.isVisible())
+    viewer.problem_regions[target] = []  # A prior unmarked recovery carries no patch selection.
     viewer.guided_feedback.outcomes["worse"].click()
     viewer.guided_feedback.note.setText("Surface matching became worse")
     viewer.guided_feedback.save.click()
     assert viewer._guided_feedback_only and not viewer.review_recorded
     report = viewer.guided_feedback_decision
+    assert report["problem_regions"] == {}
     assert report["outcome"] == "worse" and report["comparison"] == feedback.reference(
         base, "guided-varifold"
     )
@@ -97,6 +99,8 @@ def test_earlier_start_is_visible_and_works_before_rating_latest_attempt(tmp_pat
 
     app = QApplication.instance() or QApplication([])
     base, trial = attempted(tmp_path, monkeypatch)
+    trial = feedback.save_feedback(trial.study_directory, "guided-varifold",
+                                   decision(base, trial, "better"))
     dialog = ReferenceCalibrationDialog(trial.study_directory)
     dialog.show()
     try:

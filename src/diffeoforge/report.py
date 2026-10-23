@@ -254,6 +254,7 @@ def make_preflight_result(
 def collect_preflight(
     config_path: Path | str, *, cache_project: Path | str | None = None,
     progress_callback: Callable[[PreflightInspectionProgress], None] | None = None,
+    shared_cache: Path | str | None = None, cache_sources: tuple[Path, ...] = (),
 ) -> PreflightResult:
     """Validate inputs, optionally reusing project-local content-bound mesh checks.
 
@@ -264,12 +265,13 @@ def collect_preflight(
     source = Path(config_path).expanduser().resolve()
     config = load_config(source)
     inputs = validate_input_paths(config, source)
-    if cache_project is None and progress_callback is None:
+    if cache_project is None and progress_callback is None and shared_cache is None:
         template, subjects = inspect_inputs(inputs)
         mesh_quality = _structural_quality(template, subjects)
     else:
         metadata, mesh_quality = _cached_structural_quality(
             inputs, cache_project, progress_callback=progress_callback,
+            shared_cache=shared_cache, cache_sources=cache_sources,
         )
         template, subjects = metadata[0], metadata[1:]
     return make_preflight_result(
@@ -285,6 +287,7 @@ def collect_preflight(
 def _cached_structural_quality(
     inputs: InputSummary, project: Path | str | None,
     *, progress_callback: Callable[[PreflightInspectionProgress], None] | None = None,
+    shared_cache: Path | str | None = None, cache_sources: tuple[Path, ...] = (),
 ) -> tuple[tuple[MeshMetadata, ...], tuple[PreflightMeshQuality, ...]]:
     import hashlib
 
@@ -301,6 +304,60 @@ def _cached_structural_quality(
     paths = (("template", inputs.template), *(
         ("subject", item) for item in inputs.subjects
     ))
+    if shared_cache is not None:
+        from diffeoforge.input_preflight import inspect_mesh_input_cohort
+        from diffeoforge.mesh_inspection_cache import vtk_check
+
+        roots = (project, shared_cache, *cache_sources)
+        legacy = [vtk_check(path, sha256_file(path), roots) for _, path in paths]
+        if project is not None and any(row is not None for row in legacy):
+            for row in legacy:
+                if row is not None:
+                    item, quality = row
+                    name = "vtk-1-" + hashlib.sha256(
+                        f"{item.sha256}:{QUALITY_DEFINITIONS_VERSION}".encode()).hexdigest()
+                    for destination in (project, shared_cache):
+                        try:
+                            save_checkpoint(destination, name, (item, quality))
+                        except (OSError, ValueError):
+                            pass
+            result = _cached_structural_quality(inputs, project,
+                                                progress_callback=progress_callback)
+            for item, observed in zip(*result, strict=True):
+                name = "vtk-1-" + hashlib.sha256(
+                    f"{item.sha256}:{QUALITY_DEFINITIONS_VERSION}".encode()).hexdigest()
+                try:
+                    save_checkpoint(shared_cache, name, (item, observed.result))
+                except (OSError, ValueError):
+                    pass
+            return result
+
+        checked = inspect_mesh_input_cohort(
+            tuple(p for _, p in paths), template_path=inputs.template,
+            procrustes_enabled=False, cache_project=project, shared_cache=shared_cache,
+            cache_sources=cache_sources,
+            inspection_callback=(lambda done, total, path, state: progress_callback(
+                PreflightInspectionProgress(done, total,
+                    "template" if path == inputs.template else "subject", str(path),
+                    "hashing" if state == "Checking file content" else
+                    "checking" if state == "Inspecting surface geometry" else
+                    "reused" if state == "Reused saved mesh validation" else "checked")))
+                if progress_callback else None,
+        )
+        for (role, path), meta, observed in zip(paths, checked.metadata, checked.mesh_quality,
+                                              strict=True):
+            enforce_mesh_quality(f"{role} {path.name}", observed.result,
+                                 ATLAS_INPUT_MESH_QUALITY_SETTINGS)
+            with path.open("rb") as handle:
+                version = handle.readline(1024).decode("ascii").strip().split()[-1]
+            metadata.append(MeshMetadata(
+                path=str(path), bytes=meta.bytes, sha256=meta.sha256, vtk_version=version,
+                encoding=meta.encoding, dataset_type="POLYDATA", points=meta.points,
+                cells=meta.triangles, triangular=True, bounds=meta.bounds,
+                bounding_box_extents=meta.bounding_box_extents,
+                bounding_box_diagonal=meta.bounding_box_diagonal))
+            observations.append(PreflightMeshQuality(role, str(path), observed.result))
+        return tuple(metadata), tuple(observations)
     for index, (role, path) in enumerate(paths):
         def observe(
             state: str, completed: int = index, *, role: str = role, path: Path = path,

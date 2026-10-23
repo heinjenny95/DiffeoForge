@@ -33,7 +33,7 @@ from diffeoforge.reference_pca_deformations import (
 )
 from diffeoforge.runs import publish_directory_exclusive
 
-MEDIA_VERSION = "2"
+MEDIA_VERSION = "3"
 
 
 class MediaCancelled(RuntimeError):
@@ -59,7 +59,7 @@ def verify_media(directory: Path, *, source_run: Path | None = None) -> dict:
     if (directory / "media.sha256").read_text().strip() != sha256_file(manifest):
         raise ValueError("PCA media manifest differs")
     data = json.loads(manifest.read_text(encoding="utf-8"))
-    if data.get("version") != MEDIA_VERSION or data.get("status") != "complete":
+    if data.get("version") not in {"2", MEDIA_VERSION} or data.get("status") != "complete":
         raise ValueError("Unsupported or incomplete PCA media")
     if source_run is not None and Path(data["source_run"]).resolve() != source_run.resolve():
         raise ValueError("PCA media belongs to another result")
@@ -372,7 +372,7 @@ def _render_media(
     renderer = SurfaceRenderer()
     font = ImageFont.truetype(findfont("DejaVu Sans"), 20)
 
-    def six_plate(values, title, scalars=None, signed=False):
+    def six_plate(values, title, scalars=None, signed=False, *, moving=False):
         mesh = with_points(proxy, values)
         image = Image.new("RGB", (1260, 840), "white")
         draw = ImageDraw.Draw(image)
@@ -385,10 +385,14 @@ def _render_media(
             )
             image.paste(frame, (x, y), frame)
             draw.text((x + 12, y - 26), view[0], fill="#3f5963", font=font)
-        draw.text((20, 812), "−2 SD → Mean → +2 SD", fill="#3f5963", font=font)
+        draw.text((20, 42), ("Six views at this score · reference: mean shape" if moving else
+                            "Six views of this endpoint · reference: mean shape"),
+                  fill="#3f5963", font=font)
+        draw.text((20, 812), "PC score path" if moving else "Static endpoint map",
+                  fill="#3f5963", font=font)
         draw.text(
             (340, 816),
-            "Signed · model units" if signed else "Displacement · model units",
+            "Signed normal · model units" if signed else "Distance · model units",
             fill="#3f5963",
             font=font,
         )
@@ -517,7 +521,7 @@ def _render_media(
                     ]
                     magnitude = np.linalg.norm(value - mean[ids], axis=1)
                     position = "Mean · 0 SD" if abs(sd) < 1e-10 else f"{sd:+.2f} SD"
-                    frame = six_plate(value, f"PC{pc} · {position}", magnitude)
+                    frame = six_plate(value, f"PC{pc} · {position}", magnitude, moving=True)
                     writer.append_data(np.asarray(frame))
             finally:
                 writer.close()

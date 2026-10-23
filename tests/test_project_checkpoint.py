@@ -402,7 +402,8 @@ def test_existing_project_resume_does_not_require_raw_setup_again(cohort, monkey
     project, paths, _landmarks = cohort
     project.mkdir()
     config = project / "atlas.yaml"
-    config.write_text("immutable existing project")
+    config.write_bytes((ROOT / "examples/minimal-atlas.yaml").read_bytes())
+    config_before = config.read_bytes()
     app = QApplication.instance() or QApplication(["legacy-resume-checkpoint-test"])
     window = DiffeoForgeWindow()
     window.project_edit.setText(str(project))
@@ -423,5 +424,5 @@ def test_existing_project_resume_does_not_require_raw_setup_again(cohort, monkey
     window.continue_parameter_button.click()
     app.processEvents()
     assert window._result == result and reviews == [True]
-    assert config.read_text() == "immutable existing project"
+    assert config.read_bytes() == config_before
     window.close()

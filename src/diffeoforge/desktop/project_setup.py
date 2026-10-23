@@ -493,6 +493,9 @@ def _create_reference_project(
             raise ConfigurationError(
                 "Landmark Procrustes dependencies are missing; install diffeoforge[analysis]."
             ) from error
+        from diffeoforge.mesh_inspection_cache import desktop_locations
+
+        inspection_cache, cache_projects = desktop_locations()
         aligned = prepare_landmark_aligned_inputs(
             request.mesh_directory,
             project_directory=request.project_directory,
@@ -510,6 +513,7 @@ def _create_reference_project(
             expected_fingerprint=request.approved_procrustes_fingerprint,
             approved_preview=approved_procrustes_preview,
             progress_callback=progress_callback,
+            inspection_cache=inspection_cache, cache_projects=cache_projects,
         )
         input_directory = aligned.aligned_directory
         input_template = aligned.template
@@ -576,6 +580,13 @@ def _create_reference_project(
         and gpu_probe.available
         else "cpu"
     )
+    from diffeoforge.mesh_inspection_cache import desktop_locations, prime_vtk
+
+    shared, old_projects = desktop_locations()
+    prime_vtk(tuple(sorted(input_directory.glob(input_subject_pattern))),
+              (request.project_directory, shared, *old_projects))
+    if input_template is not None:
+        prime_vtk((Path(input_template),), (request.project_directory, shared, *old_projects))
     initialized = initialize_project(
         input_directory,
         units=request.units,
@@ -735,8 +746,10 @@ def _create_modern_project(
         )
     )
     if request.landmarks_file is not None and requires_canonical_conversion:
+        from diffeoforge.mesh_inspection_cache import desktop_locations
         from diffeoforge.preprocessing import prepare_landmark_aligned_inputs
 
+        inspection_cache, cache_projects = desktop_locations()
         aligned = prepare_landmark_aligned_inputs(
             request.mesh_directory,
             project_directory=request.project_directory,
@@ -754,6 +767,7 @@ def _create_modern_project(
             expected_fingerprint=request.approved_procrustes_fingerprint,
             approved_preview=approved_procrustes_preview,
             progress_callback=progress_callback,
+            inspection_cache=inspection_cache, cache_projects=cache_projects,
         )
         input_directory = aligned.aligned_directory
         input_template = aligned.template

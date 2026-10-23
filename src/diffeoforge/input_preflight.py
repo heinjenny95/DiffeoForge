@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import statistics
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -40,6 +42,7 @@ HEAVY_COHORT_FILE_BYTES = 1024**3
 SCALE_WARNING_GAP = 8.0
 SCALE_BLOCKER_GAP = 100.0
 EXTREME_LANDMARK_MESH_RATIO = 50.0
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -522,6 +525,10 @@ def inspect_mesh_input_cohort(
     progress_callback: Callable[[int, int, Path], None] | None = None,
     cache_project: Path | str | None = None,
     cache_only: bool = False,
+    shared_cache: Path | str | None = None,
+    cache_sources: Sequence[Path | str] = (),
+    force_recheck: bool = False,
+    inspection_callback: Callable[[int, int, Path, str], None] | None = None,
 ) -> MeshInputPreflight:
     """Inspect unchanged source files; optionally retain checks in a chosen project.
 
@@ -530,12 +537,7 @@ def inspect_mesh_input_cohort(
     """
 
     from diffeoforge.mesh import sha256_file
-    from diffeoforge.mesh_quality import QUALITY_DEFINITIONS_VERSION
-    from diffeoforge.project_checkpoint import (
-        CheckpointUnavailable,
-        load_checkpoint,
-        save_checkpoint,
-    )
+    from diffeoforge.project_checkpoint import CheckpointUnavailable
 
     paths = tuple(Path(path).expanduser().resolve() for path in mesh_paths)
     if len(paths) < 2:
@@ -553,31 +555,25 @@ def inspect_mesh_input_cohort(
     quality_observations: list[InputMeshQualityObservation] = []
     scale_observations: list[MeshScaleMetrics] = []
     for index, path in enumerate(paths, start=1):
+        from diffeoforge import mesh_inspection_cache as inspection
+
         cached = None
-        content_hash = sha256_file(path) if cache_project is not None else None
-        key = "surface-1-" + hashlib.sha256(
-            f"{content_hash}:{path.suffix.lower()}:{QUALITY_DEFINITIONS_VERSION}".encode()
-        ).hexdigest()
-        if cache_project is not None:
-            try:
-                candidate = load_checkpoint(cache_project, key)
-                if (isinstance(candidate, tuple) and len(candidate) == 3
-                        and isinstance(candidate[0], SurfaceMeshMetadata)
-                        and isinstance(candidate[1], MeshQualityResult)
-                        and isinstance(candidate[2], MeshScaleMetrics)
-                        and candidate[0].sha256 == content_hash
-                        and candidate[0].bytes == path.stat().st_size
-                        and candidate[0].points == candidate[1].points
-                        and candidate[0].triangles == candidate[1].triangles):
-                    cached = candidate
-            except CheckpointUnavailable:
-                pass
+        started = time.perf_counter()
+        roots = (cache_project, shared_cache, *tuple(cache_sources)[:8])
+        if inspection_callback:
+            inspection_callback(index - 1, len(paths), path, "Checking file content")
+        content_hash = sha256_file(path) if any(r is not None for r in roots) else None
+        hash_finished = time.perf_counter()
+        if not force_recheck and content_hash is not None:
+            cached = inspection.read(path, content_hash, roots)
         if cached is None:
             if cache_only:
                 raise CheckpointUnavailable(
                     f"No current saved mesh check for {path.name}. "
                     "Click Run deep mesh validation once; unchanged checks will be reused."
                 )
+            if inspection_callback:
+                inspection_callback(index - 1, len(paths), path, "Inspecting surface geometry")
             loaded = load_surface_mesh(path)
             if content_hash is not None and loaded.metadata.sha256 != content_hash:
                 raise ConfigurationError(f"Mesh changed while being checked: {path}")
@@ -590,18 +586,23 @@ def inspect_mesh_input_cohort(
                     loaded.geometry.vertices, loaded.geometry.triangles,
                 ),
             )
-            if cache_project is not None:
-                try:
-                    save_checkpoint(cache_project, key, cached)
-                except (OSError, ValueError):
-                    # A read-only project must not turn a valid mesh into a failure.
-                    # The desktop separately reports inability to save setup state.
-                    pass
+            del loaded
+            action = "Deep mesh validation completed"
+        else:
+            action = "Reused saved mesh validation"
+        if content_hash is not None:
+            if sha256_file(path) != content_hash:
+                raise ConfigurationError(f"Mesh changed while being checked: {path}")
+            inspection.write(path, content_hash, cached, (cache_project, shared_cache))
         metadata.append(replace(cached[0], path=str(path)))
         quality_observations.append(InputMeshQualityObservation(str(path), cached[1]))
         scale_observations.append(cached[2])
         if progress_callback is not None:
             progress_callback(index, len(paths), path)
+        if inspection_callback:
+            inspection_callback(index, len(paths), path, action)
+        LOG.info("Mesh validation phase=%s path=%s hash_seconds=%.6f remaining_seconds=%.6f",
+                 action, path, hash_finished - started, time.perf_counter() - hash_finished)
     metadata_tuple = tuple(metadata)
     quality_tuple = tuple(quality_observations)
     if landmark_csv is None:

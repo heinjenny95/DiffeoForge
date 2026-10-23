@@ -36,7 +36,7 @@ def origin(tmp_path):
     return study.create_reference_calibration_study(config_path, tmp_path / "pilot")
 
 
-def run_batch(snapshot, monkeypatch, *, controller=_CompletedController):
+def run_batch(snapshot, monkeypatch, *, controller=_CompletedController, refinement_guard=None):
     _stub_learned_seed(monkeypatch)
 
     def metric(run):
@@ -48,8 +48,12 @@ def run_batch(snapshot, monkeypatch, *, controller=_CompletedController):
 
     def measured(root, manifest, candidate, run):
         names = [r["filename"] for r in manifest["inputs"]["subjects"]]
+        detail = _detail(names)
+        if refinement_guard:
+            for row in detail["subjects"].values():
+                row["refinement_guard"] = refinement_guard
         return dict(
-            attachment_comparison=_detail(names),
+            attachment_comparison=detail,
             fit_scope="full_targets",
             original_surface_fit={
                 n: dict(p95=0.01, p99=0.02, mean=0.005, diagonal=1) for n in names

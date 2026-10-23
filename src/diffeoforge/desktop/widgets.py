@@ -783,6 +783,7 @@ class _InputPreflightWorker(QRunnable):
         scaling_mode: str,
         signature: tuple[object, ...],
         cache_project: Path | None = None,
+        force_recheck: bool = False,
     ) -> None:
         super().__init__()
         self.mesh_paths = mesh_paths
@@ -793,11 +794,15 @@ class _InputPreflightWorker(QRunnable):
         self.scaling_mode = scaling_mode
         self.signature = signature
         self.cache_project = cache_project
+        self.force_recheck = force_recheck
         self.signals = _WorkerSignals()
 
     @Slot()
     def run(self) -> None:
         try:
+            from diffeoforge.mesh_inspection_cache import desktop_locations
+
+            shared, sources = desktop_locations()
             report = inspect_mesh_input_cohort(
                 self.mesh_paths,
                 template_path=self.template_path,
@@ -806,8 +811,10 @@ class _InputPreflightWorker(QRunnable):
                 scale_to_unit_centroid_size=self.scale_to_unit_centroid_size,
                 scaling_mode=self.scaling_mode,
                 cache_project=self.cache_project,
-                progress_callback=lambda completed, total, path: self.signals.progress.emit(
-                    (completed, total, path.name)
+                shared_cache=shared, cache_sources=sources, force_recheck=self.force_recheck,
+                inspection_callback=lambda completed, total, path, state:
+                self.signals.progress.emit(
+                    (completed, total, path.name, state)
                 ),
             )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
@@ -4258,6 +4265,12 @@ class DiffeoForgeWindow(QMainWindow):
             "Fill the input paths first, then check this selection. No automatic repeat."
         )
         self.validate_meshes_button.clicked.connect(self._start_input_preflight)
+        self.revalidate_meshes_button = QPushButton("Revalidate meshes…")
+        self.revalidate_meshes_button.setObjectName("secondary")
+        self.revalidate_meshes_button.setToolTip(
+            "Ignore saved mesh checks and inspect this selection again.")
+        self.revalidate_meshes_button.clicked.connect(
+            lambda: self._start_input_preflight(force_recheck=True))
         self.input_preflight_status_label = _ReadOnlyStatusText(
             "Fill the paths, then click Run deep mesh validation."
         )
@@ -4372,7 +4385,10 @@ class DiffeoForgeWindow(QMainWindow):
         landmark_plan.addWidget(self.landmark_count_spin)
         landmark_plan.addWidget(self.landmark_auto_advance_check, 1)
         data_form.addRow("Planned landmarks", landmark_plan)
-        data_form.addRow("Data validation", self.validate_meshes_button)
+        validation_actions = QHBoxLayout()
+        validation_actions.addWidget(self.validate_meshes_button)
+        validation_actions.addWidget(self.revalidate_meshes_button)
+        data_form.addRow("Data validation", validation_actions)
         data_form.addRow("Data preflight", self.input_preflight_status_label)
 
         self.procrustes_box = QWidget()
@@ -4948,7 +4964,7 @@ class DiffeoForgeWindow(QMainWindow):
         return signature
 
     @Slot()
-    def _start_input_preflight(self) -> None:
+    def _start_input_preflight(self, *, force_recheck: bool = False) -> None:
         """Dispatch only from the explicit validation button; never queue a retry."""
         if self._input_preflight_worker is not None or self._worker is not None:
             return
@@ -4963,7 +4979,8 @@ class DiffeoForgeWindow(QMainWindow):
             self.input_preflight_status_label.setText(str(error))
             self._sync_ready_state()
             return
-        if self._input_preflight is not None and self._input_preflight_signature == signature:
+        if (not force_recheck and self._input_preflight is not None
+                and self._input_preflight_signature == signature):
             return
         worker = _InputPreflightWorker(
             mesh_paths,
@@ -4976,6 +4993,7 @@ class DiffeoForgeWindow(QMainWindow):
             Path(self.project_edit.text().strip()).expanduser().resolve()
             if self.project_edit.text().strip()
             else None,
+            force_recheck=force_recheck,
         )
         worker.signals.succeeded.connect(self._input_preflight_succeeded)
         worker.signals.failed.connect(self._input_preflight_failed)
@@ -4987,9 +5005,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.input_preflight_status_label.setObjectName("status")
         self.input_preflight_status_label.setStyleSheet("")
         self.input_preflight_status_label.setText(
-            f"Inspecting structural quality, workload, and coordinate scales for "
-            f"{len(mesh_paths)} meshes read-only outside the interface. Large files "
-            "may take a moment; no input will be changed."
+            f"Checking {len(mesh_paths)} files. Reusing saved mesh validation where compatible; "
+            "only new or changed meshes need deep inspection."
         )
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -4998,10 +5015,10 @@ class DiffeoForgeWindow(QMainWindow):
     def _input_preflight_progress(self, progress: tuple[int, int, str]) -> None:
         if self._input_preflight_worker is None:
             return
-        completed, total, filename = progress
+        completed, total, filename = progress[:3]
+        action = progress[3] if len(progress) > 3 else "Mesh checked"
         self.input_preflight_status_label.setText(
-            f"Deep mesh validation: {completed} of {total} complete — {filename}. "
-            "The interface remains usable; original meshes are read-only."
+            f"{completed} of {total} · {action}: {filename}"
         )
 
     @Slot(object)
@@ -8035,6 +8052,8 @@ class DiffeoForgeWindow(QMainWindow):
             if validation_running
             else ("Meshes checked" if validation_current else "Run deep mesh validation")
         )
+        self.revalidate_meshes_button.setEnabled(
+            bool(self.mesh_edit.text().strip()) and not validation_running and self._worker is None)
         self.load_last_project_button.setEnabled(
             bool(self._recent_projects) and self._worker is None and not validation_running
         )

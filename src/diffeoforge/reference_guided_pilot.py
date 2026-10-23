@@ -221,7 +221,10 @@ def _batch(
         config["model"]["deformation"].pop(key, None)
     template = load_surface_mesh(source.study_directory / manifest["inputs"]["template"]["copy"])
     _, spacing = control_grid(template.metadata.bounds)
-    center = dict(values, initial_control_point_spacing=spacing)
+    center = dict(values)
+    refinement = (strategy or {}).get("baseline") if phase == "refine" else None
+    if not refinement:
+        center["initial_control_point_spacing"] = spacing
     selected = (
         source.plan.selected_pilot_subjects
         if phase == "joint"
@@ -305,6 +308,8 @@ def _batch(
                 k: config["optimization"][k] for k in ("freeze_template", "freeze_control_points")
             },
             scope="All original pilot targets" if phase == "joint" else "One original target only",
+            **({"refinement": dict(version="guided-refinement-v1", reference=refinement)}
+               if refinement else {}),
             guided=dict(
                 version=ADAPTIVE_VERSION if strategy is not None else VERSION,
                 origin=str(source.study_directory),
@@ -538,7 +543,7 @@ def _next_action(directory, action, candidate_id=None, *, goal=None):
     return result
 
 
-def adjusted_values(values, goal):
+def adjusted_values(values, goal, *, conservative=False, step=0):
     values = dict(values)
     parameter, factor = {
         "detail": ("attachment_kernel_width", 0.5),
@@ -547,6 +552,9 @@ def adjusted_values(values, goal):
         "local_motion": ("deformation_kernel_width", 0.5),
         "smooth": ("noise_std", 2.0),
     }[goal]
+    if conservative:
+        delta = .1 / (2 ** step)
+        factor = 1 - delta if factor < 1 else 1 + delta
     values[parameter] *= factor
     return values
 

@@ -9,6 +9,12 @@ from diffeoforge.mesh import sha256_file
 OUTCOMES = {"better": "Better", "same": "About the same", "worse": "Worse", "unsure": "Unsure"}
 
 
+def severe_regression(snapshot, identifier):
+    candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
+    subjects = (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
+    return any(r.get("refinement_guard", {}).get("severe") is True for r in subjects.values())
+
+
 def reference(snapshot, identifier, target=None):
     candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
     metrics = candidate.metrics or {}
@@ -87,8 +93,10 @@ def selection(snapshot, identifier):
             # Validate the current binding before allowing feedback to change a proposal.
             list(_local_events(snapshot, identifier))
             _same_source(snapshot, event["comparison"])
-            return event["current"] if event["outcome"] == "better" else event["comparison"]
-    anchor = (guided.record(snapshot).get("strategy") or {}).get("anchor")
+            return (event["current"] if event["outcome"] == "better"
+                    and not severe_regression(snapshot, identifier) else event["comparison"])
+    strategy = guided.record(snapshot).get("strategy") or {}
+    anchor = strategy.get("anchor") or strategy.get("baseline")
     if anchor and anchor["target"] == guided.record(snapshot)["target"]:
         _same_source(snapshot, anchor)
         return anchor
@@ -119,6 +127,7 @@ def choices(snapshot, identifier):
                 continue
             label = f"Test {other_info['screen_trials_spent']} · {candidate.label}"
             result.append(dict(reference=ref, label=label,
+                trial_index=other_info["screen_trials_spent"],
                 approved=other.visual_reviews.get(candidate.candidate_id) is True,
                 current=other.study_directory == snapshot.study_directory
                         and identifier == candidate.candidate_id))
@@ -146,11 +155,13 @@ def presentation(snapshot, identifier):
         if selected and selected != current:
             comparison = selected
         feedback = list(_local_events(snapshot, identifier))
+        explicitly_selected = any(e["event"] == "guided_starting_fit_selected"
+                                  for e in study._load_events(snapshot.study_directory))
         return dict(choices=rows, comparison=comparison, selected=selected,
                     current_inspected=bool(current and inspected(snapshot, identifier)),
                     feedback=feedback[-1] if feedback else None,
                     # An old chain without feedback starts with an explicit user choice.
-                    needs_direction=bool(comparison and not feedback and not selected))
+                    needs_direction=bool(comparison and not feedback and not explicitly_selected))
 
 
 def save_feedback(directory, identifier, decision):

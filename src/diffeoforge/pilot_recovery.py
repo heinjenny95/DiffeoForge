@@ -101,9 +101,14 @@ def capture(snapshot, identifier, target, *, regions=None):
 
     regions = (regions if regions is not None
                else snapshot.problem_regions.get(identifier, {}).get(target, []))
-    if not regions:
-        return None
     candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
+    if not regions:
+        measured = (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
+        if target in measured:
+            return dict(directory=str(snapshot.study_directory), candidate_id=identifier,
+                manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST),
+                binding=study._candidate_review_binding(candidate), target=target, regions=[],
+                baseline=[], global_baseline=measured[target])
     manifest = study._verify_manifest(snapshot.study_directory)
     row = next(r for r in manifest["inputs"]["subjects"] if r["filename"] == target)
     run = study.calibration_candidate_run_directory(candidate)
@@ -118,7 +123,7 @@ def capture(snapshot, identifier, target, *, regions=None):
     fitted_path = study._safe_study_path(run / "output", rows[0]["path"])
     if sha256_file(fitted_path) != rows[0]["sha256"]:
         raise ValueError("Region feedback reconstruction bytes changed")
-    validate({target: regions}, {target: row["sha256"]})
+    validate({target: regions} if regions else {}, {target: row["sha256"]})
     original_source = load_surface_mesh(snapshot.study_directory / row["copy"])
     fitted_source = load_surface_mesh(fitted_path)
     if (original_source.metadata.sha256 != row["sha256"]
@@ -147,4 +152,4 @@ def verify(feedback, subjects):
     candidate = next(c for c in snapshot.candidates if c.candidate_id == feedback["candidate_id"])
     if study._candidate_review_binding(candidate) != feedback["binding"]:
         raise ValueError("Region feedback reconstruction or settings changed")
-    validate({feedback["target"]: feedback["regions"]}, subjects)
+    validate({feedback["target"]: feedback["regions"]} if feedback["regions"] else {}, subjects)

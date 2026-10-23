@@ -130,12 +130,29 @@ def render_starting_fits(window, snapshot, identifier, layout, data):
         caption.setWordWrap(True)
         caption.setObjectName("guidedStartingFit")
         layout.addWidget(caption)
+        if not selection["current"]:
+            inspect_start = QPushButton("Inspect retained starting fit")
+            inspect_start.clicked.connect(lambda: window._open_guided_saved_fit(selected))
+            layout.addWidget(inspect_start)
         if selection["approved"] and not selection["current"]:
             use = QPushButton("Use reviewed starting fit → check remaining forms")
             _set_action_emphasis(use, True)
             use.clicked.connect(lambda: window._start_pilot(
                 adaptive=False, guided_action=("adaptive_confirm_start", identifier, None)))
             layout.addWidget(use)
+    same_method = [r for r in data["choices"] if not r["current"] and
+                   r["reference"]["method"] ==
+                   snapshot.attachment_comparison["methods"][identifier]]
+    if same_method:
+        first = min(same_method, key=lambda r: r.get("trial_index", 0))["reference"]
+        if first != selected:
+            inspect_first = QPushButton("Inspect first fit on this form")
+            inspect_first.clicked.connect(lambda: window._open_guided_saved_fit(first))
+            layout.addWidget(inspect_first)
+            restore_first = QPushButton("Return to first fit as starting point")
+            restore_first.clicked.connect(lambda: window._start_pilot(adaptive=False,
+                guided_action=("adaptive_select_start", identifier, first)))
+            layout.addWidget(restore_first)
     toggle = QPushButton("Choose / inspect an earlier fit…")
     toggle.setCheckable(True)
     layout.addWidget(toggle)

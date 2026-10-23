@@ -215,8 +215,17 @@ class VisualizationPanel(QWidget):
         self.plot_view.hovered.connect(self.hover_label.setText)
         self.sd_combo, self.sd_view = self._picture_tab("±2 SD")
         self.heat_combo, self.heat_view = self._picture_tab("Heatmaps")
-        heat_legend = QLabel("Displacement · model units. Signed: along mean normal +, against −.")
+        heat_legend = QLabel(
+                            "Static endpoint maps relative to the mean; "
+                            "six views of the same shape. "
+                            "Distance shows movement magnitude. Signed normal: + along the mean "
+                            "surface normal, − against it, 0 no normal movement. Model units.")
+        heat_legend.setWordWrap(True)
         self.heat_view.parentWidget().layout().insertWidget(1, heat_legend)
+        self.all_heatmaps_button = QPushButton("Show all heatmaps · all PCs, signs and map types")
+        self.all_heatmaps_button.setEnabled(False)
+        self.all_heatmaps_button.clicked.connect(self._show_all_heatmaps)
+        self.heat_view.parentWidget().layout().insertWidget(2, self.all_heatmaps_button)
         self.sd_combo.currentIndexChanged.connect(
             lambda: self._show_image(self.sd_combo, self.sd_view)
         )
@@ -304,6 +313,7 @@ class VisualizationPanel(QWidget):
         self.export.setEnabled(False)
         self.export_current.setEnabled(False)
         self._records = {}
+        self.all_heatmaps_button.setEnabled(False)
         self.morphospace.clear()
         for combo, view in ((self.sd_combo, self.sd_view), (self.heat_combo, self.heat_view)):
             combo.clear()
@@ -377,6 +387,7 @@ class VisualizationPanel(QWidget):
             combo.blockSignals(False)
         self._show_image(self.sd_combo, self.sd_view)
         self._show_image(self.heat_combo, self.heat_view)
+        self.all_heatmaps_button.setEnabled(self.heat_combo.findData("all") >= 0)
         self._select_video()
         self._show_plot()
         self.export.setEnabled(self._export_future is None)
@@ -484,11 +495,18 @@ class VisualizationPanel(QWidget):
             glyph.setToolTip(f"{label} · PC{x + 1}: {a:.6g} · PC{y + 1}: {b:.6g}")
             glyph.setData(0, glyph.toolTip())
 
+    def _show_all_heatmaps(self):
+        index = self.heat_combo.findData("all")
+        if index >= 0:
+            self.heat_combo.setCurrentIndex(index)
+            self._show_image(self.heat_combo, self.heat_view)
+
     def _show_image(self, combo, view):
         if combo.currentData() == "all":
             scene = view.scene()
             scene.clear()
-            entries = [(combo.itemText(i), combo.itemData(i)) for i in range(combo.count() - 1)]
+            entries = [(combo.itemText(i), combo.itemData(i)) for i in range(combo.count())
+                       if combo.itemData(i) not in (None, "all")]
             if combo is self.heat_combo:
                 entries.sort(key=lambda entry: (entry[1].stem.split("-", 1)[-1], entry[1].stem))
             for index, (title, path) in enumerate(entries):

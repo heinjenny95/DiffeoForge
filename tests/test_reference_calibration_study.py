@@ -42,10 +42,12 @@ def _synthetic_learned_seed(monkeypatch):
 
 
 def _stub_learned_seed(monkeypatch):
+    from guided_field_fixture import field_fixture
     from test_reference_adaptive_calibration import seed_stub
 
     # These controllers produce synthetic receipts, not optimizer tensors.
     monkeypatch.setattr("diffeoforge.reference_adaptive_calibration.bind_learned_seed", seed_stub)
+    monkeypatch.setattr("diffeoforge.guided_refinement.load_field", field_fixture)
 
 
 def test_latest_search_extension_directory_follows_deterministic_rounds(

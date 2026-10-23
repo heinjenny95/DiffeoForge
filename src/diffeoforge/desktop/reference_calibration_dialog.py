@@ -902,7 +902,7 @@ class CalibrationCandidateViewerDialog(QDialog):
             n: self.display_scopes.get(n, "original_and_reconstruction_displayed") for n in names},
             comparison_displayed=False,
             problem_regions={n: self.problem_regions[n]
-                             for n in names if n in self.problem_regions})
+                             for n in names if self.problem_regions.get(n)})
         saved = getattr(self, "saved_comparison", None)
         if saved and saved.toggle.isChecked() and saved.canvas.comparison_ready:
             model = saved.canvas.reconstruction_model
@@ -4478,7 +4478,8 @@ class ReferenceCalibrationDialog(QDialog):
                     candidate.candidate_id, {}).items()
             }
             feedback = (guided_record(reviewed_snapshot) or {}).get("feedback")
-            if feedback and candidate.candidate_id not in reviewed_snapshot.problem_regions:
+            if (feedback and feedback["regions"]
+                    and candidate.candidate_id not in reviewed_snapshot.problem_regions):
                 dialog.problem_regions[feedback["target"]] = [
                     dict(row) for row in feedback["regions"]]
             # Re-review is a new human decision. Previous decisions remain in the
@@ -4539,7 +4540,7 @@ class ReferenceCalibrationDialog(QDialog):
                         p.original_path.name: dialog.problem_regions[p.original_path.name]
                         for p in dialog._pairs if p.required
                         and p.pair_id in dialog._reviewed_pair_ids
-                        and p.original_path.name in dialog.problem_regions
+                        and dialog.problem_regions.get(p.original_path.name)
                     },
                     subject_decisions=dialog.subject_decisions,
                     display_scopes={

@@ -83,8 +83,9 @@ def test_saved_exhausted_rejection_keeps_regions_and_can_refine_again(tmp_path, 
                if p.name != study.STUDY_EVENTS)
     follow = reject(run_batch(follow, monkeypatch))
     next_proposal = strategy.trial_proposal(follow, "guided-varifold", "detail")
-    assert next_proposal["goal"] == (
-        "weight" if info["goal"] == "local_motion" else "local_motion")
+    assert next_proposal["goal"] == "weight"
+    assert next_proposal["values"]["deformation_kernel_width"] == (
+        info["strategy"]["baseline"]["values"]["deformation_kernel_width"])
     second = guided.next_action(follow.study_directory, "adaptive_recover", "guided-varifold",
                                goal="detail")
     assert guided.record(second)["screen_trials_spent"] == 15
@@ -132,7 +133,7 @@ def test_previous_settings_can_fund_different_hypothesis_but_no_duplicate_fit(
     assert alternative.plan.effective_values["attachment_kernel_width"] == (
         snapshot.plan.effective_values["attachment_kernel_width"])
     assert alternative.plan.effective_values["deformation_kernel_width"] == (
-        snapshot.plan.effective_values["deformation_kernel_width"] / 2)
+        snapshot.plan.effective_values["deformation_kernel_width"] * .9)
     assert not alternative.visual_reviews and all(c.attempts == 0 for c in alternative.candidates)
 
 

@@ -9,12 +9,10 @@ import os
 import uuid
 from pathlib import Path
 
-from diffeoforge import __version__
-
 
 def measurement_key(path, digest, transform, budget, descriptor_version):
     return {
-        "software_version": __version__,
+        "software_version": "scalar-measurements-1",
         "measurement_version": "1",
         "filename": path.name,
         "sha256": digest,
@@ -38,11 +36,29 @@ def cache_path(directory, key):
     return Path(directory) / (hashlib.sha256(_json(key).encode()).hexdigest() + ".json")
 
 
-def read_measurement(directory, key):
+def read_measurement(directory, key, *, _legacy=False):
     if directory is None:
         return None
     path = cache_path(directory, key)
     try:
+        if not path.exists() and not _legacy:
+            # Migrate the former app-version key only when every measurement
+            # rule/input/transform matches. A GUI-only upgrade changes no rule.
+            for prior in sorted(Path(directory).glob("*.json"))[:2048]:
+                try:
+                    if prior.is_symlink() or prior.stat().st_size > 65536:
+                        continue
+                    old_key = json.loads(prior.read_text(encoding="utf-8"))["key"]
+                    if ({k: v for k, v in old_key.items() if k != "software_version"}
+                            != {k: v for k, v in key.items() if k != "software_version"}):
+                        continue
+                    payload = read_measurement(directory, old_key, _legacy=True)
+                    if payload is not None:
+                        write_measurement(directory, key, payload)
+                        return payload
+                except (OSError, ValueError, TypeError, KeyError):
+                    continue
+            return None
         if path.is_symlink() or path.stat().st_size > 65536:
             return None
         record = json.loads(path.read_text(encoding="utf-8"))

@@ -182,6 +182,11 @@ def test_all_pca_sd_and_heatmaps_keep_individual_selection_and_hover_ids(qapp, t
         assert len([item for item in view.scene().items() if hasattr(item, "pixmap")]) == 3
         combo.setCurrentIndex(1)
         assert len(view.scene().items()) == 1
+    panel.all_heatmaps_button.setEnabled(True)
+    panel.all_heatmaps_button.click()
+    assert panel.heat_combo.currentData() == "all"
+    assert len([item for item in panel.heat_view.scene().items()
+                if hasattr(item, "pixmap")]) == 3
     panel.close()
 
 

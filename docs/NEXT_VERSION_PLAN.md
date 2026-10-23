@@ -1,5 +1,13 @@
 # Next DiffeoForge development version
 
+Owner implementation authorization, 23 October 2026, supersedes collection-only
+status for the immediate refinement, persistent validation, repeated preparation
+and heatmap software follow-ups below. v156 implements their scoped changes;
+see [behavior, verification and remaining gates](V156_REFINEMENT_AND_REUSE.md).
+Native fit improvement, the reported result's independent first use and broader
+preparation performance remain open. Historical backlog wording below is retained
+as the original acceptance requirement, not a prohibition on this authorized work.
+
 ## Pending: refinement destroys an almost-correct fit — 23 October 2026
 
 Owner report after the delivered refinement changes: the very first fit was

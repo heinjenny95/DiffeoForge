@@ -1,5 +1,11 @@
 # Roadmap
 
+v156 implements the owner-authorized retained-refinement/shared-validation repair
+and heatmap software follow-ups. See [behavior and remaining acceptance](docs/V156_REFINEMENT_AND_REUSE.md).
+The report-level checkboxes below remain open for owner/native first use and
+result-specific evidence; earlier collection-only wording is superseded by the
+23 October implementation request. No scientific fit starts during this delivery.
+
 - [x] Separate provisional method choice from anatomical acceptance; refine a
   rejected fit before coverage, return failed individual/joint results to guided
   recovery, reuse only exact compatible approvals, and require an explicit Run

@@ -337,6 +337,8 @@ def preview_landmark_alignment(
     max_iterations: int = DEFAULT_PROCRUSTES_MAX_ITERATIONS,
     source_metadata: Sequence[SurfaceMeshMetadata] | None = None,
     source_scale_metrics: Sequence[MeshScaleMetrics] | None = None,
+    inspection_cache: Path | str | None = None,
+    cache_sources: Sequence[Path | str] = (),
 ) -> LandmarkAlignmentPreview:
     """Compute a hash-bound alignment preview without creating or changing files.
 
@@ -362,6 +364,15 @@ def preview_landmark_alignment(
         # Stream scalar evidence, never retain the entire full-resolution cohort.
         metadata_items, metric_items = [], []
         for path in source_paths:
+            from diffeoforge import mesh_inspection_cache as inspection
+
+            digest = sha256_file(path) if inspection_cache is not None else None
+            cached = inspection.read(path, digest, (inspection_cache, *cache_sources)) \
+                if digest else None
+            if cached:
+                metadata_items.append(cached[0])
+                metric_items.append(cached[2])
+                continue
             loaded = load_surface_mesh(path)
             metadata_items.append(loaded.metadata)
             metric_items.append(compute_mesh_scale_metrics(
@@ -662,6 +673,8 @@ def prepare_landmark_aligned_inputs(
     expected_fingerprint: str | None = None,
     approved_preview: LandmarkAlignmentPreview | None = None,
     progress_callback: Callable[[int, int, Path], None] | None = None,
+    cache_projects: Sequence[Path | str] = (),
+    inspection_cache: Path | str | None = None,
 ) -> AlignedInputCohort:
     """Create or verify one content-addressed Procrustes-aligned mesh cohort.
 
@@ -702,6 +715,7 @@ def prepare_landmark_aligned_inputs(
             allow_reflection=allow_reflection,
             tolerance=tolerance,
             max_iterations=max_iterations,
+            inspection_cache=inspection_cache, cache_sources=cache_projects,
         )
     else:
         preview = approved_preview
@@ -768,6 +782,62 @@ def prepare_landmark_aligned_inputs(
         "max_iterations": int(max_iterations),
     }
     fingerprint = preview.fingerprint
+    # A new project can reuse an exact, freshly verified publication from a
+    # previous selected project. Copy evidence/bytes, never share mutable files.
+    for previous in tuple(cache_projects)[:8]:
+        previous = Path(previous).expanduser().resolve()
+        if previous == project:
+            continue
+        try:
+            reused = _reuse_aligned_inputs(previous, preview.mesh_directory, landmark_source,
+                template, subject_pattern,
+                {k: v for k, v in settings.items() if k != "scaling_label"},
+                fingerprint, progress_callback)
+        except (ConfigurationError, OSError):
+            # A prior project's disposable reuse path is not the selected input.
+            # Rebuild from verified originals rather than modify old evidence.
+            reused = None
+        if reused is None:
+            continue
+        preprocessing_root = project / "preprocessing"
+        destination = preprocessing_root / f"aligned-{fingerprint[:16]}"
+        if preprocessing_root.is_symlink() or destination.is_symlink():
+            raise ConfigurationError("Refusing linked preprocessing destination")
+        if destination.exists():
+            return _load_existing(destination, fingerprint=fingerprint,
+                source_names=tuple(p.name for p in source_paths),
+                aligned_names=preview.aligned_filenames)
+        preprocessing_root.mkdir(parents=True, exist_ok=True)
+        staging = _create_alignment_staging_directory(preprocessing_root)
+        try:
+            source = reused.evidence.parent
+            for item in source.rglob("*"):
+                if item.is_symlink() or (hasattr(item, "is_junction") and item.is_junction()):
+                    raise ConfigurationError("Refusing linked saved alignment files")
+                target = staging / item.relative_to(source)
+                if item.is_dir():
+                    target.mkdir(exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(item, target)
+                    if sha256_file(item) != sha256_file(target):
+                        raise ConfigurationError("Saved alignment changed during copying")
+            _load_existing(staging, fingerprint=fingerprint,
+                source_names=tuple(p.name for p in source_paths),
+                aligned_names=preview.aligned_filenames)
+            if (sha256_file(landmark_source) != preview.landmark_sha256 or
+                    tuple(sha256_file(p) for p in source_paths) != preview.mesh_sha256):
+                raise ConfigurationError("Inputs changed during saved alignment reuse")
+            replace_atomically(staging, destination)
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging)
+        if progress_callback:
+            progress_callback(len(source_paths), len(source_paths),
+                              Path("Reused verified alignment from earlier project"))
+        return _load_existing(destination, fingerprint=fingerprint,
+            source_names=tuple(p.name for p in source_paths),
+            aligned_names=preview.aligned_filenames)
     preprocessing_root = project / "preprocessing"
     if preprocessing_root.is_symlink():
         raise ConfigurationError(
@@ -892,7 +962,8 @@ def prepare_landmark_aligned_inputs(
                 }
             )
             if progress_callback is not None:
-                progress_callback(index + 1, len(source_paths), path)
+                progress_callback(index + 1, len(source_paths),
+                                  Path("Transforming surface · " + path.name))
         sensitivity_report = preview.scaling_sensitivity
         sensitivity_csv_path = temporary / "scaling-sensitivity.csv"
         with sensitivity_csv_path.open("x", encoding="utf-8", newline="") as handle:

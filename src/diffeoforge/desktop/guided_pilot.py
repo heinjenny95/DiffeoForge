@@ -167,6 +167,16 @@ def render(window, prepared):
         label = QLabel(state)
         label.setWordWrap(True)
         layout.addWidget(label)
+        initialization = snapshot.attachment_comparison.get("refinement", {})
+        if initialization:
+            starting = QLabel(
+                "Starting from your saved fitted shape."
+                if initialization.get("initialization") == "learned"
+                else "This adjustment requires a fresh fit. "
+                "Compare it with your saved starting fit."
+            )
+            starting.setWordWrap(True)
+            layout.addWidget(starting)
         if candidate in failed:
             layout.addWidget(
                 InfoDisclosure("Technical failure", candidate.error or "No usable result")
@@ -196,6 +206,13 @@ def render(window, prepared):
                 label = QLabel(message)
                 label.setWordWrap(True)
                 layout.addWidget(label)
+            guards = [r["refinement_guard"] for r in subjects.values() if r.get("refinement_guard")]
+            if any(g["outcome"] == "regression" for g in guards):
+                warning = QLabel("This test worsened whole-shape agreement. Keep the earlier "
+                                 "starting fit and inspect the difference before another change.")
+                warning.setObjectName("statusWarning")
+                warning.setWordWrap(True)
+                layout.addWidget(warning)
             method = snapshot.attachment_comparison["methods"][candidate.candidate_id]
             valid = guidance.get("allowed", {}).get(candidate.candidate_id, False)
             if info["phase"] != "screen":
@@ -316,7 +333,11 @@ def _recovery(window, snapshot, candidate, layout, guidance):
         state.update(proposed)
         state["request"] = request
         explanation.setText(
-            f"{proposed['reason']} Next: 1 test on this form. If suitable, "
+            f"{proposed['reason']} "
+            + ("Reuse a compatible saved single-form deformation on the same basis. "
+               if proposed['goal'] in {'detail', 'weight', 'smooth'}
+               else "This changes the deformation basis or method and needs a fresh start. ")
+            + f"Next: 1 test on this form. If suitable, "
             f"{proposed['remaining_checks']} other form(s) need checking, then one joint fit. "
             "Earlier results stay saved. Whole-shape quality is also checked."
             + (" Several adjustments have been tried; inspect alignment, mesh quality and "

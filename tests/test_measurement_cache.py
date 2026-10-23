@@ -65,6 +65,28 @@ def test_cache_rejects_corruption_and_transform_changes(tmp_path, monkeypatch):
     assert doubled.template_diagonal > 0
 
 
+def test_previous_app_version_measurements_migrate_without_surface_parsing(tmp_path, monkeypatch):
+    import json
+
+    from diffeoforge.measurement_cache import cache_path, write_measurement
+
+    paths = cohort(tmp_path)
+    directory = tmp_path / "cache"
+    settings = dict(alignment_basis="declared_gpa", surface_detail_intent="fine",
+                    deformation_scale_intent="local", cache_directory=directory)
+    expected = analysis.recommend_reference_parameters(paths, **settings)
+    canonical = list(directory.glob("*.json"))
+    for path in canonical:
+        record = json.loads(path.read_text())
+        old_key = dict(record["key"], software_version="0.0.0.dev155")
+        write_measurement(directory, old_key, record["payload"])
+        assert cache_path(directory, old_key).is_file()
+        path.unlink()
+    monkeypatch.setattr(analysis, "load_surface_mesh", lambda path: pytest.fail("Legacy parsing"))
+    assert analysis.recommend_reference_parameters(paths, **settings) == expected
+    assert all(path.is_file() for path in canonical)
+
+
 def test_preparation_cancel_preserves_inputs_and_does_not_measure_next_mesh(tmp_path, monkeypatch):
     paths = cohort(tmp_path)
     original_bytes = {p: p.read_bytes() for p in paths}
