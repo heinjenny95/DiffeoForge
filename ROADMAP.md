@@ -56,6 +56,13 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 ## Owner-requested cleanup
 
+- [ ] Repair pilot refinement that turns an almost-correct first fit into grossly
+  incorrect alternatives after local-detail feedback. Audit actual initialization
+  and parameter deltas, retain the useful fit, bound changes and flag whole-shape
+  regressions with a direct return path. Existing feedback/history controls do
+  not close this first-use failure. See [acceptance](docs/NEXT_VERSION_PLAN.md#pending-refinement-destroys-an-almost-correct-fit--23-october-2026).
+  Owner report, 23 October 2026: backlog only; cause not yet traced.
+
 - [ ] Reuse saved deep mesh-validation reports across projects and application
   sessions for the same verified mesh content and compatible validation rules/
   settings. Recreating a project or restarting its pilot must not repeat valid

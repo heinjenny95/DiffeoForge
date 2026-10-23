@@ -1,5 +1,12 @@
 # v154 — feedback and recoverable pilot refinement
 
+First-use update, 23 October 2026: the owner reports an almost-correct first fit
+followed by grossly incorrect proposals after local-detail feedback. Useful
+refinement remains unresolved despite the feedback/history mechanisms below.
+The [reopened acceptance item](NEXT_VERSION_PLAN.md#pending-refinement-destroys-an-almost-correct-fit--23-october-2026)
+requires tracing actual initialization/proposals and checking global regressions;
+an optimizer reset has not been established. No new fix or fit is authorized.
+
 A sequence of unsuccessful improvements must leave a useful starting point and
 an explicit way forward. The guided review now records Better, About the same,
 Worse or Unsure, a plain-language symptom and optional notes independently of

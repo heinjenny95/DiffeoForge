@@ -1,5 +1,40 @@
 # Next DiffeoForge development version
 
+## Pending: refinement destroys an almost-correct fit — 23 October 2026
+
+Owner report after the delivered refinement changes: the very first fit was
+almost correct, with only local details unsatisfactory. Reporting those details
+led to several grossly incorrect alternatives, apparently like starting over.
+Actual reinitialization is not established. Reopen scientific first-use acceptance
+of refinement; saved feedback and an earlier-fit chooser alone do not establish
+useful proposals. Collection only: no implementation or scientific trial here.
+
+- [ ] Trace the selected reference, feedback, proposed parameter deltas and
+  actual engine inputs/initialization for the reported chain. Distinguish retaining
+  a parameter configuration from continuing its fitted deformation; identify any
+  reset/default substitution or incompatible initialization. Reuse fitted state
+  only with explicit mathematical/runtime compatibility checks, never by blindly
+  transplanting momenta after a changed kernel, basis or attachment model.
+- [ ] Keep the user-designated nearly correct fit as the visible refinement
+  reference without requiring anatomical approval. A local-detail complaint
+  should lead to a small, explained, bounded change, preserving the other good
+  settings where applicable. Do not replace it with the latest/worst attempt or
+  silently return to broad method/template search. State when a proposed trial
+  requires fresh initialization and why; require a separate Run.
+- [ ] Compare each proposal with the retained fit using comparable local and
+  whole-shape measurements plus visual feedback. Flag gross shape regression as
+  an unsuccessful alternative; never promote it merely because it completed or
+  has a lower native objective under a different configuration. Preserve results
+  and an obvious return to the retained fit. Stop recycling a failed hypothesis
+  and explain the next targeted choice when repeated proposals deteriorate.
+  Measurement guards inform review; they do not grant anatomical approval.
+- [ ] Reproduce the full route from a nearly correct first fit and a local-detail
+  complaint through multiple worse alternatives, reopening and explicit return
+  to the original. Verify exact baseline/proposal binding and bounded changes in
+  the installed workflow; obtain owner confirmation of useful refinement before
+  closing the report. Historical synthetic control-flow tests remain valid but
+  do not establish improved fit quality. Preserve generality across surface data.
+
 ## Pending: reuse deep mesh validation across projects — 23 October 2026
 
 Owner report: recreating a project to restart the pilot repeatedly requires deep
