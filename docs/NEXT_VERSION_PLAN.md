@@ -4,7 +4,8 @@ v157 owner-authorized pilot follow-up: distinguish unfinished numerical
 optimization from parameter inadequacy, retain the fitted field and fitting
 settings for a longer bounded trial, and stop repeating unsuitable detail
 hypotheses. See [behavior and remaining scientific gates](V157_CAP_AWARE_PILOT.md).
-No new owner fits are authorized for development verification. Button boundaries
+Runtime dev157 is installed; [delivery verification](V157_DELIVERY.md) passes.
+No owner/native fit was started during verification. Button boundaries
 below remain the separate recorded backlog.
 
 ## Pending: distinguish buttons from explanatory text — 23 October 2026

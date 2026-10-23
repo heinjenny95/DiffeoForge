@@ -6,8 +6,9 @@ single-form field, with a separately bounded allowance and new optimizer history
 Repeated unsuitable detail hypotheses lead to another explained adjustment;
 retained references, separate Run and fresh visual review remain required.
 See [behavior and qualification boundaries](V157_CAP_AWARE_PILOT.md).
-Installation/delivery verification is pending. Do not start owner fits to test it.
-The v156 delivery below remains the installed-version snapshot until verified.
+Runtime `637f600` / `dev157` is installed. Source, exact frozen and installed
+checks, backup/idle and preservation guards pass; see [verified delivery](V157_DELIVERY.md).
+No owner/native fit was started; anatomical benefit remains open. Older snapshots follow.
 
 The owner authorized fixing the almost-correct-fit regression and remaining
 collected follow-ups. v156 adds compatible saved-field initialization, conservative
