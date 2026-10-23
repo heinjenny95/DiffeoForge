@@ -5,7 +5,9 @@ control-point test retains the saved initial field and propagates the chosen
 common basis through coverage/joint checks. Saved attempt/stop/feedback summaries
 and direct original-template alignment inspection replace the stale disabled
 action at the end of automatic suggestions. See [scope and limits](V158_PILOT_DIAGNOSIS.md).
-Runtime installation and owner first-use acceptance must be recorded separately.
+Runtime `3a4376e` / `dev158` is installed. Source/exact frozen/installed UI,
+backup/idle, package and owner-file/Qt preservation checks pass; see
+[verified delivery](V158_DELIVERY.md). Anatomical benefit and owner acceptance remain open.
 No owner/native fit is authorized during this engineering work. Older snapshots follow.
 
 v157 source addresses repeated local-detail failures after v156: explicit native
