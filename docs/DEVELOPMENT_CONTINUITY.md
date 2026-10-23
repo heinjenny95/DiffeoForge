@@ -7,7 +7,9 @@ the unmarked-feedback save repair. Content/rules-bound mesh checks and compatibl
 alignment/metadata/measurements are reused across projects; explicit revalidation
 and phase-specific progress remain available. Heatmaps add a visible all-map
 control and corrected new-media captions. See [scope and limits](V156_REFINEMENT_AND_REUSE.md).
-Build/installation verification is pending. Do not infer a new scientific run or
+Runtime `29e882b` / `dev156` is installed.
+Source/exact frozen/installed workflow, cache and existing-result heatmap checks pass;
+owner project/state and Qt settings are preserved. See [verified delivery](V156_DELIVERY.md). Do not infer a new scientific run or
 biological improvement from development checks. Older snapshots below are historical.
 
 v155 source adds **Correct/change existing landmarks…** in Step 1, with searchable

@@ -4,6 +4,7 @@ Owner implementation authorization, 23 October 2026, supersedes collection-only
 status for the immediate refinement, persistent validation, repeated preparation
 and heatmap software follow-ups below. v156 implements their scoped changes;
 see [behavior, verification and remaining gates](V156_REFINEMENT_AND_REUSE.md).
+Runtime dev156 is installed; [delivery verification](V156_DELIVERY.md) records completed engineering gates.
 Native fit improvement, the reported result's independent first use and broader
 preparation performance remain open. Historical backlog wording below is retained
 as the original acceptance requirement, not a prohibition on this authorized work.
@@ -17,19 +18,19 @@ Actual reinitialization is not established. Reopen scientific first-use acceptan
 of refinement; saved feedback and an earlier-fit chooser alone do not establish
 useful proposals. Collection only: no implementation or scientific trial here.
 
-- [ ] Trace the selected reference, feedback, proposed parameter deltas and
+- [x] Trace the selected reference, feedback, proposed parameter deltas and
   actual engine inputs/initialization for the reported chain. Distinguish retaining
   a parameter configuration from continuing its fitted deformation; identify any
   reset/default substitution or incompatible initialization. Reuse fitted state
   only with explicit mathematical/runtime compatibility checks, never by blindly
   transplanting momenta after a changed kernel, basis or attachment model.
-- [ ] Keep the user-designated nearly correct fit as the visible refinement
+- [x] Keep the user-designated nearly correct fit as the visible refinement
   reference without requiring anatomical approval. A local-detail complaint
   should lead to a small, explained, bounded change, preserving the other good
   settings where applicable. Do not replace it with the latest/worst attempt or
   silently return to broad method/template search. State when a proposed trial
   requires fresh initialization and why; require a separate Run.
-- [ ] Compare each proposal with the retained fit using comparable local and
+- [x] Compare each proposal with the retained fit using comparable local and
   whole-shape measurements plus visual feedback. Flag gross shape regression as
   an unsuccessful alternative; never promote it merely because it completed or
   has a lower native objective under a different configuration. Preserve results
@@ -51,13 +52,13 @@ change, new validation, build, installation or scientific fit is authorized here
 This extends the earlier duplicate-dispatch and geometry-loading repairs to
 persistent reuse across projects and application sessions.
 
-- [ ] Persist per-mesh deep-validation reports in a local cache shared across
+- [x] Persist per-mesh deep-validation reports in a local cache shared across
   projects. Identify unchanged geometry by verified file content, validation
   implementation/version and relevant inspection settings, not specimen name,
   path or project ID alone. Reuse compatible reports when files are copied,
   renamed or selected for a new project/pilot; inspect only missing or changed
   meshes. Keep original files unchanged.
-- [ ] Invalidate affected reports after changed mesh content, relevant validation
+- [x] Invalidate affected reports after changed mesh content, relevant validation
   rules/settings or geometry preprocessing. Do not reuse corrupt, incomplete or
   cancelled reports as completed evidence. Preserve warnings/failures and their
   diagnostic details rather than converting a cache hit into a clean pass.
@@ -65,7 +66,7 @@ persistent reuse across projects and application sessions.
   a new project still needs its own applicable checks, without repeating valid
   geometry inspection. Landmark-only edits must not by themselves discard an
   otherwise compatible mesh-inspection report.
-- [ ] Show a concise reused/new/changed status and provide an explicit revalidate
+- [x] Show a concise reused/new/changed status and provide an explicit revalidate
   action. Run content checking/cache work off the GUI thread and distinguish
   integrity I/O from expensive topology inspection. Verify reuse after closing
   the app and recreating a project, mixed old/new inputs, moved/copied files,
