@@ -56,6 +56,14 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 ## Owner-requested cleanup
 
+- [ ] Reuse saved deep mesh-validation reports across projects and application
+  sessions for the same verified mesh content and compatible validation rules/
+  settings. Recreating a project or restarting its pilot must not repeat valid
+  topology inspection; validate only new/changed meshes, retain diagnostics and
+  offer explicit revalidation. Keep project/landmark/GPA checks separate. See
+  [acceptance criteria](docs/NEXT_VERSION_PLAN.md#pending-reuse-deep-mesh-validation-across-projects--23-october-2026).
+  Owner request, 23 October 2026: backlog only; not implemented.
+
 - [ ] Make endpoint heatmaps understandable: distinguish a static PC/SD endpoint
   from a movie, explain the mean reference and signed normal displacement with a
   short legend, and identify the six panels as views of the same shape. Remove

@@ -1,5 +1,34 @@
 # Next DiffeoForge development version
 
+## Pending: reuse deep mesh validation across projects — 23 October 2026
+
+Owner report: recreating a project to restart the pilot repeatedly requires deep
+validation of the same input meshes. Record this as backlog only; no software
+change, new validation, build, installation or scientific fit is authorized here.
+This extends the earlier duplicate-dispatch and geometry-loading repairs to
+persistent reuse across projects and application sessions.
+
+- [ ] Persist per-mesh deep-validation reports in a local cache shared across
+  projects. Identify unchanged geometry by verified file content, validation
+  implementation/version and relevant inspection settings, not specimen name,
+  path or project ID alone. Reuse compatible reports when files are copied,
+  renamed or selected for a new project/pilot; inspect only missing or changed
+  meshes. Keep original files unchanged.
+- [ ] Invalidate affected reports after changed mesh content, relevant validation
+  rules/settings or geometry preprocessing. Do not reuse corrupt, incomplete or
+  cancelled reports as completed evidence. Preserve warnings/failures and their
+  diagnostic details rather than converting a cache hit into a clean pass.
+  Keep landmark/cohort/configuration checks and GPA/anatomical approval separate;
+  a new project still needs its own applicable checks, without repeating valid
+  geometry inspection. Landmark-only edits must not by themselves discard an
+  otherwise compatible mesh-inspection report.
+- [ ] Show a concise reused/new/changed status and provide an explicit revalidate
+  action. Run content checking/cache work off the GUI thread and distinguish
+  integrity I/O from expensive topology inspection. Verify reuse after closing
+  the app and recreating a project, mixed old/new inputs, moved/copied files,
+  same-name changed contents, rule/settings changes and damaged cache entries.
+  Cache eviction must fall back to normal validation without losing input data.
+
 Owner scope, 22 October 2026: v155 adds an explicit existing-landmark correction
 button and selection of one or more specimens. Existing points are loaded, other
 coordinates retained and a separate complete corrected CSV selected after Save.
