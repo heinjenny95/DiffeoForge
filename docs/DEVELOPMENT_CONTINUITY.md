@@ -5,9 +5,10 @@ levels and revisitable families. Selector previews are prepared in a worker;
 actual preparation retains fresh evidence checks. A good comparison can remain
 separate from an unfinished field's numerical initialization. See
 [behavior and qualification boundaries](V159_ADAPTIVE_RECOVERY.md).
-Source regression and actual Qt workflow checks pass; Windows delivery is in
-progress. Do not infer installation or improved anatomy from this entry.
-No owner/native fit is authorized.
+Runtime `88ee357` / `dev159` is installed. Source, exact frozen and installed
+workflow, backup/idle and post-probe preservation checks pass; see
+[verified delivery](V159_DELIVERY.md). Anatomical benefit remains open.
+No owner/native fit was started.
 
 ## Historical v158 delivery
 
