@@ -1,5 +1,11 @@
 # v150 — pilot first-use repairs
 
+Status update, 23 October 2026: the owner again reports whole-cohort loading
+during pilot preparation after these repairs. The overall issue is reopened in
+the [next-version plan](NEXT_VERSION_PLAN.md#repeated-cohort-loading-before-pilot-selection--reopened-23-october-2026).
+The delivered checks below establish specific reuse paths, not resolution of
+this current end-to-end report. Its active cause has not yet been traced.
+
 Owner authorization on 22 October replaces collection-only scope for the recently
 reported pilot issues. Existing studies, recorded reviews and scientific outputs
 remain readable. These changes do not start or repeat a scientific fit.

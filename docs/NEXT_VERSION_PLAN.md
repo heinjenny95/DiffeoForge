@@ -329,7 +329,7 @@ does not close this issue.
   alternatives, preserve manual choice, and test local-detail sensitivity and
   mesh-sampling robustness before claiming a suitable starting template.
 
-### Repeated cohort loading before pilot selection — v150 source
+### Repeated cohort loading before pilot selection — reopened, 23 October 2026
 
 Owner feedback, 20 October 2026: preparing the pilot reads the whole cohort
 again after earlier input/GPA steps. Full-cohort shape measurements support
@@ -343,7 +343,15 @@ the alignment preview before checking for existing aligned outputs; without an
 approved preview this can parse the entire source cohort again. The v149 scalar/
 VTK-metadata cache is a partial improvement, not a completed fix for this path.
 
-- [x] Profile and remove avoidable repeated mesh loading between input checks,
+Owner reports the same symptom again on 23 October, after the delivered repairs:
+pilot preparation appears to load every mesh again. Reopen the overall issue;
+the earlier cache/alignment-path checks do not establish end-to-end first-use
+acceptance. No live trace has established which current work is hashing, parsing,
+validation, transformation or cache invalidation. Do not assume a cause or mark
+this resolved from the historical synthetic tests. Collection only; no new fix
+or scientific run is authorized by this follow-up.
+
+- [ ] Profile and remove avoidable repeated mesh loading between input checks,
   GPA and pilot parameter analysis. Reuse verified geometry or aligned
   measurements with exact source/transform/settings binding and bounded memory.
   Check reusable saved alignment evidence before rebuilding geometry, including
@@ -354,6 +362,16 @@ VTK-metadata cache is a partial improvement, not a completed fix for this path.
   separate hash I/O from parsing/transformation costs. Show whether the app is
   checking files, reusing measurements or measuring shapes. Preserve full-cohort
   coverage for selection and the chosen subset for actual pilot fitting.
+- [ ] Trace the reported installed preparation route per mesh and phase, with
+  timings and reasons for every cache miss. Include the same project, reopening,
+  and a newly created project with the same inputs to restart a pilot. Distinguish
+  reusable mesh inspection/measurements from alignment-dependent work; changed
+  landmarks/transforms must invalidate only their dependent evidence. Retain
+  fresh integrity checking, but label it accurately instead of calling all work
+  mesh loading. Close the issue only after the reported installed route shows
+  reuse, no redundant parsing/inspection and unchanged scientific outputs, with
+  independent owner confirmation. The separate cross-project deep-validation
+  backlog above remains open; neither item closes the other automatically.
 
 v150 checks saved alignment before preview construction, including reopening and
 non-VTK sources, and streams cold-preview geometry one mesh at a time. Synthetic

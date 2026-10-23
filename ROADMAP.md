@@ -269,7 +269,12 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
   Reuse verified geometry or aligned measurements across these steps, retaining
   fresh hashes, exact transform binding and bounded memory. The existing scalar
   cache alone does not close this repeated-loading report. See
-  [specific acceptance](docs/NEXT_VERSION_PLAN.md#repeated-cohort-loading-before-pilot-selection--pending).
+  [specific acceptance](docs/NEXT_VERSION_PLAN.md#repeated-cohort-loading-before-pilot-selection--reopened-23-october-2026).
+  Reopened after the owner's 23 October report of the same symptom following
+  installed repairs. Trace actual per-mesh phases/cache misses, including new
+  projects with the same inputs, and verify the installed route with the owner
+  before closing it. Historical cache/alignment tests remain partial evidence;
+  the current cause is unverified. Backlog only, no new implementation or fits.
 
 - [x] Check new screening approximations at every vertex/face centroid with
   component coverage, bounded resolution escalation and original fallback;
