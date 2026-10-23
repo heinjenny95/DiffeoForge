@@ -207,6 +207,17 @@ def _batch(
 
     manifest = study._verify_manifest(source.study_directory)
     config = copy.deepcopy(load_config(source.study_directory / manifest["source_config"]["copy"]))
+    iterations = (max(ITERATIONS, previous.attachment_comparison["iterations"])
+                  if strategy is not None and previous else ITERATIONS)
+    optimization = (strategy or {}).get("optimization")
+    if optimization:
+        from diffeoforge.guided_feedback import verify_reference
+
+        parent = verify_reference(optimization["reference"])
+        retained = next(c for c in parent.candidates
+                        if c.candidate_id == optimization["reference"]["candidate_id"])
+        config = copy.deepcopy(load_config(retained.config_path))
+        iterations = optimization["iterations"]
     cohort = manifest["inputs"]["full_cohort"]
     config["input"].update(
         directory=cohort["directory"],
@@ -293,13 +304,13 @@ def _batch(
         config_path,
         destination,
         plan_override=plan,
-        pilot_max_iterations=ITERATIONS,
+        pilot_max_iterations=iterations,
         attachment_comparison=dict(
             version=METRIC_VERSION,
             methods={c.candidate_id: m for c, m in zip(candidates, methods, strict=True)},
             source_directory=str(source.study_directory),
             source_manifest_sha256=sha256_file(source.study_directory / study.STUDY_MANIFEST),
-            iterations=ITERATIONS,
+            iterations=iterations,
             samples_per_repeat=8192,
             repeats=2,
             region_grid=4,

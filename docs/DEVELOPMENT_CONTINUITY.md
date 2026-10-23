@@ -1,4 +1,13 @@
-# Development continuity — v156 retained refinement and shared inspection
+# Development continuity — v157 cap-aware pilot guidance
+
+v157 source addresses repeated local-detail failures after v156: explicit native
+iteration-limit evidence first offers more optimization on the unchanged saved
+single-form field, with a separately bounded allowance and new optimizer history.
+Repeated unsuitable detail hypotheses lead to another explained adjustment;
+retained references, separate Run and fresh visual review remain required.
+See [behavior and qualification boundaries](V157_CAP_AWARE_PILOT.md).
+Installation/delivery verification is pending. Do not start owner fits to test it.
+The v156 delivery below remains the installed-version snapshot until verified.
 
 The owner authorized fixing the almost-correct-fit regression and remaining
 collected follow-ups. v156 adds compatible saved-field initialization, conservative

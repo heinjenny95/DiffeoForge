@@ -1,5 +1,11 @@
 # Roadmap
 
+v157 source adds [cap-aware pilot guidance](docs/V157_CAP_AWARE_PILOT.md): give an
+explicitly unfinished saved single-form fit more optimization time before another
+automatic parameter change; avoid repeated unsuitable detail hypotheses. New
+optimizer history, separate Run, visual review and prospective anatomy gates stay
+explicit. Installation verification is pending.
+
 v156 implements the owner-authorized retained-refinement/shared-validation repair
 and heatmap software follow-ups. See [behavior and remaining acceptance](docs/V156_REFINEMENT_AND_REUSE.md).
 The report-level checkboxes below remain open for owner/native first use and

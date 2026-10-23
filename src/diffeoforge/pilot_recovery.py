@@ -6,6 +6,11 @@ from diffeoforge.mesh import sha256_file
 from diffeoforge.pilot_regions import validate
 
 DESCRIPTIONS = {
+    "optimize": (
+        "Optimize longer with the same settings",
+        "The saved fit stopped at its iteration limit. Give its existing deformation more "
+        "optimization time before changing another parameter.",
+    ),
     "detail": (
         "Test finer surface matching",
         "Make smaller surface differences more visible to fitting.",

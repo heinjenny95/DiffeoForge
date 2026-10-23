@@ -105,10 +105,19 @@ def _read_context(snapshot):
             goals.append(info["goal"])
         for candidate in other.candidates:
             if candidate.status == "completed":
+                feedback = [e for e in study._load_events(other.study_directory)
+                            if e["event"] == "guided_fit_feedback"
+                            and e["current"]["candidate_id"] == candidate.candidate_id]
                 cases.append(dict(method=other.attachment_comparison["methods"][candidate.candidate_id],
                     values=next(c.values for c in other.current_stage.candidates
                                 if c.candidate_id == candidate.candidate_id),
                     target=info["target"],
+                    goal=info.get("goal"),
+                    reference=other.attachment_comparison.get("refinement", {}).get("reference"),
+                    iterations=other.attachment_comparison["iterations"],
+                    outcome=feedback[-1]["outcome"] if feedback else
+                    "rejected" if other.visual_reviews.get(candidate.candidate_id) is False
+                    else None,
                     approval=guided._approved_record(other, candidate.candidate_id)
                     if other.visual_reviews.get(candidate.candidate_id) is True else None))
     return cases, goals[-1] if goals else None
@@ -150,6 +159,7 @@ def remaining_forms(snapshot, identifier, *, context):
 def trial_proposal(snapshot, identifier, symptom, *, context=None):
     """Explain one hypothesis and its downstream checks; no global trial cap."""
     from diffeoforge.guided_feedback import regions, selection
+    from diffeoforge.guided_progress import iteration_limited, next_hypothesis
 
     anchor = selection(snapshot, identifier)
     _candidate(snapshot, identifier, allow_unreviewed=bool(anchor))
@@ -177,37 +187,79 @@ def trial_proposal(snapshot, identifier, symptom, *, context=None):
     if anchor and not from_base:
         base_values, base_method, target = anchor["values"], anchor["method"], anchor["target"]
 
+    reference = anchor if not from_base else baseline
+    reference_snapshot = snapshot
+    reference_id = identifier
+    if reference:
+        from diffeoforge.guided_feedback import verify_reference
+
+        reference_snapshot = verify_reference(reference)
+        reference_id = reference["candidate_id"]
+    retained = next(c for c in reference_snapshot.candidates if c.candidate_id == reference_id)
+    retained_reference = reference or _reference(snapshot, identifier, target)
+    already_extended = any(r.get("goal") == "optimize"
+                           and r.get("reference") == retained_reference for r in cases)
+    can_optimize = (reference_snapshot.plan.pilot_subject_count == 1
+                    and iteration_limited(retained) and not already_extended)
+    explicit = ":" in symptom or symptom == "other_method"
+    note = ""
+    if not explicit and can_optimize and symptom != "distortion":
+        goal = "optimize"
+    elif not explicit and symptom in {"detail", "unsure"}:
+        goal, note = next_hypothesis(cases, base_method, target, goal)
+    if goal == "optimize" and not can_optimize:
+        goal = None
+        note = ("This saved field has already had a longer optimization test. Inspect that "
+                "saved alternative or choose a different adjustment."
+                if already_extended else
+                "Longer optimization requires an inspected single-form fit with an "
+                "explicit iteration-limit stop.")
+
+    if goal is None:
+        proposed.update(goal="detail", available=False, reason=note, blocked_reason=note,
+                        method=base_method, values=base_values, target=target,
+                        anchor=reference, from_base=from_base, remaining_checks=0,
+                        hypothesis_count=strategy.get("hypothesis_count", 0),
+                        initialization="learned", numerical_extension=False)
+        return proposed
+
     def choice(key, step=0):
         method = ("varifold" if base_method == "current" else "current") \
             if key == "other_method" else base_method
-        values = base_values if key == "other_method" else guided.adjusted_values(
+        values = base_values if key in {"other_method", "optimize"} else guided.adjusted_values(
             base_values, key, conservative=True, step=step)
-        seen = any(r["method"] == method and r["target"] == target and r["values"] == values
+        seen = key != "optimize" and any(
+                   r["method"] == method and r["target"] == target and r["values"] == values
                    for r in cases)
         return method, values, seen
 
     # Detail-only feedback stays on the same deformation basis. After failure,
     # make a smaller hypothesis from the retained reference, never a broad reset.
-    if symptom == "detail":
+    if symptom == "detail" and not note and goal != "optimize":
         goal = "detail"
-    elif symptom == "unsure" and anchor:
+    elif symptom == "unsure" and anchor and not note and goal != "optimize":
         goal = "weight"
     method, values, seen = choice(goal)
     if seen and ":" not in symptom and symptom != "other_method":
         for alternative, step in ((g, s) for s in range(3) for g in
-                                  (("detail", "weight") if symptom == "detail"
+                                  (("detail", "weight") if symptom == "detail" and not note
                                    else (goal,))):
             method, values, seen = choice(alternative, step)
             if not seen:
                 goal = alternative
                 break
-    proposed.update(goal=goal, title=DESCRIPTIONS[goal][0], reason=DESCRIPTIONS[goal][1])
+    proposed.update(goal=goal, title=DESCRIPTIONS[goal][0], reason=note + DESCRIPTIONS[goal][1])
     approved = _compatible(snapshot, method, values, cases)
     covered = {r["filename"] for r in approved} | {target}
     proposed.update(method=method, values=values, target=target, from_base=from_base,
-                    anchor=anchor if not from_base else baseline,
+                    anchor=reference,
                     remaining_checks=len(set(info["pilot_order"]) - covered),
-                    available=not seen, hypothesis_count=strategy.get("hypothesis_count", 0))
+                    available=not seen, hypothesis_count=strategy.get("hypothesis_count", 0),
+                    numerical_extension=goal == "optimize",
+                    initialization="learned" if goal in {"optimize", "detail", "weight", "smooth"}
+                    and reference_snapshot.plan.pilot_subject_count == 1 else "fresh",
+                    optimization_iterations=(retained.metrics["maximum_iterations"] * 2
+                                             if goal == "optimize" else None))
     return proposed
 
 
@@ -240,6 +292,26 @@ def verify_strategy(info, record, manifest):
         from diffeoforge.guided_feedback import verify_reference
 
         verify_reference(strategy["anchor"])
+    optimization = strategy.get("optimization")
+    if optimization:
+        from diffeoforge.guided_feedback import verify_reference
+        from diffeoforge.guided_progress import iteration_limited
+
+        parent = verify_reference(optimization["reference"])
+        candidate = next(c for c in parent.candidates
+                         if c.candidate_id == optimization["reference"]["candidate_id"])
+        if (info["phase"] != "refine" or info["goal"] != "optimize"
+                or parent.plan.pilot_subject_count != 1 or not iteration_limited(candidate)
+                or set(record["methods"].values()) != {optimization["reference"]["method"]}
+                or record.get("refinement", {}).get("initialization") != "learned"
+                or optimization["reference"] != strategy.get("baseline")
+                or record["iterations"] != candidate.metrics["maximum_iterations"] * 2
+                or optimization["iterations"] != record["iterations"]
+                or manifest["plan"]["baseline_effective_values"]
+                != optimization["reference"]["values"]):
+            return False
+    elif info.get("goal") == "optimize":
+        return False
     values = manifest["plan"]["baseline_effective_values"]
     if info["phase"] in {"validate", "joint"} and any(
             r["values"] != values or r["method"] not in record["methods"].values()
@@ -255,6 +327,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     approved = list(info["approved"])
     guided.verify_approvals(approved)
     strategy = dict(info.get("strategy") or {})
+    strategy.pop("optimization", None)
     strategy["previous"] = dict(directory=str(snapshot.study_directory),
         manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))
     history = [*info["history"], dict(**strategy["previous"], outcome="adaptive_" + action)]
@@ -265,8 +338,9 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     if action == "recover":
         proposed = trial_proposal(snapshot, identifier, goal or "unsure")
         if not proposed["available"]:
-            raise ValueError("This unchanged combination was already tested. Inspect saved "
-                             "alternatives or choose another adjustment; no fit was prepared.")
+            raise ValueError(proposed.get("blocked_reason", "This unchanged combination was "
+                "already tested. Inspect saved alternatives or choose another adjustment; "
+                "no fit was prepared."))
         baseline_snapshot, baseline_id = snapshot, identifier
         if proposed["anchor"]:
             from diffeoforge.guided_feedback import verify_reference
@@ -281,6 +355,9 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
                            regions=regions(snapshot, identifier, target))
         strategy["baseline"] = _reference(baseline_snapshot, baseline_id, target)
         strategy["anchor"] = strategy["baseline"]
+        if proposed["numerical_extension"]:
+            strategy["optimization"] = dict(reference=strategy["baseline"],
+                iterations=proposed["optimization_iterations"])
         strategy["difficult_targets"] = list(dict.fromkeys(
             [target, *strategy.get("difficult_targets", [])]))
         strategy["hypothesis_count"] = strategy.get("hypothesis_count", 0) + 1

@@ -4,7 +4,9 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
     QLabel,
+    QLayout,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
 )
 
@@ -18,6 +20,8 @@ def render(window, prepared):
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
 
     snapshot = prepared.snapshot
+    # Let the scroll area grow its content rather than compressing recovery cards.
+    window.content_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
     info = record(snapshot)
     guidance = getattr(prepared, "guidance", None) or guidance_state(snapshot)
     running = window._worker is not None or window._restoring_search
@@ -134,6 +138,7 @@ def render(window, prepared):
     # Candidate identity is captured by each card's callbacks, never a shared selector.
     for candidate in snapshot.candidates:
         card = QFrame(window.content)
+        card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         card.setObjectName("card")
         card.setProperty(
             "pilotMethod", snapshot.attachment_comparison["methods"][candidate.candidate_id]
@@ -162,7 +167,9 @@ def render(window, prepared):
         runtime = (candidate.metrics or {}).get("runtime_seconds")
         if runtime is not None:
             state += f" · {runtime / 60:.1f} min"
-        if (candidate.metrics or {}).get("converged") is False:
+        from diffeoforge.guided_progress import iteration_limited
+
+        if iteration_limited(candidate):
             state += " · iteration limit, provisional"
         label = QLabel(state)
         label.setWordWrap(True)
@@ -170,7 +177,7 @@ def render(window, prepared):
         initialization = snapshot.attachment_comparison.get("refinement", {})
         if initialization:
             starting = QLabel(
-                "Starting from your saved fitted shape."
+                "Starting from your saved fitted shape; optimizer history starts anew."
                 if initialization.get("initialization") == "learned"
                 else "This adjustment requires a fresh fit. "
                 "Compare it with your saved starting fit."
@@ -311,6 +318,7 @@ def _recovery(window, snapshot, candidate, layout, guidance):
     layout.addWidget(symptoms)
     explanation = QLabel()
     explanation.setWordWrap(True)
+    explanation.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
     layout.addWidget(explanation)
     prepare = QPushButton()
     layout.addWidget(prepare)
@@ -335,8 +343,11 @@ def _recovery(window, snapshot, candidate, layout, guidance):
         explanation.setText(
             f"{proposed['reason']} "
             + ("Reuse a compatible saved single-form deformation on the same basis. "
-               if proposed['goal'] in {'detail', 'weight', 'smooth'}
+               if proposed['initialization'] == 'learned'
                else "This changes the deformation basis or method and needs a fresh start. ")
+            + (f"Keep all fitting settings; allow up to {proposed['optimization_iterations']} "
+               "new iterations from that saved field, with new optimizer history. "
+               if proposed['numerical_extension'] else "")
             + f"Next: 1 test on this form. If suitable, "
             f"{proposed['remaining_checks']} other form(s) need checking, then one joint fit. "
             "Earlier results stay saved. Whole-shape quality is also checked."
@@ -344,8 +355,9 @@ def _recovery(window, snapshot, candidate, layout, guidance):
                "the starting template before investing in further tests."
                if proposed["hypothesis_count"] >= 3 else "")
             if proposed["available"] else
-            "This unchanged combination has already been tested. Inspect saved alternatives "
-            "or select another adjustment below; no repeat is prepared."
+            proposed.get("blocked_reason", "This unchanged combination has already been tested. "
+                         "Inspect saved alternatives or select another adjustment below; "
+                         "no repeat is prepared.")
         )
         prepare.setText(proposed["title"] + " · prepare 1 trial on 1 specimen")
         prepare.setEnabled(proposed["available"])
@@ -381,7 +393,8 @@ def _recovery(window, snapshot, candidate, layout, guidance):
         layout.addWidget(other)
     checks = QLabel(
         "Check alignment and mesh quality if either method misses the same area. "
-        "A marked area identifies the problem location, not its unique cause. "
+        "Marked areas are used to compare local errors; they do not add local fitting weights "
+        "or identify a unique cause. "
         "Changed settings require renewed checks on the other pilot forms."
     )
     checks.setWordWrap(True)
