@@ -1115,9 +1115,12 @@ class CalibrationCandidateViewerDialog(QDialog):
             )
         if self.fit_preferences:
             self.fit_preferences.set_current_models(pair, (original, reconstruction))
+        reconstruction_role = ("Original template" if getattr(self, "_input_alignment", False)
+                               else "Reconstruction")
         self.status.setText(
             f"Original: {pair.original_path.name} ({original.triangle_count} faces)  |  "
-            f"Reconstruction: {pair.reconstruction_path.name} "
+            f"{reconstruction_role}: "
+            f"{pair.reconstruction_path.name} "
             f"({reconstruction.triangle_count} faces)  |  read-only"
         )
         self._update_review_progress()
@@ -4418,6 +4421,22 @@ class ReferenceCalibrationDialog(QDialog):
     @Slot(object, object)
     def _candidate_prepared(self, key: object, prepared: object) -> None:
         if self._view_closed or self._review_saving:
+            return
+        if key[0] == "guided-inputs":
+            if key[1] != self.study_directory or self._worker:
+                return
+            parent, candidate, pairs = prepared
+            dialog = CalibrationCandidateViewerDialog(parent.study_directory, candidate, self,
+                pairs=pairs, read_only=True)
+            dialog._input_alignment = True
+            dialog.setWindowTitle("Original inputs — template alignment (no fit)")
+            dialog.findChild(QLabel, "title").setText(
+                "Original template alignment — before fitting")
+            dialog._comparison_intro.setText(
+                "Orange: original specimen. Blue: original template after prealignment. "
+                "This is an input check, not a reconstruction or anatomical approval.")
+            dialog.show_reconstruction.setText("Show original template (blue surface)")
+            dialog.exec()
             return
         if key[0] == "compare-plan-b":
             root, candidate, pairs = prepared

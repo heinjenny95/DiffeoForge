@@ -136,14 +136,18 @@ def prepare_controls(root, manifest, record):
     from diffeoforge.surface_io import load_surface_mesh
 
     template = load_surface_mesh(root / manifest["inputs"]["template"]["copy"])
-    controls, spacing = control_grid(template.metadata.bounds)
-    path = root / "method-controls.txt"
-    np.savetxt(path, controls, fmt="%.17g")
+    from diffeoforge.guided_density import copy_basis
+
+    chosen = copy_basis(root, record)
+    if chosen is None:
+        controls, spacing = control_grid(template.metadata.bounds)
+        path = root / "method-controls.txt"
+        np.savetxt(path, controls, fmt="%.17g")
+        chosen = dict(copy=path.name, sha256=sha256_file(path),
+                      count=len(controls), spacing=spacing)
     result = dict(
         record,
-        controls=dict(
-            copy=path.name, sha256=sha256_file(path), count=len(controls), spacing=spacing
-        ),
+        controls=chosen,
     )
     from diffeoforge.guided_refinement import bind
 
@@ -277,7 +281,7 @@ def configure(config, root, manifest, candidate_id):
             initial_control_point_spacing=controls["spacing"],
         )
         refinement = record.get("refinement")
-        if refinement and refinement["initialization"] == "learned":
+        if refinement and refinement["initialization"] in {"learned", "nested"}:
             deformation.update(initial_momenta=str(root / refinement["momenta"]["copy"]),
                                initial_momenta_subjects=[refinement["reference"]["target"]])
     else:

@@ -38,12 +38,16 @@ def bind(root, manifest, record):
         raise ValueError("Refinement must retain the exact template and original target")
     values = manifest["plan"]["baseline_effective_values"]
     method = next(iter(record["methods"].values()))
+    nested = (record.get("guided", {}).get("goal") == "density"
+              and values["initial_control_point_spacing"]
+              == ref["values"]["initial_control_point_spacing"] * .8)
     compatible = (
         len(previous) == 1
         and method == ref["method"]
         and all(
             values[k] == ref["values"][k]
-            for k in ("deformation_kernel_width", "initial_control_point_spacing")
+            for k in (("deformation_kernel_width",) if nested else
+                      ("deformation_kernel_width", "initial_control_point_spacing"))
         )
     )
     if not compatible:
@@ -93,6 +97,11 @@ def bind(root, manifest, record):
         or not np.isfinite(inputs.momenta).all()
     ):
         raise ValueError("Saved fitted field does not match the fixed refinement basis")
+    if nested:
+        from diffeoforge.guided_density import write
+
+        return dict(record, **write(root, request, controls, original, inputs.momenta, source,
+                                    inputs.momenta_path))
     point_path, momentum_path = root / "refinement-controls.txt", root / "refinement-momenta.txt"
     study._copy_bound(source, point_path, controls["sha256"])
     digest = sha256_file(inputs.momenta_path)
@@ -122,12 +131,17 @@ def verify(root, manifest, record):
     if request.get("version") != VERSION or request.get("initialization") not in {
         "learned",
         "fresh",
+        "nested",
     }:
         raise ValueError("Unknown refinement initialization")
     if request["initialization"] == "learned":
         row = request["momenta"]
         if sha256_file(_safe_study_path(root, row["copy"])) != row["sha256"]:
             raise ValueError("Refinement field bytes changed")
+    elif request["initialization"] == "nested":
+        from diffeoforge.guided_density import verify as verify_nested
+
+        verify_nested(root, manifest, record)
 
 
 def geometry_guard(baseline, current):

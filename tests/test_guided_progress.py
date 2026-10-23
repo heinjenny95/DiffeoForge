@@ -114,6 +114,8 @@ def test_repeated_detail_switches_explanation_and_ignores_other_targets():
     cases = [case, case, case | dict(goal="weight")]
     assert next_hypothesis(cases, "current", "form.vtk", "detail")[0] == "local_motion"
     assert next_hypothesis(cases + [case | dict(goal="local_motion")],
+                           "current", "form.vtk", "detail")[0] == "density"
+    assert next_hypothesis(cases + [case | dict(goal="local_motion"), case | dict(goal="density")],
                            "current", "form.vtk", "detail")[0] is None
 
 

@@ -33,8 +33,13 @@ def next_hypothesis(cases, method, target, fallback):
         return "weight", reason
     if "local_motion" not in tested:
         return "local_motion", reason
+    if "density" not in tested:
+        return "density", (
+            "The previous parameter changes did not resolve the missing detail. "
+            "Control-point density has not been tested on this form. "
+        )
     return None, (
-        "Surface matching and local movement have already been tested without a suitable fit. "
-        "Inspect the retained fit, alignment and template before another test. "
-        "You can still choose a specific adjustment under Other adjustments."
+        "These guided hypotheses have not produced a suitable fit. Review the saved "
+        "attempts and the original template alignment below before choosing another test. "
+        "A completed test does not establish that its parameter cannot help."
     )

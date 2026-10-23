@@ -1,4 +1,12 @@
-# Development continuity — v157 cap-aware pilot guidance
+# Development continuity — v158 exhausted-pilot diagnosis
+
+v158 source addresses the owner's exhausted guided recovery: a bounded nested
+control-point test retains the saved initial field and propagates the chosen
+common basis through coverage/joint checks. Saved attempt/stop/feedback summaries
+and direct original-template alignment inspection replace the stale disabled
+action at the end of automatic suggestions. See [scope and limits](V158_PILOT_DIAGNOSIS.md).
+Runtime installation and owner first-use acceptance must be recorded separately.
+No owner/native fit is authorized during this engineering work. Older snapshots follow.
 
 v157 source addresses repeated local-detail failures after v156: explicit native
 iteration-limit evidence first offers more optimization on the unchanged saved

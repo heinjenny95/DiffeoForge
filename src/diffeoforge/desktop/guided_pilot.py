@@ -179,6 +179,9 @@ def render(window, prepared):
             starting = QLabel(
                 "Starting from your saved fitted shape; optimizer history starts anew."
                 if initialization.get("initialization") == "learned"
+                else "Starting from the saved deformation with additional zero-momentum "
+                "control points; optimizer history starts anew."
+                if initialization.get("initialization") == "nested"
                 else "This adjustment requires a fresh fit. "
                 "Compare it with your saved starting fit."
             )
@@ -332,6 +335,9 @@ def _recovery(window, snapshot, candidate, layout, guidance):
     options_layout = QVBoxLayout(options)
     options_layout.addWidget(alternatives)
     layout.addWidget(InfoDisclosure("Other adjustments", options))
+    from diffeoforge.desktop.guided_diagnosis import render as render_diagnosis
+
+    diagnostics = render_diagnosis(window, snapshot, identifier, layout, guidance)
 
     def update(*_):
         selected = alternatives.currentData()
@@ -344,16 +350,15 @@ def _recovery(window, snapshot, candidate, layout, guidance):
             f"{proposed['reason']} "
             + ("Reuse a compatible saved single-form deformation on the same basis. "
                if proposed['initialization'] == 'learned'
+               else "Keep saved control points and momenta; add zero-momentum controls. "
+               if proposed['initialization'] == 'nested'
                else "This changes the deformation basis or method and needs a fresh start. ")
             + (f"Keep all fitting settings; allow up to {proposed['optimization_iterations']} "
                "new iterations from that saved field, with new optimizer history. "
                if proposed['numerical_extension'] else "")
-            + f"Next: 1 test on this form. If suitable, "
-            f"{proposed['remaining_checks']} other form(s) need checking, then one joint fit. "
-            "Earlier results stay saved. Whole-shape quality is also checked."
-            + (" Several adjustments have been tried; inspect alignment, mesh quality and "
-               "the starting template before investing in further tests."
-               if proposed["hypothesis_count"] >= 3 else "")
+            + f"Prepare one test here, then inspect it. If suitable: "
+            f"{proposed['remaining_checks']} other form(s), then a joint check. "
+            "Earlier results stay saved."
             if proposed["available"] else
             proposed.get("blocked_reason", "This unchanged combination has already been tested. "
                          "Inspect saved alternatives or select another adjustment below; "
@@ -361,6 +366,7 @@ def _recovery(window, snapshot, candidate, layout, guidance):
         )
         prepare.setText(proposed["title"] + " · prepare 1 trial on 1 specimen")
         prepare.setEnabled(proposed["available"])
+        prepare.setVisible(proposed["available"])
         _set_action_emphasis(prepare, proposed["available"])
         data = guidance.get("feedback", {}).get(identifier)
         if data and data["needs_direction"]:
@@ -369,6 +375,8 @@ def _recovery(window, snapshot, candidate, layout, guidance):
             explanation.setText(
                 "Tell us whether the last change helped, or choose an earlier starting fit above. "
                 "This prevents another change from building blindly on a worse attempt.")
+        if diagnostics and not proposed["available"]:
+            diagnostics.toggle_button.setChecked(True)
 
     symptoms.currentIndexChanged.connect(update)
     alternatives.currentIndexChanged.connect(update)
@@ -384,12 +392,20 @@ def _recovery(window, snapshot, candidate, layout, guidance):
         data = guidance.get("feedback", {}).get(identifier)
         other.setEnabled(other_proposal["available"] and not (data and data["needs_direction"]))
         if not other_proposal["available"]:
-            other.setText("Other method already tested here — compare saved alternatives")
-        other.clicked.connect(
-            lambda: window._start_pilot(
+            other.setText("Inspect saved fit with the other method")
+            reference = next((r.get("fit") for r in reversed(guidance["cases"])
+                if r["method"] != other_proposal["anchor"]["method"]
+                and r["target"] == other_proposal["target"] and r.get("fit")), None) \
+                if other_proposal.get("anchor") else None
+            other.setEnabled(bool(reference))
+            other.setVisible(bool(reference))
+            other.clicked.connect(lambda: window._open_guided_saved_fit(reference))
+        else:
+            other.clicked.connect(lambda: window._start_pilot(
                 adaptive=False, guided_action=("adaptive_recover", identifier, "other_method")
-            )
-        )
+            ))
+        other.setStyleSheet("QPushButton { border: 1px solid #789994; "
+                           "border-radius: 4px; padding: 8px; }")
         layout.addWidget(other)
     checks = QLabel(
         "Check alignment and mesh quality if either method misses the same area. "

@@ -1,5 +1,10 @@
 # Next DiffeoForge development version
 
+v158 owner follow-up addresses an exhausted pilot with a field-preserving nested
+control-point hypothesis, exact common-basis retention and actionable saved-attempt
+and original-input diagnosis. See [behavior and boundaries](V158_PILOT_DIAGNOSIS.md).
+No owner/native fit is started during engineering checks; first-use benefit is open.
+
 v157 owner-authorized pilot follow-up: distinguish unfinished numerical
 optimization from parameter inadequacy, retain the fitted field and fitting
 settings for a longer bounded trial, and stop repeating unsuitable detail

@@ -115,6 +115,13 @@ def _read_context(snapshot):
                     goal=info.get("goal"),
                     reference=other.attachment_comparison.get("refinement", {}).get("reference"),
                     iterations=other.attachment_comparison["iterations"],
+                    stop=(candidate.metrics or {}).get("optimizer_stop_signal"),
+                    control_count=other.attachment_comparison["controls"]["count"],
+                    fit=_reference(other, candidate.candidate_id)
+                    if starting_allowed(other, candidate.candidate_id) else None,
+                    region_outcomes=[r["marked_regions"]["outcome"] for r in
+                        (candidate.metrics or {}).get("attachment_comparison", {}).get(
+                            "subjects", {}).values() if r.get("marked_regions")],
                     outcome=feedback[-1]["outcome"] if feedback else
                     "rejected" if other.visual_reviews.get(candidate.candidate_id) is False
                     else None,
@@ -256,10 +263,18 @@ def trial_proposal(snapshot, identifier, symptom, *, context=None):
                     remaining_checks=len(set(info["pilot_order"]) - covered),
                     available=not seen, hypothesis_count=strategy.get("hypothesis_count", 0),
                     numerical_extension=goal == "optimize",
-                    initialization="learned" if goal in {"optimize", "detail", "weight", "smooth"}
+                    initialization="nested" if goal == "density"
+                    and reference_snapshot.plan.pilot_subject_count == 1 else
+                    "learned" if goal in {"optimize", "detail", "weight", "smooth"}
                     and reference_snapshot.plan.pilot_subject_count == 1 else "fresh",
                     optimization_iterations=(retained.metrics["maximum_iterations"] * 2
                                              if goal == "optimize" else None))
+    if goal == "density" and (reference_snapshot.plan.pilot_subject_count != 1 or
+                             reference_snapshot.attachment_comparison[
+                                 "controls"]["count"] * 1.5 > 2000):
+        proposed.update(available=False, blocked_reason="This bounded density test requires "
+                        "a saved single-form fit with fewer than 1,334 control points. "
+                        "Review the saved fits and inputs below.")
     return proposed
 
 
@@ -285,7 +300,7 @@ def verify_strategy(info, record, manifest):
     if (len(record["methods"]) != (2 if info["phase"] == "screen" else 1)
             or not set(strategy.get("difficult_targets", [])) <= set(info["pilot_order"])):
         return False
-    for key in ("preference", "baseline"):
+    for key in ("preference", "baseline", "control_basis"):
         if strategy.get(key):
             _verify_reference(strategy[key])
     if strategy.get("anchor"):
@@ -355,6 +370,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
                            regions=regions(snapshot, identifier, target))
         strategy["baseline"] = _reference(baseline_snapshot, baseline_id, target)
         strategy["anchor"] = strategy["baseline"]
+        strategy["control_basis"] = strategy["baseline"]
         if proposed["numerical_extension"]:
             strategy["optimization"] = dict(reference=strategy["baseline"],
                 iterations=proposed["optimization_iterations"])
@@ -375,6 +391,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
             accepted, accepted_id = verify_reference(anchor), anchor["candidate_id"]
         row = guided._approved_record(accepted, accepted_id)
         preference = _reference(accepted, accepted_id)
+        strategy["control_basis"] = preference
         values, methods = row["values"], (row["method"],)
         approved = list({r["filename"]: r for r in
             [*_compatible(snapshot, methods[0], values, cases), row]}.values())

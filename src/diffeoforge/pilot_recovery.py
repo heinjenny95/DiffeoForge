@@ -6,6 +6,11 @@ from diffeoforge.mesh import sha256_file
 from diffeoforge.pilot_regions import validate
 
 DESCRIPTIONS = {
+    "density": (
+        "Test additional control points",
+        "The deformation may need more independent controls. Add 50% more points while "
+        "keeping the saved starting deformation and the other fitting settings.",
+    ),
     "optimize": (
         "Optimize longer with the same settings",
         "The saved fit stopped at its iteration limit. Give its existing deformation more "

@@ -234,7 +234,7 @@ def _batch(
     _, spacing = control_grid(template.metadata.bounds)
     center = dict(values)
     refinement = (strategy or {}).get("baseline") if phase == "refine" else None
-    if not refinement:
+    if not refinement and not (strategy or {}).get("control_basis"):
         center["initial_control_point_spacing"] = spacing
     selected = (
         source.plan.selected_pilot_subjects
@@ -562,8 +562,9 @@ def adjusted_values(values, goal, *, conservative=False, step=0):
         "weight": ("noise_std", 0.5),
         "local_motion": ("deformation_kernel_width", 0.5),
         "smooth": ("noise_std", 2.0),
+        "density": ("initial_control_point_spacing", 0.8),
     }[goal]
-    if conservative:
+    if conservative and goal != "density":
         delta = .1 / (2 ** step)
         factor = 1 - delta if factor < 1 else 1 + delta
     values[parameter] *= factor

@@ -1134,3 +1134,11 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 - [ ] Complete user and methods documentation
 - [ ] Archived release and DOI
 - [ ] Software and/or methods-paper submission
+
+# v158 pilot recovery follow-up
+
+- Bounded nested control-point hypothesis after unsuitable scale/weight/movement
+  trials, with retained initial field and common basis across coverage/joint checks.
+- Direct saved-attempt evidence and original-input inspection when guided
+  hypotheses are exhausted; no anatomical approval or automatic scientific run.
+- See [behavior and outstanding qualification](docs/V158_PILOT_DIAGNOSIS.md).
