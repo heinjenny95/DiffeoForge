@@ -1,5 +1,13 @@
 # Next DiffeoForge development version
 
+Owner-directed offline method qualification (24 October 2026) precedes further
+production pilot changes. The isolated protocol distinguishes solver adequacy,
+parameter hypotheses, full-original verification of explicit working geometry,
+and a separately declared protected local objective. See
+[qualification protocol](PILOT_OFFLINE_EXPERIMENT_PROTOCOL.md). Private results
+remain dataset-local; the current installed pilot is unchanged. Single-pair
+experiments do not close anatomical or cohort-level acceptance.
+
 v160 addresses the owner's renewed unchanged-fit report: persistent original
 patches with explicit Clear, and response-driven follow-ups measured on identical
 patches across saved reconstructions. See [scope and limits](V160_REGIONAL_RESPONSE.md).
