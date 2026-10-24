@@ -60,6 +60,14 @@ Raw attachment objectives across methods, weights or working geometries cannot
 rank reconstruction fidelity. Inspect fixed-camera full-resolution overlays and
 marked-area close-ups. No measurement creates anatomical approval.
 
+An aggregate marked-region score can hide a missing small feature. Where the
+dataset warrants it, inspect distinct feature caps, their coverage in both
+directions, extent and position, and the complete feature group in solid views.
+A cropped region may exclude a relevant branch. Geometry-derived endpoints or
+branch assignments are diagnostics, not established biological homologies.
+Endpoint constraints also need a surface-level control: matching the endpoint
+does not establish a correct intervening shape.
+
 ## Treat a protected local objective as a separate method
 
 A prototype may combine a whole-surface term, an additional marked-patch surface
@@ -73,6 +81,23 @@ separately. Record patch selection, halo and term weights explicitly. Such
 individual constraints must not silently redefine the common metric or the
 statistical feature space of a cohort atlas/PCA. Independent anatomical assessment
 and cohort-level validation remain necessary before product adoption.
+
+A separately declared small-scale residual deformation may start from the
+complete retained reconstruction with a zero field. Qualify this identity start
+explicitly; it avoids copying momenta between different deformation kernels.
+This is a composition with a new deformation metric and basis, not an ordinary
+continuation under the original single metric. Keep broader capture and finer
+surface matching as explicit stages, and retain an earlier result when a stage
+regresses. Changes of region, protection, basis and objective remain visible.
+
+Check temporal integration and spatial tessellation separately. A smooth ambient
+map is represented by straight triangles in an exported mesh; their intersections
+must not be dismissed because sampled Jacobians are positive. Conforming linear
+subdivision before evaluating an unchanged field can test this representation
+error without smoothing, target projection or changing the input surface.
+Preserve old vertices, validate the identical input surface, edge incidence and
+topology, and track parent faces for repeated regional measurements. Report
+sampled Jacobians and full-triangle intersection tests with their limits.
 
 Application source and installed behavior remain separate from private experiment
 scripts. A successful single pair cannot establish a universally best search
