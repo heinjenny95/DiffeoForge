@@ -118,3 +118,30 @@ trajectory-wide validity or suitability for morphometric statistics.
 Application source and installed behavior remain separate from private experiment
 scripts. A successful single pair cannot establish a universally best search
 policy, guarantee monotonic improvements or qualify the production pilot.
+
+## Qualify feedback-to-action rules before implementing them
+
+A visible symptom is not a uniquely identified parameter fault. Test proposed
+responses against saved reconstructions with a declared hypothesis and regional
+success/failure criteria. Separate historical replay, prospective matched
+contrasts and adaptively selected follow-ups; known historical outcomes are not
+an independent validation set. Multiple fits of one specimen remain one specimen.
+
+For a parameter contrast, bind the same initial field, source, target, protection,
+control basis, optimizer and configured iteration budget. Inspect the actual
+native XML to verify only the intended parameter differs. A matching-kernel
+change can also alter objective scale; an unchanged noise setting does not prove
+normalized equal fitting strength across kernels. Evaluate both continuations
+on the same complete original-reference surface and numerical grid.
+
+Check distinct problem regions and previously good regions separately. A better
+endpoint, mean distance or native objective does not establish a better complete
+structure. A global-only finer-matching failure does not establish how a local
+finer-matching term will behave after a separate capture stage. Likewise, diagnose
+surface representation and time integration before blaming endpoint intersections
+on excessive fitting pressure. Preserve failed trials and the retained reference.
+
+Record which symptom classes are represented by actual cases, which have only
+diagnostic evidence and which remain untested. Do not convert workflow checks,
+topology flags or the absence of a representative case into a validated automatic
+correction rule. Keep production implementation and cohort qualification pending.
