@@ -145,3 +145,37 @@ Record which symptom classes are represented by actual cases, which have only
 diagnostic evidence and which remain untested. Do not convert workflow checks,
 topology flags or the absence of a representative case into a validated automatic
 correction rule. Keep production implementation and cohort qualification pending.
+
+## Use explicit synthetic recovery fixtures for missing symptom classes
+
+When saved fits do not isolate a proposed symptom, deform a copied real surface
+with a declared, bounded map. Preserve the original input and record the known
+fault, ambient-map Jacobian bounds, unchanged connectivity, approximation error
+and pre-existing mesh flags separately from newly introduced flags. A calibre
+test is not automatically an isolated wall-thickness test; a gap-width test does
+not validate changing a topological connection or opening.
+
+Withhold the generating map, its inverse and active-region vertex correspondences
+from the fitting objective and initialization. Known synthetic correspondences
+may support independent evaluation, but retained-position protection outside a
+supplied region is a different constraint. Inspect actual native inputs, not only
+the requested parameter labels, to verify this separation.
+
+Choose settings on primary faults, freeze that choice, then test opposite-polarity
+fixtures without retuning. Record adaptive changes to evaluation criteria honestly.
+Multiple generated faults of one real shape are not independent specimens or a
+general biological validation set. Ideal supplied regions also do not validate
+automatic problem-region discovery.
+
+Measure the named error, other regional shape properties and outside preservation
+independently. A fixed world-coordinate section can confuse local pose with gap
+width. Transported material sections give a different, correspondence-dependent
+measurement; their changes can include material sliding or section rotation and
+must not be described unconditionally as geometric calibre errors. Neither
+measurement alone establishes biological homology.
+
+A relative-function optimizer stop with an unchanged initial field is a stalled
+trial, not evidence of a suitable reconstruction or an ineffective physical
+parameter. Keep numerical diagnosis separate from parameter ranking. A new
+compatible-field warm start can test initialization sensitivity, but its extra
+work is not an equal-total-budget demonstration of objective superiority.
