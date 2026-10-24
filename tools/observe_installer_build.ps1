@@ -155,8 +155,9 @@ if ($compiler.PSIsContainer -or $compiler.Name -ne "ISCC.exe") {
     throw "Portable compiler path differs."
 }
 $compilerArguments = @($planDocument.compiler.arguments | ForEach-Object { $_.ToString() })
-if ($compilerArguments.Count -ne 9) {
-    throw "Installer plan compiler vector must contain exactly nine arguments."
+$expectedCompilerArgumentCount = if ($planDocument.source.application_version -cmatch '^0\.0\.0\.dev([1-9][0-9]*)$') { 10 } else { 9 }
+if ($compilerArguments.Count -ne $expectedCompilerArgumentCount) {
+    throw "Installer plan compiler vector must contain exactly $expectedCompilerArgumentCount arguments for its version."
 }
 
 $setupPath = [System.IO.Path]::GetFullPath($planDocument.output.setup_path)

@@ -1,0 +1,641 @@
+{
+  "atol": 1e-10,
+  "cases": [
+    {
+      "agreement": {
+        "attachment": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "control_gradient": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "control_path": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "endpoint": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "momenta_gradient": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "momenta_path": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "regularity": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "residual": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "template_gradient": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "total": {
+          "max_absolute": 0.0,
+          "pass": true
+        }
+      },
+      "attachment": "current",
+      "engine": "reference-keops",
+      "faces": 320,
+      "max_process_peak_rss_bytes": 379191296,
+      "max_seconds": 0.012799343000011731,
+      "median_seconds": 0.012693310999992491,
+      "min_seconds": 0.012503174999991984,
+      "numerical_pass": true
+    },
+    {
+      "agreement": {
+        "attachment": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "control_gradient": {
+          "max_absolute": 1.1275702593849246e-17,
+          "pass": true
+        },
+        "control_path": {
+          "max_absolute": 1.2197274440461925e-18,
+          "pass": true
+        },
+        "endpoint": {
+          "max_absolute": 1.1102230246251565e-16,
+          "pass": true
+        },
+        "momenta_gradient": {
+          "max_absolute": 3.219646771412954e-15,
+          "pass": true
+        },
+        "momenta_path": {
+          "max_absolute": 1.3552527156068805e-20,
+          "pass": true
+        },
+        "regularity": {
+          "max_absolute": 2.541098841762901e-21,
+          "pass": true
+        },
+        "residual": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "template_gradient": {
+          "max_absolute": 1.8283985436795547e-15,
+          "pass": true
+        },
+        "total": {
+          "max_absolute": 0.0,
+          "pass": true
+        }
+      },
+      "attachment": "current",
+      "engine": "modern-dense",
+      "faces": 320,
+      "max_process_peak_rss_bytes": 252325888,
+      "max_seconds": 0.01192457400000535,
+      "median_seconds": 0.011467347999996491,
+      "min_seconds": 0.011069977000005338,
+      "numerical_pass": true
+    },
+    {
+      "agreement": {
+        "attachment": {
+          "max_absolute": 7.105427357601002e-15,
+          "pass": true
+        },
+        "control_gradient": {
+          "max_absolute": 9.324138683375338e-18,
+          "pass": true
+        },
+        "control_path": {
+          "max_absolute": 1.2197274440461925e-18,
+          "pass": true
+        },
+        "endpoint": {
+          "max_absolute": 1.1102230246251565e-16,
+          "pass": true
+        },
+        "momenta_gradient": {
+          "max_absolute": 4.218847493575595e-15,
+          "pass": true
+        },
+        "momenta_path": {
+          "max_absolute": 1.3552527156068805e-20,
+          "pass": true
+        },
+        "regularity": {
+          "max_absolute": 2.541098841762901e-21,
+          "pass": true
+        },
+        "residual": {
+          "max_absolute": 1.7763568394002505e-15,
+          "pass": true
+        },
+        "template_gradient": {
+          "max_absolute": 2.914335439641036e-15,
+          "pass": true
+        },
+        "total": {
+          "max_absolute": 7.105427357601002e-15,
+          "pass": true
+        }
+      },
+      "attachment": "current",
+      "engine": "modern-blockwise",
+      "faces": 320,
+      "max_process_peak_rss_bytes": 319561728,
+      "max_seconds": 0.018632535999984157,
+      "median_seconds": 0.018630954000002475,
+      "min_seconds": 0.018601119999999582,
+      "numerical_pass": true
+    },
+    {
+      "agreement": {
+        "attachment": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "control_gradient": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "control_path": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "endpoint": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "momenta_gradient": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "momenta_path": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "regularity": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "residual": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "template_gradient": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "total": {
+          "max_absolute": 0.0,
+          "pass": true
+        }
+      },
+      "attachment": "current",
+      "engine": "reference-keops",
+      "faces": 1280,
+      "max_process_peak_rss_bytes": 381214720,
+      "max_seconds": 0.08816329699999415,
+      "median_seconds": 0.08727561100000969,
+      "min_seconds": 0.08727282799999614,
+      "numerical_pass": true
+    },
+    {
+      "agreement": {
+        "attachment": {
+          "max_absolute": 7.105427357601002e-15,
+          "pass": true
+        },
+        "control_gradient": {
+          "max_absolute": 1.9081958235744878e-17,
+          "pass": true
+        },
+        "control_path": {
+          "max_absolute": 1.2197274440461925e-18,
+          "pass": true
+        },
+        "endpoint": {
+          "max_absolute": 1.1102230246251565e-16,
+          "pass": true
+        },
+        "momenta_gradient": {
+          "max_absolute": 7.66053886991358e-15,
+          "pass": true
+        },
+        "momenta_path": {
+          "max_absolute": 1.3552527156068805e-20,
+          "pass": true
+        },
+        "regularity": {
+          "max_absolute": 2.541098841762901e-21,
+          "pass": true
+        },
+        "residual": {
+          "max_absolute": 1.7763568394002505e-15,
+          "pass": true
+        },
+        "template_gradient": {
+          "max_absolute": 1.2677576002873003e-15,
+          "pass": true
+        },
+        "total": {
+          "max_absolute": 7.105427357601002e-15,
+          "pass": true
+        }
+      },
+      "attachment": "current",
+      "engine": "modern-dense",
+      "faces": 1280,
+      "max_process_peak_rss_bytes": 363782144,
+      "max_seconds": 0.12633992400000693,
+      "median_seconds": 0.12312340600001903,
+      "min_seconds": 0.11339836899999511,
+      "numerical_pass": true
+    },
+    {
+      "agreement": {
+        "attachment": {
+          "max_absolute": 1.4210854715202004e-14,
+          "pass": true
+        },
+        "control_gradient": {
+          "max_absolute": 8.673617379884035e-18,
+          "pass": true
+        },
+        "control_path": {
+          "max_absolute": 1.2197274440461925e-18,
+          "pass": true
+        },
+        "endpoint": {
+          "max_absolute": 1.1102230246251565e-16,
+          "pass": true
+        },
+        "momenta_gradient": {
+          "max_absolute": 3.1086244689504383e-15,
+          "pass": true
+        },
+        "momenta_path": {
+          "max_absolute": 1.3552527156068805e-20,
+          "pass": true
+        },
+        "regularity": {
+          "max_absolute": 2.541098841762901e-21,
+          "pass": true
+        },
+        "residual": {
+          "max_absolute": 3.552713678800501e-15,
+          "pass": true
+        },
+        "template_gradient": {
+          "max_absolute": 2.6020852139652106e-15,
+          "pass": true
+        },
+        "total": {
+          "max_absolute": 1.4210854715202004e-14,
+          "pass": true
+        }
+      },
+      "attachment": "current",
+      "engine": "modern-blockwise",
+      "faces": 1280,
+      "max_process_peak_rss_bytes": 322289664,
+      "max_seconds": 0.07027203999999188,
+      "median_seconds": 0.0697726369999998,
+      "min_seconds": 0.06749356000000262,
+      "numerical_pass": true
+    },
+    {
+      "agreement": {
+        "attachment": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "control_gradient": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "control_path": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "endpoint": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "momenta_gradient": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "momenta_path": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "regularity": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "residual": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "template_gradient": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "total": {
+          "max_absolute": 0.0,
+          "pass": true
+        }
+      },
+      "attachment": "varifold",
+      "engine": "reference-keops",
+      "faces": 320,
+      "max_process_peak_rss_bytes": 381014016,
+      "max_seconds": 0.017166955000007533,
+      "median_seconds": 0.017081521999998017,
+      "min_seconds": 0.017026928000007047,
+      "numerical_pass": true
+    },
+    {
+      "agreement": {
+        "attachment": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "control_gradient": {
+          "max_absolute": 1.0842021724855044e-17,
+          "pass": true
+        },
+        "control_path": {
+          "max_absolute": 1.2197274440461925e-18,
+          "pass": true
+        },
+        "endpoint": {
+          "max_absolute": 1.1102230246251565e-16,
+          "pass": true
+        },
+        "momenta_gradient": {
+          "max_absolute": 3.9968028886505635e-15,
+          "pass": true
+        },
+        "momenta_path": {
+          "max_absolute": 1.3552527156068805e-20,
+          "pass": true
+        },
+        "regularity": {
+          "max_absolute": 2.541098841762901e-21,
+          "pass": true
+        },
+        "residual": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "template_gradient": {
+          "max_absolute": 2.123301534595612e-15,
+          "pass": true
+        },
+        "total": {
+          "max_absolute": 0.0,
+          "pass": true
+        }
+      },
+      "attachment": "varifold",
+      "engine": "modern-dense",
+      "faces": 320,
+      "max_process_peak_rss_bytes": 259813376,
+      "max_seconds": 0.01329523100000074,
+      "median_seconds": 0.012943066999994812,
+      "min_seconds": 0.012341902999992271,
+      "numerical_pass": true
+    },
+    {
+      "agreement": {
+        "attachment": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "control_gradient": {
+          "max_absolute": 1.0842021724855044e-17,
+          "pass": true
+        },
+        "control_path": {
+          "max_absolute": 1.2197274440461925e-18,
+          "pass": true
+        },
+        "endpoint": {
+          "max_absolute": 1.1102230246251565e-16,
+          "pass": true
+        },
+        "momenta_gradient": {
+          "max_absolute": 7.105427357601002e-15,
+          "pass": true
+        },
+        "momenta_path": {
+          "max_absolute": 1.3552527156068805e-20,
+          "pass": true
+        },
+        "regularity": {
+          "max_absolute": 2.541098841762901e-21,
+          "pass": true
+        },
+        "residual": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "template_gradient": {
+          "max_absolute": 4.6221707017402025e-15,
+          "pass": true
+        },
+        "total": {
+          "max_absolute": 0.0,
+          "pass": true
+        }
+      },
+      "attachment": "varifold",
+      "engine": "modern-blockwise",
+      "faces": 320,
+      "max_process_peak_rss_bytes": 321789952,
+      "max_seconds": 0.02358657400000652,
+      "median_seconds": 0.023531650999998988,
+      "min_seconds": 0.022803480000007426,
+      "numerical_pass": true
+    },
+    {
+      "agreement": {
+        "attachment": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "control_gradient": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "control_path": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "endpoint": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "momenta_gradient": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "momenta_path": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "regularity": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "residual": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "template_gradient": {
+          "max_absolute": 0.0,
+          "pass": true
+        },
+        "total": {
+          "max_absolute": 0.0,
+          "pass": true
+        }
+      },
+      "attachment": "varifold",
+      "engine": "reference-keops",
+      "faces": 1280,
+      "max_process_peak_rss_bytes": 383324160,
+      "max_seconds": 0.15383202600000345,
+      "median_seconds": 0.1522951809999995,
+      "min_seconds": 0.15132878999997956,
+      "numerical_pass": true
+    },
+    {
+      "agreement": {
+        "attachment": {
+          "max_absolute": 7.105427357601002e-15,
+          "pass": true
+        },
+        "control_gradient": {
+          "max_absolute": 1.214306433183765e-17,
+          "pass": true
+        },
+        "control_path": {
+          "max_absolute": 1.2197274440461925e-18,
+          "pass": true
+        },
+        "endpoint": {
+          "max_absolute": 1.1102230246251565e-16,
+          "pass": true
+        },
+        "momenta_gradient": {
+          "max_absolute": 5.995204332975845e-15,
+          "pass": true
+        },
+        "momenta_path": {
+          "max_absolute": 1.3552527156068805e-20,
+          "pass": true
+        },
+        "regularity": {
+          "max_absolute": 2.541098841762901e-21,
+          "pass": true
+        },
+        "residual": {
+          "max_absolute": 1.7763568394002505e-15,
+          "pass": true
+        },
+        "template_gradient": {
+          "max_absolute": 2.680147770384167e-15,
+          "pass": true
+        },
+        "total": {
+          "max_absolute": 7.105427357601002e-15,
+          "pass": true
+        }
+      },
+      "attachment": "varifold",
+      "engine": "modern-dense",
+      "faces": 1280,
+      "max_process_peak_rss_bytes": 469696512,
+      "max_seconds": 0.19346578200000408,
+      "median_seconds": 0.19151315100000943,
+      "min_seconds": 0.1391312479999982,
+      "numerical_pass": true
+    },
+    {
+      "agreement": {
+        "attachment": {
+          "max_absolute": 7.105427357601002e-15,
+          "pass": true
+        },
+        "control_gradient": {
+          "max_absolute": 6.071532165918825e-18,
+          "pass": true
+        },
+        "control_path": {
+          "max_absolute": 1.2197274440461925e-18,
+          "pass": true
+        },
+        "endpoint": {
+          "max_absolute": 1.1102230246251565e-16,
+          "pass": true
+        },
+        "momenta_gradient": {
+          "max_absolute": 2.220446049250313e-15,
+          "pass": true
+        },
+        "momenta_path": {
+          "max_absolute": 1.3552527156068805e-20,
+          "pass": true
+        },
+        "regularity": {
+          "max_absolute": 2.541098841762901e-21,
+          "pass": true
+        },
+        "residual": {
+          "max_absolute": 1.7763568394002505e-15,
+          "pass": true
+        },
+        "template_gradient": {
+          "max_absolute": 4.700666939028153e-15,
+          "pass": true
+        },
+        "total": {
+          "max_absolute": 7.105427357601002e-15,
+          "pass": true
+        }
+      },
+      "attachment": "varifold",
+      "engine": "modern-blockwise",
+      "faces": 1280,
+      "max_process_peak_rss_bytes": 348127232,
+      "max_seconds": 0.12132433200000037,
+      "median_seconds": 0.11730915299999367,
+      "min_seconds": 0.11106314200000611,
+      "numerical_pass": true
+    }
+  ],
+  "cpu_model": "AMD Ryzen 9 7950X 16-Core Processor",
+  "host_kernel": [
+    "Linux",
+    "6.18.33.2-microsoft-standard-WSL2",
+    "x86_64"
+  ],
+  "limits": "Single-subject float64 objective plus gradients; not atlas convergence, biological validation or a large-mesh performance claim.",
+  "numerical_pass": true,
+  "observation_count": 36,
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "protocol": "public-engine-pair-v1",
+  "rtol": 1e-08
+}

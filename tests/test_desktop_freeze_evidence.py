@@ -38,6 +38,7 @@ def _bundle(
     *,
     include_reference_worker: bool = True,
     include_preparation_worker: bool = True,
+    include_execution_worker: bool = True,
 ) -> Path:
     root = tmp_path / "DiffeoForge"
     internal = root / "_internal" / "diffeoforge" / "schema"
@@ -51,6 +52,10 @@ def _bundle(
     if include_preparation_worker:
         (root / "DiffeoForgeReferencePreparationWorker.exe").write_bytes(
             b"reference preparation worker executable"
+        )
+    if include_execution_worker:
+        (root / "DiffeoForgeReferenceExecutionWorker.exe").write_bytes(
+            b"reference execution worker executable"
         )
     (internal / "schema.json").write_text('{"schema": true}\n', encoding="utf-8")
     return root
@@ -88,7 +93,7 @@ def test_desktop_freeze_evidence_is_exact_non_overwriting_and_self_verifying(
     manifest = verify_desktop_freeze_evidence(root)
 
     assert manifest_path == root / MANIFEST_NAME
-    assert manifest["schema_version"] == "0.3"
+    assert manifest["schema_version"] == "0.4"
     assert manifest["status"] == "engineering_evidence_not_a_release"
     assert manifest["target"] == "windows-x86_64-cpu"
     assert manifest["builder"] == {
@@ -100,11 +105,12 @@ def test_desktop_freeze_evidence_is_exact_non_overwriting_and_self_verifying(
     }
     assert manifest["entry_points"] == {
         "desktop": "DiffeoForge.exe",
+        "reference_execution_worker": "DiffeoForgeReferenceExecutionWorker.exe",
         "reference_preparation_worker": "DiffeoForgeReferencePreparationWorker.exe",
         "reference_worker": "DiffeoForgeReferenceWorker.exe",
         "worker": "DiffeoForgeWorker.exe",
     }
-    assert manifest["bundle"]["file_count"] == 5
+    assert manifest["bundle"]["file_count"] == 6
     assert [record["path"] for record in manifest["bundle"]["files"]] == sorted(
         record["path"] for record in manifest["bundle"]["files"]
     )
@@ -154,6 +160,11 @@ def test_desktop_freeze_creation_requires_windows_entry_points_and_clean_provena
     with pytest.raises(DesktopFreezeEvidenceError, match="entry point"):
         _create(missing_preparation_worker)
 
+    missing_execution_worker = _bundle(tmp_path / "missing-execution-worker")
+    (missing_execution_worker / "DiffeoForgeReferenceExecutionWorker.exe").unlink()
+    with pytest.raises(DesktopFreezeEvidenceError, match="entry point"):
+        _create(missing_execution_worker)
+
     non_windows = _bundle(tmp_path / "non-windows")
     with pytest.raises(DesktopFreezeEvidenceError, match="Windows host"):
         create_desktop_freeze_evidence(
@@ -194,10 +205,10 @@ def test_desktop_freeze_verifier_rejects_unknown_schema_version(
     root = _bundle(tmp_path)
     _create(root)
     manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
-    manifest["schema_version"] = "0.4"
+    manifest["schema_version"] = "0.5"
     _rewrite_manifest(root, manifest)
 
-    with pytest.raises(DesktopFreezeEvidenceError, match="Unsupported.*0.4"):
+    with pytest.raises(DesktopFreezeEvidenceError, match="Unsupported.*0.5"):
         verify_desktop_freeze_evidence(root)
 
 
@@ -219,6 +230,12 @@ def test_desktop_freeze_verifier_rejects_unknown_schema_version(
         (
             lambda value: value["entry_points"].update(
                 reference_preparation_worker="other-preparation.exe"
+            ),
+            "schema violation",
+        ),
+        (
+            lambda value: value["entry_points"].update(
+                reference_execution_worker="other-execution.exe"
             ),
             "schema violation",
         ),
@@ -255,7 +272,7 @@ def test_desktop_freeze_evidence_cli_verifies_existing_bundle(tmp_path: Path) ->
     assert completed.returncode == 0, completed.stderr
     summary = json.loads(completed.stdout)
     assert summary["source_commit"] == SOURCE_COMMIT
-    assert summary["file_count"] == 5
+    assert summary["file_count"] == 6
 
 
 def test_desktop_freeze_verifier_retains_legacy_v01_compatibility(
@@ -265,6 +282,7 @@ def test_desktop_freeze_verifier_retains_legacy_v01_compatibility(
         tmp_path / "legacy",
         include_reference_worker=False,
         include_preparation_worker=False,
+        include_execution_worker=False,
     )
     records = []
     for path in sorted(root.rglob("*"), key=lambda candidate: candidate.as_posix()):
@@ -327,7 +345,11 @@ def test_desktop_freeze_verifier_retains_legacy_v01_compatibility(
 def test_desktop_freeze_verifier_retains_v02_three_entry_point_compatibility(
     tmp_path: Path,
 ) -> None:
-    root = _bundle(tmp_path / "legacy-v02", include_preparation_worker=False)
+    root = _bundle(
+        tmp_path / "legacy-v02",
+        include_preparation_worker=False,
+        include_execution_worker=False,
+    )
     records = []
     for path in sorted(root.rglob("*"), key=lambda candidate: candidate.as_posix()):
         if not path.is_file():
@@ -386,3 +408,64 @@ def test_desktop_freeze_verifier_retains_v02_three_entry_point_compatibility(
         "reference_worker": "DiffeoForgeReferenceWorker.exe",
         "worker": "DiffeoForgeWorker.exe",
     }
+
+
+def test_desktop_freeze_verifier_retains_v03_four_entry_point_compatibility(
+    tmp_path: Path,
+) -> None:
+    root = _bundle(tmp_path / "legacy-v03", include_execution_worker=False)
+    records = [
+        {
+            "path": path.relative_to(root).as_posix(),
+            "bytes": path.stat().st_size,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        for path in sorted(root.rglob("*"), key=lambda candidate: candidate.as_posix())
+        if path.is_file()
+    ]
+    inventory_payload = json.dumps(
+        records,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    manifest = {
+        "schema_version": "0.3",
+        "status": STATUS,
+        "created_at": FIXED_TIME,
+        "target": TARGET,
+        "source": {"commit_sha": SOURCE_COMMIT, "dirty_worktree_allowed": False},
+        "builder": {
+            "name": "PyInstaller",
+            "version": VERSIONS["pyinstaller"],
+            "mode": "onedir",
+            "python": "3.12.13",
+            "platform": "Windows-11-10.0.26100-SP0",
+        },
+        "runtime_packages": VERSIONS,
+        "entry_points": {
+            "desktop": "DiffeoForge.exe",
+            "reference_preparation_worker": (
+                "DiffeoForgeReferencePreparationWorker.exe"
+            ),
+            "reference_worker": "DiffeoForgeReferenceWorker.exe",
+            "worker": "DiffeoForgeWorker.exe",
+        },
+        "bundle": {
+            "directory_name": root.name,
+            "file_count": len(records),
+            "total_bytes": sum(record["bytes"] for record in records),
+            "inventory_sha256": hashlib.sha256(
+                inventory_payload.encode("utf-8")
+            ).hexdigest(),
+            "files": records,
+        },
+        "missing_release_gates": list(MISSING_RELEASE_GATES),
+        "scientific_boundary": SCIENTIFIC_BOUNDARY,
+    }
+    _rewrite_manifest(root, manifest)
+
+    verified = verify_desktop_freeze_evidence(root)
+
+    assert verified["schema_version"] == "0.3"
+    assert "reference_execution_worker" not in verified["entry_points"]

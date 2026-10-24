@@ -51,6 +51,33 @@ def test_ascii_vtk_geometry_is_inspected(tmp_path: Path) -> None:
     assert geometry.triangles == ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3))
 
 
+def test_metadata_reuse_is_content_bound_and_does_not_reparse_geometry(tmp_path, monkeypatch):
+    from diffeoforge import mesh
+
+    path = write_tetrahedron(tmp_path / "warm.vtk")
+    first = inspect_vtk(path)
+    monkeypatch.setattr(mesh, "_inspect_vtk_uncached",
+                        lambda *_args: pytest.fail("Unchanged mesh reparsed"))
+    assert inspect_vtk(path) == first
+    copied = tmp_path / "identical.vtk"
+    copied.write_bytes(path.read_bytes())
+    assert inspect_vtk(copied).path == str(copied.resolve())
+    assert inspect_vtk(copied).sha256 == first.sha256
+
+
+def test_changed_bytes_with_preserved_size_and_mtime_are_not_trusted(tmp_path):
+    import os
+
+    path = write_tetrahedron(tmp_path / "changed.vtk")
+    first = inspect_vtk(path)
+    before = path.stat()
+    path.write_bytes(path.read_bytes().replace(b"1 0 0", b"2 0 0", 1))
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    second = inspect_vtk(path)
+    assert first.sha256 != second.sha256
+    assert second.bounds[1] == 2
+
+
 def test_non_triangular_polygons_are_rejected(tmp_path: Path) -> None:
     mesh = tmp_path / "quad.vtk"
     mesh.write_text(

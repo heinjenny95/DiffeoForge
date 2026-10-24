@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='utf-8'?>
+<data_set>
+    <subject id="subject-01.vtk">
+        <visit id="experiment">
+            <filename object_id="surface">../input/subjects/subject-01.vtk</filename>
+        </visit>
+    </subject>
+    <subject id="subject-02.vtk">
+        <visit id="experiment">
+            <filename object_id="surface">../input/subjects/subject-02.vtk</filename>
+        </visit>
+    </subject>
+    <subject id="subject-03.vtk">
+        <visit id="experiment">
+            <filename object_id="surface">../input/subjects/subject-03.vtk</filename>
+        </visit>
+    </subject>
+    <subject id="subject-04.vtk">
+        <visit id="experiment">
+            <filename object_id="surface">../input/subjects/subject-04.vtk</filename>
+        </visit>
+    </subject>
+    <subject id="subject-05.vtk">
+        <visit id="experiment">
+            <filename object_id="surface">../input/subjects/subject-05.vtk</filename>
+        </visit>
+    </subject>
+</data_set>

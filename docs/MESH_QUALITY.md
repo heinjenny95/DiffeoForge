@@ -1,6 +1,7 @@
 # Deterministic mesh-quality evidence
 
-Status: **implemented engineering gates; not a complete surface-validity test**
+Status: **implemented engineering gates on both engine routes; not a complete
+surface-validity test**
 
 Tracked prospectively by
 [scientific-change issue #32](https://github.com/heinjenny95/DiffeoForge/issues/32).
@@ -11,7 +12,10 @@ A readable triangular VTK file is not necessarily suitable atlas input, and an
 output with the expected number of points and faces can still be degenerate.
 DiffeoForge therefore measures the exact meshes used by `modern-run`, applies
 explicit gates before optimization, and assesses every generated template,
-reconstruction, and PCA endpoint before publication.
+reconstruction, and PCA endpoint before publication. The Deformetrica-reference
+`validate`, desktop review, and execution preflight apply the same default
+structural input gates before preparation or engine launch and include their
+per-mesh counts in `atlas.preflight.html`.
 
 The implementation is dependency-free and deterministic. JSON retains the
 complete evidence; CSV exposes a stable review table. The run and bundle
@@ -56,6 +60,13 @@ CGAL separately documents polygon-mesh orientation, manifold constraints, and
 repair operations in its
 [`Polygon Mesh Processing` package](https://doc.cgal.org/latest/Polygon_mesh_processing/index.html).
 DiffeoForge does not silently repair a mesh.
+
+The reference preflight also reports byte-identical subjects, unusual point and
+triangle-count dispersion, extreme bounding-box scale dispersion, and bounding-box
+centre dispersion that can indicate missing rigid/GPA alignment. These are review
+notices rather than biological acceptance tests. Missing paths, duplicate selected
+paths or case-insensitive filenames, damaged legacy VTK payloads, invalid indices,
+and non-finite coordinates already fail validation.
 
 ## Configuration and gates
 
