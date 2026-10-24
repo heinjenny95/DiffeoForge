@@ -99,6 +99,22 @@ Preserve old vertices, validate the identical input surface, edge incidence and
 topology, and track parent faces for repeated regional measurements. Report
 sampled Jacobians and full-triangle intersection tests with their limits.
 
+For composed fields, evaluate every retained deformation on the original
+reference vertices at declared precision. New vertices from conforming source
+subdivision must traverse the complete composition. A rounded intermediate mesh
+or linear interpolation of a deformed mesh is a different representation; do not
+silently treat it as the original ambient composition. Check integration
+sensitivity on the same source tessellation and retain exact field identities.
+
+Unmarked regions are not necessarily already correct. Use bidirectional residual
+maps to distinguish well-supported retained surface from missing structures and
+overhangs before defining protection anchors. Record this confidence rule as a
+new hypothesis, and check the previously good regions separately after fitting.
+Good average preservation can coexist with a small local regression. Likewise,
+a positive sampled determinant may still indicate severe compression; neither
+it nor a zero endpoint-mesh intersection count establishes anatomical homology,
+trajectory-wide validity or suitability for morphometric statistics.
+
 Application source and installed behavior remain separate from private experiment
 scripts. A successful single pair cannot establish a universally best search
 policy, guarantee monotonic improvements or qualify the production pilot.
