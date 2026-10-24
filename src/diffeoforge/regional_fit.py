@@ -54,6 +54,12 @@ def read_plan(config):
             != residual["parent_manifest_sha256"]
         ):
             raise ValueError("Residual parent changed")
+        grid = data["residual"].get("original_source_grid")
+        if grid and (
+            Path(grid["copy"]).name != grid["copy"]
+            or sha256_file(path.parent / grid["copy"]) != grid["sha256"]
+        ):
+            raise ValueError("Original source grid changed")
     for item in data["objects"]:
         if (
             not re.fullmatch(r"[a-z][a-z0-9_]{0,39}", item["id"])
@@ -91,6 +97,11 @@ def assets(config):
     if plan.get("residual"):
         row = plan["residual"]["source"]
         result.append((root / row["copy"], Path("input/regional") / row["copy"], row["sha256"]))
+        grid = plan["residual"].get("original_source_grid")
+        if grid:
+            result.append(
+                (root / grid["copy"], Path("input/regional") / grid["copy"], grid["sha256"])
+            )
     for item in plan["objects"]:
         for role in ["source", "target"]:
             row = item[role]
@@ -295,8 +306,25 @@ def prepare(
         _save(path, v, f)
         return dict(copy=path.name, sha256=sha256_file(path), bytes=path.stat().st_size)
 
-    for name, v, f in [("focus-source.vtk", sv, sf), ("focus-target.vtk", tv, tf)]:
-        _patch(root / name, v, f, mask(v[f].mean(1), focus_regions))
+    source_centres = sv[sf].mean(1)
+    target_centres = tv[tf].mean(1)
+    source_selected = np.zeros(len(sf), bool)
+    inferred = []
+    for region in focus_regions:
+        chosen = mask(source_centres, [region])
+        target_chosen = mask(target_centres, [region])
+        if not target_chosen.any():
+            raise ValueError("The marked original area contains no face centres; enlarge it")
+        if not chosen.any() and guide_noise is None:
+            centre = target_centres[target_chosen].mean(0)
+            closest = source_centres[np.argmin(np.linalg.norm(source_centres-centre, axis=1))]
+            extent = np.linalg.norm(np.ptp(tv[np.unique(tf[target_chosen])], axis=0))
+            area = dict(center=closest.tolist(), radius=max(focus_width*2, extent*.75))
+            chosen = mask(source_centres, [area])
+            inferred.append(area)
+        source_selected |= chosen
+    _patch(root / "focus-source.vtk", sv, sf, source_selected)
+    _patch(root / "focus-target.vtk", tv, tf, mask(target_centres, focus_regions))
 
     def row(name):
         p = root / name
@@ -317,7 +345,8 @@ def prepare(
     ids = np.unique(
         sf[np.searchsorted(np.cumsum(area), (np.arange(1800) + 0.5) * area.sum() / 1800), 0]
     )
-    ids = ids[~mask(sv[ids], focus_regions, halo=halo) | mask(sv[ids], fixed_regions)]
+    ids = ids[~mask(sv[ids], [*focus_regions, *inferred], halo=halo)
+              | mask(sv[ids], fixed_regions)]
     if len(ids) < 4:
         raise ValueError("The marked region leaves too little surface for outside protection")
     protected = sv[ids]
@@ -384,7 +413,7 @@ def prepare(
             dict(id="featureguides", kind="Landmark", noise_std=guide_noise, source=a, target=b)
         )
     retained_binding = (
-            dict(path=str(Path(retained_path).resolve()), sha256=sha256_file(Path(retained_path)))
+        dict(path=str(Path(retained_path).resolve()), sha256=sha256_file(Path(retained_path)))
         if retained_path
         else None
     )
@@ -395,6 +424,7 @@ def prepare(
         target_sha256=target.metadata.sha256,
         regions=regions,
         focus_regions=focus_regions,
+        inferred_source_regions=inferred,
         protection_halo=halo,
         protection=protection,
         protection_vertex_ids=ids.tolist(),

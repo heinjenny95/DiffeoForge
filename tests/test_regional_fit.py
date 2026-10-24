@@ -136,6 +136,25 @@ def test_mixed_marked_areas_do_not_force_shape_preservation_on_shape_errors():
     assert not regional_pilot.split_regions([good])[0]
 
 
+def test_missing_detail_beyond_source_tip_gets_a_movable_source_patch(tmp_path):
+    config, sv, tv, faces = fixture(tmp_path, guides=False)
+    source_centres, target_centres = sv[faces].mean(1), tv[faces].mean(1)
+    distances = np.linalg.norm(target_centres[:, None] - source_centres[None, :], axis=2).min(1)
+    index = np.argmax(distances)
+    radius = min(0.08, distances[index] / 3)
+    region = dict(center=target_centres[index].tolist(), radius=radius, symptom="detail")
+    declaration = prepare(
+        tmp_path / "missing-tip", tmp_path / "source.vtk", tmp_path / "target.vtk", [region],
+        focus_width=0.1, focus_noise=0.02, protection_noise=0.001, protection_halo=0.1,
+        retained_path=tmp_path / "source.vtk")
+    config["project"]["parameter_provenance"]["regional_fit"] = declaration
+    plan = read_plan(config)
+    assert len(plan["inferred_source_regions"]) == 1
+    assert plan["protection_vertex_ids"] and not plan["guidance"]
+    quality = measure(config, tmp_path / "source.vtk")
+    assert not quality["local_improved"] and np.isfinite(quality["active_surface_p95"])
+
+
 def test_feedback_recipes_keep_preference_and_balance_transitions_without_promoting_attempt(
     monkeypatch,
 ):
@@ -191,6 +210,32 @@ def test_shared_atlas_scope_cannot_inherit_single_form_terms(tmp_path):
     path.write_text(json.dumps(data))
     entry["sha256"] = sha256_file(path)
     with pytest.raises(ValueError, match="surface scale"):
+        read_plan(config)
+
+
+def test_original_source_grid_is_bound_and_staged_with_residual(tmp_path):
+    import shutil
+
+    config, *_ = fixture(tmp_path, guides=False)
+    entry = config["project"]["parameter_provenance"]["regional_fit"]
+    path = Path(entry["manifest"])
+    data = json.loads(path.read_text())
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    (parent / "manifest.json").write_text("{}")
+    rows = {}
+    for key, name in [("source", "residual-source.vtk"),
+                      ("original_source_grid", "original-grid.vtk")]:
+        copied = path.parent / name
+        shutil.copyfile(tmp_path / "source.vtk", copied)
+        rows[key] = dict(copy=name, sha256=sha256_file(copied), bytes=copied.stat().st_size)
+    data["residual"] = dict(rows, parent_run=str(parent),
+                            parent_manifest_sha256=sha256_file(parent / "manifest.json"))
+    path.write_text(json.dumps(data))
+    entry["sha256"] = sha256_file(path)
+    assert any(str(staged).endswith("original-grid.vtk") for _, staged, _ in assets(config))
+    (path.parent / "original-grid.vtk").write_text("changed")
+    with pytest.raises(ValueError, match="Original source grid changed"):
         read_plan(config)
 
 

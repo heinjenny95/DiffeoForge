@@ -15,8 +15,14 @@ def _distances(target, target_faces, fitted, fitted_faces, areas):
     rows = []
     a = target_faces[mask(target[target_faces].mean(1), areas)]
     b = fitted_faces[mask(fitted[fitted_faces].mean(1), areas)]
-    if not len(a) or not len(b):
-        raise ValueError("Regional surface verification needs faces in both surfaces")
+    if not len(a):
+        raise ValueError("Regional surface verification needs faces in the marked original")
+    if not len(b):
+        # A genuinely missing tip may not reach the marked target region yet.
+        # Measure the closest fitted face too; do not lose the completed trial.
+        centre = target[a].mean(axis=(0, 1))
+        nearest = np.argmin(np.linalg.norm(fitted[fitted_faces].mean(1) - centre, axis=1))
+        b = fitted_faces[[nearest]]
     for seed in (2026102901, 2026102902):
         x = distances_to_surface(surface_samples(target, a, 2048, seed=seed), fitted, fitted_faces)
         y = distances_to_surface(surface_samples(fitted, b, 2048, seed=seed), target, target_faces)
@@ -31,7 +37,7 @@ def _distances(target, target_faces, fitted, fitted_faces, areas):
     return rows
 
 
-def measure(config, fitted_path):
+def measure(config, fitted_path, *, source_path=None, baseline_path=None):
     from diffeoforge.surface_io import load_surface_mesh
 
     plan = read_plan(config)
@@ -39,6 +45,8 @@ def measure(config, fitted_path):
     if plan.get("residual"):
         directory = Path(config["project"]["parameter_provenance"]["regional_fit"]["manifest"])
         source = load_surface_mesh(directory.parent / plan["residual"]["source"]["copy"]).geometry
+    if source_path is not None:
+        source = load_surface_mesh(source_path).geometry
     target_path = Path(config["input"]["directory"]) / plan.get("target_filename", "")
     if not target_path.is_file():
         choices = [
@@ -63,7 +71,7 @@ def measure(config, fitted_path):
     if retained:
         if sha256_file(Path(retained["path"])) != retained["sha256"]:
             raise ValueError("The retained comparison changed")
-        original = load_surface_mesh(retained["path"]).geometry
+        original = load_surface_mesh(baseline_path or retained["path"]).geometry
         before = _distances(
             tv,
             tf,
@@ -167,12 +175,19 @@ def evaluate_and_measure(
     destination = (
         Path(root) / "regional-evaluations" / (candidate.candidate_id + "-" + uuid4().hex[:8])
     )
-    receipt = evaluate(run, destination, cancelled=cancelled, event_callback=event_callback)
+    cache = {}
+    receipt = evaluate(
+        run, destination, cancelled=cancelled, event_callback=event_callback, _cache=cache
+    )
     config = load_config(candidate.config_path)
     from diffeoforge.config import validate_input_paths
 
     summary = validate_input_paths(config, candidate.config_path)
     config["input"].update(template=str(summary.template), directory=str(summary.input_directory))
+    from diffeoforge.source_refinement import refine_evaluation
+
+    plan = read_plan(config)
+    grid = Path(receipt["reference_source"]["path"])
     from diffeoforge.reference_fixed_shooting import movement
     from diffeoforge.surface_io import load_surface_mesh
 
@@ -182,8 +197,10 @@ def evaluate_and_measure(
         run,
         destination.with_name(destination.name + "-grid37"),
         count=37,
+        _source=grid,
         cancelled=cancelled,
         event_callback=event_callback,
+        _cache=cache,
     )
     comparisons = []
     for count in (73, 145, 289):
@@ -193,8 +210,10 @@ def evaluate_and_measure(
                 run,
                 destination.with_name(destination.name + f"-grid{count}"),
                 count=count,
+                _source=grid,
                 cancelled=cancelled,
                 event_callback=event_callback,
+                _cache=cache,
             )
         delta = movement(
             Path(coarse["endpoint"]["path"]), Path(receipt["endpoint"]["path"]), diagonal
@@ -202,10 +221,79 @@ def evaluate_and_measure(
         comparisons.append(dict(coarse=coarse["timepoints"], fine=count, **delta))
         if delta["maximum"] <= 1e-4:
             break
-    quality = measure(config, receipt["endpoint"]["path"])
+    receipt = refine_evaluation(
+        run,
+        receipt,
+        destination.with_name(destination.name + "-spatial"),
+        plan,
+        cancelled=cancelled,
+        event_callback=event_callback,
+        cache=cache,
+    )
+    refinement = receipt.get("source_refinement")
+    final_grid = Path(receipt["reference_source"]["path"])
+    if sha256_file(final_grid) != sha256_file(grid):
+        coarse_count = comparisons[-1]["coarse"]
+        coarse = evaluate(
+            run,
+            destination.with_name(destination.name + "-spatial-grid-check"),
+            count=coarse_count,
+            _source=final_grid,
+            cancelled=cancelled,
+            event_callback=event_callback,
+            _cache=cache,
+        )
+        delta = movement(
+            Path(coarse["endpoint"]["path"]), Path(receipt["endpoint"]["path"]), diagonal
+        )
+        comparisons.append(dict(coarse=coarse_count, fine=receipt["timepoints"], **delta))
+        while comparisons[-1]["maximum"] > 1e-4 and receipt["timepoints"] < 289:
+            coarse = receipt
+            count = receipt["timepoints"] * 2 - 1
+            receipt = evaluate(
+                run,
+                destination.with_name(destination.name + f"-spatial-t{count}"),
+                count=count,
+                _source=final_grid,
+                cancelled=cancelled,
+                event_callback=event_callback,
+                _cache=cache,
+            )
+            delta = movement(
+                Path(coarse["endpoint"]["path"]), Path(receipt["endpoint"]["path"]), diagonal
+            )
+            comparisons.append(dict(coarse=coarse["timepoints"], fine=count, **delta))
+    grid = final_grid
+    baseline = None
+    if plan.get("retained_run"):
+        parent = plan["retained_run"]
+        if sha256_file(Path(parent["path"]) / "manifest.json") != parent["manifest_sha256"]:
+            raise ValueError("Retained comparison run changed")
+        baseline = evaluate(
+            parent["path"],
+            destination.with_name(destination.name + "-baseline"),
+            count=receipt["timepoints"],
+            _source=grid,
+            cancelled=cancelled,
+            event_callback=event_callback,
+            _cache=cache,
+        )
+    source = receipt["prefix"]["endpoint"]["path"] if receipt["prefix"] else str(grid)
+    quality = measure(
+        config,
+        receipt["endpoint"]["path"],
+        source_path=source,
+        baseline_path=baseline["endpoint"]["path"] if baseline else None,
+    )
+    if baseline:
+        quality["baseline_evaluation"] = baseline
+    if refinement:
+        receipt["source_refinement"] = refinement
+    quality["spatial_resolution_sufficient"] = not (refinement or {}).get("resource_limit", False)
     quality["temporal_grid_checks"] = comparisons
     quality["temporal_grid_stable"] = comparisons[-1]["maximum"] <= 1e-4
     quality["numerical_selection_suitable"] &= quality["temporal_grid_stable"]
+    quality["numerical_selection_suitable"] &= quality["spatial_resolution_sufficient"]
     quality["evaluation"] = receipt
     path = destination / "quality.json"
     path.write_text(json.dumps(quality, indent=2) + "\n")

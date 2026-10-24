@@ -44,9 +44,17 @@ new, declared controls and zero initial residual
 momenta. Old momenta are never reinterpreted under a different kernel. The saved
 prefix remains unchanged. Evaluation replays the entire ambient field chain
 forward from the original source, in Float64; interpolating a deformed endpoint
-is not used as a substitute for that composition. The current implementation
-retains the supplied source connectivity; automatic source subdivision is not
-part of this delivery.
+is not used as a substitute for that composition. Long or intersection-flagged
+active triangles trigger conforming midpoint subdivision of the **original**
+source surface. Every old material point stays unchanged; new original points
+pass through all saved fields. Verified field/point batches reuse old endpoints
+instead of repeating the entire evaluation. Subdivision preserves the original
+piecewise-linear surface and is bounded to eight passes and 500,000 vertices;
+an unresolved resource limit prevents numerical selection.
+
+Native text output declares Float32 points even when it prints Double values.
+Evaluation therefore preserves raw files and separately writes Double endpoints
+before feeding a later field. This avoids intermediate Float32 quantization.
 
 An ordinary global alternative cannot reinterpret only the last residual field
 on the original template. It receives an explicit fresh initialization instead;
@@ -101,9 +109,21 @@ also exercise actual pilot successor preparation, immutable asset staging,
 regional guards, mark persistence and Qt controls. Native reproduction and
 software routing are distinct evidence.
 
-This establishes implementation parity for the controlled translation-like
-spacing cases, not prospective anatomical validation across independent animals,
-an isolated wall-thickness guarantee, or automatic reproduction of the earlier
-three-field real-anatomy search. Mesh density, topology, severe compression,
+The earlier three-field real-anatomy result was also replayed through the actual
+DF fixed-field adapter. All five conforming original-source grids reproduced
+the earlier coordinates/connectivity exactly. The final endpoint differed by at
+most 4.84e-8 model units. An initially stricter 1e-10 comparison failed: the old
+manual prototype used Float64 geometry with a Float32 Gaussian scalar, while
+the stock Float64 API promotes that scalar too. Independent scalar-precision
+audits reproduced both variants exactly on sampled points. This is explained
+numerical agreement below the earlier 0.0002 sensitivity bound, not bit identity
+or a new automatic parameter search. A separate actual two-field evaluation
+also checks that incremental material-point batches equal a full refined-grid
+replay without optimizer updates.
+
+This establishes implementation parity for controlled spacing cases and real
+saved-field replay, not prospective automatic search or anatomical validation
+across independent animals, an isolated wall-thickness guarantee, or a qualified
+common cohort objective. Mesh density, topology, severe compression,
 correspondence and template suitability still require appropriate checks and
 the researcher's visual decisions.

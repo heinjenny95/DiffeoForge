@@ -190,6 +190,8 @@ def render(window, prepared):
                 failures.append("new surface intersection flags")
             if not quality.get("temporal_grid_stable", True):
                 failures.append("time-grid stability")
+            if not quality.get("spatial_resolution_sufficient", True):
+                failures.append("original-source spatial resolution limit")
             note = QLabel(("This attempt fails: " + ", ".join(failures)
                            + ". It will not replace your retained starting fit.") if failures else
                           "Local, transition and preservation checks passed; inspect anatomy. "

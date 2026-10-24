@@ -76,6 +76,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         and quality.get("shape_preserved")
         and quality.get("no_new_intersection_flags", True)
         and quality.get("temporal_grid_stable", True)
+        and quality.get("spatial_resolution_sufficient", True)
         and feedback.get("outcome") != "worse"
     ):
         # A retained comparison is not promoted by using a useful local numerical
@@ -223,6 +224,11 @@ def bind(root, manifest, record):
     evaluated = endpoint(candidate)
     if evaluated:
         retained = Path(evaluated["path"])
+    from diffeoforge.regional_residual import retained_evaluation
+
+    anchor_evaluation = retained_evaluation(record, run, feedback["target"])
+    if anchor_evaluation:
+        retained = Path(anchor_evaluation["endpoint"]["path"])
     fit_source = root / manifest["inputs"]["template"]["copy"]
     residual = record["refinement"].get("residual")
     if not residual:
@@ -244,9 +250,38 @@ def bind(root, manifest, record):
                     "regional_fit"
                 ]["manifest"]
             ).parent
-            shutil.copyfile(
-                previous_path / residual["source"]["copy"], root / residual["source"]["copy"]
-            )
+            for row in [
+                residual["source"],
+                *(
+                    [residual["original_source_grid"]]
+                    if residual.get("original_source_grid")
+                    else []
+                ),
+            ]:
+                shutil.copyfile(previous_path / row["copy"], root / row["copy"])
+            seed_run = study.calibration_candidate_run_directory(seed_candidate)
+            fine = retained_evaluation(record, seed_run, feedback["target"])
+            if fine and fine.get("prefix"):
+                original = Path(fine["reference_source"]["path"])
+                prefix = Path(fine["prefix"]["endpoint"]["path"])
+                for name, source_path in [
+                    ("original-source-grid.vtk", original),
+                    ("residual-source.vtk", prefix),
+                ]:
+                    shutil.copyfile(source_path, root / name)
+                residual = dict(
+                    residual,
+                    source=dict(
+                        copy="residual-source.vtk",
+                        sha256=sha256_file(root / "residual-source.vtk"),
+                        bytes=(root / "residual-source.vtk").stat().st_size,
+                    ),
+                    original_source_grid=dict(
+                        copy="original-source-grid.vtk",
+                        sha256=sha256_file(root / "original-source-grid.vtk"),
+                        bytes=(root / "original-source-grid.vtk").stat().st_size,
+                    ),
+                )
     if residual:
         fit_source = root / residual["source"]["copy"]
     declaration = prepare(
@@ -264,16 +299,21 @@ def bind(root, manifest, record):
         guide_noise=recipe["guide_noise"],
         guide_points=recipe["guide_points"],
     )
-    if residual:
-        import json
-        import shutil
+    import json
+    import shutil
 
-        path = Path(declaration["manifest"])
-        data = json.loads(path.read_text())
-        shutil.copyfile(fit_source, path.parent / residual["source"]["copy"])
+    path = Path(declaration["manifest"])
+    data = json.loads(path.read_text())
+    data["retained_run"] = dict(path=str(run), manifest_sha256=sha256_file(run / "manifest.json"))
+    if residual:
+        for row in [
+            residual["source"],
+            *([residual["original_source_grid"]] if residual.get("original_source_grid") else []),
+        ]:
+            shutil.copyfile(root / row["copy"], path.parent / row["copy"])
         data["residual"] = residual
-        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        declaration["sha256"] = sha256_file(path)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    declaration["sha256"] = sha256_file(path)
     return dict(record, regional_objective=declaration)
 
 

@@ -257,7 +257,8 @@ def _batch(
     candidates = tuple(
         CalibrationCandidate(
             "guided-" + method,
-            method.title() + (" · joint confirmation" if phase == "joint" else ""),
+            method.title() + (" · joint confirmation" if phase == "joint" else
+                              " · protected local fit" if goal == "regional" else ""),
             tuple(sorted(center.items())),
             "One bounded original-surface trial; explicit visual review",
         )

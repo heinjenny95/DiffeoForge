@@ -5,6 +5,35 @@ from pathlib import Path
 from diffeoforge.mesh import sha256_file
 
 
+def retained_evaluation(record, run, target):
+    """Find a bound current-grid evaluation of the requested unchanged field."""
+    from diffeoforge import reference_calibration_study as study
+
+    previous = record.get("guided", {}).get("strategy", {}).get("previous")
+    if not previous:
+        return None
+    if (
+        sha256_file(Path(previous["directory"]) / study.STUDY_MANIFEST)
+        != previous["manifest_sha256"]
+    ):
+        raise ValueError("Regional predecessor changed")
+    latest = study.load_reference_calibration_study(previous["directory"])
+    for row in latest.candidates:
+        q = (
+            (row.metrics or {})
+            .get("attachment_comparison", {})
+            .get("subjects", {})
+            .get(target, {})
+            .get("regional_quality", {})
+        )
+        for entry in (q.get("evaluation"), q.get("baseline_evaluation")):
+            if entry and Path(entry["source_run"]).resolve() == Path(run).resolve():
+                if sha256_file(Path(entry["endpoint"]["path"])) != entry["endpoint"]["sha256"]:
+                    raise ValueError("Retained original-grid endpoint changed")
+                return entry
+    return None
+
+
 def bind(root, manifest, record, recipe):
     """Preserve the parent deformation and fit only a new residual field."""
     import numpy as np
@@ -23,6 +52,33 @@ def bind(root, manifest, record, recipe):
     run = study.calibration_candidate_run_directory(candidate)
     report = collect_run_report(run)
     evaluated = endpoint(candidate)
+    quality = (
+        (candidate.metrics or {})
+        .get("attachment_comparison", {})
+        .get("subjects", {})
+        .get(ref["target"], {})
+        .get("regional_quality", {})
+    )
+    evaluation = quality.get("evaluation")
+    # A rejected attempt may still have supplied a better original reference
+    # grid and a fresh evaluation of the unchanged preferred field on it.
+    previous = record.get("guided", {}).get("strategy", {}).get("previous")
+    if previous:
+        latest = study.load_reference_calibration_study(previous["directory"])
+        for row in latest.candidates:
+            q = (
+                (row.metrics or {})
+                .get("attachment_comparison", {})
+                .get("subjects", {})
+                .get(ref["target"], {})
+                .get("regional_quality", {})
+            )
+            base = q.get("baseline_evaluation")
+            if base and Path(base["source_run"]).resolve() == run.resolve():
+                evaluation, evaluated = base, base["endpoint"]
+                if sha256_file(Path(evaluated["path"])) != evaluated["sha256"]:
+                    raise ValueError("Refined retained-field evaluation changed")
+                break
     if evaluated:
         path = Path(evaluated["path"])
     else:
@@ -52,6 +108,18 @@ def bind(root, manifest, record, recipe):
         inherited_fields_unchanged=True,
         evaluation="original-source-forward-composition",
     )
+    if evaluation and evaluation.get("reference_source"):
+        import shutil
+
+        grid = evaluation["reference_source"]
+        origin = Path(grid["path"])
+        if sha256_file(origin) != grid["sha256"]:
+            raise ValueError("Retained original-source grid changed")
+        copied_grid = root / "original-source-grid.vtk"
+        shutil.copyfile(origin, copied_grid)
+        residual["original_source_grid"] = dict(
+            copy=copied_grid.name, sha256=sha256_file(copied_grid), bytes=copied_grid.stat().st_size
+        )
     return dict(
         record,
         controls=dict(

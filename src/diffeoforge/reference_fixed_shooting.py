@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 
 from diffeoforge.backends.deformetrica_reference import build_shooting_command
-from diffeoforge.mesh import read_vtk_polydata, sha256_file
+from diffeoforge.mesh import read_vtk_points, read_vtk_polydata, sha256_file
 from diffeoforge.reference_pca_deformations import _render_shooting_model
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
@@ -85,6 +85,7 @@ def shoot(
     event_callback=None,
     surface_only=None,
     precision=None,
+    point_cloud=False,
 ):
     if type(count) is not int or count < 2:
         raise ValueError("Shooting needs at least two timepoints")
@@ -119,6 +120,9 @@ def shoot(
             for obj in list(template):
                 if obj not in matches:
                     template.remove(obj)
+            if point_cloud:
+                matches[0].find("deformable-object-type").text = "Landmark"
+                matches[0].find("attachment-type").text = "landmark"
         if precision is not None:
             if precision not in {"float32", "float64"}:
                 raise ValueError("Unknown fixed-field evaluation precision")
@@ -207,14 +211,27 @@ def shoot(
             raise ValueError("Fixed Shooting input changed during computation")
     labels = seed["subject_labels"]
     result = {}
+    precise = destination / "endpoints"
+    precise.mkdir()
+    from diffeoforge.regional_fit import _save
+
     for index, label in enumerate(labels):
         prefix = "Shooting" if len(labels) == 1 else f"Shooting_{index}"
         grid = json.loads((destination / "output" / (prefix + "__grid.json")).read_text())
         if grid != dict(root=prefix, timepoints=count, tmin=0, tmax=1):
             raise ValueError("Runtime grid receipt differs from declaration")
         endpoint = destination / "output" / (prefix + "__endpoint.vtk")
-        read_vtk_polydata(endpoint)
-        result[label] = endpoint
+        if point_cloud:
+            vertices, faces = read_vtk_points(endpoint), None
+        else:
+            mesh = read_vtk_polydata(endpoint)
+            vertices, faces = mesh.vertices, mesh.triangles
+        # Stock Landmark.write labels even Float64 text as VTK "float". Reuse
+        # exact text values with a Double declaration before another field reads
+        # them; otherwise VTK silently rounds the next field's input to Float32.
+        typed = precise / endpoint.name
+        _save(typed, vertices, faces)
+        result[label] = typed
     expected = {p.name for p in result.values()}
     if {p.name for p in (destination / "output").glob("*.vtk")} != expected:
         raise ValueError("Unexpected or missing fixed-model endpoints")

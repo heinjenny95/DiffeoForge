@@ -113,6 +113,14 @@ def propose(snapshot, identifier, request, data):
                    "a different adjustment; parameter tests can continue."
                    if extended else "Longer optimization requires an inspected single-form "
                    "fit with an explicit iteration-limit stop.")
+        if can_optimize:
+            from diffeoforge.config import load_config
+            from diffeoforge.regional_fit import declaration
+
+            if declaration(load_config(numerical.config_path)):
+                available = False
+                blocked = ("Continue with Improve marked areas to preserve the full field "
+                           "chain and local objective. A global extension cannot discard them.")
     elif goal == "other_method":
         seed, seed_parent = reference, parent
         values, method = base_values, "varifold" if base_method == "current" else "current"

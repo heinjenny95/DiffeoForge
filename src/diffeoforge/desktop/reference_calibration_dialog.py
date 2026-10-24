@@ -3980,6 +3980,9 @@ class ReferenceCalibrationDialog(QDialog):
                     + f" · {float(payload['elapsed_seconds']) / 60:.1f} min."
                 )
             self._thread_pool.indicator.label.setText(self.status.text())
+        elif kind == "qualification_phase":
+            self.status.setText(str(event["message"]))
+            self._thread_pool.indicator.label.setText(self.status.text())
         elif kind == "qualification_progress":
             self.status.setText("Checking the complete fitted field at "
                 f"{event['timepoints']} timepoints · {event['elapsed_seconds'] / 60:.1f} min. "
