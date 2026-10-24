@@ -42,6 +42,10 @@ is not used as a substitute for that composition. The current implementation
 retains the supplied source connectivity; automatic source subdivision is not
 part of this delivery.
 
+An ordinary global alternative cannot reinterpret only the last residual field
+on the original template. It receives an explicit fresh initialization instead;
+protected refinement retains the full prefix. The retained comparison stays saved.
+
 All objective geometry, source/target identities, initial fields, controls,
 recipe and derived guide files are hash-bound and staged with the run. The native
 installation is unchanged. A run-local SciPy message compatibility wrapper only

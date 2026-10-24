@@ -60,6 +60,31 @@ def test_explicit_basis_change_is_declared_fresh_and_has_no_momenta(tmp_path, mo
     assert child.candidates[0].attempts == 0 and not child.visual_reviews
 
 
+def test_global_alternative_cannot_reinterpret_a_residual_without_its_prefix(tmp_path, monkeypatch):
+    from diffeoforge import guided_refinement, regional_fit
+
+    base = reject(run_batch(initial(tmp_path), monkeypatch), "guided-varifold")
+    original_load, original_plan = guided_refinement.load_field, regional_fit.read_plan
+    field_configs = []
+
+    def residual_field(run):
+        loaded = original_load(run)
+        field_configs.append(loaded.run_report.manifest["effective_config"])
+        return loaded
+
+    monkeypatch.setattr(guided_refinement, "load_field", residual_field)
+    monkeypatch.setattr(regional_fit, "read_plan", lambda config:
+        dict(residual=dict(prefix=True)) if any(config is c for c in field_configs)
+        else original_plan(config))
+    child = guided.next_action(base.study_directory, "adaptive_recover", "guided-varifold",
+                               goal="goal:weight")
+    record = child.attachment_comparison["refinement"]
+    assert record["initialization"] == "fresh" and "preserved prefix" in record["reason"]
+    config = load_config(child.candidates[0].config_path)
+    assert "initial_momenta" not in config["model"]["deformation"]
+    assert all(c.attempts == 0 for c in child.candidates)
+
+
 def test_worse_detail_keeps_first_reference_and_next_probe_same_basis(tmp_path, monkeypatch):
     base, trial = attempted(tmp_path, monkeypatch)
     selected = feedback.save_feedback(

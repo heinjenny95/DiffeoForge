@@ -63,6 +63,15 @@ def bind(root, manifest, record):
     run = study.calibration_candidate_run_directory(candidate)
     inputs = load_field(run)
     config = inputs.run_report.manifest["effective_config"]
+    from diffeoforge.regional_fit import read_plan
+
+    regional = read_plan(config)
+    recipe = (record.get("guided", {}).get("strategy") or {}).get("regional_recipe")
+    if regional and regional.get("residual") and not recipe:
+        return dict(record, refinement=dict(request, initialization="fresh",
+            reason="This field is a residual after a preserved prefix. An ordinary global "
+                   "trial cannot reuse that residual alone on the original template. "
+                   "Use protected regional refinement to retain the full field chain."))
     requested = load_config(root / manifest["source_config"]["copy"])
     controls = old["attachment_comparison"]["controls"]
     source = study._safe_study_path(parent.study_directory, controls["copy"])
