@@ -204,6 +204,9 @@ def render(window, prepared):
                 else "Starting from the saved deformation with additional zero-momentum "
                 "control points; optimizer history starts anew."
                 if initialization.get("initialization") == "nested"
+                else "Retaining your saved deformation as a fixed prefix and fitting a "
+                "local residual. The complete field chain is evaluated from the original source."
+                if initialization.get("initialization") == "residual"
                 else "This adjustment requires a fresh fit. "
                 "Compare it with your saved starting fit."
             )

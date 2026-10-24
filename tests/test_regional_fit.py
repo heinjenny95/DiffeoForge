@@ -127,6 +127,15 @@ def proposal_data():
     )
 
 
+def test_mixed_marked_areas_do_not_force_shape_preservation_on_shape_errors():
+    gap = dict(symptom="gap", purpose="problem")
+    bent = dict(symptom="curvature", purpose="problem")
+    good = dict(symptom="unsure", purpose="fixed")
+    problem, guides, fixed = regional_pilot.split_regions([gap, bent, good])
+    assert problem == [gap, bent] and guides == [gap] and fixed == [good]
+    assert not regional_pilot.split_regions([good])[0]
+
+
 def test_feedback_recipes_keep_preference_and_balance_transitions_without_promoting_attempt(
     monkeypatch,
 ):
@@ -151,6 +160,13 @@ def test_feedback_recipes_keep_preference_and_balance_transitions_without_promot
     assert second["regional_recipe"]["focus_noise"] == 0.0003
     assert second["initialization_reference"] == data["current_reference"]
     assert second["anchor"] == data["anchor"]
+    quality = data["current"].metrics["attachment_comparison"]["subjects"]["shape.vtk"][
+        "regional_quality"]
+    for key in ("no_new_intersection_flags", "temporal_grid_stable"):
+        quality[key] = False
+        assert regional_pilot.proposal(None, "x", data, symptom="gap")[
+            "initialization_reference"] == data["anchor"]
+        quality[key] = True
     data["context"]["feedback"] = dict(x=dict(feedback=dict(outcome="worse")))
     assert (
         regional_pilot.proposal(None, "x", data, symptom="gap")["initialization_reference"]
@@ -233,7 +249,7 @@ def test_real_pilot_transition_stages_regional_assets_without_launching(
     )
     config = load_config(child.candidates[0].config_path)
     plan = read_plan(config)
-    expected = "residual" if symptom == "curvature" else "learned"
+    expected = "residual"
     assert child.attachment_comparison["refinement"]["initialization"] == expected
     assert plan["retained_reference"] and len(plan["objects"]) == 2
     assert config["optimization"]["method"] == "lbfgs"
@@ -244,7 +260,7 @@ def test_real_pilot_transition_stages_regional_assets_without_launching(
     prepared = prepare_run(child.candidates[0].config_path, run_id="regional-stage-test")
     verify_prepared_run(prepared)
     assert (prepared / "input/regional/plan.json").is_file()
-    if symptom == "curvature":
+    if expected == "residual":
         assert plan["residual"]["inherited_fields_unchanged"]
         assert "initial_momenta" not in config["model"]["deformation"]
         model = ET.parse(prepared / "engine/model.xml")

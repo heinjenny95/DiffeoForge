@@ -5,6 +5,14 @@ from pathlib import Path
 from diffeoforge.mesh import sha256_file
 
 
+def split_regions(regions):
+    problem = [r for r in regions if r.get("purpose", "problem") == "problem"]
+    shape = [r for r in regions if r.get("purpose") == "preserve"]
+    fixed = [r for r in regions if r.get("purpose") == "fixed"]
+    guides = [*shape, *(r for r in problem if r["symptom"] in {"gap", "position"})]
+    return problem or shape, guides, fixed
+
+
 def verify(root, manifest, record):
     declaration = record.get("regional_objective")
     recipe = (record.get("guided", {}).get("strategy") or {}).get("regional_recipe")
@@ -66,13 +74,16 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         and data["current_reference"]
         and quality.get("outside_preserved")
         and quality.get("shape_preserved")
+        and quality.get("no_new_intersection_flags", True)
+        and quality.get("temporal_grid_stable", True)
         and feedback.get("outcome") != "worse"
     ):
         # A retained comparison is not promoted by using a useful local numerical
         # field to repair its transitions. This distinction is shown in the UI.
         seed = data["current_reference"]
     values = dict(seed["values"])
-    available = bool(marked and reference)
+    problem, guides, _fixed = split_regions(marked)
+    available = bool(problem and reference)
     blocked = "Mark the problem area before preparing a protected local test."
     if symptom in {"alignment", "topology", "view"}:
         available = False
@@ -94,7 +105,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         focus_noise=values["noise_std"] * noise_factor,
         protection_noise=values["noise_std"] * 0.15,
         guide_noise=values["noise_std"] * 0.05
-        if symptom in {"gap", "position"} or any(r.get("purpose") == "preserve" for r in marked)
+        if symptom in {"gap", "position"} or guides
         else None,
         protection_halo=values["deformation_kernel_width"] * 2,
         guide_points=192,
@@ -106,9 +117,11 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         recipe["protection_halo"] = min(recipe["protection_halo"], diagonal * 0.1)
     # Changing a movement kernel cannot reuse its old momenta as if the basis
     # were identical. Preserve that deformation as the prefix of a residual.
-    recipe["residual"] = (symptom == "curvature" or level >= 2) and not (
-        quality and seed == data["current_reference"] and quality.get("local_improved")
-    )
+    recipe["residual"] = (
+        symptom not in {"gap", "position"}
+        or any(r["symptom"] == "curvature" for r in problem)
+        or level >= 2
+    ) and not (quality and seed == data["current_reference"] and quality.get("local_improved"))
     if recipe["residual"]:
         values["deformation_kernel_width"] *= 0.5
     reason = (
@@ -180,14 +193,10 @@ def bind(root, manifest, record):
 
     feedback = record["guided"]["feedback"]
     regions = feedback["regions"]
-    problem = [r for r in regions if r.get("purpose", "problem") == "problem"]
-    shape = [r for r in regions if r.get("purpose") == "preserve"]
-    fixed = [r for r in regions if r.get("purpose") == "fixed"]
-    if not problem:
-        problem = [r for r in regions if r.get("purpose") != "fixed"]
+    problem, guides, fixed = split_regions(regions)
     if not problem:
         raise ValueError("Mark a problem area as well as already good protected areas")
-    guides = shape or problem
+    guides = guides or problem
     target = next(r for r in manifest["inputs"]["subjects"] if r["filename"] == feedback["target"])
     ref = record["guided"]["strategy"]["anchor"]
     from diffeoforge.guided_feedback import verify_reference

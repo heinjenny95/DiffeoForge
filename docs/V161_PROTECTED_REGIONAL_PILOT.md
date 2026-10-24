@@ -33,8 +33,14 @@ the earlier field. Subsequent contrasts remain available; there is no cumulative
 trial budget or once-per-parameter lock. Changed areas, methods and symptoms
 start separate recipe histories.
 
-For curvature or stalled local matching, a smaller-scale residual can be added
-on the retained endpoint with new, declared controls and zero initial residual
+Mixed feedback remains separate: a spacing region may receive movement guides
+while a curvature/thickness region receives shape matching. A shape error is not
+forced into a shape-preserving guide merely because another marked area has a
+spacing problem. Fixed-only marks require a problem area before a trial is prepared.
+
+Local shape errors start from the retained endpoint with a smaller-scale residual;
+spacing can first use a compatible retained original-source field. Residuals use
+new, declared controls and zero initial residual
 momenta. Old momenta are never reinterpreted under a different kernel. The saved
 prefix remains unchanged. Evaluation replays the entire ambient field chain
 forward from the original source, in Float64; interpolating a deformed endpoint
