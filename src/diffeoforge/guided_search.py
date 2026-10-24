@@ -29,10 +29,13 @@ def inputs(snapshot, identifier, context):
             ref = latest_density["fit"]
             references[ref["directory"]] = verify_reference(ref)
     inspected = context["allowed"].get(identifier, False)
+    from diffeoforge.guided_response import history
+
+    response_cases, response_evidence = history(context['cases'], anchor, marked)
     return dict(anchor=anchor, current=current, target=target, regions=marked,
                 current_reference=_reference(snapshot, identifier, target) if inspected else None,
                 severe=severe_regression(snapshot, identifier), references=references,
-                context=context)
+                context=context, response_cases=response_cases, response_evidence=response_evidence)
 
 
 def propose(snapshot, identifier, request, data):
@@ -58,7 +61,7 @@ def propose(snapshot, identifier, request, data):
     goal = request.split(":", 1)[1] if ":" in request else result["goal"]
     if goal not in DESCRIPTIONS:
         raise ValueError("Unknown targeted adjustment")
-    cases = context["cases"]
+    cases = data.get('response_cases', context["cases"])
     relevant = [r for r in cases if r["method"] == base_method and r["target"] == target]
     # New human-preferred fields start a new local search. An exact old field/settings
     # combination does not become new merely because it is opened again.
@@ -81,6 +84,17 @@ def propose(snapshot, identifier, request, data):
         fallback = "weight" if marked and base_values["attachment_kernel_width"] <= \
             min(r["radius"] for r in marked) / 2 else "detail"
         goal, reason = next_hypothesis(local, base_method, target, fallback)
+        from diffeoforge.guided_response import choose
+
+        response = choose(local, fallback)
+        if response:
+            goal, reason = response
+    elif not explicit and goal != 'optimize':
+        from diffeoforge.guided_response import choose
+
+        response = choose(local, goal)
+        if response:
+            goal, reason = response
     elif goal != "optimize":
         seed, seed_parent = reference, parent
     available, blocked = True, ""
@@ -104,7 +118,9 @@ def propose(snapshot, identifier, request, data):
         # projection, no promotion of that field as the retained comparison.
         latest = next((r for r in reversed(local) if r.get("family", r.get("goal")) == "density"
                        and r.get("fit") and r.get("outcome") in {"same", "better"}
-                       and not r.get("severe")), None)
+                       and not r.get("severe")
+                       and r.get('response', {}).get('status') not in {'worse', 'tradeoff'}
+                       and not r.get('response', {}).get('global_worse')), None)
         if latest:
             seed = latest["fit"]
             seed_parent = data["references"][seed["directory"]]
@@ -114,7 +130,8 @@ def propose(snapshot, identifier, request, data):
             seed_parent.attachment_comparison["controls"]["count"] * 1.5 <= 2000
         blocked = ("This density test would exceed the 2,000-control resource guard or lacks "
                    "a single-form field. Other parameter tests and input checks remain available.")
-        reason += "Preserve the saved field and expand its controls; compare against your retained fit. "
+        reason += ("Preserve the saved field and expand its controls; "
+                   "compare against your retained fit. ")
     else:
         seed, seed_parent = reference, parent
         method = base_method
@@ -132,6 +149,19 @@ def propose(snapshot, identifier, request, data):
         if step:
             reason += "Earlier tests at smaller contrasts did not resolve this area. "
     title, description = DESCRIPTIONS[goal]
+    measured_rows = [r for r in local if r.get('response')]
+    if measured_rows:
+        counts = {status: sum(r['response']['status'] == status for r in measured_rows)
+                  for status in ('improved', 'unchanged', 'worse', 'tradeoff')}
+        reason = (f"Same marked areas, {len(measured_rows)} saved tests: "
+                  f"{counts['improved']} with lower distances, "
+                  f"{counts['unchanged']} similar, "
+                  f"{counts['worse'] + counts['tradeoff']} worse or mixed. " + reason)
+        prior = [r for r in measured_rows if r.get('family', r.get('goal')) == goal]
+        if explicit and prior and (prior[-1]['response']['status'] in {'worse', 'tradeoff'}
+                                  or prior[-1]['response']['global_worse']):
+            reason += ("This direction previously worsened the marked area or whole shape. "
+                       "This is an optional different-scale test, not the suggested next step. ")
     if goal not in {"density", "optimize", "other_method"}:
         key = next(k for k in values if values[k] != base_values[k])
         ratio = values[key] / base_values[key]
@@ -155,6 +185,7 @@ def propose(snapshot, identifier, request, data):
                   remaining_checks=len(set(info["pilot_order"]) - covered),
                   hypothesis_count=strategy.get("hypothesis_count", 0),
                   contrast_level=step, numerical_extension=goal == "optimize",
+                  response_evidence=data.get('response_evidence', []),
                   initialization="nested" if goal == "density" else
                   "learned" if goal in {"optimize", "detail", "weight", "smooth"}
                   and seed_parent.plan.pilot_subject_count == 1 else "fresh",

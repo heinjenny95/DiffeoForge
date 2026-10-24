@@ -1,4 +1,12 @@
-# Development continuity — v159 adaptive pilot recovery
+# Development continuity — v160 marked-area response
+
+v160 separates explicit Clear from empty feedback, restores compatible historical
+patches without changing evidence, and uses same-patch measurements of saved fits
+to guide subsequent hypotheses. See [behavior and limits](V160_REGIONAL_RESPONSE.md).
+Delivery verification is pending; installed v159 remains unchanged until backup,
+idle and exact-package checks pass. No owner/native fits are authorized here.
+
+## Historical v159 delivery
 
 v159 replaces one-test-per-hypothesis recovery with feedback-driven contrast
 levels and revisitable families. Selector previews are prepared in a worker;

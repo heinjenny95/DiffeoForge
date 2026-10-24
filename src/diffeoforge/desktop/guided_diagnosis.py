@@ -28,6 +28,9 @@ def render(window, snapshot, identifier, layout, guidance):
                   "are separate; marked-area measurements do not identify a unique cause.")
     text.setWordWrap(True)
     body.addWidget(text)
+    measured = {r['fit']['directory']: r for r in
+                next(iter(guidance.get('proposals', {}).get(identifier, {}).values()), {}).get(
+                    'response_evidence', [])}
     for row in rows:
         title = DESCRIPTIONS.get(row.get("goal"), ("Starting fit", ""))[0]
         stop = {"tolerance_threshold": "numerical tolerance reached",
@@ -40,6 +43,16 @@ def render(window, snapshot, identifier, layout, guidance):
                          else ""))
         text.setWordWrap(True)
         body.addWidget(text)
+        response = measured.get((row.get('fit') or {}).get('directory'))
+        if response:
+            status = {'improved': 'lower distances; visual review still required',
+                      'unchanged': 'no reliable distance reduction',
+                      'worse': 'distances increased',
+                      'tradeoff': 'some errors reduced, others increased'}[response['status']]
+            label = QLabel('On your current marked areas: ' + status
+                           + ('; whole-shape regression' if response['global_worse'] else ''))
+            label.setWordWrap(True)
+            body.addWidget(label)
         if row.get("fit"):
             button(body, "Inspect this saved attempt",
                    lambda _checked=False, ref=row["fit"]: window._open_guided_saved_fit(ref))

@@ -87,6 +87,7 @@ def measure(original, reconstruction, regions):
             repeats.append(
                 dict(
                     original_to_fit_p95=float(np.quantile(distances, 0.95)),
+                    original_to_fit_mean=float(np.mean(distances)),
                     original_to_fit_p99=float(np.quantile(distances, 0.99)),
                     fit_to_original_p95=float(np.quantile(back, 0.95))
                     if back is not None

@@ -1,6 +1,7 @@
 """Inspected fit preferences and feedback, independent of anatomical approval."""
 
 from pathlib import Path
+from time import time_ns
 
 from diffeoforge import reference_calibration_study as study
 from diffeoforge import reference_guided_pilot as guided
@@ -161,6 +162,8 @@ def presentation(snapshot, identifier):
                     current_inspected=bool(current and inspected(snapshot, identifier)),
                     feedback=feedback[-1] if feedback else None,
                     problem_regions={info["target"]: regions(snapshot, identifier, info["target"])},
+                    cleared_region_subjects=[info["target"]] if region_state(
+                        snapshot, identifier, info["target"])[1] else [],
                     # An old chain without feedback starts with an explicit user choice.
                     needs_direction=bool(comparison and not feedback and not explicitly_selected))
 
@@ -181,7 +184,19 @@ def save_feedback(directory, identifier, decision):
         raise ValueError("Feedback notes must contain at most 2000 characters")
     from diffeoforge.pilot_regions import SYMPTOMS, validate
 
-    regions = decision.get("problem_regions", {})
+    regions = dict(decision.get("problem_regions", {}))
+    cleared = decision.get("cleared_region_subjects", [])
+    target = current["target"]
+    if (not isinstance(cleared, (list, tuple)) or len(set(cleared)) != len(cleared)
+            or set(cleared) - {target} or set(cleared) & set(regions)):
+        raise ValueError("Only explicitly cleared inspected areas may be removed")
+    # Missing/empty UI payloads are not deletion requests. Preserve legacy patches too.
+    if not regions.get(target) and target not in cleared:
+        existing, was_cleared = region_state(snapshot, identifier, target)
+        if existing:
+            regions[target] = existing
+        elif was_cleared:
+            cleared = [target]
     symptom = decision.get("symptom", "unsure")
     if symptom not in SYMPTOMS:
         raise ValueError("Choose what still needs improvement, or Unsure")
@@ -194,19 +209,66 @@ def save_feedback(directory, identifier, decision):
         display_scopes=decision["display_scopes"],
         comparison_displayed=bool(decision.get("comparison_displayed")),
         problem_regions=regions,
+        region_edit=dict(version=2, recorded_at=time_ns(), cleared=list(cleared)),
         anatomical_approval_created=False, optimizer_started=False))
     return study.load_reference_calibration_study(directory)
 
 
 def regions(snapshot, identifier, target):
-    feedback = list(_local_events(snapshot, identifier))
-    # A present empty mapping is an explicit Clear, not permission to resurrect a patch.
-    if feedback and "problem_regions" in feedback[-1]:
-        return feedback[-1]["problem_regions"].get(target, [])
-    if identifier in snapshot.problem_regions:
-        return snapshot.problem_regions[identifier].get(target, [])
-    inherited = guided.record(snapshot).get("feedback") or {}
-    return inherited.get("regions", []) if inherited.get("target") == target else []
+    return region_state(snapshot, identifier, target)[0]
+
+
+def region_state(snapshot, identifier, target, *, _seen=None, _search_history=True):
+    """A patch lives until explicit Clear, across reviews, saved starts and successors.
+
+    Older empty payloads cannot prove the user pressed Clear. Never rewrite those
+    journals; recover a same-source patch in presentation only.
+    """
+    seen = set() if _seen is None else _seen
+    key = (str(snapshot.study_directory), identifier, target)
+    if key in seen:
+        raise ValueError("Cyclic marked-area history")
+    seen.add(key)
+    candidates = []
+    for event in _local_events(snapshot, identifier):
+        edit = event.get("region_edit", {})
+        rows = event.get("problem_regions", {}).get(target, [])
+        clear = target in edit.get("cleared", [])
+        if rows or clear:
+            candidates.append((edit.get("recorded_at", 0), rows, clear))
+    edit = snapshot.region_edits.get(identifier, {})
+    rows = snapshot.problem_regions.get(identifier, {}).get(target, [])
+    if rows or target in edit.get("cleared", []):
+        candidates.append((edit.get("recorded_at", -1), rows, target in edit.get("cleared", [])))
+    if candidates:
+        _, rows, clear = max(candidates, key=lambda r: r[0])
+        return rows, clear
+    info = guided.record(snapshot) or {}
+    inherited = info.get("feedback") or {}
+    if inherited.get("target") == target:
+        if inherited.get("regions") or inherited.get("regions_cleared"):
+            return inherited.get("regions", []), bool(inherited.get("regions_cleared"))
+    if not _search_history:
+        return [], False
+    for row in reversed(info.get("history", [])):
+        root = Path(row["directory"])
+        if sha256_file(root / study.STUDY_MANIFEST) != row["manifest_sha256"]:
+            raise ValueError("Marked-area history changed")
+        parent = study.load_reference_calibration_study(root)
+        parent_info = guided.record(parent) or {}
+        if parent_info.get("target") != target:
+            continue
+        if parent_info.get("origin") != info.get("origin"):
+            raise ValueError("Marked-area history belongs to another source")
+        if not any(c.candidate_id == identifier for c in parent.candidates):
+            continue
+        # The sealed history already contains all predecessors in order. Do not
+        # recursively rescan every prefix of this list (exponential for empty marks).
+        rows, clear = region_state(parent, identifier, target, _seen=seen.copy(),
+                                  _search_history=False)
+        if rows or clear:
+            return rows, clear
+    return [], False
 
 
 def select(directory, identifier, ref):

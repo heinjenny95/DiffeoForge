@@ -174,9 +174,8 @@ def prepare_proposals(snapshot, context):
     These are presentation data only. Preparation/dispatch still recalculates the
     selected request against fresh bound evidence in its existing worker.
     """
-    from diffeoforge.pilot_regions import SYMPTOMS
-
     from diffeoforge.guided_search import inputs, propose
+    from diffeoforge.pilot_regions import SYMPTOMS
 
     requests = [*SYMPTOMS, "other_method", *("goal:" + k for k in DESCRIPTIONS)]
     with study.calibration_verification_scope():
@@ -287,17 +286,19 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
             baseline_snapshot = verify_reference(reference)
             baseline_id = reference["candidate_id"]
         target, values, methods = proposed["target"], proposed["values"], (proposed["method"],)
-        from diffeoforge.guided_feedback import regions
+        from diffeoforge.guided_feedback import region_state
 
         comparison = proposed["anchor"]
         comparison_snapshot = verify_reference(comparison)
-        feedback = capture(comparison_snapshot, comparison["candidate_id"], target,
-                           regions=regions(snapshot, identifier, target))
+        marked, cleared = region_state(snapshot, identifier, target)
+        feedback = capture(comparison_snapshot, comparison["candidate_id"], target, regions=marked)
+        feedback["regions_cleared"] = cleared
         strategy["baseline"] = _reference(baseline_snapshot, baseline_id, target)
         strategy["anchor"] = comparison
         strategy["control_basis"] = strategy["baseline"]
         strategy["search_family"] = (info.get("strategy") or {}).get(
-            "search_family", info.get("goal")) if proposed["numerical_extension"] else proposed["goal"]
+            "search_family", info.get("goal")) if proposed["numerical_extension"] else (
+                proposed["goal"])
         if proposed["numerical_extension"]:
             strategy["optimization"] = dict(reference=strategy["baseline"],
                 iterations=proposed["optimization_iterations"])

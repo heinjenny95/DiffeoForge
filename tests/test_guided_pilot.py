@@ -38,6 +38,11 @@ def origin(tmp_path):
 
 def run_batch(snapshot, monkeypatch, *, controller=_CompletedController, refinement_guard=None):
     _stub_learned_seed(monkeypatch)
+    # This controller emits receipt-only outputs, not inventory-bound geometry.
+    # Regional evidence has dedicated real-geometry and response tests.
+    from diffeoforge import guided_response
+
+    monkeypatch.setattr(guided_response, 'history', lambda cases, reference, regions: (cases, []))
 
     def metric(run):
         atlas = run / "atlas.vtk"

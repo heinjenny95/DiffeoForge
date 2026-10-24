@@ -196,6 +196,7 @@ class ReferenceCalibrationStudySnapshot:
     subject_decisions: Mapping[str, dict[str, str]] = field(default_factory=dict)
     feature_observations: Mapping[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
     problem_regions: Mapping[str, dict[str, list[dict]]] = field(default_factory=dict)
+    region_edits: Mapping[str, dict] = field(default_factory=dict)
     visual_display_scopes: Mapping[str, dict[str, str]] = field(default_factory=dict)
     adaptive_search_status: Mapping[str, Any] = field(default_factory=dict)
     early_screening: Mapping[str, Any] = field(default_factory=dict)
@@ -1552,6 +1553,7 @@ def record_reference_calibration_candidate_review(
     subject_decisions: Mapping[str, str] | None = None,
     display_scopes: Mapping[str, str] | None = None,
     problem_regions: dict | None = None,
+    cleared_region_subjects: tuple[str, ...] = (),
 ) -> ReferenceCalibrationStudySnapshot:
     """Persist an explicit complete visual decision before any stage selection."""
     root = Path(study_directory).expanduser().resolve()
@@ -1634,6 +1636,23 @@ def record_reference_calibration_candidate_review(
         s.filename: s.sha256 for s in snapshot.plan.selected_pilot_subjects
         if s.filename in reviewed
     })
+    if (set(cleared_region_subjects) - reviewed
+            or len(set(cleared_region_subjects)) != len(cleared_region_subjects)
+            or set(cleared_region_subjects) & set(regions)):
+        raise ReferenceCalibrationStudyError(
+            "Only explicitly cleared inspected areas may be removed")
+    from time import time_ns
+
+    if snapshot.attachment_comparison.get("guided"):
+        from diffeoforge.guided_feedback import region_state
+
+        cleared_region_subjects = list(cleared_region_subjects)
+        for name in reviewed - set(regions) - set(cleared_region_subjects):
+            previous, was_cleared = region_state(snapshot, candidate_id, name)
+            if previous:
+                regions[name] = previous
+            elif was_cleared:
+                cleared_region_subjects.append(name)
     payload = {
         "stage_id": snapshot.current_stage.stage_id,
         "candidate_id": candidate_id,
@@ -1645,6 +1664,8 @@ def record_reference_calibration_candidate_review(
         "subject_decisions": decisions,
         "policy": "researcher_every_specimen_fit_v2",
         "problem_regions": regions,
+        "region_edit": dict(version=2, recorded_at=time_ns(),
+                            cleared=list(cleared_region_subjects)),
     }
     if display_scopes is None:
         _append_event(root, "candidate_visual_review", payload)
@@ -2045,6 +2066,9 @@ def _load_verified_calibration_study(
             if event["event"] == "candidate_visual_review"
             and event.get("stage_id") == stage.stage_id
         },
+        region_edits={event["candidate_id"]: event.get("region_edit", {})
+                      for event in review_events if event["event"] == "candidate_visual_review"
+                      and event.get("stage_id") == stage.stage_id},
         visual_display_scopes={
             event["candidate_id"]: dict(
                 event.get(

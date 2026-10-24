@@ -148,7 +148,9 @@ def capture(snapshot, identifier, target, *, regions=None):
         target=target,
         regions=regions,
         baseline=measure(original, fitted, regions),
-        global_baseline=compare_geometry(original, fitted, original_key=row["sha256"]),
+        global_baseline=(candidate.metrics or {}).get("attachment_comparison", {}).get(
+            "subjects", {}).get(target) or compare_geometry(
+                original, fitted, original_key=row["sha256"]),
     )
 
 

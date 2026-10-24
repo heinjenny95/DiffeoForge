@@ -541,6 +541,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         self._allow_plan_b = self._allow_plan_b and self._valid_individual
         self.feature_observations: dict[str, dict[str, object]] = {}
         self.problem_regions: dict[str, list[dict]] = {}
+        self.cleared_region_subjects: set[str] = set()
         self._region_loader = PreviewMeshLoader(self)
         self._region_loader.loaded.connect(self._region_loaded)
         self._region_loader.failed.connect(
@@ -902,7 +903,8 @@ class CalibrationCandidateViewerDialog(QDialog):
             n: self.display_scopes.get(n, "original_and_reconstruction_displayed") for n in names},
             comparison_displayed=False,
             problem_regions={n: self.problem_regions[n]
-                             for n in names if self.problem_regions.get(n)})
+                             for n in names if self.problem_regions.get(n)},
+            cleared_region_subjects=sorted(self.cleared_region_subjects.intersection(names)))
         saved = getattr(self, "saved_comparison", None)
         if saved and saved.toggle.isChecked() and saved.canvas.comparison_ready:
             model = saved.canvas.reconstruction_model
@@ -1070,12 +1072,15 @@ class CalibrationCandidateViewerDialog(QDialog):
         dialog = RegionFeedbackDialog(models[0], self)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.region:
             self.problem_regions.setdefault(pair.original_path.name, []).append(dialog.region)
+            self.cleared_region_subjects.discard(pair.original_path.name)
         self._update_review_progress()
 
     def _clear_regions(self):
         index = self.mesh_combo.currentData()
         if index is not None:
-            self.problem_regions.pop(self._pairs[int(index)].original_path.name, None)
+            name = self._pairs[int(index)].original_path.name
+            self.problem_regions.pop(name, None)
+            self.cleared_region_subjects.add(name)
         self._update_review_progress()
 
     def _feature_conflicts(self) -> list[str]:
@@ -4507,6 +4512,7 @@ class ReferenceCalibrationDialog(QDialog):
                 dialog.problem_regions = {
                     name: [dict(row) for row in rows]
                     for name, rows in prepared[4].get("problem_regions", {}).items()}
+                dialog.cleared_region_subjects = set(prepared[4].get("cleared_region_subjects", []))
             # Re-review is a new human decision. Previous decisions remain in the
             # journal but must not silently pre-pass specimens or lock bulk approval.
             dialog.subject_decisions = {}
@@ -4568,6 +4574,7 @@ class ReferenceCalibrationDialog(QDialog):
                         and dialog.problem_regions.get(p.original_path.name)
                     },
                     subject_decisions=dialog.subject_decisions,
+                    cleared_region_subjects=tuple(dialog.cleared_region_subjects),
                     display_scopes={
                         p.original_path.name: dialog.display_scopes[p.original_path.name]
                         for p in dialog._pairs
