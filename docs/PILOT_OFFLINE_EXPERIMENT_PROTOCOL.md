@@ -179,3 +179,25 @@ trial, not evidence of a suitable reconstruction or an ineffective physical
 parameter. Keep numerical diagnosis separate from parameter ranking. A new
 compatible-field warm start can test initialization sensitivity, but its extra
 work is not an equal-total-budget demonstration of objective superiority.
+
+## Separate gap displacement from section distortion
+
+When testing a gap correction, measure the gap and both adjacent structures.
+Projected widths alone can confuse deformation with rotation. On declared
+material sections, also compare area, perimeter, diameter and principal widths,
+and remove rigid motion before measuring section-shape residuals. Preserve the
+old projected-width result; new diagnostics must not erase a failed guard.
+
+An adaptively examined holdout becomes development evidence. Replaying its
+opposite direction is useful but does not restore blind validation. Freeze a
+candidate before a genuinely new geometry or perturbation-level check.
+
+Shape-preserving guides may be derived from independently segmented source and
+target regions, for example by estimating a common rigid movement for a patch.
+Record how target guide positions were obtained; supplying a synthetic inverse
+or known target vertex identities would answer a different question. Compare
+the added guide term with an equal-budget unchanged-objective continuation from
+the same retained field. This is an objective extension, not a one-parameter
+comparison. Measure unmarked-region changes and full-surface artifacts as well
+as the intended local benefit. Soft guidance gives a measured approximation to
+preservation, not a claim of exact rigidity everywhere.
