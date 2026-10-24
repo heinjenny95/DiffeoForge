@@ -3,7 +3,8 @@
 v160 addresses the owner's renewed unchanged-fit report: persistent original
 patches with explicit Clear, and response-driven follow-ups measured on identical
 patches across saved reconstructions. See [scope and limits](V160_REGIONAL_RESPONSE.md).
-Delivery and independent owner-run anatomical benefit remain pending. No new fits.
+Runtime `9ed011e` / dev160 is installed; [delivery gates](V160_DELIVERY.md) pass.
+Independent owner-run anatomical benefit remains pending. No owner/native fits.
 
 v159 addresses the owner's repeated Same/Worse and selector-freeze reports.
 See [adaptive recovery behavior and limits](V159_ADAPTIVE_RECOVERY.md). Repeated

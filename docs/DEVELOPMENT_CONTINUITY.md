@@ -3,8 +3,9 @@
 v160 separates explicit Clear from empty feedback, restores compatible historical
 patches without changing evidence, and uses same-patch measurements of saved fits
 to guide subsequent hypotheses. See [behavior and limits](V160_REGIONAL_RESPONSE.md).
-Delivery verification is pending; installed v159 remains unchanged until backup,
-idle and exact-package checks pass. No owner/native fits are authorized here.
+Runtime `9ed011e` / `dev160` is installed after backup/idle, source/exact-package
+and installed verification. See [delivery and remaining limits](V160_DELIVERY.md).
+No owner/native fits were started; future anatomical benefit remains unverified.
 
 ## Historical v159 delivery
 
