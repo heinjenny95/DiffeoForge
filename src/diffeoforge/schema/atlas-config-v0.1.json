@@ -14,7 +14,7 @@
     "output"
   ],
   "allOf": [{
-    "if": {"properties": {"project": {
+    "if": {"anyOf": [{"properties": {"project": {
       "required": ["parameter_provenance"], "properties": {"parameter_provenance": {
         "required": ["recommendation"], "properties": {"recommendation": {
           "required": ["calibration_plan"], "properties": {"calibration_plan": {
@@ -24,7 +24,9 @@
           }}
         }}
       }}
-    }}},
+    }}}, {"properties": {"project": {"required": ["parameter_provenance"],
+      "properties": {"parameter_provenance": {"required": ["regional_fit"]}}
+    }}}]},
     "then": {"properties": {
       "model": {"properties": {"deformation": {"properties": {
         "initial_momenta_subjects": {"maxItems": 1}
@@ -33,6 +35,11 @@
     "else": {"properties": {"model": {"properties": {"deformation": {"properties": {
       "initial_momenta_subjects": {"minItems": 2}
     }}}}}}
+  }, {
+    "if": {"properties": {"optimization": {"properties": {"method": {"const": "lbfgs"}}}}},
+    "then": {"properties": {"project": {"required": ["parameter_provenance"],
+      "properties": {"parameter_provenance": {"required": ["regional_fit"]}}
+    }}}
   }],
   "properties": {
     "schema_version": {
@@ -60,6 +67,15 @@
           "additionalProperties": false,
           "required": ["profile", "scale_reference", "ratios", "sources"],
           "properties": {
+            "regional_fit": {
+              "type": "object", "additionalProperties": false,
+              "required": ["version", "manifest", "sha256"],
+              "properties": {
+                "version": {"const": "regional-fit-v1"},
+                "manifest": {"type": "string", "minLength": 1},
+                "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+              }
+            },
             "attachment_selection": {
               "type": "object", "additionalProperties": false,
               "required": ["version", "mode", "state"],
@@ -1119,7 +1135,7 @@
       ],
       "properties": {
         "method": {
-          "const": "gradient_ascent"
+          "enum": ["gradient_ascent", "lbfgs"]
         },
         "max_iterations": {
           "type": "integer",

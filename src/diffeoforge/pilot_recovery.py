@@ -6,6 +6,11 @@ from diffeoforge.mesh import sha256_file
 from diffeoforge.pilot_regions import validate
 
 DESCRIPTIONS = {
+    "regional": (
+        "Improve marked areas and protect the rest",
+        "Fit the marked surfaces directly, retain useful deformation, protect already "
+        "good areas, and check both the local result and its transitions.",
+    ),
     "density": (
         "Test additional control points",
         "The deformation may need more independent controls. Add 50% more points while "
@@ -44,7 +49,9 @@ def proposal(snapshot, identifier, symptom, *, adaptive=False, starting_from_sav
     if not info or (snapshot.visual_reviews.get(identifier) is not False
                     and not starting_from_saved):
         raise ValueError("Inspect and reject this fit before preparing a recovery test")
-    if symptom not in {"detail", "missing", "shape", "distortion", "unsure", "other_method"}:
+    from diffeoforge.pilot_regions import SYMPTOMS
+
+    if symptom not in {*SYMPTOMS, "other_method"}:
         raise ValueError("Choose the visible problem, or say you are unsure")
     names = [s.filename for s in snapshot.plan.selected_pilot_subjects]
     rejected = [
@@ -76,6 +83,9 @@ def proposal(snapshot, identifier, symptom, *, adaptive=False, starting_from_sav
             "distortion": "smooth",
             "unsure": "other_method" if count == 1 else "weight",
             "other_method": "other_method",
+            "thickness": "regional", "position": "regional", "curvature": "regional",
+            "gap": "regional", "alignment": "regional", "topology": "regional",
+            "view": "regional",
         }[symptom]
     title, reason = DESCRIPTIONS[goal]
     remaining = (info["screen_trial_limit"] - info["screen_trials_spent"]
@@ -123,21 +133,32 @@ def capture(snapshot, identifier, target, *, regions=None):
     row = next(r for r in manifest["inputs"]["subjects"] if r["filename"] == target)
     run = study.calibration_candidate_run_directory(candidate)
     report = collect_run_report(run)
+    regional = manifest.get("attachment_comparison", {}).get("regional_objective")
     rows = [
         r
         for r in report.inventory
-        if "__Reconstruction__" in r["path"] and r["path"].endswith("__subject_" + target + ".vtk")
+        if "__Reconstruction__" in r["path"]
+        and (not regional or ("__Reconstruction__"
+            + report.manifest["effective_config"]["model"]["object_id"]
+            + "__subject_") in r["path"])
+        and r["path"].endswith("__subject_" + target + ".vtk")
     ]
     if len(rows) != 1:
         raise ValueError("Regional feedback requires one verified reconstruction of the original")
     fitted_path = study._safe_study_path(run / "output", rows[0]["path"])
     if sha256_file(fitted_path) != rows[0]["sha256"]:
         raise ValueError("Region feedback reconstruction bytes changed")
+    from diffeoforge.regional_evaluation import endpoint
+
+    evaluated = endpoint(candidate)
+    fitted_hash = rows[0]["sha256"]
+    if evaluated:
+        fitted_path, fitted_hash = Path(evaluated["path"]), evaluated["sha256"]
     validate({target: regions} if regions else {}, {target: row["sha256"]})
     original_source = load_surface_mesh(snapshot.study_directory / row["copy"])
     fitted_source = load_surface_mesh(fitted_path)
     if (original_source.metadata.sha256 != row["sha256"]
-            or fitted_source.metadata.sha256 != rows[0]["sha256"]):
+            or fitted_source.metadata.sha256 != fitted_hash):
         raise ValueError("Regional feedback geometry changed while loading")
     original, fitted = original_source.geometry, fitted_source.geometry
     return dict(

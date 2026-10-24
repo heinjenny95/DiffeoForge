@@ -22,13 +22,14 @@ _atlas.initialize_momenta = _initialize
 
 
 def needs_adapter(config):
+    provenance = config.get("project", {}).get("parameter_provenance", {})
     return bool(
-        config.get("project", {})
+        (provenance.get("regional_fit") or config.get("project", {})
         .get("parameter_provenance", {})
         .get("recommendation", {})
         .get("calibration_plan", {})
         .get("execution_scope")
-        == "single_specimen_probe"
+        == "single_specimen_probe")
         and config["model"]["deformation"].get("initial_momenta")
         and config["optimization"]["freeze_template"]
         and config["optimization"]["freeze_control_points"]

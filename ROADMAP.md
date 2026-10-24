@@ -1,5 +1,11 @@
 # Roadmap
 
+v161 adds [protected regional pilot fitting](docs/V161_PROTECTED_REGIONAL_PILOT.md):
+explicit marked-surface terms, retained-shape protection, compatible movement
+guides and residual-field composition. Actual DF/native reproduction passes on
+three controlled spacing cases. Independent-animal anatomical validation and a
+compatible common cohort objective remain separate open scientific gates.
+
 v159 implements [feedback-driven recovery](docs/V159_ADAPTIVE_RECOVERY.md): larger
 contrasts after unchanged attempts, revisitable hypotheses, persistent marked
 patches, separate retained comparison/numerical seed, and worker-prepared selector

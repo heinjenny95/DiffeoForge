@@ -13,13 +13,14 @@
           "freeze_template": {"const": true}, "freeze_control_points": {"const": true}
         }},
         "project": {"required": ["parameter_provenance"], "properties": {
-          "parameter_provenance": {"required": ["recommendation"], "properties": {
+          "parameter_provenance": {"anyOf": [{"required": ["regional_fit"]},
+          {"required": ["recommendation"], "properties": {
             "recommendation": {"required": ["calibration_plan"], "properties": {
               "calibration_plan": {"required": ["execution_scope"], "properties": {
                 "execution_scope": {"const": "single_specimen_probe"}
               }}
             }}
-          }}
+          }}]}
         }}
       }}
     }},

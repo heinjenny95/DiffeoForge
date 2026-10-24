@@ -151,16 +151,20 @@ def collect_calibration_qc_pairs(
     output = (run_directory / "output").resolve()
     atlas_path: Path | None = None
     reconstructions: dict[str, Path] = {}
+    from diffeoforge.config import load_config
+
+    object_id = load_config(candidate.config_path)["model"]["object_id"]
     for record in output_inventory:
         relative = PurePosixPath(str(record["path"]))
         name = relative.name
         path = output.joinpath(*relative.parts).resolve()
         if not path.is_file() or not path.is_relative_to(output):
             continue
-        if "__EstimatedParameters__Template_" in name:
+        if (f"__EstimatedParameters__Template_{object_id}__" in name
+                or name.endswith(f"__EstimatedParameters__Template_{object_id}.vtk")):
             atlas_path = path
             continue
-        if "__Reconstruction__" not in name or "__subject_" not in name:
+        if f"__Reconstruction__{object_id}__subject_" not in name:
             continue
         encoded_source_name = name.split("__subject_", 1)[1]
         source_name = encoded_source_name.removesuffix(".vtk")
@@ -175,6 +179,14 @@ def collect_calibration_qc_pairs(
             f"Missing reconstructions: {missing or 'none'}; "
             f"unexpected reconstructions: {unexpected or 'none'}"
         )
+
+    from diffeoforge.regional_evaluation import endpoint
+
+    evaluated = endpoint(candidate)
+    if evaluated:
+        if len(subject_paths) != 1:
+            raise ValueError("Regional evaluation cannot replace a cohort reconstruction")
+        reconstructions[next(iter(subject_paths))] = Path(evaluated["path"])
 
     pairs = [
         CalibrationQcPair(
@@ -195,7 +207,7 @@ def collect_calibration_qc_pairs(
             reconstruction_path=reconstructions[name],
             required=True,
             original_sha256=original_hashes[name],
-            reconstruction_sha256=output_hashes[
+            reconstruction_sha256=evaluated["sha256"] if evaluated else output_hashes[
                 reconstructions[name].relative_to(output).as_posix()
             ],
         )
@@ -754,6 +766,9 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.clear_regions_button = QPushButton("Clear marked areas")
         self.clear_regions_button.clicked.connect(self._clear_regions)
         region_controls.addWidget(self.clear_regions_button)
+        self.manage_regions_button = QPushButton("Manage marked areas…")
+        self.manage_regions_button.clicked.connect(self._manage_regions)
+        region_controls.addWidget(self.manage_regions_button)
         decision_layout.addLayout(region_controls)
         self.region_summary = QLabel()
         self.region_summary.setWordWrap(True)
@@ -1083,6 +1098,46 @@ class CalibrationCandidateViewerDialog(QDialog):
             self.cleared_region_subjects.add(name)
         self._update_review_progress()
 
+    def _manage_regions(self):
+        from PySide6.QtWidgets import QListWidget
+
+        index = self.mesh_combo.currentData()
+        if index is None:
+            return
+        name = self._pairs[int(index)].original_path.name
+        rows = list(self.problem_regions.get(name, []))
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Marked areas for this specimen")
+        layout = QVBoxLayout(dialog)
+        listing = QListWidget()
+        from diffeoforge.pilot_regions import SYMPTOMS
+
+        def refresh():
+            listing.clear()
+            for i, row in enumerate(rows, 1):
+                listing.addItem(f"{i}. {row.get('purpose', 'problem')} · "
+                                f"{SYMPTOMS[row['symptom']]} · {row.get('shape', 'brush')}")
+        refresh()
+        layout.addWidget(listing)
+        remove = QPushButton("Remove selected area")
+        remove.clicked.connect(lambda: (rows.pop(listing.currentRow()), refresh())
+            if listing.currentRow() >= 0 else None)
+        layout.addWidget(remove)
+        save = QPushButton("Keep changes")
+        save.clicked.connect(dialog.accept)
+        layout.addWidget(save)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(dialog.reject)
+        layout.addWidget(cancel)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            if rows:
+                self.problem_regions[name] = rows
+                self.cleared_region_subjects.discard(name)
+            else:
+                self.problem_regions.pop(name, None)
+                self.cleared_region_subjects.add(name)
+            self._update_review_progress()
+
     def _feature_conflicts(self) -> list[str]:
         return [
             name
@@ -1213,6 +1268,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.mark_region_button.setEnabled(current_seen)
         count = len(self.problem_regions.get(pair.original_path.name, [])) if pair else 0
         self.clear_regions_button.setVisible(count > 0)
+        self.manage_regions_button.setVisible(count > 0)
         self.region_summary.setVisible(count > 0)
         self.region_summary.setText(f"{count} marked area(s) for this specimen. "
                                     "Reject to request a guided follow-up; closing discards edits.")
@@ -3923,6 +3979,11 @@ class ReferenceCalibrationDialog(QDialog):
                     )
                     + f" · {float(payload['elapsed_seconds']) / 60:.1f} min."
                 )
+            self._thread_pool.indicator.label.setText(self.status.text())
+        elif kind == "qualification_progress":
+            self.status.setText("Checking the complete fitted field at "
+                f"{event['timepoints']} timepoints · {event['elapsed_seconds'] / 60:.1f} min. "
+                "No further fitting is running in this phase.")
             self._thread_pool.indicator.label.setText(self.status.text())
         elif kind == "candidate_completed":
             self._render(event.get("snapshot"))

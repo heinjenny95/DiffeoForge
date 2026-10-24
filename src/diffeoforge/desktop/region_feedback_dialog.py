@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
-from diffeoforge.pilot_regions import SYMPTOMS, VERSION, face_mask
+from diffeoforge.pilot_regions import BOX_VERSION, EDIT_VERSION, SYMPTOMS, face_mask
 
 
 class RegionFeedbackDialog(QDialog):
@@ -48,10 +48,32 @@ class RegionFeedbackDialog(QDialog):
         row.addWidget(self.size, 1)
         row.addWidget(QLabel("Larger area"))
         layout.addLayout(row)
+        self.shape = QComboBox()
+        self.shape.setAccessibleName("Shape of problem area")
+        self.shape.addItem("Surface brush", "sphere")
+        self.shape.addItem("3D box", "box")
+        layout.addWidget(self.shape)
+        self.axes = []
+        for label in ["X", "Y", "Z"]:
+            axis = QSlider(Qt.Orientation.Horizontal)
+            axis.setRange(1, 60)
+            axis.setValue(8)
+            axis.setAccessibleName(label + " box half extent as percentage of original size")
+            axis.setToolTip(label + " half extent")
+            axis.hide()
+            layout.addWidget(axis)
+            axis.valueChanged.connect(self._update)
+            self.axes.append(axis)
         self.symptom = QComboBox()
         for key, label in SYMPTOMS.items():
             self.symptom.addItem(label, key)
         layout.addWidget(self.symptom)
+        self.purpose = QComboBox()
+        self.purpose.setAccessibleName("How this area should influence fitting")
+        self.purpose.addItem("Improve this area", "problem")
+        self.purpose.addItem("Preserve this part's shape while moving it", "preserve")
+        self.purpose.addItem("Keep this already good area in place", "fixed")
+        layout.addWidget(self.purpose)
         self.status = QLabel("No area selected")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -67,6 +89,7 @@ class RegionFeedbackDialog(QDialog):
         layout.addLayout(controls)
         self.canvas.surfacePointPicked.connect(self._picked)
         self.size.valueChanged.connect(self._update)
+        self.shape.currentIndexChanged.connect(self._update)
         self.finished.connect(self.canvas.cancel_pending_pick)
 
     def _picked(self, point):
@@ -74,15 +97,32 @@ class RegionFeedbackDialog(QDialog):
         self._update()
 
     def _update(self, *_):
+        boxed = self.shape.currentData() == "box"
+        for axis in self.axes:
+            axis.setVisible(boxed)
+        self.size.setVisible(not boxed)
         if self.center is None:
             return
         radius = self.diagonal * self.size.value() / 100
-        count = int(face_mask(self.model.vertices, self.model.triangles, self.center, radius).sum())
-        self.canvas.set_surface_region(self.center, radius)
+        if boxed:
+            half = self.diagonal * np.array([x.value() for x in self.axes]) / 100
+            self.bounds = np.column_stack((np.asarray(self.center) - half,
+                                           np.asarray(self.center) + half)).ravel().tolist()
+            from diffeoforge.regional_fit import mask
+
+            count = int(mask(np.asarray(self.model.vertices)[
+                np.asarray(self.model.triangles, int)].mean(1),
+                             [dict(shape="box", bounds=self.bounds)]).sum())
+            self.canvas.set_surface_box(self.bounds)
+        else:
+            count = int(face_mask(self.model.vertices, self.model.triangles,
+                                  self.center, radius).sum())
+            self.canvas.set_surface_region(self.center, radius)
         self.canvas.set_markers({"Area centre": self.center})
         self.status.setText(
-            f"{count:,} original faces selected · radius {self.size.value()}% of extent. "
-            "The area is used to guide tests; the whole shape remains fitted."
+            f"{count:,} original faces selected · "
+            + ("3D box. " if boxed else f"radius {self.size.value()}% of extent. ")
+            + "Keep this area, then add other problem or protected areas as needed."
         )
         self.save.setEnabled(count > 0)
 
@@ -90,11 +130,16 @@ class RegionFeedbackDialog(QDialog):
         if self.center is None or not self.save.isEnabled():
             return
         self.region = dict(
-            version=VERSION,
+            version=EDIT_VERSION,
             source_sha256=self.model.sha256,
             space="original_mesh_coordinates",
             center=list(self.center),
             radius=self.diagonal * self.size.value() / 100,
             symptom=self.symptom.currentData(),
+            purpose=self.purpose.currentData(),
         )
+        if self.shape.currentData() == "box":
+            self.region.update(version=BOX_VERSION, shape="box", bounds=self.bounds,
+                radius=float(np.linalg.norm(np.asarray(self.bounds).reshape(3, 2)[:, 1]
+                                            - np.asarray(self.bounds).reshape(3, 2)[:, 0]) / 2))
         self.accept()

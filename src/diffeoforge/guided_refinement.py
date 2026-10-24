@@ -132,6 +132,7 @@ def verify(root, manifest, record):
         "learned",
         "fresh",
         "nested",
+        "residual",
     }:
         raise ValueError("Unknown refinement initialization")
     if request["initialization"] == "learned":
@@ -142,6 +143,10 @@ def verify(root, manifest, record):
         from diffeoforge.guided_density import verify as verify_nested
 
         verify_nested(root, manifest, record)
+    elif request["initialization"] == "residual":
+        from diffeoforge.regional_residual import verify as verify_residual
+
+        verify_residual(record)
 
 
 def geometry_guard(baseline, current):

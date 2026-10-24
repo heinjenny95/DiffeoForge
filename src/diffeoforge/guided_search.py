@@ -56,6 +56,13 @@ def propose(snapshot, identifier, request, data):
     # A concrete marked-patch symptom is more useful than an unchanged Unsure default.
     if symptom == "unsure" and marked:
         symptom = next((r["symptom"] for r in marked if r["symptom"] != "unsure"), symptom)
+    if request.startswith("regional:"):
+        symptom = request.split(":", 1)[1]
+    if request == "goal:regional" or request.startswith("regional:") or symptom in {
+            "gap", "thickness", "position", "curvature", "alignment", "topology", "view"}:
+        from diffeoforge.regional_pilot import proposal as local_proposal
+
+        return local_proposal(snapshot, identifier, data, symptom=symptom)
     result = proposal(snapshot, identifier, symptom, adaptive=True,
                       starting_from_saved=bool(reference), regions_override=marked)
     goal = request.split(":", 1)[1] if ":" in request else result["goal"]

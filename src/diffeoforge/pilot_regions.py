@@ -1,4 +1,4 @@
-"""Source-bound 3D feedback and diagnostic measurements, never attachment weights."""
+"""Source-bound 3D feedback, explicit regional trial intent and measurements."""
 
 from __future__ import annotations
 
@@ -7,11 +7,20 @@ import math
 import numpy as np
 
 VERSION = "surface-region-v1"
+EDIT_VERSION = "surface-region-v2"
+BOX_VERSION = "surface-box-v1"
 SYMPTOMS = {
     "detail": "Details are missing",
     "missing": "Part of the surface is missed",
     "shape": "The shape or position is wrong",
     "distortion": "The reconstruction looks distorted",
+    "thickness": "This part is too thick or too thin",
+    "position": "The part has the wrong position; its shape is otherwise good",
+    "curvature": "The bending or curvature is wrong",
+    "gap": "The gap or spacing is wrong; preserve the adjacent parts",
+    "alignment": "The overall alignment is wrong",
+    "topology": "A surface is merged, disconnected, or has a different opening",
+    "view": "I cannot judge the view or displayed detail",
     "unsure": "I am unsure what is wrong",
 }
 MAX_REGIONS = 8
@@ -27,18 +36,24 @@ def validate(regions, sources):
             raise ValueError("Keep between one and eight regions per specimen")
         result[name] = []
         for row in rows:
-            if not isinstance(row, dict) or set(row) != {
+            expected = {
                 "version",
                 "source_sha256",
                 "space",
                 "center",
                 "radius",
                 "symptom",
-            }:
+            }
+            boxed = isinstance(row, dict) and row.get("version") == BOX_VERSION
+            if isinstance(row, dict) and row.get("version") in {EDIT_VERSION, BOX_VERSION}:
+                expected |= {"purpose"} if "purpose" in row else set()
+            if boxed:
+                expected |= {"shape", "bounds"}
+            if not isinstance(row, dict) or set(row) != expected:
                 raise ValueError("Invalid 3D region record")
             center, radius = row["center"], row["radius"]
             if (
-                row["version"] != VERSION
+                row["version"] not in {VERSION, EDIT_VERSION, BOX_VERSION}
                 or row["space"] != "original_mesh_coordinates"
                 or row["source_sha256"] != sources[name]
                 or not isinstance(row["symptom"], str)
@@ -51,6 +66,15 @@ def validate(regions, sources):
                 or radius <= 0
             ):
                 raise ValueError("Region source, coordinates, size or symptom changed")
+            if row.get("purpose", "problem") not in {"problem", "preserve", "fixed"}:
+                raise ValueError("Choose whether to improve, preserve shape, or keep an area fixed")
+            if boxed:
+                bounds = row["bounds"]
+                if (row["shape"] != "box" or not isinstance(bounds, (list, tuple))
+                        or len(bounds) != 6 or any(type(x) not in (int, float)
+                        or not math.isfinite(x) for x in bounds)
+                        or any(bounds[i] >= bounds[i + 1] for i in (0, 2, 4))):
+                    raise ValueError("Invalid three-dimensional box")
             result[name].append(dict(row, center=list(center)))
     return result
 
@@ -74,15 +98,17 @@ def measure(original, reconstruction, regions):
     diagonal = float(np.linalg.norm(np.ptp(av, axis=0)))
     result = []
     for row in regions:
-        mask = face_mask(av, af, row["center"], row["radius"])
-        if not mask.any():
+        from diffeoforge.regional_fit import mask as region_mask
+
+        chosen = region_mask(av[af].mean(1), [row])
+        if not chosen.any():
             raise ValueError("The marked brush contains no original face centres; enlarge it")
         repeats = []
         for seed in (20261022, 20261023):
-            points = surface_samples(av, af[mask], 2048, seed=seed)
+            points = surface_samples(av, af[chosen], 2048, seed=seed)
             distances = distances_to_surface(points, bv, bf)
             reverse = surface_samples(bv, bf, 8192, seed=seed)
-            reverse = reverse[np.linalg.norm(reverse - row["center"], axis=1) <= row["radius"]]
+            reverse = reverse[region_mask(reverse, [row])]
             back = distances_to_surface(reverse, av, af) if len(reverse) else None
             repeats.append(
                 dict(
@@ -96,7 +122,7 @@ def measure(original, reconstruction, regions):
                 )
             )
         result.append(
-            dict(region=row, selected_faces=int(mask.sum()), diagonal=diagonal, repeats=repeats)
+            dict(region=row, selected_faces=int(chosen.sum()), diagonal=diagonal, repeats=repeats)
         )
     return result
 

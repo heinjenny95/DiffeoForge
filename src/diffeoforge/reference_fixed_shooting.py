@@ -83,6 +83,8 @@ def shoot(
     *,
     cancelled=lambda: False,
     event_callback=None,
+    surface_only=None,
+    precision=None,
 ):
     if type(count) is not int or count < 2:
         raise ValueError("Shooting needs at least two timepoints")
@@ -104,9 +106,25 @@ def shoot(
             raise ValueError("Fixed Shooting source changed")
         shutil.copyfile(path, source / name)
     run = Path(seed["source_run_directory"])
-    (engine / "model.xml").write_bytes(
-        _render_shooting_model((run / "engine/model.xml").read_bytes())
-    )
+    model_bytes = (run / "engine/model.xml").read_bytes()
+    if surface_only is not None or precision is not None:
+        import xml.etree.ElementTree as ET
+
+        model = ET.fromstring(model_bytes)
+        if surface_only is not None:
+            template = model.find("template")
+            matches = [obj for obj in template if obj.attrib.get("id") == surface_only]
+            if len(matches) != 1:
+                raise ValueError("Fixed regional evaluation needs one declared global surface")
+            for obj in list(template):
+                if obj not in matches:
+                    template.remove(obj)
+        if precision is not None:
+            if precision not in {"float32", "float64"}:
+                raise ValueError("Unknown fixed-field evaluation precision")
+            model.find("dtype").text = precision
+        model_bytes = ET.tostring(model, encoding="utf-8")
+    (engine / "model.xml").write_bytes(_render_shooting_model(model_bytes))
     shutil.copyfile(
         run / "engine/optimization_parameters.xml", engine / "optimization_parameters.xml"
     )

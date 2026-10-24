@@ -151,7 +151,12 @@ def prepare_controls(root, manifest, record):
     )
     from diffeoforge.guided_refinement import bind
 
-    return bind(root, manifest, result)
+    recipe = (record.get("guided", {}).get("strategy") or {}).get("regional_recipe") or {}
+    if not recipe.get("residual"):
+        result = bind(root, manifest, result)
+    from diffeoforge.regional_pilot import bind as bind_regional
+
+    return bind_regional(root, manifest, result)
 
 
 def verify(root, manifest):
@@ -161,6 +166,9 @@ def verify(root, manifest):
     from diffeoforge.guided_refinement import verify as verify_refinement
 
     verify_refinement(root, manifest, record)
+    from diffeoforge.regional_pilot import verify as verify_regional
+
+    verify_regional(root, manifest, record)
     source = Path(record["source_directory"]).resolve()
     control = study._safe_study_path(root, record["controls"]["copy"])
     if (
@@ -284,6 +292,9 @@ def configure(config, root, manifest, candidate_id):
         if refinement and refinement["initialization"] in {"learned", "nested"}:
             deformation.update(initial_momenta=str(root / refinement["momenta"]["copy"]),
                                initial_momenta_subjects=[refinement["reference"]["target"]])
+        from diffeoforge.regional_pilot import configure as configure_regional
+
+        configure_regional(config, record)
     else:
         _, comparison = context(root, manifest)
         config["optimization"].update(comparison["confirmation_freeze_settings"])
@@ -381,15 +392,22 @@ def compare_geometry(original, reconstruction, *, original_key=None):
     )
 
 
-def measure(root, manifest, candidate, run):
+def measure(root, manifest, candidate, run, *, cancelled=lambda: False, event_callback=None):
     from diffeoforge.result_report import collect_run_report
     from diffeoforge.surface_io import load_surface_mesh
 
     report = collect_run_report(run)
+    from diffeoforge.regional_quality import evaluate_and_measure
+
+    quality = evaluate_and_measure(root, manifest, candidate, run,
+                                  cancelled=cancelled, event_callback=event_callback)
     paths = {
         Path(row["path"]).name: run / "output" / row["path"]
         for row in report.inventory
         if "__Reconstruction__" in row["path"]
+        and (not manifest["attachment_comparison"].get("regional_objective")
+             or ("__Reconstruction__" + report.manifest["effective_config"]["model"]["object_id"]
+                 + "__subject_") in row["path"])
     }
     subjects = {}
     for row in manifest["inputs"]["subjects"]:
@@ -400,12 +418,16 @@ def measure(root, manifest, candidate, run):
         ]
         if len(matches) != 1:
             raise ValueError("Method comparison reconstruction identity mismatch")
+        if quality:
+            matches = [Path(quality["evaluation"]["endpoint"]["path"])]
         original = load_surface_mesh(root / row["copy"]).geometry
         fitted = load_surface_mesh(matches[0]).geometry
         subjects[row["filename"]] = compare_geometry(
             original, fitted,
             original_key=row["sha256"],
         )
+        if quality:
+            subjects[row["filename"]]["regional_quality"] = quality
         feedback = manifest["attachment_comparison"].get("guided", {}).get("feedback")
         if feedback and feedback["target"] == row["filename"]:
             from diffeoforge.guided_refinement import geometry_guard

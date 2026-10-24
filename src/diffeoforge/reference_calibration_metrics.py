@@ -271,6 +271,13 @@ def _collect_reference_calibration_metrics_from_report(
     if report.result["status"] != "completed":
         raise ConfigurationError("Automatic calibration metrics require a completed pilot run")
     templates = _inventory_vtk(report, _ESTIMATED_TEMPLATE_MARKER)
+    regional = report.manifest["effective_config"]["project"].get(
+        "parameter_provenance", {}).get("regional_fit")
+    if regional:
+        object_id = report.manifest["effective_config"]["model"]["object_id"]
+        templates = [(name, path) for name, path in templates
+                     if f"__Template_{object_id}__" in name
+                     or name.endswith(f"__Template_{object_id}.vtk")]
     if len(templates) != 1:
         raise ConfigurationError(
             "Calibration run must contain exactly one estimated atlas template"
@@ -281,6 +288,9 @@ def _collect_reference_calibration_metrics_from_report(
         recovery_history, _paths = verified_export_history(run, report)
         objective_rows = recovery_history.rows
     reconstructions = _inventory_vtk(report, _RECONSTRUCTION_MARKER)
+    if regional:
+        reconstructions = [(name, path) for name, path in reconstructions
+                           if f"__Reconstruction__{object_id}__subject_" in name]
     input_records = report.manifest.get("inputs")
     if not isinstance(input_records, list):
         raise ConfigurationError("Run manifest contains no staged input inventory")

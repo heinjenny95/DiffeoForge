@@ -164,7 +164,12 @@ def render(window, prepared):
             else candidate.status.title()
         )
         runtime = (candidate.metrics or {}).get("runtime_seconds")
-        if runtime is not None:
+        total = (candidate.metrics or {}).get("pipeline_wall_seconds")
+        if total is not None:
+            state += f" · {total / 60:.1f} min total"
+            if runtime is not None:
+                state += f" ({runtime / 60:.1f} min fitting)"
+        elif runtime is not None:
             state += f" · {runtime / 60:.1f} min"
         from diffeoforge.guided_progress import iteration_limited
 
@@ -173,6 +178,24 @@ def render(window, prepared):
         label = QLabel(state)
         label.setWordWrap(True)
         layout.addWidget(label)
+        subjects = (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
+        quality = next((r["regional_quality"] for r in subjects.values()
+                        if r.get("regional_quality")), None)
+        if quality:
+            failures = [label for key, label in [("transition_preserved", "transition fit"),
+                         ("outside_preserved", "preservation outside the area"),
+                         ("shape_preserved", "preservation of marked part shape")]
+                        if not quality[key]]
+            if not quality.get("no_new_intersection_flags", True):
+                failures.append("new surface intersection flags")
+            if not quality.get("temporal_grid_stable", True):
+                failures.append("time-grid stability")
+            note = QLabel(("This attempt fails: " + ", ".join(failures)
+                           + ". It will not replace your retained starting fit.") if failures else
+                          "Local, transition and preservation checks passed; inspect anatomy. "
+                          "This regional objective still needs a shared cohort protocol.")
+            note.setWordWrap(True)
+            layout.addWidget(note)
         initialization = snapshot.attachment_comparison.get("refinement", {})
         if initialization:
             starting = QLabel(
@@ -246,7 +269,14 @@ def render(window, prepared):
             if ((decision is False or has_start) and (valid or has_start) and not unresolved
                     and (guidance["preferred"] == method or has_start or info["phase"] == "joint")):
                 _recovery(window, snapshot, candidate, layout, guidance)
-            if decision is True and info["phase"] != "joint":
+            regional = bool(snapshot.attachment_comparison.get("regional_objective"))
+            if decision is True and regional:
+                note = QLabel("This regional fit is saved. Keep refining or inspect earlier fits. "
+                              "It does not certify a common atlas objective.")
+                note.setWordWrap(True)
+                layout.addWidget(note)
+                _recovery(window, snapshot, candidate, layout, guidance)
+            if decision is True and info["phase"] != "joint" and not regional:
                 remaining = remaining_forms(snapshot, candidate.candidate_id, context=guidance)
                 action(
                     layout,
@@ -342,7 +372,10 @@ def _recovery(window, snapshot, candidate, layout, guidance):
 
     def update(*_):
         selected = alternatives.currentData()
-        request = "goal:" + selected if selected else symptoms.currentData()
+        local = any(regions.values()) and symptoms.currentData() not in {
+            "alignment", "topology", "view"}
+        request = ("goal:" + selected if selected else
+                   "regional:" + symptoms.currentData() if local else symptoms.currentData())
         proposed = guidance["proposals"][identifier][request]
         state.clear()
         state.update(proposed)
@@ -353,13 +386,18 @@ def _recovery(window, snapshot, candidate, layout, guidance):
                if proposed['initialization'] == 'learned'
                else "Keep saved control points and momenta; add zero-momentum controls. "
                if proposed['initialization'] == 'nested'
+               else "Retain the saved deformation and add a local residual field. "
+               if proposed['initialization'] == 'residual'
                else "This changes the deformation basis or method and needs a fresh start. ")
             + (f"Keep all fitting settings; allow up to {proposed['optimization_iterations']} "
                "new iterations from that saved field, with new optimizer history. "
                if proposed['numerical_extension'] else "")
-            + f"Prepare one test here, then inspect it. If suitable: "
-            f"{proposed['remaining_checks']} other form(s), then a joint check. "
-            "Earlier results stay saved."
+            + ("Prepare one protected regional test, then inspect it. Regional constraints "
+               "remain explicit; a shared cohort objective needs separate validation. "
+               if proposed['goal'] == 'regional' else
+               f"Prepare one test here, then inspect it. If suitable: "
+               f"{proposed['remaining_checks']} other form(s), then a joint check. ")
+            + "Earlier results stay saved."
             if proposed["available"] else
             proposed.get("blocked_reason", "This unchanged combination has already been tested. "
                          "Inspect saved alternatives or select another adjustment below; "
@@ -410,8 +448,8 @@ def _recovery(window, snapshot, candidate, layout, guidance):
         layout.addWidget(other)
     checks = QLabel(
         "Check alignment and mesh quality if either method misses the same area. "
-        "Marked areas are used to compare local errors; they do not add local fitting weights "
-        "or identify a unique cause. "
+        "Protected local trials fit marked areas directly and check transitions and the "
+        "remaining shape. A visible problem does not identify a unique cause. "
         "Changed settings require renewed checks on the other pilot forms."
     )
     checks.setWordWrap(True)

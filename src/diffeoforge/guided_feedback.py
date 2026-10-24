@@ -13,7 +13,9 @@ OUTCOMES = {"better": "Better", "same": "About the same", "worse": "Worse", "uns
 def severe_regression(snapshot, identifier):
     candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
     subjects = (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
-    return any(r.get("refinement_guard", {}).get("severe") is True for r in subjects.values())
+    return any(r.get("refinement_guard", {}).get("severe") is True
+               or (r.get("regional_quality") and not r["regional_quality"][
+                   "numerical_selection_suitable"]) for r in subjects.values())
 
 
 def reference(snapshot, identifier, target=None):

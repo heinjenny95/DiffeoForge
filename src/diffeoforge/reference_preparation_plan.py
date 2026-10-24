@@ -505,6 +505,11 @@ def plan_reference_preparation(
         ),
         *(_generated_file(f"engine/{name}", payload) for name, payload in engine_bytes.items()),
     ]
+    from diffeoforge.regional_fit import assets as regional_assets
+
+    regional = regional_assets(config)
+    protected_files.extend(_copied_file(staged.as_posix(), source, source.stat().st_size, digest)
+                           for source, staged, digest in regional)
     plan = {
         "schema_version": SCHEMA_VERSION,
         "status": STATUS,
@@ -532,6 +537,7 @@ def plan_reference_preparation(
         },
         "directories": [
             *PLANNED_DIRECTORIES,
+            *(("input/regional",) if regional else ()),
             *(() if staged_momenta_relative is None else ("input/momenta",)),
             *(() if staged_control_points_relative is None else ("input/control-points",)),
         ],

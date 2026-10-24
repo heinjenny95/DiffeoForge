@@ -81,7 +81,7 @@ def run_mesh_filter(operation: str, *, timeout: float = 300, **arrays) -> dict:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("decimate", "distances"))
+    parser.add_argument("operation", choices=("decimate", "distances", "intersections"))
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
     args = parser.parse_args(argv)
@@ -111,6 +111,9 @@ def main(argv=None) -> int:
                     )
                 mesh = ms.current_mesh()
                 result = dict(vertices=mesh.vertex_matrix(), faces=mesh.face_matrix())
+            elif args.operation == "intersections":
+                ms.apply_filter("compute_selection_by_self_intersections_per_face")
+                result = dict(faces=np.flatnonzero(ms.current_mesh().face_selection_array()))
             else:
                 points = data["points"]
                 ms.add_mesh(pm.Mesh(vertex_matrix=points))

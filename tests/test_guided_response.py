@@ -66,6 +66,26 @@ def test_all_stalled_families_explain_input_check_without_a_dead_end():
     assert 'optional' in reason
 
 
+def test_new_marks_bound_geometry_replay_without_discarding_history(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        response, "measured", lambda reference, regions: calls.append(reference) or {}
+    )
+    monkeypatch.setattr(
+        response, "compare", lambda *_: dict(status="unchanged", global_worse=False)
+    )
+    reference = dict(target="shape.vtk", method="varifold", id="preferred")
+    cases = [
+        dict(fit=dict(reference, id=i), target="shape.vtk", method="varifold", family="detail")
+        for i in range(60)
+    ]
+    result, evidence = response.history(cases, reference, [dict(mark="new")])
+    assert len(result) == 60 and len(evidence) == 2
+    assert len(calls) == 3  # retained baseline plus the two latest contrasts
+    assert result[0] == cases[0] and all(c["fit"] == r["fit"]
+                                       for c, r in zip(cases, result, strict=True))
+
+
 def marked_chain(tmp_path, monkeypatch):
     base = reject(run_batch(initial(tmp_path), monkeypatch), 'guided-varifold', marked=True)
     geometry_receipt(base, 'guided-varifold', monkeypatch)

@@ -235,6 +235,11 @@ class InteractiveMeshCanvas3D(QWidget):
         self._region_colors = None
         self.update()
 
+    def set_surface_box(self, bounds):
+        self._surface_region = ("box", tuple(float(x) for x in bounds))
+        self._region_colors = None
+        self.update()
+
     def _surface_layer(self, vertices, triangles):
         if self._surface_region is None:
             return SurfaceLayer(vertices, triangles)
@@ -242,7 +247,13 @@ class InteractiveMeshCanvas3D(QWidget):
 
         key = (id(vertices), id(triangles), self._surface_region)
         if self._region_colors is None or self._region_colors[0] != key:
-            mask = face_mask(vertices, triangles, *self._surface_region)
+            if self._surface_region[0] == "box":
+                from diffeoforge.regional_fit import mask as region_mask
+
+                mask = region_mask(np.asarray(vertices)[triangles].mean(1),
+                                   [dict(shape="box", bounds=self._surface_region[1])])
+            else:
+                mask = face_mask(vertices, triangles, *self._surface_region)
             colors = np.tile((160, 208, 192, 255), (len(triangles), 1))
             colors[mask] = (242, 115, 45, 255)
             self._region_colors = key, colors

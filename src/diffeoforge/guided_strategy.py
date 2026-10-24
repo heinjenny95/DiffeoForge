@@ -77,8 +77,13 @@ def _preference(snapshot):
 def _compatible(snapshot, method, values, cases=()):
     rows = [*guided.record(snapshot)["approved"],
             *(c["approval"] for c in cases if c.get("approval"))]
+    def common_objective(row):
+        manifest = study._verify_manifest(Path(row["directory"]))
+        return not manifest.get("attachment_comparison", {}).get("regional_objective")
+
     return list({(r["directory"], r["candidate_id"]): r for r in rows
-                 if r["method"] == method and r["values"] == values}.values())
+                 if r["method"] == method and r["values"] == values
+                 and common_objective(r)}.values())
 
 
 def _context(snapshot):
@@ -116,6 +121,8 @@ def _read_context(snapshot):
                     reference=other.attachment_comparison.get("refinement", {}).get("reference"),
                     comparison=(info.get("strategy") or {}).get("anchor"),
                     family=(info.get("strategy") or {}).get("search_family", info.get("goal")),
+                    regional_recipe=(info.get("strategy") or {}).get("regional_recipe"),
+                    regions=(info.get("feedback") or {}).get("regions", []),
                     iterations=other.attachment_comparison["iterations"],
                     stop=(candidate.metrics or {}).get("optimizer_stop_signal"),
                     control_count=other.attachment_comparison["controls"]["count"],
@@ -177,7 +184,8 @@ def prepare_proposals(snapshot, context):
     from diffeoforge.guided_search import inputs, propose
     from diffeoforge.pilot_regions import SYMPTOMS
 
-    requests = [*SYMPTOMS, "other_method", *("goal:" + k for k in DESCRIPTIONS)]
+    requests = [*SYMPTOMS, "other_method", *("goal:" + k for k in DESCRIPTIONS),
+                *("regional:" + k for k in SYMPTOMS)]
     with study.calibration_verification_scope():
         context["proposals"] = {}
         for candidate in snapshot.candidates:
@@ -265,6 +273,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     guided.verify_approvals(approved)
     strategy = dict(info.get("strategy") or {})
     strategy.pop("optimization", None)
+    strategy.pop("regional_recipe", None)
     strategy["previous"] = dict(directory=str(snapshot.study_directory),
         manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))
     history = [*info["history"], dict(**strategy["previous"], outcome="adaptive_" + action)]
@@ -294,6 +303,8 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         feedback = capture(comparison_snapshot, comparison["candidate_id"], target, regions=marked)
         feedback["regions_cleared"] = cleared
         strategy["baseline"] = _reference(baseline_snapshot, baseline_id, target)
+        if proposed.get("regional_recipe"):
+            strategy["regional_recipe"] = proposed["regional_recipe"]
         strategy["anchor"] = comparison
         strategy["control_basis"] = strategy["baseline"]
         strategy["search_family"] = (info.get("strategy") or {}).get(
@@ -317,6 +328,10 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
             if not anchor:
                 raise ValueError("Choose an inspected starting fit first")
             accepted, accepted_id = verify_reference(anchor), anchor["candidate_id"]
+        if accepted.attachment_comparison.get("regional_objective"):
+            raise ValueError("This fit uses explicit regional constraints. It remains saved and "
+                "can be refined or inspected, but is not approval of the common atlas objective. "
+                "A shared cohort protocol must be checked separately before atlas/PCA use.")
         row = guided._approved_record(accepted, accepted_id)
         preference = _reference(accepted, accepted_id)
         strategy["control_basis"] = preference

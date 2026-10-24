@@ -212,6 +212,8 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
         .get("execution_scope")
         == "single_specimen_probe"
     )
+    probe = probe or bool(config.get("project", {}).get("parameter_provenance", {}).get(
+        "regional_fit"))
     fixed_probe = (
         probe
         and config["optimization"]["freeze_template"]
@@ -268,7 +270,7 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
                 "Preserved pilot initial momenta or subject identities changed."
             )
 
-    return InputSummary(
+    result = InputSummary(
         input_directory=input_directory,
         template=template,
         subject_count=len(subjects),
@@ -277,3 +279,7 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
         initial_momenta=initial_momenta,
         cohort_template=cohort_template,
     )
+    from diffeoforge.regional_fit import validate_scope
+
+    validate_scope(config, result)
+    return result

@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import threading
+import time
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -2186,6 +2187,7 @@ class ReferenceCalibrationStudyRunner:
             if self._cancel_requested:
                 break
             request = _launch_request(self.study_directory, manifest, candidate)
+            pipeline_started = time.monotonic()
             started = _append_event(
                 self.study_directory,
                 "candidate_started",
@@ -2238,9 +2240,15 @@ class ReferenceCalibrationStudyRunner:
                     if manifest.get("attachment_comparison") and snapshot.current_stage.order == 1:
                         from diffeoforge.reference_attachment_comparison import measure
 
+                        options = {}
+                        if manifest["attachment_comparison"].get("regional_objective"):
+                            options = dict(cancelled=lambda: self._cancel_requested,
+                                           event_callback=event_callback)
                         measured.update(measure(
-                            self.study_directory, manifest, candidate, request.destination
+                            self.study_directory, manifest, candidate,
+                            request.destination, **options
                         ))
+                    measured["pipeline_wall_seconds"] = time.monotonic() - pipeline_started
                     terminal = _append_event(
                         self.study_directory,
                         "candidate_completed",

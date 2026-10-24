@@ -1,4 +1,14 @@
-# Development continuity — v160 marked-area response
+# Development continuity — v161 protected regional pilot
+
+v161 implements explicit local surface objectives, retained-position protection,
+shape-compatible common-movement guides and preserved-prefix residual fields.
+The three controlled native spacing cases reproduce the Codex fields and dense
+endpoints. See [behavior, native evidence and limits](V161_PROTECTED_REGIONAL_PILOT.md).
+Source/runtime/installation verification is recorded separately at delivery;
+the installed version remains v160 until the new verified installer is applied.
+Regional single-form success is not approval of a common atlas/PCA objective.
+
+## Historical v160 marked-area response
 
 v160 separates explicit Clear from empty feedback, restores compatible historical
 patches without changing evidence, and uses same-patch measurements of saved fits

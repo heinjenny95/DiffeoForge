@@ -73,11 +73,25 @@ def history(cases, reference, regions):
     if not regions or not reference:
         return cases, []
     baseline = measured(reference, regions)
+    # New marks must not trigger a full historical geometry replay on every
+    # selector refresh. Keep all decisions, but remeasure recent relevant
+    # contrasts only; older fits remain available for explicit inspection.
+    selected, counts = set(), {}
+    for index in reversed(range(len(cases))):
+        row = cases[index]
+        family = row.get('family', row.get('goal'))
+        if (row.get('fit') and row['target'] == reference['target']
+                and row['method'] == reference['method'] and counts.get(family, 0) < 2):
+            selected.add(index)
+            counts[family] = counts.get(family, 0) + 1
+            if len(selected) == 8:
+                break
     result, evidence = [], []
-    for case in cases:
+    for index, case in enumerate(cases):
         row = dict(case)
         fit = case.get('fit')
-        if (fit and case['target'] == reference['target'] and case['method'] == reference['method']
+        if (index in selected and fit and case['target'] == reference['target']
+                and case['method'] == reference['method']
                 and fit != reference):
             response = compare(baseline, measured(fit, regions))
             row['response'] = response

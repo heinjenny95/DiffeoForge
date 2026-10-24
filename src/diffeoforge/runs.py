@@ -553,6 +553,14 @@ def _prepare_run(
                 sha256_file(summary.initial_momenta),
             )
 
+        from diffeoforge.regional_fit import assets as regional_assets
+
+        regional_paths = []
+        for source, staged, digest in regional_assets(config):
+            target = temp_directory / staged
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _copy_and_verify(source, target, digest)
+            regional_paths.append(target)
         source_config_copy = config_directory / "source-config.yaml"
         shutil.copy2(source_config, source_config_copy)
         effective = effective_reference_config(
@@ -592,6 +600,7 @@ def _prepare_run(
                 else (temp_directory / staged_momenta_relative,)
             ),
             *engine_files,
+            *regional_paths,
         ]
         command_preview = build_command(config, final_directory)
         manifest = {

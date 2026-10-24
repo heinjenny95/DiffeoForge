@@ -245,12 +245,25 @@ def render_engine_file_bytes(
         "data_set.xml": _dataset_xml(config, staged_subjects),
         "optimization_parameters.xml": _optimization_xml(config),
     }
+    from diffeoforge.regional_fit import apply_xml, declaration
+
+    if declaration(config):
+        model = ET.fromstring(rendered["model.xml"])
+        dataset = ET.fromstring(rendered["data_set.xml"])
+        apply_xml(config, model, dataset)
+        rendered["model.xml"] = _render_xml(model)
+        rendered["data_set.xml"] = _render_xml(dataset)
     from diffeoforge.reference_singleton_compat import SITECUSTOMIZE, needs_adapter
 
     if needs_adapter(config):
         if len(staged_subjects) != 1 or staged_momenta is None:
             raise ConfigurationError("Singleton warm fitting needs exactly one bound field/subject")
         rendered["sitecustomize.py"] = SITECUSTOMIZE.encode("utf-8")
+    if config["optimization"]["method"] == "lbfgs":
+        from diffeoforge.reference_scipy_compat import SOURCE
+
+        rendered["sitecustomize.py"] = (
+            rendered.get("sitecustomize.py", b"") + SOURCE.encode("utf-8"))
     from diffeoforge.reference_checkpoint_schedule import needs_adapter as compact
     from diffeoforge.reference_checkpoint_schedule import render_adapter
 
@@ -458,7 +471,9 @@ def _build_launcher_command(
     singleton = arguments[0] == "estimate" and needs_adapter(config)
     from diffeoforge.reference_checkpoint_schedule import needs_adapter as compact
 
-    if singleton or verified_shooting_grid or (arguments[0] == "estimate" and compact(config)):
+    scipy_compat = arguments[0] == "estimate" and config["optimization"]["method"] == "lbfgs"
+    if (singleton or verified_shooting_grid or scipy_compat
+            or (arguments[0] == "estimate" and compact(config))):
         # Use the original executable/interpreter. The adapter is confined to this
         # protected engine directory; no global runtime or package file changes.
         environment["PYTHONPATH"] = (
