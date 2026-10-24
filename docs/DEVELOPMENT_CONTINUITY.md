@@ -4,8 +4,10 @@ v161 implements explicit local surface objectives, retained-position protection,
 shape-compatible common-movement guides and preserved-prefix residual fields.
 The three controlled native spacing cases reproduce the Codex fields and dense
 endpoints. See [behavior, native evidence and limits](V161_PROTECTED_REGIONAL_PILOT.md).
-Source/runtime/installation verification is recorded separately at delivery;
-the installed version remains v160 until the new verified installer is applied.
+Runtime `d58c4aa` / `dev161` is installed; source, exact frozen and installed
+functional checks, backup/idle, package and owner-file/Qt preservation checks pass.
+See [delivery evidence](V161_DELIVERY.md) for the distinction between native parity,
+real-field replay and prospective search/cohort qualification still to be done.
 Regional single-form success is not approval of a common atlas/PCA objective.
 
 ## Historical v160 marked-area response
