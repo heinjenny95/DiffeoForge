@@ -252,6 +252,14 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         values["deformation_kernel_width"] = max(
             values['deformation_kernel_width']*.5,
             2*recipe['focus_width'] if evidence else 0)
+    recovery = False
+    if evidence and seed == data['current_reference']:
+        from diffeoforge.regional_search import recover_whole
+
+        recovery = recover_whole(recipe, values, seed['values'], previous_recipe, quality,
+                                 whole_tail, spatial_tail, explicit_fixed=bool(_fixed))
+        if recovery:
+            finer = contrast = balance = whole_capture = False
     changed = False
     if evidence:
         from diffeoforge.regional_search import distinct
@@ -299,6 +307,12 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         reason += ('A spatially supported whole-surface miss still lies beyond capture. '
                    'Broaden whole-surface capture and scale its noise with that width; '
                    'retain the local detail settings, controls and learned deformation. ')
+    if recovery:
+        reason += ('The marked area has reached the measured detail tolerance, but the '
+                   'whole surface still has larger errors. Retain all earlier fields and '
+                   'the local objective; test a whole-surface correction with source and '
+                   'target control coverage. Keep preservation tolerances and explicit '
+                   'fixed regions, and check the marked area again after this correction. ')
     if initial_warm or coarse_other:
         reason += ('First optimize the saved broad field itself with the marked-area '
                    'objective and soft unmarked protection. Preserve its controls and movement '
@@ -323,7 +337,8 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         )
     return dict(
         goal="regional",
-        title="Improve marked areas and protect the rest",
+        title=("Improve remaining areas while retaining local detail" if recovery else
+               "Improve marked areas and protect the rest"),
         reason=reason,
         target=reference["target"],
         method=method,

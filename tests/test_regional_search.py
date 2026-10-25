@@ -391,3 +391,53 @@ def test_reopened_plan_rejects_partial_protection_confidence_declarations(tmp_pa
     entry['sha256'] = sha256_file(path)
     with pytest.raises(ValueError, match='protection confidence'):
         read_plan(config)
+
+
+@pytest.mark.parametrize('fixed', [False, True])
+def test_reached_marked_detail_recovers_remaining_surface_without_discarding_fields(
+    monkeypatch, fixed,
+):
+    from test_regional_fit import proposal_data
+
+    from diffeoforge import reference_guided_pilot as guided
+
+    previous = dict(phase='detail', focus_width=.03, focus_noise=.003,
+        protection_noise=.01, protection_close_distance=.01, protection_tolerance=.005,
+        protection_halo=.2)
+    monkeypatch.setattr(guided, 'record', lambda _: dict(goal='regional', pilot_order=[1],
+        strategy=dict(regional_recipe=previous)))
+    data = proposal_data()
+    data['regions'] = [dict(symptom='detail')]
+    if fixed:
+        data['regions'].append(dict(symptom='unsure', purpose='fixed'))
+    data['regional_capture'] = dict(original_to_fit_p95=.004)
+    data['context']['cases'] = [dict(family='regional', target='shape.vtk', outcome='better')]*3
+    data['current'].metrics = dict(attachment_comparison=dict(subjects={
+        'shape.vtk': dict(repeats=[dict(p95=.04, regional_tail=.2)], regional_quality=dict(
+            numerical_selection_suitable=True, outside_preserved=True, shape_preserved=True,
+            outside_displacement_p95=.0001, outside_position_limit=.005,
+            active_surface=[dict(original_to_fit_p95=.004, fit_to_original_p95=.004)]))}))
+    old = dict(data['current_reference']['values'])
+    result = regional_pilot.proposal(None, 'x', data, symptom='detail')
+    recipe = result['regional_recipe']
+    assert recipe['phase'] == 'whole_recovery'
+    assert recipe['residual'] and recipe['control_scope'] == 'full_surface'
+    assert recipe['focus_width'] == previous['focus_width']
+    assert recipe['focus_noise'] == previous['focus_noise']
+    assert recipe['protection_tolerance'] == previous['protection_tolerance']
+    assert recipe['protection_noise'] == previous['protection_noise']*(1 if fixed else 2)
+    assert result['values']['attachment_kernel_width'] == .1
+    assert result['values']['noise_std'] == old['noise_std']*.5
+    assert result['values']['deformation_kernel_width'] >= .2
+    assert result['initialization_reference'] == data['current_reference']
+    assert result['regions'] == data['regions'] and data['current_reference']['values'] == old
+    subject = data['current'].metrics['attachment_comparison']['subjects']['shape.vtk']
+    quality = subject['regional_quality']
+    # A local miss or unsafe field cannot trigger a whole-surface continuation.
+    quality['active_surface'][0]['fit_to_original_p95'] = .02
+    result = regional_pilot.proposal(None, 'x', data, symptom='detail')
+    assert result['regional_recipe']['phase'] != 'whole_recovery'
+    quality['active_surface'][0]['fit_to_original_p95'] = .004
+    quality['no_new_intersection_flags'] = False
+    result = regional_pilot.proposal(None, 'x', data, symptom='detail')
+    assert result['regional_recipe']['phase'] != 'whole_recovery'

@@ -6,6 +6,10 @@ for measured capture/support, consistent RK2 frames, confidence-based preservati
 whole/local recovery and operation-scoped preparation checks. This remains
 single-form development under qualification; installed runtime `d58c4aa` / `dev161`
 and the distributed installer are unchanged. No common atlas/PCA approval follows.
+Experimental follow-up adds global contact refinement on the original material
+grid and a measured whole-surface recovery hypothesis after marked detail is
+reached. Related regressions pass; reference-equivalent automatic search remains
+a separate empirical gate.
 
 v161 implements explicit local surface objectives, retained-position protection,
 shape-compatible common-movement guides and preserved-prefix residual fields.

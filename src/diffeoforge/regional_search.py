@@ -71,3 +71,41 @@ def distinct(recipe, values, method, seed, cases, quality):
             return False, changed
         changed = True
     return True, changed
+
+
+def recover_whole(recipe, values, original_values, previous, quality, whole_tail,
+                  spatial_tail, *, explicit_fixed=False):
+    """Once marked detail is reached, address measured remaining global error.
+
+    This is a new hypothesis with independent controls, never replacement of a
+    useful prefix. No external successful fit participates in its measurements.
+    """
+    rows = quality.get('active_surface') or []
+    tolerance = previous.get('protection_tolerance', 0)
+    marked = max((max(r['original_to_fit_p95'], r.get('fit_to_original_p95', np.inf))
+                  for r in rows), default=np.inf)
+    if (previous.get('phase') not in {'detail', 'whole_recovery'} or not tolerance
+            or not quality.get('numerical_selection_suitable') or marked > tolerance
+            or recipe.get('guide_noise') is not None
+            or whole_tail <= max(2*marked, 2*tolerance)):
+        return False
+    width = max(original_values['attachment_kernel_width']*.5, spatial_tail*.5)
+    relaxed = bool(not explicit_fixed and quality.get('outside_preserved')
+                   and quality.get('outside_displacement_p95', np.inf) < tolerance*.25)
+    recipe.update(version='protected-local-v8', phase='whole_recovery', residual=True,
+        control_scope='full_surface', focus_width=previous['focus_width'],
+        focus_noise=previous['focus_noise'],
+        protection_noise=previous['protection_noise']*(2 if relaxed else 1),
+        protection_close_distance=previous['protection_close_distance'],
+        protection_tolerance=tolerance, protection_halo=previous['protection_halo'],
+        whole_surface_recovery=dict(whole_p95=whole_tail, marked_p95=marked,
+            spatial_tail=spatial_tail, before_width=original_values['attachment_kernel_width'],
+            after_width=width, noise_factor=.5, automatic_anchor_weight_relaxed=relaxed,
+            explicit_fixed_present=explicit_fixed, retained_prefix_unchanged=True))
+    for key in ('whole_surface_contrast', 'whole_surface_balance', 'whole_surface_capture',
+                'weight_continuation'):
+        recipe.pop(key, None)
+    values.update(attachment_kernel_width=width, noise_std=original_values['noise_std']*.5,
+        deformation_kernel_width=max(original_values['deformation_kernel_width']*.5,
+                                     2*recipe['focus_width'], 2*width))
+    return True

@@ -67,6 +67,12 @@ QC compares matching connectivity on that grid, rather than comparing a refined
 reconstruction with an older unrefined template. Unexpected connectivity changes
 and changed source hashes remain errors.
 
+New contact flags also trigger conforming original-source refinement outside the
+marked halo. Their material points are evaluated through the same unchanged
+fields, retaining all existing endpoint coordinates. Contacts already present on
+the matching original grid are excluded from this refinement target; finite
+pass/vertex limits and the final global contact check still apply.
+
 ## Preparation cost and evidence
 
 An operation-scoped manifest cache verifies each immutable ancestor once within
@@ -81,6 +87,15 @@ Private qualification evidence preserves unsuccessful trials, actual staged
 inputs, native files, source hashes and independent final-geometry comparisons.
 
 ## Remaining acceptance gates
+
+An experimental recovery stage addresses the remaining surface once both marked
+distance tails reach the retained preservation tolerance and numerical guards
+pass. It retains all previous fields and the local objective, adds full-surface
+source/target control support, and derives a global capture scale from measured
+whole-surface errors. Automatic soft anchors can be relaxed only with unused
+preservation slack and no explicitly fixed areas. Geometric preservation limits
+remain unchanged. This grouped hypothesis needs a new optimized result and full
+rechecking; proposing it is not evidence that it improves the fit.
 
 Automatic equivalence to a useful reference fit is still under prospective test.
 Regression tests and numerical guards alone are insufficient. A single-form

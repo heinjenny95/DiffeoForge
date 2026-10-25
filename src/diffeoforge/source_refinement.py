@@ -51,7 +51,7 @@ def subdivide(vertices, faces, selected, *, maximum_vertices=500_000):
     return np.vstack((v, v[edges].mean(1))), np.asarray(output, np.int64), np.asarray(parents)
 
 
-def selection(vertices, faces, regions, width):
+def selection(vertices, faces, regions, width, *, source_vertices=None):
     from diffeoforge.mesh_filter_worker import run_mesh_filter
     from diffeoforge.regional_fit import mask
 
@@ -60,7 +60,16 @@ def selection(vertices, faces, regions, width):
     lengths = np.max(np.linalg.norm(v[f] - v[np.roll(f, 1, axis=1)], axis=2), axis=1)
     selected = active & (lengths > width * 0.5 * (1 + 1e-8))
     flagged = run_mesh_filter("intersections", vertices=v, faces=f)["faces"]
-    seeds = flagged[active[flagged]]
+    # Straight triangles can cross even when the ambient field is smooth. Chase
+    # new contacts across the whole surface, including just outside the focus.
+    # Existing source contacts cannot be repaired by evaluating this same map.
+    seeds = np.asarray(flagged, dtype=np.int64)
+    if source_vertices is not None:
+        original = np.asarray(source_vertices, float)
+        if original.shape != v.shape or not np.isfinite(original).all():
+            raise ValueError("Contact refinement needs the matching original material grid")
+        preexisting = run_mesh_filter("intersections", vertices=original, faces=f)["faces"]
+        seeds = np.setdiff1d(seeds, preexisting)
     if len(seeds):
         selected |= np.isin(f, np.unique(f[seeds])).any(1)
     return selected
@@ -144,7 +153,8 @@ def refine_evaluation(run, receipt, destination, plan, *, cancelled, event_callb
         v, f = np.asarray(source.vertices), np.asarray(source.triangles)
         if not np.array_equal(f, fitted.triangles) or len(v) != len(fitted.vertices):
             raise ValueError("Original reference and fitted grid differ")
-        selected = selection(fitted.vertices, f, plan["focus_regions"], width)
+        selected = selection(fitted.vertices, f, plan["focus_regions"], width,
+                             source_vertices=v)
         if not selected.any():
             break
         if cancelled():
@@ -193,9 +203,11 @@ def refine_evaluation(run, receipt, destination, plan, *, cancelled, event_callb
             )
         )
     else:
+        source = load_surface_mesh(receipt["reference_source"]["path"]).geometry
         fitted = load_surface_mesh(receipt["endpoint"]["path"]).geometry
         limited = bool(selection(fitted.vertices, fitted.triangles,
-                                 plan["focus_regions"], width).any())
+                                 plan["focus_regions"], width,
+                                 source_vertices=source.vertices).any())
     receipt["source_refinement"] = dict(
         stages=stages,
         resource_limit=limited,
