@@ -75,6 +75,19 @@ def selection(vertices, faces, regions, width, *, source_vertices=None):
     return selected
 
 
+def _selection(receipt, source, fitted, regions, width):
+    from diffeoforge.surface_io import load_surface_mesh
+
+    # QC compares a residual with its incoming (prefix) surface. The original
+    # material grid remains the subdivision domain, not this contact baseline.
+    before = (load_surface_mesh(receipt['prefix']['endpoint']['path']).geometry
+              if receipt.get('prefix') else source)
+    if not np.array_equal(before.triangles, fitted.triangles):
+        raise ValueError('Incoming field and fitted contact grids differ')
+    return selection(fitted.vertices, fitted.triangles, regions, width,
+                     source_vertices=before.vertices)
+
+
 def augment(receipt, points_receipt, grid, faces, directory):
     """Combine independent material-point batches of the same unchanged fields."""
     from diffeoforge.mesh import read_vtk_points, read_vtk_polydata
@@ -153,8 +166,7 @@ def refine_evaluation(run, receipt, destination, plan, *, cancelled, event_callb
         v, f = np.asarray(source.vertices), np.asarray(source.triangles)
         if not np.array_equal(f, fitted.triangles) or len(v) != len(fitted.vertices):
             raise ValueError("Original reference and fitted grid differ")
-        selected = selection(fitted.vertices, f, plan["focus_regions"], width,
-                             source_vertices=v)
+        selected = _selection(receipt, source, fitted, plan['focus_regions'], width)
         if not selected.any():
             break
         if cancelled():
@@ -205,9 +217,7 @@ def refine_evaluation(run, receipt, destination, plan, *, cancelled, event_callb
     else:
         source = load_surface_mesh(receipt["reference_source"]["path"]).geometry
         fitted = load_surface_mesh(receipt["endpoint"]["path"]).geometry
-        limited = bool(selection(fitted.vertices, fitted.triangles,
-                                 plan["focus_regions"], width,
-                                 source_vertices=source.vertices).any())
+        limited = bool(_selection(receipt, source, fitted, plan['focus_regions'], width).any())
     receipt["source_refinement"] = dict(
         stages=stages,
         resource_limit=limited,

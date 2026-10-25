@@ -8,7 +8,7 @@ from test_shape_descriptor import cube
 
 from diffeoforge.mesh import read_vtk_polydata, sha256_file
 from diffeoforge.regional_fit import _save
-from diffeoforge.source_refinement import augment, selection, subdivide
+from diffeoforge.source_refinement import _selection, augment, selection, subdivide
 
 
 def test_new_contacts_outside_the_marked_window_still_refine_the_original_grid():
@@ -22,6 +22,26 @@ def test_new_contacts_outside_the_marked_window_still_refine_the_original_grid()
     assert selected.all()
     # An unchanged pre-existing contact is not a new refinement target.
     assert not selection(vertices, faces, far, .1, source_vertices=vertices).any()
+
+
+def test_residual_contact_baseline_is_the_incoming_field_not_original_material(monkeypatch):
+    from types import SimpleNamespace
+
+    from diffeoforge import surface_io
+
+    vertices = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0],
+                         [.25, .25, -1], [.25, .25, 1], [.75, .75, 0]], float)
+    faces = np.array([[0, 1, 2], [3, 4, 5]])
+    original = SimpleNamespace(vertices=vertices, triangles=faces)
+    incoming = vertices.copy()
+    incoming[3:, 0] += 3
+    prefix = SimpleNamespace(vertices=incoming, triangles=faces)
+    monkeypatch.setattr(surface_io, 'load_surface_mesh',
+                        lambda path: SimpleNamespace(geometry=prefix))
+    far = [dict(center=[20, 20, 20], radius=1)]
+    receipt = dict(prefix=dict(endpoint=dict(path='incoming.vtk')))
+    assert _selection(receipt, original, original, far, .1).all()
+    assert not _selection(dict(prefix=None), original, original, far, .1).any()
 
 
 @pytest.mark.parametrize("chosen", [[0], [0, 3], [0, 1, 2, 3, 4]])

@@ -69,9 +69,10 @@ and changed source hashes remain errors.
 
 New contact flags also trigger conforming original-source refinement outside the
 marked halo. Their material points are evaluated through the same unchanged
-fields, retaining all existing endpoint coordinates. Contacts already present on
-the matching original grid are excluded from this refinement target; finite
-pass/vertex limits and the final global contact check still apply.
+fields, retaining all existing endpoint coordinates. Pre-existing contacts are
+measured on the incoming prefix surface, matching final residual QC; the original
+material grid remains the subdivision domain. Finite pass/vertex limits and the
+final global contact check still apply.
 
 ## Preparation cost and evidence
 
