@@ -441,3 +441,75 @@ def test_reached_marked_detail_recovers_remaining_surface_without_discarding_fie
     quality['no_new_intersection_flags'] = False
     result = regional_pilot.proposal(None, 'x', data, symptom='detail')
     assert result['regional_recipe']['phase'] != 'whole_recovery'
+
+
+def test_failed_global_attempt_retries_finer_from_the_retained_good_field(monkeypatch):
+    from copy import deepcopy
+
+    from test_regional_fit import proposal_data
+
+    from diffeoforge import guided_feedback
+    from diffeoforge import reference_guided_pilot as guided
+
+    data = proposal_data()
+    data['anchor']['candidate_id'] = 'old'
+    data['current_reference']['values'] = dict(attachment_kernel_width=.12,
+        deformation_kernel_width=.24, noise_std=.01, initial_control_point_spacing=.3)
+    data['regions'] = [dict(symptom='detail')]
+    data['regional_capture'] = dict(original_to_fit_p95=.004)
+    data['context']['feedback'] = dict(x=dict(feedback=dict(outcome='same')))
+    previous = dict(phase='detail', focus_width=.03, focus_noise=.003, protection_noise=.01,
+        protection_close_distance=.01, protection_tolerance=.005, protection_halo=.2)
+    good_quality = dict(numerical_selection_suitable=True, outside_preserved=True,
+        shape_preserved=True, outside_displacement_p95=.0001, marked_regions=data['regions'],
+        active_surface=[dict(original_to_fit_p95=.004, fit_to_original_p95=.004)])
+    good = dict(repeats=[dict(p95=.03, regional_tail=.2)], regional_quality=good_quality)
+    bad_quality = dict(good_quality, numerical_selection_suitable=False,
+        active_surface=[dict(original_to_fit_p95=.007, fit_to_original_p95=.007)])
+    bad = dict(repeats=[dict(p95=.031, regional_tail=.2)], regional_quality=bad_quality)
+    data['current'].metrics = dict(attachment_comparison=dict(subjects={'shape.vtk': bad}))
+    parent = SimpleNamespace(candidates=[SimpleNamespace(candidate_id='old',
+        metrics=dict(attachment_comparison=dict(subjects={'shape.vtk': good})))])
+    monkeypatch.setattr(guided_feedback, 'verify_reference', lambda ref: parent)
+    monkeypatch.setattr(guided, 'record', lambda snap: dict(goal='regional', pilot_order=[1],
+        strategy=dict(regional_recipe=(previous if snap is parent else
+            dict(previous, phase='whole_recovery')))))
+    before = deepcopy(data['current_reference'])
+    result = regional_pilot.proposal(None, 'x', data, symptom='detail')
+    assert result['initialization_reference'] == data['anchor']
+    assert result['values']['attachment_kernel_width'] == .06
+    assert result['values']['deformation_kernel_width'] == .12
+    assert result['values']['noise_std'] == .005
+    recipe = result['regional_recipe']
+    assert recipe['whole_surface_recovery']['discarded_trial'] == before
+    assert recipe['focus_width'] == .03 and recipe['focus_noise'] == .003
+    assert recipe['protection_tolerance'] == .005
+    assert recipe['control_scope'] == 'full_surface'
+    assert data['current_reference'] == before
+    # A useful global improvement can be reused even when the local reviewer
+    # says Same: only the failed global deformation is excluded above.
+    bad['repeats'][0]['p95'] = .02
+    bad['regional_quality'] = dict(good_quality)
+    useful = regional_pilot.proposal(None, 'x', data, symptom='detail')
+    assert useful['initialization_reference'] == data['current_reference']
+
+
+def test_surface_noise_change_does_not_redefine_physical_preservation_limits(monkeypatch):
+    from test_regional_fit import proposal_data
+
+    from diffeoforge import reference_guided_pilot as guided
+
+    previous = dict(phase='capture', focus_width=.15, focus_noise=.003,
+        protection_close_distance=.01, protection_tolerance=.005, protection_halo=.2)
+    monkeypatch.setattr(guided, 'record', lambda _: dict(goal='regional', pilot_order=[1],
+        strategy=dict(regional_recipe=previous)))
+    data = proposal_data()
+    data['regions'] = [dict(symptom='detail')]
+    data['regional_capture'] = dict(original_to_fit_p95=.02)
+    data['current_reference']['values'] = dict(data['current_reference']['values'], noise_std=.01)
+    data['current'].metrics = dict(attachment_comparison=dict(subjects={'shape.vtk':
+        dict(regional_quality=dict(outside_preserved=True, shape_preserved=True,
+            active_surface=[dict(original_to_fit_p95=.02)]))}))
+    recipe = regional_pilot.proposal(None, 'x', data, symptom='detail')['regional_recipe']
+    for key in ('protection_close_distance', 'protection_tolerance', 'protection_halo'):
+        assert recipe[key] == previous[key]

@@ -71,8 +71,38 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         .get(reference["target"], {})
         .get("regional_quality", {})
     )
+    previous_recipe = (info.get('strategy') or {}).get('regional_recipe') or {}
+    retry_global = None
+    retained_surface = None
+    if (previous_recipe.get('phase') == 'whole_recovery'
+            and feedback.get('outcome') in {'same', 'worse'}
+            and reference != data['current_reference'] and data['current_reference']):
+        from diffeoforge.guided_feedback import verify_reference
+
+        retained = verify_reference(reference)
+        candidate = next(c for c in retained.candidates
+                         if c.candidate_id == reference['candidate_id'])
+        row = ((candidate.metrics or {}).get('attachment_comparison', {})
+               .get('subjects', {}).get(reference['target'], {}))
+        current_row = ((data['current'].metrics or {}).get('attachment_comparison', {})
+                       .get('subjects', {}).get(reference['target'], {}))
+        old_tail = max((r['p95'] for r in row.get('repeats', [])), default=0)
+        new_tail = max((r['p95'] for r in current_row.get('repeats', [])), default=0)
+        trusted = row.get('regional_quality') or {}
+        if (trusted.get('numerical_selection_suitable')
+                and trusted.get('marked_regions') == marked
+                and (feedback['outcome'] == 'worse'
+                     or not quality.get('numerical_selection_suitable')
+                     or new_tail >= old_tail*.95)):
+            retry_global = dict(reference=data['current_reference'],
+                                values=dict(data['current_reference']['values']))
+            quality = trusted
+            retained_surface = row
+            previous_recipe = ((guided.record(retained).get('strategy') or {})
+                               .get('regional_recipe') or {})
     if (
         info.get("goal") == "regional"
+        and not retry_global
         and data["current_reference"]
         and quality.get("outside_preserved")
         and quality.get("shape_preserved")
@@ -127,6 +157,9 @@ def proposal(snapshot, identifier, data, *, symptom=None):
             protection_close_distance=values['noise_std']*.5,
             protection_tolerance=values['noise_std']*.25,
             control_support='source-target-coverage-v1')
+        for key in ('protection_close_distance', 'protection_tolerance', 'protection_halo'):
+            if key in previous_recipe:
+                recipe[key] = previous_recipe[key]
     ratios = dict(snapshot.plan.baseline_parameter_ratios) if snapshot is not None else {}
     ratio = ratios.get("attachment_kernel_width")
     diagonal = data.get('spatial_diagonal')
@@ -141,7 +174,6 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         or any(r["symptom"] == "curvature" for r in problem)
         or level >= 2
     ) and not (quality and seed == data["current_reference"] and quality.get("local_improved"))
-    previous_recipe = (info.get('strategy') or {}).get('regional_recipe') or {}
     initial_warm = bool(evidence and not cases and not quality)
     initial_case = next((r for r in reversed(data['context']['cases'])
         if r.get('family') == 'regional' and r['target'] == reference['target']
@@ -163,8 +195,9 @@ def proposal(snapshot, identifier, data, *, symptom=None):
                        for r in data['context']['cases'])
     contrast = bool(evidence and len(cases) >= 2 and not tested_other
                     and any(r.get('outcome') in {'same', 'worse', 'rejected'} for r in cases))
-    current_surface = ((data['current'].metrics or {}).get('attachment_comparison', {})
-                       .get('subjects', {}).get(reference['target'], {}))
+    current_surface = retained_surface or (
+        (data['current'].metrics or {}).get('attachment_comparison', {})
+        .get('subjects', {}).get(reference['target'], {}))
     whole_tail = max((r['p95'] for r in current_surface.get('repeats', [])), default=0)
     # A useful local field can leave the rest underweighted. Rebalance that same
     # field before adding still finer controls; use only this fit's measurements.
@@ -253,13 +286,27 @@ def proposal(snapshot, identifier, data, *, symptom=None):
             values['deformation_kernel_width']*.5,
             2*recipe['focus_width'] if evidence else 0)
     recovery = False
-    if evidence and seed == data['current_reference']:
+    if evidence and (seed == data['current_reference'] or retry_global):
         from diffeoforge.regional_search import recover_whole
 
         recovery = recover_whole(recipe, values, seed['values'], previous_recipe, quality,
                                  whole_tail, spatial_tail, explicit_fixed=bool(_fixed))
         if recovery:
             finer = contrast = balance = whole_capture = False
+            if retry_global:
+                failed = retry_global['values']
+                values.update(attachment_kernel_width=failed['attachment_kernel_width']*.5,
+                              noise_std=failed['noise_std']*.5)
+                values['deformation_kernel_width'] = max(
+                    failed['deformation_kernel_width']*.5,
+                    2*recipe['focus_width'], 2*values['attachment_kernel_width'])
+                recipe['version'] = 'protected-local-v9'
+                recipe['whole_surface_recovery'].update(
+                    discarded_trial=retry_global['reference'],
+                    before_width=failed['attachment_kernel_width'],
+                    after_width=values['attachment_kernel_width'],
+                    failed_global_field_reused=False,
+                    hypothesis='Finer global resolution from the retained good field')
     changed = False
     if evidence:
         from diffeoforge.regional_search import distinct
@@ -313,6 +360,10 @@ def proposal(snapshot, identifier, data, *, symptom=None):
                    'the local objective; test a whole-surface correction with source and '
                    'target control coverage. Keep preservation tolerances and explicit '
                    'fixed regions, and check the marked area again after this correction. ')
+        if retry_global:
+            reason += ('The earlier whole-surface trial did not pass the measured comparison. '
+                       'Return to the retained fit and test finer whole-surface resolution; '
+                       'the discarded correction is kept only in the history. ')
     if initial_warm or coarse_other:
         reason += ('First optimize the saved broad field itself with the marked-area '
                    'objective and soft unmarked protection. Preserve its controls and movement '

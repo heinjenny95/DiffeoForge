@@ -98,6 +98,12 @@ preservation slack and no explicitly fixed areas. Geometric preservation limits
 remain unchanged. This grouped hypothesis needs a new optimized result and full
 rechecking; proposing it is not evidence that it improves the fit.
 
+A Same/Worse global trial that fails the measured comparison is excluded from
+the next numerical prefix. The search verifies the retained good reference and
+tests finer global attachment/movement resolution from it, holding local settings.
+A useful global gain can still be reused after Same local feedback. Previously
+declared physical preservation limits do not shrink with surface-noise changes.
+
 Automatic equivalence to a useful reference fit is still under prospective test.
 Regression tests and numerical guards alone are insufficient. A single-form
 regional success does not qualify another specimen, a shared cohort objective,
