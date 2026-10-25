@@ -69,10 +69,15 @@ and changed source hashes remain errors.
 
 New contact flags also trigger conforming original-source refinement outside the
 marked halo. Their material points are evaluated through the same unchanged
-fields, retaining all existing endpoint coordinates. Pre-existing contacts are
-measured on the incoming prefix surface, matching final residual QC; the original
-material grid remains the subdivision domain. Finite pass/vertex limits and the
-final global contact check still apply.
+fields, retaining all existing endpoint coordinates. The verified original coarse
+template determines whether contacts are pre-existing input defects. If it is
+clean, even contacts inherited from a discretized prefix trigger refinement;
+they must not be exempted merely because they appear in that prefix too. If the
+coarse input has contacts, the incoming-prefix exemption remains. Refinement
+permits at most 16 passes for a clean input and eight otherwise, with the same
+500,000-vertex cap and unchanged final acceptance checks. The original material
+grid remains the subdivision domain; this neither sculpts an endpoint nor
+repairs an invalid original input.
 
 ## Preparation cost and evidence
 

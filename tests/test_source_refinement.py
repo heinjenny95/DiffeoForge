@@ -8,7 +8,13 @@ from test_shape_descriptor import cube
 
 from diffeoforge.mesh import read_vtk_polydata, sha256_file
 from diffeoforge.regional_fit import _save
-from diffeoforge.source_refinement import _selection, augment, selection, subdivide
+from diffeoforge.source_refinement import (
+    _selection,
+    augment,
+    coarse_input_contacts,
+    selection,
+    subdivide,
+)
 
 
 def test_new_contacts_outside_the_marked_window_still_refine_the_original_grid():
@@ -42,6 +48,37 @@ def test_residual_contact_baseline_is_the_incoming_field_not_original_material(m
     receipt = dict(prefix=dict(endpoint=dict(path='incoming.vtk')))
     assert _selection(receipt, original, original, far, .1).all()
     assert not _selection(dict(prefix=None), original, original, far, .1).any()
+    # A clean coarse source means inherited prefix contacts can be sampling
+    # artifacts too; they must remain refinement targets, not exemptions.
+    assert _selection(dict(prefix=None), original, original, far, .1,
+                      coarse_input_clean=True).all()
+
+
+def test_contact_policy_inspects_the_verified_original_coarse_template(tmp_path, monkeypatch):
+    from diffeoforge import regional_evaluation
+
+    v, f = map(np.asarray, cube())
+    source = tmp_path/'coarse.vtk'
+    _save(source, v, f)
+    calls = []
+    def inputs(run, cache):
+        calls.append(run)
+        return SimpleNamespace(run_report=SimpleNamespace(manifest=dict(inputs=[
+            dict(role='template', staged_path='coarse.vtk')])))
+    monkeypatch.setattr(regional_evaluation, 'field_inputs', inputs)
+    receipt = dict(source_run='later-field', prefix=dict(source_run=str(tmp_path)))
+    clean = coarse_input_contacts(receipt, {})
+    assert calls == [tmp_path]
+    assert clean['clean'] and clean['flagged_faces'] == 0
+    assert clean['sha256'] == sha256_file(source)
+    # Genuine coarse-input contacts retain the pre-existing-contact policy.
+    v = np.array([[0,0,0],[1,0,0],[0,1,0],
+                  [.25,.25,-1],[.25,.25,1],[.75,.75,0]], float)
+    _save(source, v, np.array([[0,1,2],[3,4,5]]))
+    assert not coarse_input_contacts(receipt)['clean']
+    receipt['prefix'] = receipt
+    with pytest.raises(ValueError, match='Cyclic'):
+        coarse_input_contacts(receipt)
 
 
 @pytest.mark.parametrize("chosen", [[0], [0, 3], [0, 1, 2, 3, 4]])

@@ -62,7 +62,8 @@ def selection(vertices, faces, regions, width, *, source_vertices=None):
     flagged = run_mesh_filter("intersections", vertices=v, faces=f)["faces"]
     # Straight triangles can cross even when the ambient field is smooth. Chase
     # new contacts across the whole surface, including just outside the focus.
-    # Existing source contacts cannot be repaired by evaluating this same map.
+    # A caller may exempt genuine original-input contacts. A discretized prefix
+    # of a clean original input can itself need denser material evaluation.
     seeds = np.asarray(flagged, dtype=np.int64)
     if source_vertices is not None:
         original = np.asarray(source_vertices, float)
@@ -75,7 +76,7 @@ def selection(vertices, faces, regions, width, *, source_vertices=None):
     return selected
 
 
-def _selection(receipt, source, fitted, regions, width):
+def _selection(receipt, source, fitted, regions, width, *, coarse_input_clean=False):
     from diffeoforge.surface_io import load_surface_mesh
 
     # QC compares a residual with its incoming (prefix) surface. The original
@@ -85,7 +86,30 @@ def _selection(receipt, source, fitted, regions, width):
     if not np.array_equal(before.triangles, fitted.triangles):
         raise ValueError('Incoming field and fitted contact grids differ')
     return selection(fitted.vertices, fitted.triangles, regions, width,
-                     source_vertices=before.vertices)
+                     source_vertices=None if coarse_input_clean else before.vertices)
+
+
+def coarse_input_contacts(receipt, cache=None):
+    """Inspect the verified coarse input, not its roundoff-sensitive subdivision."""
+    from diffeoforge.mesh_filter_worker import run_mesh_filter
+    from diffeoforge.regional_evaluation import field_inputs
+    from diffeoforge.surface_io import load_surface_mesh
+
+    seen = set()
+    while receipt.get('prefix'):
+        key = receipt['source_run']
+        if key in seen or len(seen) >= 12:
+            raise ValueError('Cyclic or excessive original material source chain')
+        seen.add(key)
+        receipt = receipt['prefix']
+    run = Path(receipt['source_run'])
+    data = field_inputs(run, cache)
+    row = next(r for r in data.run_report.manifest['inputs'] if r['role'] == 'template')
+    path = run / row['staged_path']
+    mesh = load_surface_mesh(path).geometry
+    count = len(run_mesh_filter('intersections', vertices=mesh.vertices,
+                                faces=mesh.triangles)['faces'])
+    return dict(path=str(path), sha256=sha256_file(path), flagged_faces=count, clean=count == 0)
 
 
 def augment(receipt, points_receipt, grid, faces, directory):
@@ -159,14 +183,17 @@ def refine_evaluation(run, receipt, destination, plan, *, cancelled, event_callb
     root.mkdir()
     obj = next(r for r in plan["objects"] if r["id"] == "focus")
     width = obj["kernel_width"]
+    original_contacts = coarse_input_contacts(receipt, cache)
+    maximum_passes = 16 if original_contacts['clean'] else 8
     stages, limited = [], False
-    for level in range(8):
+    for level in range(maximum_passes):
         source = load_surface_mesh(receipt["reference_source"]["path"]).geometry
         fitted = load_surface_mesh(receipt["endpoint"]["path"]).geometry
         v, f = np.asarray(source.vertices), np.asarray(source.triangles)
         if not np.array_equal(f, fitted.triangles) or len(v) != len(fitted.vertices):
             raise ValueError("Original reference and fitted grid differ")
-        selected = _selection(receipt, source, fitted, plan['focus_regions'], width)
+        selected = _selection(receipt, source, fitted, plan['focus_regions'], width,
+                              coarse_input_clean=original_contacts['clean'])
         if not selected.any():
             break
         if cancelled():
@@ -217,12 +244,15 @@ def refine_evaluation(run, receipt, destination, plan, *, cancelled, event_callb
     else:
         source = load_surface_mesh(receipt["reference_source"]["path"]).geometry
         fitted = load_surface_mesh(receipt["endpoint"]["path"]).geometry
-        limited = bool(_selection(receipt, source, fitted, plan['focus_regions'], width).any())
+        limited = bool(_selection(receipt, source, fitted, plan['focus_regions'], width,
+                                 coarse_input_clean=original_contacts['clean']).any())
     receipt["source_refinement"] = dict(
         stages=stages,
         resource_limit=limited,
         maximum_vertices=500_000,
-        maximum_passes=8,
+        maximum_passes=maximum_passes,
+        original_coarse_contact_status=original_contacts,
+        inherited_contacts_refined=original_contacts['clean'],
         method="Conforming linear subdivision before original-source full-chain evaluation",
     )
     return receipt
