@@ -19,7 +19,8 @@ def capture(snapshot, reference, regions):
                 original_to_fit_p95=max(r['original_to_fit_p95'] for r in rows))
 
 
-def controls(source, target, regions, width, *, limit=2000, full_surface=False):
+def controls(source, target, regions, width, *, limit=2000, full_surface=False,
+             budget_policy=None):
     """A zero-field basis covers both sides of the miss, not only the short source."""
     from diffeoforge.reference_fit_search import control_grid
     from diffeoforge.regional_fit import mask
@@ -29,26 +30,42 @@ def controls(source, target, regions, width, *, limit=2000, full_surface=False):
         raise ValueError('Residual movement width must be positive')
     lo, hi = np.minimum(source.min(0), target.min(0)), np.maximum(source.max(0), target.max(0))
     coarse, _ = control_grid(np.column_stack((lo, hi)).ravel(), target=200)
+    if budget_policy not in {None, 'bounded-full-surface-v1'}:
+        raise ValueError('Unknown residual control-budget policy')
+    if budget_policy and not full_surface:
+        raise ValueError('Bounded spacing is declared only for full-surface controls')
     spacing = width * .5
     local = (np.vstack((source, target)) if full_surface else
              np.vstack((source[mask(source, regions, halo=width)],
                         target[mask(target, regions, halo=width)])))
     if not len(local):
         raise ValueError('The active residual region has no control support')
-    cells = np.unique(np.floor((local-lo)/spacing).astype(np.int64), axis=0)
-    fine = lo + (cells+.5)*spacing
-    points = np.unique(np.vstack((coarse, fine)), axis=0)
-    if len(points) > limit:
-        raise ValueError('The requested local movement exceeds the residual control limit; '
-                         'choose a broader scale or review the marked areas')
+    attempts = []
+    while True:
+        cells = np.unique(np.floor((local-lo)/spacing).astype(np.int64), axis=0)
+        fine = lo + (cells+.5)*spacing
+        points = np.unique(np.vstack((coarse, fine)), axis=0)
+        attempts.append(dict(spacing=spacing, controls=len(points)))
+        if len(points) <= limit:
+            break
+        if not budget_policy or spacing >= width:
+            raise ValueError('The requested local movement exceeds the residual control limit; '
+                             'choose a broader scale or review the marked areas')
+        spacing = min(width, spacing*1.125)
     # Every selected source/target vertex is at most sqrt(3)*spacing/2 from
     # its occupied voxel centre; no nearest-control promise outside this halo.
-    return points, spacing, dict(version='source-target-coverage-v1',
+    receipt = dict(version='source-target-coverage-v2' if budget_policy else
+                   'source-target-coverage-v1',
         scope='full_surface' if full_surface else 'marked_halo',
         controls=len(points), local_voxels=len(fine), spacing=spacing,
         maximum_local_support_distance=float(np.sqrt(3)*spacing/2),
-        maximum_local_support_distance_over_width=float(np.sqrt(3)/4),
+        maximum_local_support_distance_over_width=float(np.sqrt(3)*spacing/(2*width)),
         limit=limit, source_points=len(source), target_points=len(target))
+    if budget_policy:
+        receipt.update(budget_policy=budget_policy, attempts=attempts,
+                       budget_adjusted=len(attempts) > 1, maximum_spacing=width,
+                       deformation_width_unchanged=width)
+    return points, spacing, receipt
 
 
 def distinct(recipe, values, method, seed, cases, quality):

@@ -26,6 +26,30 @@ def test_residual_support_reaches_missing_target_extent_and_remains_bounded():
     assert record['scope'] == 'full_surface'
 
 
+def test_declared_full_surface_budget_keeps_width_and_bounds_all_point_support():
+    source = np.stack(np.meshgrid(*([np.linspace(0, 1, 17)]*3)), -1).reshape(-1, 3)
+    target = source + [0, 0, .02]
+    width = .2
+    with pytest.raises(ValueError, match='control limit'):
+        controls(source, target, [], width, full_surface=True, limit=700)
+    q, spacing, receipt = controls(source, target, [], width, full_surface=True,
+        limit=700, budget_policy='bounded-full-surface-v1')
+    assert len(q) <= 700 and width*.5 < spacing <= width
+    assert receipt['budget_adjusted'] and receipt['deformation_width_unchanged'] == width
+    assert receipt['version'] == 'source-target-coverage-v2'
+    assert receipt['attempts'][0]['controls'] > 700
+    assert receipt['attempts'][-1] == dict(spacing=spacing, controls=len(q))
+    for points in (source, target):
+        distance = np.linalg.norm(points[:, None]-q[None], axis=2).min(1).max()
+        assert distance <= receipt['maximum_local_support_distance']+1e-12
+    assert receipt['maximum_local_support_distance_over_width'] <= np.sqrt(3)/2
+    with pytest.raises(ValueError, match='control limit'):
+        controls(source, target, [], width, full_surface=True, limit=1,
+                 budget_policy='bounded-full-surface-v1')
+    with pytest.raises(ValueError, match='only for full-surface'):
+        controls(source, target, [], width, budget_policy='bounded-full-surface-v1')
+
+
 def test_far_miss_keeps_capture_range_instead_of_blindly_narrowing(monkeypatch):
     from test_regional_fit import proposal_data
 
@@ -198,11 +222,14 @@ def test_exact_discarded_settings_receive_distinct_feedback_driven_contrast():
 
     from diffeoforge.regional_search import distinct
 
-    recipe = dict(focus_width=.1, focus_noise=.01, protection_noise=.02, residual=True)
+    recipe = dict(focus_width=.1, focus_noise=.01, protection_noise=.02, residual=True,
+                  control_scope='full_surface', control_support='source-target-coverage-v1')
     values = dict(noise_std=.1)
     seed = dict(directory='same retained field')
     cases = [dict(reference=seed, method='current', values=values,
                   regional_recipe=deepcopy(recipe))]
+    # Merely declaring the budget policy cannot masquerade as a new objective.
+    recipe['control_budget_policy'] = 'bounded-full-surface-v1'
     available, changed = distinct(recipe, values, 'current', seed, cases,
                                   dict(outside_preserved=True))
     assert available and changed and recipe['focus_noise'] == .005

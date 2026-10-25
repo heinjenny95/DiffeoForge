@@ -116,10 +116,12 @@ def bind(root, manifest, record, recipe):
         target = next(r for r in manifest['inputs']['subjects'] if r['filename'] == ref['target'])
         original = load_surface_mesh(root / target['copy'])
         width = manifest['plan']['baseline_effective_values']['deformation_kernel_width']
+        options = dict(full_surface=recipe.get('control_scope') == 'full_surface')
+        if recipe.get('control_budget_policy'):
+            options['budget_policy'] = recipe['control_budget_policy']
         controls, spacing, coverage = supported_controls(
             source.geometry.vertices, original.geometry.vertices,
-            record['guided']['feedback']['regions'], width,
-            full_surface=recipe.get('control_scope') == 'full_surface')
+            record['guided']['feedback']['regions'], width, **options)
     control_path = root / "residual-controls.txt"
     np.savetxt(control_path, controls, fmt="%.17g")
     residual = dict(

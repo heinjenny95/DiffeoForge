@@ -336,6 +336,8 @@ def proposal(snapshot, identifier, data, *, symptom=None):
                     hypothesis=('Restore marked fidelity with the tested global settings'
                                 if progress else
                                 'Finer global resolution from the retained good field'))
+    if recipe['residual'] and recipe.get('control_scope') == 'full_surface':
+        recipe['control_budget_policy'] = 'bounded-full-surface-v1'
     changed = False
     if evidence:
         from diffeoforge.regional_search import distinct

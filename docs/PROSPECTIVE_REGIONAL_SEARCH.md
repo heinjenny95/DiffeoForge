@@ -19,6 +19,15 @@ desktop runtime remains unchanged while this experimental policy is evaluated.
 - New residual controls cover both the retained source and original target,
   rather than only the short or misplaced source. Occupied surface voxels and a
   coarse bounding grid have an explicit support-distance and resource receipt.
+  Full-surface corrections declare a bounded spacing policy: start at half the
+  unchanged movement width and, only if the control limit is exceeded, increase
+  spacing by 1.125 up to that width. Retain every occupied voxel; never truncate
+  points to meet the cap. The staged receipt records each attempted count and
+  the actual support bound `sqrt(3) * spacing / 2`. If even the broadest declared
+  spacing exceeds the limit, preparation fails without native dispatch. Local
+  marked-halo grids retain their existing fixed-spacing policy. This changes a
+  newly zero-initialized residual basis, never an existing field's coefficients
+  or movement kernel. Surface weights and physical preservation limits stay fixed.
 - Keep useful coarse fields as an immutable prefix. A finer movement basis starts
   with zero residual momenta; existing coefficients are never reinterpreted under
   a different deformation kernel. A compatible warm continuation retains its
@@ -158,3 +167,14 @@ runtime and distributed installer remain unchanged. Seventy-six scoped
 regressions passed for the functional changes; nineteen existing search tests
 and Ruff/diff checks pass for the explanation correction. No new installer is
 created from this checkpoint.
+
+The subsequent full-surface preparation exposed its fixed-spacing control cap
+before any native optimizer was dispatched. The declared bounded-spacing policy
+above addresses that preparation failure without changing motion width or
+surface weights. Thirty-four targeted search, regional-fit and frame tests pass,
+including coverage of all source/target points, unchanged movement width and an
+unattainable-budget rejection. Thirty-five related guided/refinement/study
+workflow tests pass. Declaring this policy alone does not count as a new
+contrast when earlier objective settings already have a result. A newly optimized
+result on this bounded basis still needs the full independent geometry and
+preservation checks.
