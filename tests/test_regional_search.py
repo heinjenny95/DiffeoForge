@@ -495,10 +495,15 @@ def test_failed_global_attempt_retries_finer_from_the_retained_good_field(monkey
     assert balanced['initialization_reference'] == data['anchor']
     assert balanced['values']['attachment_kernel_width'] == .12
     assert balanced['values']['deformation_kernel_width'] == .24
-    assert balanced['values']['noise_std'] == .005
+    assert balanced['values']['noise_std'] == .01
+    # Stronger global fidelity must not make the good marked objective weaker
+    # in relative terms; keep its retained local/global noise ratio as a cap.
     assert balanced['regional_recipe']['focus_noise'] == pytest.approx(.002)
+    assert (balanced['regional_recipe']['focus_noise']/balanced['values']['noise_std']
+            <= previous['focus_noise']/data['anchor']['values']['noise_std'])
     assert balanced['regional_recipe']['protection_noise'] == previous['protection_noise']
-    assert balanced['regional_recipe']['whole_surface_recovery']['basis_changed'] is False
+    assert balanced['regional_recipe']['whole_surface_recovery']['kernel_widths_changed'] is False
+    assert balanced['regional_recipe']['whole_surface_recovery']['control_support_rebuilt']
     # A useful global improvement can be reused even when the local reviewer
     # says Same: only the failed global deformation is excluded above.
     bad['repeats'][0]['p95'] = .02

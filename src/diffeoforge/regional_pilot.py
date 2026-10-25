@@ -306,27 +306,34 @@ def proposal(snapshot, identifier, data, *, symptom=None):
                 progress = retry_global['global_progress']
                 factor = 1. if progress else .5
                 values.update(attachment_kernel_width=failed['attachment_kernel_width']*factor,
-                              noise_std=failed['noise_std']*.5)
+                              noise_std=failed['noise_std']*(1. if progress else .5))
                 values['deformation_kernel_width'] = max(
                     failed['deformation_kernel_width']*factor,
                     2*recipe['focus_width'], 2*values['attachment_kernel_width'])
-                recipe['version'] = 'protected-local-v10' if progress else 'protected-local-v9'
+                recipe['version'] = 'protected-local-v11' if progress else 'protected-local-v9'
                 if progress:
                     # Resolution helped, but the correction lost local fidelity.
-                    # Keep its tested basis, not its unsuitable deformation. The
-                    # marked error determines a bounded local weight contrast.
-                    recipe['focus_noise'] = min(values['noise_std'],
-                        previous_recipe['focus_noise']*.5*retry_global['local_noise_ratio'])
+                    # Keep global settings; do not weaken the retained relative
+                    # local weight while increasing absolute fidelity elsewhere.
+                    relative = previous_recipe['focus_noise']/seed['values']['noise_std']
+                    desired = min(previous_recipe['focus_noise']*.5,
+                                  values['noise_std']*relative)*retry_global['local_noise_ratio']
+                    recipe['focus_noise'] = max(desired,
+                        retry_global['recipe']['focus_noise']*.25)
                     recipe['protection_noise'] = retry_global['recipe']['protection_noise']
+                    recipe['whole_surface_recovery'].update(
+                        retained_local_global_noise_ratio=relative,
+                        desired_focus_noise=desired,maximum_noise_decrease_factor=4.)
                 recipe['whole_surface_recovery'].update(
                     discarded_trial=retry_global['reference'],
                     before_width=failed['attachment_kernel_width'],
                     after_width=values['attachment_kernel_width'],
                     failed_global_field_reused=False,
-                    basis_changed=not progress,
+                    kernel_widths_changed=not progress,
+                    control_support_rebuilt=True,
                     measured_global_progress=progress,
                     local_noise_ratio=retry_global['local_noise_ratio'],
-                    hypothesis=('Surface-fidelity balance at the tested global resolution'
+                    hypothesis=('Restore marked fidelity with the tested global settings'
                                 if progress else
                                 'Finer global resolution from the retained good field'))
     changed = False
@@ -386,7 +393,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
             reason += ('The earlier whole-surface trial did not pass the measured comparison. '
                        'Return to the retained fit; the discarded correction remains in history. ')
             reason += ('Its resolution improved the whole surface. Keep that resolution and '
-                       'test stronger whole-surface and marked-area fidelity, with the same '
+                       'global surface weight; test stronger marked-area fidelity, with the same '
                        'protection weight and physical preservation limits. '
                        if retry_global['global_progress'] else
                        'Test finer whole-surface resolution from the retained fit. ')

@@ -102,13 +102,21 @@ A Same/Worse global trial that fails the measured comparison is excluded from
 the next numerical prefix. The search verifies the retained good reference and
 tests finer global attachment/movement resolution from it, holding local settings.
 If that trial already reduced whole-surface P95 by at least 5% but lost local
-fidelity, the next contrast instead keeps the tested resolution and halves global
-surface noise. Local noise is at most half its retained value, scaled by the
-retained/current marked P95 ratio clipped to [0.5, 1], and capped by the new global
-noise. This strengthens local and global fidelity without copying the unsuitable
-correction. The tested protection weight, physical preservation limits and good
-prefix remain fixed. This is a measured heuristic awaiting native qualification,
-not a guarantee of progress or permission to promote a failed result.
+fidelity, keep its global surface weight and kernel widths. The local noise target
+is bounded by half the retained local noise and by the current global noise times
+the retained good local/global noise ratio. Scale that target by the measured
+retained/current marked P95 ratio clipped to [0.5, 1]; limit the decrease from the
+last attempted local noise to fourfold per trial. This restores relative marked
+weight rather than strengthening the whole surface again. Protection weight,
+physical preservation limits and the good prefix remain fixed; the unsuitable
+correction is excluded. These are nominal noise multipliers, not a normalization
+theorem across different kernels and surface areas.
+
+Unchanged kernel widths do not imply an identical discrete basis. Source/target
+coverage is regenerated and can include points from a more refined material grid.
+Staged geometry and control files bind the actual basis. This grouped contrast
+remains under native qualification; it guarantees neither progress nor promotion
+of a failed result.
 A useful global gain can still be reused after Same local feedback. Previously
 declared physical preservation limits do not shrink with surface-noise changes.
 
