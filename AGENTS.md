@@ -32,6 +32,14 @@ Source HEAD, installed executable and distributed installer are distinct states.
 Updating one does not prove the others are current. Keep exact source/build/hash
 provenance. This checklist is not permission to schedule background tasks.
 
+Owner storage instruction (2026-10-25): when local space is low, completed,
+inactive material may be archived to the owner's NAS. Prefer older packaging
+working copies. Verify the intended destination is reachable, record restoration
+paths and file checksums, and verify the copied bytes before removing a local
+copy. Preserve active jobs, installed runtimes, current deliveries and scientific
+input/field dependencies. If the NAS is unavailable, retain local files; do not
+silently substitute a different network destination.
+
 Standing installation authorization (2026-09-26): an owner go-ahead to develop a
 new DiffeoForge version includes installing the resulting tested version, without
 another confirmation. Verify a recoverable backup and idle application/backends
