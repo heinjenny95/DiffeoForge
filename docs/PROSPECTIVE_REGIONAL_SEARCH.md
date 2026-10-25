@@ -149,7 +149,7 @@ declared proposal. A successful manual reference is used only by an independent
 judge, never as a proposal input or numerical seed. Original owner journals and
 the frozen source are verified separately after execution.
 
-The latest tested contrast passes the production numerical guards, including
+An earlier local contrast passes the production numerical guards, including
 marked surfaces, transitions, retained surface shape, temporal sensitivity,
 conforming spatial resolution and contact checks. It still fails the full
 independent reference-equivalence comparison. Internal numerical suitability
@@ -178,3 +178,37 @@ workflow tests pass. Declaring this policy alone does not count as a new
 contrast when earlier objective settings already have a result. A newly optimized
 result on this bounded basis still needs the full independent geometry and
 preservation checks.
+
+## Subsequent bounded-basis checkpoint, 25 October 2026
+
+The full-surface successor was actually optimized on its declared bounded basis.
+It retains the good numerical prefix and starts a new zero residual; the rejected
+correction and successful manual reference fields are not used as initializers.
+Staged geometry, controls, objective weights and prefix identities agree with the
+frozen proposal. Source and original owner journals remain unchanged after the
+run. This extends new-optimization evidence, rather than saved-field replay.
+
+The resulting endpoint passes outside-surface, shape, transition and temporal
+checks. Contact flags remain after the declared conforming-refinement allowance,
+so spatial sufficiency and numerical selection are false. The reference-equivalent
+search acceptance gate remains open. A favorable surface-distance comparison
+cannot override these failed checks or create anatomical approval.
+
+A native relative-convergence message following a non-finite evaluation and an
+accepted worsening is also insufficient evidence of tolerance convergence or
+optimality. Finite stored parameters and a sealed zero return are different facts;
+retain the raw stop evidence and assess the final geometry independently. No
+optimizer recovery or modified native line-search rule is qualified here.
+
+The independent surface-edge length proxy is sensitive to available graph
+directions. Adding valid paths inside unchanged planar faces can materially
+change that proxy without modifying a surface or field. Preserve the original
+verdict and report such a same-surface diagnostic separately; neither graph
+variant proves anatomical centreline length or homology.
+
+Preparation, native optimization, export/dense qualification and independent
+benchmarking are recorded separately. Repeated full-surface checks and refinement
+are too costly in this experiment to qualify interactive runtime. The policy was
+revised on known data, so this is still development evidence rather than a blind
+independent-specimen test. No installer, installed runtime, cohort objective,
+atlas or PCA is updated or approved by this checkpoint.

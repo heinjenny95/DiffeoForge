@@ -1,5 +1,12 @@
 # Development continuity — v161 protected regional pilot
 
+The subsequent bounded-basis native search is complete and remains unqualified:
+outside/shape/transition/temporal checks pass, while contact/spatial checks do not.
+See the [latest checkpoint and stop/runtime limits](PROSPECTIVE_REGIONAL_SEARCH.md#subsequent-bounded-basis-checkpoint-25-october-2026).
+This is genuine new optimization with an audited good prefix; the successful
+manual reference is used only by the independent judge. Experimental source has
+not been installed, and independent-specimen/general-runtime qualification is open.
+
 Experimental source qualification now exercises newly optimized regional fields,
 not only saved-field replay. See [prospective search and limits](PROSPECTIVE_REGIONAL_SEARCH.md)
 for measured capture/support, consistent RK2 frames, confidence-based preservation,
