@@ -41,6 +41,11 @@ def read_plan(config):
     ):
         raise ValueError("Invalid regional fitting plan")
     names = set()
+    confidence = [data.get(k) for k in ('protection_close_distance', 'protection_tolerance')]
+    if (any(x is not None and (not isinstance(x, (int, float))
+                               or not math.isfinite(x) or x <= 0) for x in confidence)
+            or (confidence[0] is None) != (confidence[1] is None)):
+        raise ValueError('Invalid regional protection confidence or tolerance')
     if data.get("residual"):
         row = data["residual"]["source"]
         if (
@@ -269,6 +274,8 @@ def prepare(
     guide_points=192,
     retained_path=None,
     fixed_regions=(),
+    protection_close_distance=None,
+    protection_tolerance=None,
 ):
     """Prepare native terms from feedback; no optimizer, oracle or acceptance.
 
@@ -287,6 +294,14 @@ def prepare(
     sv, sf = np.asarray(source.geometry.vertices, float), np.asarray(source.geometry.triangles, int)
     tv, tf = np.asarray(target.geometry.vertices, float), np.asarray(target.geometry.triangles, int)
     diagonal = float(np.linalg.norm(np.ptp(tv, axis=0)))
+    selection = sv
+    if retained_path:
+        retained = load_surface_mesh(retained_path).geometry
+        if np.asarray(retained.vertices).shape != sv.shape or not np.array_equal(
+            retained.triangles, sf
+        ):
+            raise ValueError("Retained field needs identical source connectivity for protection")
+        selection = np.asarray(retained.vertices, float)
     focus_regions = focus_regions or regions
     halo = diagonal * 0.065 if protection_halo is None else protection_halo
     if (
@@ -296,6 +311,9 @@ def prepare(
         or (guide_noise is not None and (not math.isfinite(guide_noise) or guide_noise <= 0))
         or type(guide_points) is not int
         or not 4 <= guide_points <= 2048
+        or any(x is not None and (not math.isfinite(x) or x <= 0)
+               for x in (protection_close_distance, protection_tolerance))
+        or (protection_close_distance is None) != (protection_tolerance is None)
     ):
         raise ValueError("Regional scales must be finite and positive")
     root.mkdir(parents=True)
@@ -306,7 +324,7 @@ def prepare(
         _save(path, v, f)
         return dict(copy=path.name, sha256=sha256_file(path), bytes=path.stat().st_size)
 
-    source_centres = sv[sf].mean(1)
+    source_centres = selection[sf].mean(1)
     target_centres = tv[tf].mean(1)
     source_selected = np.zeros(len(sf), bool)
     inferred = []
@@ -340,13 +358,16 @@ def prepare(
             target=row("focus-target.vtk"),
         )
     )
-    t = sv[sf]
+    t = selection[sf]
     area = np.linalg.norm(np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]), axis=1)
     ids = np.unique(
         sf[np.searchsorted(np.cumsum(area), (np.arange(1800) + 0.5) * area.sum() / 1800), 0]
     )
-    ids = ids[~mask(sv[ids], [*focus_regions, *inferred], halo=halo)
-              | mask(sv[ids], fixed_regions)]
+    ids = ids[~mask(selection[ids], [*focus_regions, *inferred], halo=halo)
+              | mask(selection[ids], fixed_regions)]
+    if protection_close_distance is not None:
+        close = distances_to_surface(selection[ids], tv, tf) <= protection_close_distance
+        ids = ids[close | mask(selection[ids], fixed_regions)]
     if len(ids) < 4:
         raise ValueError("The marked region leaves too little surface for outside protection")
     protected = sv[ids]
@@ -355,12 +376,7 @@ def prepare(
         fixed_regions
         or np.quantile(distances_to_surface(protected, tv, tf), 0.95) > diagonal * 1e-6
     ):
-        retained = load_surface_mesh(retained_path).geometry
-        if np.asarray(retained.vertices).shape != sv.shape or not np.array_equal(
-            retained.triangles, sf
-        ):
-            raise ValueError("Retained field needs identical source connectivity for protection")
-        protected = np.asarray(retained.vertices, float)[ids]
+        protected = selection[ids]
         protection = "retained fit outside the marked transition halo"
     a = asset("protect-source.vtk", sv[ids])
     b = asset("protect-target.vtk", protected)
@@ -428,6 +444,9 @@ def prepare(
         protection_halo=halo,
         protection=protection,
         protection_vertex_ids=ids.tolist(),
+        protection_close_distance=protection_close_distance,
+        protection_tolerance=protection_tolerance,
+        fixed_vertex_ids=ids[mask(selection[ids], fixed_regions)].tolist(),
         fixed_regions=list(fixed_regions),
         retained_reference=retained_binding,
         objects=objects,

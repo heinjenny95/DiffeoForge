@@ -7,6 +7,7 @@ from diffeoforge.pilot_recovery import DESCRIPTIONS, proposal
 
 def inputs(snapshot, identifier, context):
     """Verify once in the background, shared by all selector previews for this fit."""
+    from diffeoforge import reference_calibration_study as study
     from diffeoforge.guided_feedback import regions, selection, severe_regression, verify_reference
     from diffeoforge.guided_strategy import _candidate, _reference, _target
 
@@ -32,10 +33,22 @@ def inputs(snapshot, identifier, context):
     from diffeoforge.guided_response import history
 
     response_cases, response_evidence = history(context['cases'], anchor, marked)
+    current_reference = _reference(snapshot, identifier, target) if inspected else None
+    capture_reference = anchor or current_reference
+    regional_capture = None
+    if (marked and capture_reference
+            and any(r.get('purpose', 'problem') == 'problem' for r in marked)):
+        from diffeoforge.regional_search import capture
+
+        regional_capture = capture(references.get(capture_reference['directory'], snapshot),
+            capture_reference,
+            [r for r in marked if r.get('purpose', 'problem') == 'problem'])
     return dict(anchor=anchor, current=current, target=target, regions=marked,
-                current_reference=_reference(snapshot, identifier, target) if inspected else None,
+                current_reference=current_reference,
                 severe=severe_regression(snapshot, identifier), references=references,
-                context=context, response_cases=response_cases, response_evidence=response_evidence)
+                context=context, response_cases=response_cases, response_evidence=response_evidence,
+                regional_capture=regional_capture,
+                spatial_diagonal=study._verify_manifest(snapshot.study_directory)['template_diagonal'])
 
 
 def propose(snapshot, identifier, request, data):

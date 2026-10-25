@@ -86,6 +86,7 @@ def shoot(
     surface_only=None,
     precision=None,
     point_cloud=False,
+    use_rk2=None,
 ):
     if type(count) is not int or count < 2:
         raise ValueError("Shooting needs at least two timepoints")
@@ -132,6 +133,17 @@ def shoot(
     shutil.copyfile(
         run / "engine/optimization_parameters.xml", engine / "optimization_parameters.xml"
     )
+    if use_rk2 is not None:
+        import xml.etree.ElementTree as ET
+
+        if type(use_rk2) is not bool:
+            raise ValueError("Fixed-field RK2 selection must be explicit")
+        parameters = ET.parse(engine / "optimization_parameters.xml")
+        for name in ("use-rk2", "use-rk2-for-shoot", "use-rk2-for-flow"):
+            for old in parameters.getroot().findall(name):
+                parameters.getroot().remove(old)
+        ET.SubElement(parameters.getroot(), "use-rk2").text = "on" if use_rk2 else "off"
+        parameters.write(engine / "optimization_parameters.xml", encoding="utf-8")
     (engine / "sitecustomize.py").write_text(ADAPTER, encoding="utf-8")
     artifacts = {
         str(p.relative_to(destination)): sha256_file(p)

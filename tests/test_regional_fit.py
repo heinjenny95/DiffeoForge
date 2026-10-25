@@ -279,7 +279,7 @@ def test_real_pilot_transition_stages_regional_assets_without_launching(
     output.mkdir()
     object_id = load_config(candidate.config_path)["model"]["object_id"]
     name = f"Fixture__Reconstruction__{object_id}__subject_" + target["filename"] + ".vtk"
-    shutil.copyfile(base.study_directory / target["copy"], output / name)
+    shutil.copyfile(base.study_directory / manifest['inputs']['template']['copy'], output / name)
     monkeypatch.setattr(
         result_report,
         "collect_run_report",
@@ -288,16 +288,43 @@ def test_real_pilot_transition_stages_regional_assets_without_launching(
             manifest=dict(effective_config=load_config(candidate.config_path)),
         ),
     )
+    # Completed runs above are synthetic receipts. Supply a correspondingly
+    # synthetic qualified frame; native frame qualification is tested separately.
+    from diffeoforge import regional_frame
+
+    frozen_run = candidate.run_directory
+    if not (frozen_run / "manifest.json").exists():
+        (frozen_run / "manifest.json").write_text("{}")
+    controls, momenta = tmp_path / "frame-controls.txt", tmp_path / "frame-momenta.txt"
+    controls.write_text("synthetic controls")
+    momenta.write_text("synthetic momenta")
+    original_source = base.study_directory / manifest["inputs"]["template"]["copy"]
+    def qualified_frame(run, directory, **kwargs):
+        return dict(source_run=str(run), source_manifest_sha256=sha256_file(run / "manifest.json"),
+            endpoint=dict(path=str(output / name), sha256=sha256_file(output / name)),
+            reference_source=dict(path=str(original_source), sha256=sha256_file(original_source)),
+            timepoints=73, precision="float64", integrator="rk2",
+            starting_frame_qualification=dict(temporal_stable=True),
+            field_paths=dict(control_points=str(controls), momenta=str(momenta)),
+            controls_sha256=sha256_file(controls), momenta_sha256=sha256_file(momenta))
+    monkeypatch.setattr(regional_frame, "qualify", qualified_frame)
     protected = {p: sha256_file(p) for p in base.study_directory.rglob("*") if p.is_file()}
     child = guided.next_action(
         base.study_directory, "adaptive_recover", "guided-varifold", goal="regional:" + symptom
     )
     config = load_config(child.candidates[0].config_path)
     plan = read_plan(config)
-    expected = "residual"
+    expected = "learned"
     assert child.attachment_comparison["refinement"]["initialization"] == expected
     assert plan["retained_reference"] and len(plan["objects"]) == 2
     assert config["optimization"]["method"] == "lbfgs"
+    assert config["model"]["deformation"]["use_rk2"]
+    assert config["model"]["deformation"]["timepoints"] >= 19
+    assert config["optimization"]["convergence_tolerance"] <= 1e-6
+    child_manifest = study._verify_manifest(child.study_directory)
+    binding_config = load_config(child.study_directory / child_manifest['source_config']['copy'])
+    assert binding_config['model']['deformation']['use_rk2']
+    assert binding_config['model']['deformation']['timepoints'] >= 19
     assert all(c.attempts == 0 for c in child.candidates) and not child.visual_reviews
     assert all(
         sha256_file(p) == digest for p, digest in protected.items() if p.name != study.STUDY_EVENTS
@@ -310,3 +337,7 @@ def test_real_pilot_transition_stages_regional_assets_without_launching(
         assert "initial_momenta" not in config["model"]["deformation"]
         model = ET.parse(prepared / "engine/model.xml")
         assert model.find("template/object/filename").text.endswith("residual-source.vtk")
+    else:
+        assert config['model']['deformation']['kernel_width'] == (
+            base.plan.effective_values['deformation_kernel_width'])
+        assert config['model']['deformation']['initial_momenta']

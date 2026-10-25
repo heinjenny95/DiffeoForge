@@ -15,6 +15,17 @@ def load_field(run):
     return load_reference_momenta(run, allow_singleton=True)
 
 
+def integration_upgrade(before, after, regional):
+    """Only regional, independently qualified RK2 evaluation may refine this grid."""
+    keys = ('timepoints', 'use_rk2')
+    if all(before[k] == after[k] for k in keys):
+        return None
+    if not regional or not after['use_rk2'] or after['timepoints'] < 19:
+        raise ValueError('Saved fitted field does not match the fixed refinement basis')
+    return dict(version='regional-rk2-v1', before={k: before[k] for k in keys},
+                after={k: after[k] for k in keys}, coefficients_unchanged=True)
+
+
 def bind(root, manifest, record):
     """Copy only a compatible frozen singleton field; never run an optimizer."""
     from diffeoforge import reference_calibration_study as study
@@ -38,12 +49,16 @@ def bind(root, manifest, record):
         raise ValueError("Refinement must retain the exact template and original target")
     values = manifest["plan"]["baseline_effective_values"]
     method = next(iter(record["methods"].values()))
+    recipe = (record.get("guided", {}).get("strategy") or {}).get("regional_recipe")
+    attachment_contrast = bool(recipe and recipe.get('phase') == 'coarse_method_check'
+        and recipe.get('residual') is False
+        and recipe.get('whole_surface_contrast', {}).get('existing_broad_basis_retained') is True)
     nested = (record.get("guided", {}).get("goal") == "density"
               and values["initial_control_point_spacing"]
               == ref["values"]["initial_control_point_spacing"] * .8)
     compatible = (
         len(previous) == 1
-        and method == ref["method"]
+        and (method == ref["method"] or attachment_contrast)
         and all(
             values[k] == ref["values"][k]
             for k in (("deformation_kernel_width",) if nested else
@@ -66,13 +81,14 @@ def bind(root, manifest, record):
     from diffeoforge.regional_fit import read_plan
 
     regional = read_plan(config)
-    recipe = (record.get("guided", {}).get("strategy") or {}).get("regional_recipe")
     if regional and regional.get("residual") and not recipe:
         return dict(record, refinement=dict(request, initialization="fresh",
             reason="This field is a residual after a preserved prefix. An ordinary global "
                    "trial cannot reuse that residual alone on the original template. "
                    "Use protected regional refinement to retain the full field chain."))
     requested = load_config(root / manifest["source_config"]["copy"])
+    upgrade = integration_upgrade(config['model']['deformation'],
+                                  requested['model']['deformation'], recipe)
     controls = old["attachment_comparison"]["controls"]
     source = study._safe_study_path(parent.study_directory, controls["copy"])
     original = np.loadtxt(source).reshape(-1, 3)
@@ -95,10 +111,6 @@ def bind(root, manifest, record):
         or not config["optimization"]["freeze_control_points"]
         or config["model"]["attachment"]["type"] != ref["method"]
         or config["model"]["deformation"]["kernel_width"] != values["deformation_kernel_width"]
-        or any(
-            config["model"]["deformation"][k] != requested["model"]["deformation"][k]
-            for k in ("timepoints", "use_rk2")
-        )
         or config["runtime"]["precision"] != requested["runtime"]["precision"]
         or inputs.control_points.shape != original.shape
         or not np.allclose(inputs.control_points, original, rtol=0, atol=5.000001e-7)
@@ -125,6 +137,10 @@ def bind(root, manifest, record):
             "retain the fitted field, restart optimizer history, require fresh visual review.",
             momenta=dict(copy=momentum_path.name, sha256=digest),
             source_run_sha256=sha256_file(run / "manifest.json"),
+            **(dict(numerical_upgrade=upgrade) if upgrade else {}),
+            **(dict(attachment_contrast=dict(from_method=ref['method'], to_method=method,
+                deformation_basis_unchanged=True, initial_momenta_unchanged=True))
+               if attachment_contrast and method != ref['method'] else {}),
         ),
     )
 

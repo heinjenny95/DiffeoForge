@@ -39,6 +39,8 @@ def verify(root, manifest, record):
         or focus["kernel_width"] != recipe["focus_width"]
         or protect["noise_std"] != recipe["protection_noise"]
         or plan["protection_halo"] != recipe["protection_halo"]
+        or plan.get('protection_close_distance') != recipe.get('protection_close_distance')
+        or plan.get('protection_tolerance') != recipe.get('protection_tolerance')
     ):
         raise ValueError("Regional fitting recipe changed")
 
@@ -94,8 +96,8 @@ def proposal(snapshot, identifier, data, *, symptom=None):
             "does not create or remove a topological connection.",
             "view": "Load original detail or change the view before judging the fit.",
         }[symptom]
-    # The capture and transition-balancing stages reproduce the qualified method.
-    # Subsequent user-authorized trials remain distinct, bounded contrasts.
+    # These are explicit hypotheses. Native controlled-case parity does not
+    # qualify the full automatic search; each new result is checked again.
     noise_factor = 0.3 if level == 0 else 0.015
     width_factor = (2 / 3) * (0.7 ** max(0, level - 1))
     recipe = dict(
@@ -111,10 +113,26 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         protection_halo=values["deformation_kernel_width"] * 2,
         guide_points=192,
     )
+    evidence = data.get('regional_capture')
+    if evidence:
+        tail = evidence['original_to_fit_p95']
+        if seed == data['current_reference'] and quality.get('active_surface'):
+            tail = max(r['original_to_fit_p95'] for r in quality['active_surface'])
+        capture = tail > recipe['focus_width'] * 2
+        if capture:
+            recipe['focus_width'] = max(recipe['focus_width'], tail * .5)
+            recipe['focus_noise'] = values['noise_std'] * max(noise_factor, .15)
+        recipe.update(version='protected-local-v2',
+            phase='capture' if capture else 'detail', capture_evidence=evidence,
+            protection_close_distance=values['noise_std']*.5,
+            protection_tolerance=values['noise_std']*.25,
+            control_support='source-target-coverage-v1')
     ratios = dict(snapshot.plan.baseline_parameter_ratios) if snapshot is not None else {}
     ratio = ratios.get("attachment_kernel_width")
-    if ratio:
+    diagonal = data.get('spatial_diagonal')
+    if diagonal is None and ratio:
         diagonal = reference["values"]["attachment_kernel_width"] / ratio
+    if diagonal:
         recipe["protection_halo"] = min(recipe["protection_halo"], diagonal * 0.1)
     # Changing a movement kernel cannot reuse its old momenta as if the basis
     # were identical. Preserve that deformation as the prefix of a residual.
@@ -123,8 +141,127 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         or any(r["symptom"] == "curvature" for r in problem)
         or level >= 2
     ) and not (quality and seed == data["current_reference"] and quality.get("local_improved"))
+    previous_recipe = (info.get('strategy') or {}).get('regional_recipe') or {}
+    initial_warm = bool(evidence and not cases and not quality)
+    initial_case = next((r for r in reversed(data['context']['cases'])
+        if r.get('family') == 'regional' and r['target'] == reference['target']
+        and r.get('regions', marked) == marked and r.get('reference')
+        and (r.get('regional_recipe') or {}).get('phase') == 'initial_warm'), None)
+    coarse_other = bool(evidence and previous_recipe.get('phase') == 'initial_warm'
+                        and initial_case
+                        and not any((r.get('regional_recipe') or {}).get('phase')
+                                    == 'coarse_method_check'
+                                    and r['target'] == reference['target']
+                                    and r.get('regions', marked) == marked
+                                    for r in data['context']['cases']))
+    finer = bool(evidence and previous_recipe.get('focus_width')
+                 and recipe['focus_width'] < previous_recipe['focus_width']*.8)
+    method = reference['method']
+    other = 'varifold' if method == 'current' else 'current'
+    tested_other = any(r.get('family') == 'regional' and r.get('method') == other
+                       and r['target'] == reference['target'] and r.get('regions') == marked
+                       for r in data['context']['cases'])
+    contrast = bool(evidence and len(cases) >= 2 and not tested_other
+                    and any(r.get('outcome') in {'same', 'worse', 'rejected'} for r in cases))
+    current_surface = ((data['current'].metrics or {}).get('attachment_comparison', {})
+                       .get('subjects', {}).get(reference['target'], {}))
+    whole_tail = max((r['p95'] for r in current_surface.get('repeats', [])), default=0)
+    # A useful local field can leave the rest underweighted. Rebalance that same
+    # field before adding still finer controls; use only this fit's measurements.
+    balance = bool(evidence and seed == data['current_reference']
+                   and (quality.get('local_improved')
+                        or quality.get('numerical_selection_suitable'))
+                   and (previous_recipe.get('whole_surface_contrast')
+                        or previous_recipe.get('whole_surface_balance')
+                        or previous_recipe.get('whole_surface_capture'))
+                   and whole_tail > 2*tail)
+    spatial_tail = max((r.get('regional_tail', r.get('p99', r['p95']))
+                        for r in current_surface.get('repeats', [])), default=0)
+    whole_capture = bool(balance and spatial_tail > 2*values['attachment_kernel_width'])
+    if balance:
+        finer = contrast = False
+        recipe.update(version='protected-local-v4', phase='balance', residual=False,
+            focus_width=previous_recipe['focus_width'],
+            focus_noise=min(previous_recipe.get('focus_noise', values['noise_std']*.5),
+                            values['noise_std']*.5),
+            protection_noise=previous_recipe['protection_noise'],
+            protection_close_distance=previous_recipe['protection_close_distance'],
+            protection_tolerance=previous_recipe['protection_tolerance'],
+            whole_surface_balance=dict(whole_p95=whole_tail, marked_p95=tail,
+                noise_factor=.5, existing_field_and_prefix_retained=True))
+        values['noise_std'] *= .5
+    if whole_capture:
+        # Existing spatial-bin tails expose a missed small feature even when
+        # its area is too small to dominate the global percentile. Keep the
+        # learned field/local objective; change the whole-surface capture only.
+        balance = finer = contrast = False
+        original_noise = seed['values']['noise_std']
+        old_width = seed['values']['attachment_kernel_width']
+        width = max(old_width*1.5, spatial_tail*.5)
+        values['attachment_kernel_width'] = width
+        values['noise_std'] = original_noise*width/old_width
+        recipe.update(version='protected-local-v5', phase='whole_capture', residual=False,
+            focus_noise=previous_recipe['focus_noise'],
+            whole_surface_capture=dict(spatial_tail=spatial_tail, before_width=old_width,
+                after_width=width, noise_scale=width/old_width,
+                existing_field_and_local_objective_retained=True))
+        recipe.pop('whole_surface_balance', None)
+    if initial_warm or coarse_other:
+        # The first protected fit must be able to improve the original broad
+        # field itself. Freezing an already-wrong broad field as an immutable
+        # prefix is not equivalent to warm optimization of that same basis.
+        finer = contrast = balance = whole_capture = False
+        if coarse_other:
+            # Both models must start from the same saved field. Chaining the
+            # second model after the first model confounds this comparison.
+            seed = initial_case['reference']
+            values = dict(seed['values'])
+        recipe.update(version='protected-local-v7', residual=False,
+            phase='initial_warm' if initial_warm else 'coarse_method_check',
+            protection_noise=values['noise_std'], protection_reference=seed)
+        if coarse_other:
+            method = other
+            recipe.update(focus_width=previous_recipe['focus_width'],
+                focus_noise=previous_recipe['focus_noise'],
+                whole_surface_contrast=dict(from_method=reference['method'], to_method=method,
+                    scale_factor=1., noise_factor=1., existing_broad_basis_retained=True))
+    if finer or contrast:
+        recipe['version'] = 'protected-local-v3'
+        recipe['residual'] = True
+        recipe['control_scope'] = 'full_surface' if contrast else 'marked_halo'
+        if symptom not in {'gap', 'position'}:
+            recipe['protection_noise'] = values['noise_std']*.5
+    if finer:
+        # Isolate the movement/detail-scale hypothesis: a new basis must not
+        # simultaneously jump to a hundreds-fold stronger local surface term.
+        previous_noise = previous_recipe.get('focus_noise', values['noise_std']*.3)
+        next_noise = max(previous_noise, values['noise_std']*.15)
+        recipe.update(version='protected-local-v7',
+            focus_noise=next_noise,
+            weight_continuation=dict(basis_changed=True, before_noise=previous_noise,
+                after_noise=next_noise, minimum_noise_fraction=.15,
+                local_weight_held=next_noise == previous_noise))
+    if contrast:
+        method = other
+        values['attachment_kernel_width'] = min(values['attachment_kernel_width']*.5,
+                                                recipe['focus_width'])
+        values['noise_std'] *= .5
+        recipe['whole_surface_contrast'] = dict(from_method=reference['method'], to_method=method,
+            scale_factor=.5, noise_factor=.5, retained_prefix_unchanged=True)
     if recipe["residual"]:
-        values["deformation_kernel_width"] *= 0.5
+        values["deformation_kernel_width"] = max(
+            values['deformation_kernel_width']*.5,
+            2*recipe['focus_width'] if evidence else 0)
+    changed = False
+    if evidence:
+        from diffeoforge.regional_search import distinct
+
+        available_contrast, changed = distinct(recipe, values, method, seed,
+                                               data['context']['cases'], quality)
+        available &= available_contrast
+        if not available_contrast:
+            blocked = ('This contrast reached its numerical weight guard. Keep the saved '
+                       'fit and review the inputs, marked areas or movement scale.')
     reason = (
         "Fit the marked original surfaces directly and protect the retained shape "
         "outside them. Check the full marked area, its transitions and the rest "
@@ -140,6 +277,40 @@ def proposal(snapshot, identifier, data, *, symptom=None):
             "The next stage strengthens local surface agreement to correct "
             "transition errors; later trials use a distinct detail scale. "
         )
+    if evidence:
+        reason += ("First reach missing original surfaces, then refine their detail. "
+                   "The measured mismatch determines the next capture scale; "
+                   "new residual controls cover source and target. "
+                   "Protect already-close unmarked positions and explicit fixed areas, "
+                   "and check previously good original surfaces separately. ")
+    if finer:
+        reason += ('The earlier capture is retained; add a finer independent field '
+                   'instead of forcing detail through the same broad movement. ')
+    if contrast:
+        reason += (f'Earlier local tests still needed improvement. Check {method.title()} '
+                   'on the whole original at this finer scale, keeping the saved shape '
+                   'as the unchanged starting deformation. ')
+    if balance:
+        reason += ('The marked area improved more than the whole surface. Continue the '
+                   'same field with stronger global surface weight, retaining useful local '
+                   'weight and strengthening '
+                   'whole-surface agreement while keeping the earlier capture and controls. ')
+    if whole_capture:
+        reason += ('A spatially supported whole-surface miss still lies beyond capture. '
+                   'Broaden whole-surface capture and scale its noise with that width; '
+                   'retain the local detail settings, controls and learned deformation. ')
+    if initial_warm or coarse_other:
+        reason += ('First optimize the saved broad field itself with the marked-area '
+                   'objective and soft unmarked protection. Preserve its controls and movement '
+                   'scale; add a residual only when independent finer movement is needed. ')
+        if coarse_other:
+            reason += (f'Check {method.title()} on that same broad basis before freezing '
+                       'the broad field for finer corrections. Both models use the same '
+                       'original starting field and protection frame; keep the earlier '
+                       'model result as a separate comparison. ')
+    if changed:
+        reason += ('The exact earlier settings already have a saved result; '
+                   'use a distinct feedback-driven weight contrast. ')
     if seed != reference:
         reason += (
             "Keep your preferred comparison; reuse the last local field only "
@@ -147,15 +318,15 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         )
     if recipe["residual"]:
         reason += (
-            "Keep the saved deformation as a fixed prefix and test a smaller-scale "
-            "residual field, then evaluate their true forward composition. "
+            "Keep the saved deformation as a fixed prefix and add a correction "
+            "at the chosen movement scale, then evaluate their true forward composition. "
         )
     return dict(
         goal="regional",
         title="Improve marked areas and protect the rest",
         reason=reason,
         target=reference["target"],
-        method=reference["method"],
+        method=method,
         values=values,
         anchor=reference,
         initialization_reference=seed,
@@ -199,7 +370,11 @@ def bind(root, manifest, record):
         raise ValueError("Mark a problem area as well as already good protected areas")
     guides = guides or problem
     target = next(r for r in manifest["inputs"]["subjects"] if r["filename"] == feedback["target"])
-    ref = record["guided"]["strategy"]["anchor"]
+    ref = recipe.get('protection_reference') or record["guided"]["strategy"]["anchor"]
+    if recipe.get('protection_reference') and (
+        ref != record['refinement']['reference'] or ref['target'] != feedback['target']
+    ):
+        raise ValueError('Common-start protection must match the bound initialization reference')
     from diffeoforge.guided_feedback import verify_reference
     from diffeoforge.result_report import collect_run_report
 
@@ -227,6 +402,16 @@ def bind(root, manifest, record):
     from diffeoforge.regional_residual import retained_evaluation
 
     anchor_evaluation = retained_evaluation(record, run, feedback["target"])
+    from diffeoforge.regional_frame import compatible, qualify, verify_source
+
+    parent_evaluation = record.get("refinement", {}).get("parent_evaluation")
+    if (parent_evaluation and Path(parent_evaluation["source_run"]).resolve() == run.resolve()):
+        anchor_evaluation = parent_evaluation
+    if not compatible(anchor_evaluation):
+        original = (parent_evaluation or {}).get("reference_source")
+        anchor_evaluation = qualify(run, root / "comparison-frame-qualification",
+                                   source=original["path"] if original else None)
+    verify_source(anchor_evaluation)
     if anchor_evaluation:
         retained = Path(anchor_evaluation["endpoint"]["path"])
     fit_source = root / manifest["inputs"]["template"]["copy"]
@@ -298,6 +483,8 @@ def bind(root, manifest, record):
         protection_halo=recipe["protection_halo"],
         guide_noise=recipe["guide_noise"],
         guide_points=recipe["guide_points"],
+        protection_close_distance=recipe.get('protection_close_distance'),
+        protection_tolerance=recipe.get('protection_tolerance'),
     )
     import json
     import shutil
@@ -305,6 +492,9 @@ def bind(root, manifest, record):
     path = Path(declaration["manifest"])
     data = json.loads(path.read_text())
     data["retained_run"] = dict(path=str(run), manifest_sha256=sha256_file(run / "manifest.json"))
+    data["numerical_protocol"] = dict(
+        version="regional-rk2-v1", integration="rk2", minimum_native_timepoints=19,
+        retained_comparison=anchor_evaluation, field_parameters_unchanged=True)
     if residual:
         for row in [
             residual["source"],
@@ -317,6 +507,14 @@ def bind(root, manifest, record):
     return dict(record, regional_objective=declaration)
 
 
+def configure_numerics(config):
+    """Use the same regional integration contract before binding and at dispatch."""
+    config["optimization"]["convergence_tolerance"] = min(
+        config["optimization"]["convergence_tolerance"], 1e-6)
+    config["model"]["deformation"].update(
+        use_rk2=True, timepoints=max(19, config["model"]["deformation"]["timepoints"]))
+
+
 def configure(config, record):
     declaration = record.get("regional_objective")
     if not declaration:
@@ -326,3 +524,4 @@ def configure(config, record):
     config["optimization"].update(
         method="lbfgs", max_line_search_iterations=30, save_every_n_iterations=1_000_000
     )
+    configure_numerics(config)

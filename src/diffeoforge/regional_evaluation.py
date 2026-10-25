@@ -118,6 +118,7 @@ def evaluate_points(
         surface_only=config["model"]["object_id"],
         precision="float64",
         point_cloud=True,
+        use_rk2=True,
         cancelled=cancelled,
         event_callback=event_callback,
     )
@@ -130,6 +131,7 @@ def evaluate_points(
         controls_sha256=sha256_file(inputs.control_points_path),
         momenta_sha256=sha256_file(inputs.momenta_path),
         optimizer_updates=0,
+        integrator="rk2",
         endpoint=dict(path=str(path), sha256=sha256_file(path)),
     )
 
@@ -206,6 +208,7 @@ def evaluate(
         count,
         surface_only=config["model"]["object_id"],
         precision="float64",
+        use_rk2=True,
         cancelled=cancelled,
         event_callback=event_callback,
     )
@@ -217,8 +220,11 @@ def evaluate(
         controls_sha256=sha256_file(inputs.control_points_path),
         momenta_sha256=sha256_file(inputs.momenta_path),
         source_template_sha256=sha256_file(source),
+        field_paths=dict(control_points=str(inputs.control_points_path),
+                         momenta=str(inputs.momenta_path)),
         timepoints=count,
         precision="float64",
+        integrator="rk2",
         optimizer_updates=0,
         endpoint=dict(path=str(path), sha256=sha256_file(path)),
         protected=protected,

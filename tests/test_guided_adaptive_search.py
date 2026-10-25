@@ -89,6 +89,10 @@ def test_approved_starting_fit_can_have_previews_without_granting_new_approval(m
 def test_capped_new_field_keeps_old_comparison_and_cannot_loop_unchanged(monkeypatch):
     snapshot, data, reference = model(monkeypatch, outcome="same", goal="density", capped=True)
     snapshot.plan.pilot_subject_count = 1
+    # This unit fixture represents an ordinary singleton field. Production
+    # candidates always carry a config path, including the regional-chain guard.
+    data['current'].config_path = 'synthetic-global-field.yaml'
+    monkeypatch.setattr('diffeoforge.config.load_config', lambda _: {})
     row = guided_search.propose(snapshot, "fit", "detail", data)
     assert row["goal"] == "optimize" and row["optimization_iterations"] == 240
     assert row["anchor"] == reference
@@ -103,12 +107,13 @@ def test_capped_new_field_keeps_old_comparison_and_cannot_loop_unchanged(monkeyp
 
 def test_selector_callbacks_perform_no_verification_or_file_reads(tmp_path, monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from pilot_view_helpers import wait_pilot_view
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication, QComboBox
-    from pilot_view_helpers import wait_pilot_view
     from test_guided_feedback import attempted, decision
 
-    from diffeoforge import guided_feedback, reference_calibration_study as study
+    from diffeoforge import guided_feedback
+    from diffeoforge import reference_calibration_study as study
     from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
 
     app = QApplication.instance() or QApplication([])

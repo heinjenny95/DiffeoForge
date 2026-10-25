@@ -60,6 +60,48 @@ def test_explicit_basis_change_is_declared_fresh_and_has_no_momenta(tmp_path, mo
     assert child.candidates[0].attempts == 0 and not child.visual_reviews
 
 
+def test_protected_method_check_keeps_momenta_but_still_rejects_changed_movement_basis(
+    tmp_path, monkeypatch,
+):
+    import shutil
+
+    import yaml
+
+    from diffeoforge.guided_refinement import bind
+
+    base = reject(run_batch(initial(tmp_path), monkeypatch), 'guided-varifold')
+    child = guided.next_action(base.study_directory, 'adaptive_recover',
+        'guided-varifold', goal='detail')
+    manifest = copy.deepcopy(study._verify_manifest(child.study_directory))
+    record = copy.deepcopy(child.attachment_comparison)
+    root = tmp_path/'same-field-method-check'
+    root.mkdir()
+    source = child.study_directory/manifest['source_config']['copy']
+    destination = root/manifest['source_config']['copy']
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    cfg = load_config(source)
+    cfg['model']['attachment']['type'] = 'current'
+    destination.write_text(yaml.safe_dump(cfg), encoding='utf-8')
+    manifest['source_config']['sha256'] = sha256_file(destination)
+    record['methods'] = {'guided-current': 'current'}
+    record['guided']['strategy']['regional_recipe'] = dict(phase='coarse_method_check',
+        residual=False, whole_surface_contrast=dict(existing_broad_basis_retained=True))
+    result = bind(root, manifest, record)
+    assert result['refinement']['initialization'] == 'learned'
+    contrast = result['refinement']['attachment_contrast']
+    assert contrast['from_method'] == 'varifold' and contrast['to_method'] == 'current'
+    assert contrast['deformation_basis_unchanged'] and contrast['initial_momenta_unchanged']
+    assert sha256_file(root/result['refinement']['momenta']['copy']) == (
+        child.attachment_comparison['refinement']['momenta']['sha256'])
+    changed = tmp_path/'changed-basis-method-check'
+    changed.mkdir()
+    target = changed/manifest['source_config']['copy']
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(destination, target)
+    manifest['plan']['baseline_effective_values']['deformation_kernel_width'] *= .8
+    assert bind(changed, manifest, record)['refinement']['initialization'] == 'fresh'
+
+
 def test_global_alternative_cannot_reinterpret_a_residual_without_its_prefix(tmp_path, monkeypatch):
     from diffeoforge import guided_refinement, regional_fit
 

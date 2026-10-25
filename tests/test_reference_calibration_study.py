@@ -379,6 +379,11 @@ def test_afk_start_errors_are_visible_and_retryable(
     assert messages[0][0] == "Pilot could not start"
     assert "AttributeError: synthetic startup error" in messages[0][1]
     assert "Pilot start failed" in dialog.status.text()
+    # Startup recovery re-renders evidence asynchronously before enabling the
+    # optional mode controls. The dedicated error remains after view completion.
+    wait_pilot_view(dialog)
+    assert 'synthetic startup error' in dialog.operation_error.text()
+    assert not dialog.operation_error.isHidden()
     assert not queued and dialog._worker is None
     assert dialog.start_button.isEnabled()
     assert dialog.afk_mode.isEnabled() and dialog.outward_mode.isEnabled()

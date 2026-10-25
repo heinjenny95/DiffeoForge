@@ -1,5 +1,12 @@
 # Development continuity — v161 protected regional pilot
 
+Experimental source qualification now exercises newly optimized regional fields,
+not only saved-field replay. See [prospective search and limits](PROSPECTIVE_REGIONAL_SEARCH.md)
+for measured capture/support, consistent RK2 frames, confidence-based preservation,
+whole/local recovery and operation-scoped preparation checks. This remains
+single-form development under qualification; installed runtime `d58c4aa` / `dev161`
+and the distributed installer are unchanged. No common atlas/PCA approval follows.
+
 v161 implements explicit local surface objectives, retained-position protection,
 shape-compatible common-movement guides and preserved-prefix residual fields.
 The three controlled native spacing cases reproduce the Codex fields and dense

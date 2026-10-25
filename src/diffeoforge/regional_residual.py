@@ -27,7 +27,10 @@ def retained_evaluation(record, run, target):
             .get("regional_quality", {})
         )
         for entry in (q.get("evaluation"), q.get("baseline_evaluation")):
-            if entry and Path(entry["source_run"]).resolve() == Path(run).resolve():
+            from diffeoforge.regional_frame import compatible
+
+            if (compatible(entry)
+                    and Path(entry["source_run"]).resolve() == Path(run).resolve()):
                 if sha256_file(Path(entry["endpoint"]["path"])) != entry["endpoint"]["sha256"]:
                     raise ValueError("Retained original-grid endpoint changed")
                 return entry
@@ -94,10 +97,29 @@ def bind(root, manifest, record, recipe):
         path = study._safe_study_path(run / "output", rows[0]["path"])
         if sha256_file(path) != rows[0]["sha256"]:
             raise ValueError("Residual starting surface changed")
+    from diffeoforge.regional_frame import compatible, qualify, verify_source
+
+    if not compatible(evaluation):
+        original = (evaluation or {}).get("reference_source")
+        evaluation = qualify(run, root / "retained-frame-qualification",
+                             source=original["path"] if original else None)
+    verify_source(evaluation)
+    path = Path(evaluation["endpoint"]["path"])
     source = load_surface_mesh(path)
     copied = root / "residual-source.vtk"
     _save(copied, source.geometry.vertices, source.geometry.triangles)
     controls, spacing = control_grid(source.metadata.bounds, target=1000)
+    coverage = None
+    if recipe.get('control_support') == 'source-target-coverage-v1':
+        from diffeoforge.regional_search import controls as supported_controls
+
+        target = next(r for r in manifest['inputs']['subjects'] if r['filename'] == ref['target'])
+        original = load_surface_mesh(root / target['copy'])
+        width = manifest['plan']['baseline_effective_values']['deformation_kernel_width']
+        controls, spacing, coverage = supported_controls(
+            source.geometry.vertices, original.geometry.vertices,
+            record['guided']['feedback']['regions'], width,
+            full_surface=recipe.get('control_scope') == 'full_surface')
     control_path = root / "residual-controls.txt"
     np.savetxt(control_path, controls, fmt="%.17g")
     residual = dict(
@@ -107,6 +129,7 @@ def bind(root, manifest, record, recipe):
         original_template_sha256=manifest["inputs"]["template"]["sha256"],
         inherited_fields_unchanged=True,
         evaluation="original-source-forward-composition",
+        control_coverage=coverage,
     )
     if evaluation and evaluation.get("reference_source"):
         import shutil
@@ -132,7 +155,9 @@ def bind(root, manifest, record, recipe):
             record["refinement"],
             initialization="residual",
             residual=residual,
-            reason="Retain the parent field; fit a smaller-scale zero-initialized residual. "
+            parent_evaluation=evaluation,
+            reason="Retain the parent field; fit a zero-initialized residual "
+            "at the declared scale. "
             "Evaluate the entire field chain from the original source.",
         ),
     )

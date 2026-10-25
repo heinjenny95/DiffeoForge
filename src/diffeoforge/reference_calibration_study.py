@@ -774,9 +774,13 @@ def create_reference_calibration_study(
         if attachment_comparison is not None:
             from diffeoforge.reference_attachment_comparison import prepare_controls
 
-            manifest["attachment_comparison"] = prepare_controls(
-                root, manifest, dict(attachment_comparison)
-            )
+            # This fresh child has no manifest/journal yet. Stage only new
+            # assets while sharing checks of its immutable parent graph;
+            # exit before sealing the child and writing any journal event.
+            with calibration_verification_scope():
+                manifest["attachment_comparison"] = prepare_controls(
+                    root, manifest, dict(attachment_comparison)
+                )
         _write_json(root / STUDY_MANIFEST, manifest, overwrite=False)
         write_text_safely(
             root / STUDY_DIGEST,
@@ -1233,6 +1237,69 @@ def create_reference_calibration_search_extension_study(
 
 
 def _verify_manifest(root: Path) -> dict[str, Any]:
+    """Verify each immutable ancestor once per read action, with live bindings.
+
+    Snapshot caching alone does not bound direct recursive manifest verification.
+    No cache survives the existing read-only action scope or a subsequent Run.
+    """
+    root = Path(root).resolve()
+    with calibration_verification_scope():
+        cache = _LOAD_CONTEXT.manifests
+        if root in cache:
+            record = cache[root]
+            if record is None:
+                raise ReferenceCalibrationStudyError("Cyclic calibration manifest lineage")
+            manifest, identities, digest = record
+            if (sha256_file(root / STUDY_MANIFEST) != digest
+                    or (root / STUDY_DIGEST).read_text(encoding="utf-8").strip() != digest
+                    or any(_manifest_file_identity(p) != identity
+                           for p, identity in _LOAD_CONTEXT.manifest_witnesses.items())):
+                raise ReferenceCalibrationStudyError(
+                    "Calibration evidence changed during this action")
+            return copy.deepcopy(manifest)
+        cache[root] = None
+        try:
+            manifest = _verify_manifest_uncached(root)
+            identities = _manifest_bound_identities(root, manifest)
+            identities.update({p: _manifest_file_identity(p)
+                               for p in (root / STUDY_MANIFEST, root / STUDY_DIGEST)})
+            _LOAD_CONTEXT.manifest_witnesses.update(identities)
+            digest = sha256_file(root / STUDY_MANIFEST)
+            cache[root] = copy.deepcopy(manifest), identities, digest
+            return manifest
+        except BaseException:
+            cache.pop(root, None)
+            raise
+
+
+def _manifest_file_identity(path):
+    stat = path.stat()
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+
+
+def _manifest_bound_identities(root, manifest):
+    files = set()
+    def collect(value, base):
+        if isinstance(value, dict):
+            if isinstance(value.get("copy"), str) and value.get("sha256"):
+                path = (base / value["copy"]).resolve()
+                if path.is_relative_to(root) and path.is_file():
+                    files.add(path)
+            if isinstance(value.get("manifest"), str) and value.get("sha256"):
+                path = Path(value["manifest"]).resolve()
+                if path.is_relative_to(root) and path.is_file():
+                    files.add(path)
+                    collect(_read_json(path, "bound manifest"), path.parent)
+            for child in value.values():
+                collect(child, base)
+        elif isinstance(value, (tuple, list)):
+            for child in value:
+                collect(child, base)
+    collect(manifest, root)
+    return {p: _manifest_file_identity(p) for p in files}
+
+
+def _verify_manifest_uncached(root: Path) -> dict[str, Any]:
     manifest_path = root / STUDY_MANIFEST
     manifest = _read_json(manifest_path, "calibration study manifest")
     try:
@@ -1727,19 +1794,25 @@ def _read_review_journal(series_root: Path) -> tuple[dict[str, Any], ...]:
 def calibration_verification_scope():
     """Share lineage verification within one read operation, never between actions.
 
-    This scope must not contain a journal/configuration mutation. A later user
+    Never mutate a verified journal/configuration in this scope. Fresh child
+    assets may be staged before that child has a manifest or enters the cache;
+    its sealing and journal writes occur after the scope exits. A later user
     action starts a new scope and checks the bound evidence again.
     """
     top = not hasattr(_LOAD_CONTEXT, "snapshots")
     if top:
         _LOAD_CONTEXT.snapshots = {}
         _LOAD_CONTEXT.resolution_checks = {}
+        _LOAD_CONTEXT.manifests = {}
+        _LOAD_CONTEXT.manifest_witnesses = {}
     try:
         yield
     finally:
         if top:
             del _LOAD_CONTEXT.snapshots
             del _LOAD_CONTEXT.resolution_checks
+            del _LOAD_CONTEXT.manifests
+            del _LOAD_CONTEXT.manifest_witnesses
 
 
 def load_reference_calibration_study(

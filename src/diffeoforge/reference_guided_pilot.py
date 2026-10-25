@@ -218,6 +218,10 @@ def _batch(
                         if c.candidate_id == optimization["reference"]["candidate_id"])
         config = copy.deepcopy(load_config(retained.config_path))
         iterations = optimization["iterations"]
+    if (strategy or {}).get("regional_recipe"):
+        from diffeoforge.regional_pilot import configure_numerics
+
+        configure_numerics(config)
     cohort = manifest["inputs"]["full_cohort"]
     config["input"].update(
         directory=cohort["directory"],

@@ -302,6 +302,16 @@ def _collect_reference_calibration_metrics_from_report(
     if len(template_records) != 1:
         raise ConfigurationError("Run manifest must bind exactly one staged template")
     template_path = _safe_staged_input_path(run, template_records[0])
+    if regional:
+        from diffeoforge.regional_fit import read_plan
+
+        plan = read_plan(report.manifest['effective_config'])
+        grid = plan.get('residual', {}).get('original_source_grid')
+        if grid:
+            template_path = run / 'input/regional' / grid['copy']
+            if (Path(grid['copy']).name != grid['copy']
+                    or sha256_file(template_path) != grid['sha256']):
+                raise ConfigurationError('Regional original-source grid changed')
     subjects = {
         path.name: path
         for record in input_records
@@ -403,6 +413,9 @@ def _collect_reference_calibration_metrics_from_report(
             "Objective terms and optimizer stop are retained original-run observations; "
             "runtime_seconds measures only final export. No new optimization was performed.",
         )
+    if regional and plan.get('residual', {}).get('original_source_grid'):
+        notes += ('Area QC uses the bound conforming original-source grid corresponding '
+                  'to this residual, rather than the older unrefined vertex array.',)
     return ReferenceCalibrationRunMetrics(
         metric_version="0.2",
         completed=True,

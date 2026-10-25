@@ -102,7 +102,34 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None):
     root = Path(config["project"]["parameter_provenance"]["regional_fit"]["manifest"]).parent
     expected = np.asarray(read_vtk_points(root / protection["target"]["copy"]), float)
     displacement = np.linalg.norm(fv[ids] - expected, axis=1)
-    outside = float(np.quantile(displacement, 0.95)) <= diagonal * 1e-4
+    position_limit = plan.get('protection_tolerance') or diagonal*1e-4
+    outside = float(np.quantile(displacement, 0.95)) <= position_limit
+    fixed_ids = plan.get('fixed_vertex_ids', [])
+    fixed_positions = {identifier: index for index, identifier in enumerate(ids)}
+    fixed_preserved = all(displacement[fixed_positions[i]] <= diagonal*1e-4 for i in fixed_ids)
+    preserved_surface = []
+    if plan.get('protection_close_distance') and retained:
+        from diffeoforge.reference_fit_search import distances_to_surface, surface_samples
+
+        ov, of = np.asarray(original.vertices, float), np.asarray(original.triangles, int)
+        for seed in (2026102903, 2026102904):
+            points = surface_samples(tv, tf, 8192, seed=seed)
+            points = points[~mask(points, plan['focus_regions'], halo=plan['protection_halo'])]
+            old = distances_to_surface(points, ov, of)
+            keep = old <= plan['protection_close_distance']
+            if not keep.any():
+                continue
+            new = distances_to_surface(points[keep], fv, ff)
+            before_p95, after_p95 = float(np.quantile(old[keep], .95)), float(np.quantile(new, .95))
+            preserved_surface.append(dict(points=int(keep.sum()), before_p95=before_p95,
+                after_p95=after_p95, bound=before_p95+position_limit,
+                passed=after_p95 <= before_p95+position_limit))
+        # Automatic confidence anchors are soft regularization of a surface,
+        # not anatomical/material correspondences. Tangential remapping can
+        # preserve the exact surface while moving its parameterization. Only
+        # explicit fixed marks retain the strict material-position gate below.
+        outside = bool(preserved_surface) and all(r['passed'] for r in preserved_surface)
+    outside &= fixed_preserved
     shape_rows = []
     if plan["guidance"]:
         for item in _components(sv, sf[mask(sv[sf].mean(1), plan["regions"])]):
@@ -146,6 +173,12 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None):
         outside_preserved=bool(outside),
         outside_displacement_p95=float(np.quantile(displacement, 0.95)),
         outside_displacement_max=float(displacement.max()),
+        outside_position_limit=position_limit,
+        unmarked_preservation_basis=('original_surface' if preserved_surface else
+                                     'material_positions'),
+        explicit_fixed_preserved=bool(fixed_preserved),
+        previously_good_surface=preserved_surface,
+        marked_regions=plan['focus_regions'],
         shape=shape_rows,
         shape_preserved=bool(preserved),
         no_new_intersection_flags=not len(new_flags),
@@ -292,6 +325,9 @@ def evaluate_and_measure(
     quality["spatial_resolution_sufficient"] = not (refinement or {}).get("resource_limit", False)
     quality["temporal_grid_checks"] = comparisons
     quality["temporal_grid_stable"] = comparisons[-1]["maximum"] <= 1e-4
+    receipt["starting_frame_qualification"] = dict(
+        temporal_stable=quality["temporal_grid_stable"], temporal_checks=comparisons,
+        optimizer_updates=0, purpose="Dense original-source composed RK2 evaluation")
     quality["numerical_selection_suitable"] &= quality["temporal_grid_stable"]
     quality["numerical_selection_suitable"] &= quality["spatial_resolution_sufficient"]
     quality["evaluation"] = receipt

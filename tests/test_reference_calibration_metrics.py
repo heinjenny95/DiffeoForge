@@ -56,6 +56,57 @@ def test_atlas_rms_uses_ordered_vertex_displacement(tmp_path: Path) -> None:
     assert atlas_rms_distance(first_path, second_path) == pytest.approx(2.0)
 
 
+def test_regional_area_qc_uses_bound_conforming_source_grid_and_rejects_tampering(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from diffeoforge import reference_calibration_metrics as metrics
+    from diffeoforge import regional_fit
+    from diffeoforge.mesh import sha256_file
+
+    for name in ('input', 'input/regional', 'output', 'logs'):
+        (tmp_path/name).mkdir(exist_ok=True)
+    original = _triangle()
+    template = write_vtk_polydata(tmp_path/'input/original.vtk',
+                                  original.vertices, original.triangles)
+    vertices = (*original.vertices, (0, .5, 0), (0, .5, .5), (0, 0, .5))
+    faces = ((0, 3, 5), (3, 1, 4), (5, 4, 2), (3, 4, 5))
+    grid = write_vtk_polydata(tmp_path/'input/regional/grid.vtk', vertices, faces)
+    subject = write_vtk_polydata(tmp_path/'input/a.vtk', vertices, faces)
+    atlas = write_vtk_polydata(tmp_path/'output/S__EstimatedParameters__Template_surface.vtk',
+                              vertices, faces)
+    reconstruction = write_vtk_polydata(
+        tmp_path/'output/S__Reconstruction__surface__subject_a.vtk.vtk', vertices, faces)
+    def input_row(path, role):
+        return dict(staged_path=path.relative_to(tmp_path).as_posix(), role=role,
+                    geometry=dict(bytes=path.stat().st_size, sha256=sha256_file(path)))
+    report = SimpleNamespace(run_directory=tmp_path,
+        result=dict(status='completed', duration_seconds=1), max_iterations=1,
+        inventory=[dict(path=p.name) for p in (atlas, reconstruction)],
+        convergence=[SimpleNamespace(iteration=1, regularity=-1, attachment=-2)],
+        manifest=dict(inputs=[input_row(template, 'template'), input_row(subject, 'subject')],
+            effective_config=dict(model=dict(object_id='surface'),
+                project=dict(parameter_provenance=dict(regional_fit=dict(version='fixture'))))))
+    (tmp_path/'logs/deformetrica.log').write_text('Tolerance threshold met.')
+    bound = dict(copy=grid.name, sha256=sha256_file(grid))
+    monkeypatch.setattr(regional_fit, 'read_plan',
+                        lambda _: dict(residual=dict(original_source_grid=bound)))
+    value = metrics._collect_reference_calibration_metrics_from_report(report)
+    assert value.distortion_p95 == 0 and value.invalid_face_count == 0
+    assert any('conforming original-source' in note for note in value.notes)
+    # This exception remains for ordinary changed-connectivity atlas outputs.
+    report.manifest['effective_config']['project']['parameter_provenance'].clear()
+    with pytest.raises(ValueError, match='connectivity differs'):
+        metrics._collect_reference_calibration_metrics_from_report(report)
+    report.manifest['effective_config']['project']['parameter_provenance']['regional_fit'] = {}
+    report.manifest['effective_config']['project']['parameter_provenance']['regional_fit'] = dict(
+        version='fixture')
+    grid.write_text(grid.read_text()+'\n')
+    with pytest.raises(ValueError, match='source grid changed'):
+        metrics._collect_reference_calibration_metrics_from_report(report)
+
+
 def test_streaming_qc_preserves_metrics_and_releases_meshes(tmp_path, monkeypatch) -> None:
     from test_reference_pca import _completed_reference_run
 
