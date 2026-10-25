@@ -1,4 +1,4 @@
-# Prospective regional-search qualification
+# Regional automatic-search development and qualification
 
 This work tests newly optimized fields selected from saved marked-area feedback.
 Replaying a known successful field does not qualify this search. The installed
@@ -129,3 +129,32 @@ Automatic equivalence to a useful reference fit is still under prospective test.
 Regression tests and numerical guards alone are insufficient. A single-form
 regional success does not qualify another specimen, a shared cohort objective,
 an atlas or PCA, and never substitutes for owner anatomical acceptance.
+
+## Actual new-optimization checkpoint, 25 October 2026
+
+The isolated development series now includes newly optimized native fields,
+not only saved-field replay. Sealed native outputs are finite and nonzero;
+compatible warm starts change their momenta. Actual staged objective geometry,
+weights, controls, initializer and retained prefix are checked against each
+declared proposal. A successful manual reference is used only by an independent
+judge, never as a proposal input or numerical seed. Original owner journals and
+the frozen source are verified separately after execution.
+
+The latest tested contrast passes the production numerical guards, including
+marked surfaces, transitions, retained surface shape, temporal sensitivity,
+conforming spatial resolution and contact checks. It still fails the full
+independent reference-equivalence comparison. Internal numerical suitability
+therefore does not close the search acceptance gate. The useful measured result
+can remain a numerical starting point for another declared contrast without
+becoming an anatomical approval. The policy's user-facing explanation describes
+measured progress from grouped settings, avoiding an unsupported causal claim
+that resolution alone produced it.
+
+The policy was revised during development on known data. This is not a blind
+validation of an untouched policy on independent animals. Preparation, native
+optimization, export and dense qualification retain their separate wall times;
+interactive runtime suitability is also unqualified. The installed desktop
+runtime and distributed installer remain unchanged. Seventy-six scoped
+regressions passed for the functional changes; nineteen existing search tests
+and Ruff/diff checks pass for the explanation correction. No new installer is
+created from this checkpoint.

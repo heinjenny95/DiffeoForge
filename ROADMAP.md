@@ -6,6 +6,11 @@ guides and residual-field composition. Actual DF/native reproduction passes on
 three controlled spacing cases. Independent-animal anatomical validation and a
 compatible common cohort objective remain separate open scientific gates.
 
+The experimental [automatic-search qualification](docs/PROSPECTIVE_REGIONAL_SEARCH.md)
+now includes actual newly optimized protected fields. Passing internal numerical
+guards still does not satisfy the independent reference-equivalence gate. These
+known-data development changes are not installed or qualified across new animals.
+
 v159 implements [feedback-driven recovery](docs/V159_ADAPTIVE_RECOVERY.md): larger
 contrasts after unchanged attempts, revisitable hypotheses, persistent marked
 patches, separate retained comparison/numerical seed, and worker-prepared selector

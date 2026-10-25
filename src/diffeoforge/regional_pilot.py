@@ -312,7 +312,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
                     2*recipe['focus_width'], 2*values['attachment_kernel_width'])
                 recipe['version'] = 'protected-local-v11' if progress else 'protected-local-v9'
                 if progress:
-                    # Resolution helped, but the correction lost local fidelity.
+                    # Earlier settings helped, but the correction lost local fidelity.
                     # Keep global settings; do not weaken the retained relative
                     # local weight while increasing absolute fidelity elsewhere.
                     relative = previous_recipe['focus_noise']/seed['values']['noise_std']
@@ -392,9 +392,9 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         if retry_global:
             reason += ('The earlier whole-surface trial did not pass the measured comparison. '
                        'Return to the retained fit; the discarded correction remains in history. ')
-            reason += ('Its resolution improved the whole surface. Keep that resolution and '
-                       'global surface weight; test stronger marked-area fidelity, with the same '
-                       'protection weight and physical preservation limits. '
+            reason += ('The earlier settings reduced measured whole-surface error. Keep their '
+                       'kernel widths and global surface weight; test stronger marked-area '
+                       'fidelity, keeping protection weight and physical preservation limits. '
                        if retry_global['global_progress'] else
                        'Test finer whole-surface resolution from the retained fit. ')
     if initial_warm or coarse_other:
