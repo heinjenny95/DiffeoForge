@@ -486,6 +486,19 @@ def test_failed_global_attempt_retries_finer_from_the_retained_good_field(monkey
     assert recipe['protection_tolerance'] == .005
     assert recipe['control_scope'] == 'full_surface'
     assert data['current_reference'] == before
+    # Resolution helped globally but the complete fit is still unsuitable:
+    # keep that tested resolution and strengthen surface fidelity, rather than
+    # narrowing the grid again or carrying the unsuitable deformation.
+    bad['repeats'][0]['p95'] = .02
+    previous['focus_noise'] = .007
+    balanced = regional_pilot.proposal(None, 'x', data, symptom='detail')
+    assert balanced['initialization_reference'] == data['anchor']
+    assert balanced['values']['attachment_kernel_width'] == .12
+    assert balanced['values']['deformation_kernel_width'] == .24
+    assert balanced['values']['noise_std'] == .005
+    assert balanced['regional_recipe']['focus_noise'] == pytest.approx(.002)
+    assert balanced['regional_recipe']['protection_noise'] == previous['protection_noise']
+    assert balanced['regional_recipe']['whole_surface_recovery']['basis_changed'] is False
     # A useful global improvement can be reused even when the local reviewer
     # says Same: only the failed global deformation is excluded above.
     bad['repeats'][0]['p95'] = .02

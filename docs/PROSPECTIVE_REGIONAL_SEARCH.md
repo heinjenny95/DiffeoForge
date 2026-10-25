@@ -101,6 +101,14 @@ rechecking; proposing it is not evidence that it improves the fit.
 A Same/Worse global trial that fails the measured comparison is excluded from
 the next numerical prefix. The search verifies the retained good reference and
 tests finer global attachment/movement resolution from it, holding local settings.
+If that trial already reduced whole-surface P95 by at least 5% but lost local
+fidelity, the next contrast instead keeps the tested resolution and halves global
+surface noise. Local noise is at most half its retained value, scaled by the
+retained/current marked P95 ratio clipped to [0.5, 1], and capped by the new global
+noise. This strengthens local and global fidelity without copying the unsuitable
+correction. The tested protection weight, physical preservation limits and good
+prefix remain fixed. This is a measured heuristic awaiting native qualification,
+not a guarantee of progress or permission to promote a failed result.
 A useful global gain can still be reused after Same local feedback. Previously
 declared physical preservation limits do not shrink with surface-noise changes.
 

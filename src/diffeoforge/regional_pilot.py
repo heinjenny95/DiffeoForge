@@ -95,7 +95,15 @@ def proposal(snapshot, identifier, data, *, symptom=None):
                      or not quality.get('numerical_selection_suitable')
                      or new_tail >= old_tail*.95)):
             retry_global = dict(reference=data['current_reference'],
-                                values=dict(data['current_reference']['values']))
+                                values=dict(data['current_reference']['values']),
+                                recipe=dict(previous_recipe),
+                                global_progress=0 < new_tail < old_tail*.95)
+            def marked_tail(q):
+                return max((max(r['original_to_fit_p95'], r.get('fit_to_original_p95', 0))
+                            for r in q.get('active_surface', [])), default=0)
+            before_local, after_local = marked_tail(trusted), marked_tail(quality)
+            retry_global['local_noise_ratio'] = (
+                max(.5, min(1., before_local/after_local)) if after_local > 0 else 1.)
             quality = trusted
             retained_surface = row
             previous_recipe = ((guided.record(retained).get('strategy') or {})
@@ -295,18 +303,32 @@ def proposal(snapshot, identifier, data, *, symptom=None):
             finer = contrast = balance = whole_capture = False
             if retry_global:
                 failed = retry_global['values']
-                values.update(attachment_kernel_width=failed['attachment_kernel_width']*.5,
+                progress = retry_global['global_progress']
+                factor = 1. if progress else .5
+                values.update(attachment_kernel_width=failed['attachment_kernel_width']*factor,
                               noise_std=failed['noise_std']*.5)
                 values['deformation_kernel_width'] = max(
-                    failed['deformation_kernel_width']*.5,
+                    failed['deformation_kernel_width']*factor,
                     2*recipe['focus_width'], 2*values['attachment_kernel_width'])
-                recipe['version'] = 'protected-local-v9'
+                recipe['version'] = 'protected-local-v10' if progress else 'protected-local-v9'
+                if progress:
+                    # Resolution helped, but the correction lost local fidelity.
+                    # Keep its tested basis, not its unsuitable deformation. The
+                    # marked error determines a bounded local weight contrast.
+                    recipe['focus_noise'] = min(values['noise_std'],
+                        previous_recipe['focus_noise']*.5*retry_global['local_noise_ratio'])
+                    recipe['protection_noise'] = retry_global['recipe']['protection_noise']
                 recipe['whole_surface_recovery'].update(
                     discarded_trial=retry_global['reference'],
                     before_width=failed['attachment_kernel_width'],
                     after_width=values['attachment_kernel_width'],
                     failed_global_field_reused=False,
-                    hypothesis='Finer global resolution from the retained good field')
+                    basis_changed=not progress,
+                    measured_global_progress=progress,
+                    local_noise_ratio=retry_global['local_noise_ratio'],
+                    hypothesis=('Surface-fidelity balance at the tested global resolution'
+                                if progress else
+                                'Finer global resolution from the retained good field'))
     changed = False
     if evidence:
         from diffeoforge.regional_search import distinct
@@ -362,8 +384,12 @@ def proposal(snapshot, identifier, data, *, symptom=None):
                    'fixed regions, and check the marked area again after this correction. ')
         if retry_global:
             reason += ('The earlier whole-surface trial did not pass the measured comparison. '
-                       'Return to the retained fit and test finer whole-surface resolution; '
-                       'the discarded correction is kept only in the history. ')
+                       'Return to the retained fit; the discarded correction remains in history. ')
+            reason += ('Its resolution improved the whole surface. Keep that resolution and '
+                       'test stronger whole-surface and marked-area fidelity, with the same '
+                       'protection weight and physical preservation limits. '
+                       if retry_global['global_progress'] else
+                       'Test finer whole-surface resolution from the retained fit. ')
     if initial_warm or coarse_other:
         reason += ('First optimize the saved broad field itself with the marked-area '
                    'objective and soft unmarked protection. Preserve its controls and movement '
