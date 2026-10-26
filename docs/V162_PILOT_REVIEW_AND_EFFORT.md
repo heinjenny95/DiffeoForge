@@ -42,6 +42,16 @@ and a larger allowance. There is no cumulative one-test-per-setting ceiling.
 Failure, anatomical suitability and numerical convergence remain distinct; a
 failed optimizer is never silently recovered.
 
+After a substantial inspected local pass, a rejection for remaining detail can
+recommend finer independent local movement while retaining the improved broad
+field. This route requires the existing trusted continuation gate, preserved
+shape and transition checks, and measurements for every marked problem area.
+The worst remaining area determines capture; an improved large area cannot hide
+a smaller miss in the union statistic. Surface capture stays broad while a
+marked surface remains out of reach, and protection is not weakened. Explicit
+longer optimization remains available. This is a new fitting hypothesis that
+still needs numerical and visual validation, not an anatomical acceptance rule.
+
 ## An unresolved method comparison can move to another form
 
 Two inspected, technically valid Current and Varifold results can be compared on

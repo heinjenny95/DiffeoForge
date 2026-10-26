@@ -50,9 +50,11 @@ def verify(root, manifest, record):
 def proposal(snapshot, identifier, data, *, symptom=None):
     from diffeoforge import reference_guided_pilot as guided
     from diffeoforge.regional_continuation import proposal as numerical_proposal
+    from diffeoforge.regional_resolution import response as resolution_response
 
     numerical = numerical_proposal(snapshot, identifier, data, symptom=symptom)
-    if numerical:
+    resolution = resolution_response(data, guided.record(snapshot), numerical, symptom)
+    if numerical and not resolution:
         return numerical
     reference = data["anchor"] or data["current_reference"]
     marked = data["regions"]
@@ -193,7 +195,8 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         if r.get('family') == 'regional' and r['target'] == reference['target']
         and r.get('regions', marked) == marked and r.get('reference')
         and (r.get('regional_recipe') or {}).get('phase') == 'initial_warm'), None)
-    coarse_other = bool(evidence and previous_recipe.get('phase') == 'initial_warm'
+    coarse_other = bool(not resolution and evidence
+                        and previous_recipe.get('phase') == 'initial_warm'
                         and initial_case
                         and not any((r.get('regional_recipe') or {}).get('phase')
                                     == 'coarse_method_check'
@@ -272,6 +275,15 @@ def proposal(snapshot, identifier, data, *, symptom=None):
                 focus_noise=previous_recipe['focus_noise'],
                 whole_surface_contrast=dict(from_method=reference['method'], to_method=method,
                     scale_factor=1., noise_factor=1., existing_broad_basis_retained=True))
+    if resolution:
+        # A substantial inspected pass improved the broad fit, but the human
+        # still rejects its detail. Test finer independent movement first.
+        finer = True
+        contrast = balance = whole_capture = False
+        recipe.update(residual=True, phase='local_resolution', control_scope='marked_halo',
+            focus_width=resolution['next_focus_width'],
+            focus_noise=previous_recipe['focus_noise'],
+            local_resolution_response=resolution)
     if finer or contrast:
         recipe['version'] = 'protected-local-v3'
         recipe['residual'] = True
@@ -295,6 +307,9 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         values['noise_std'] *= .5
         recipe['whole_surface_contrast'] = dict(from_method=reference['method'], to_method=method,
             scale_factor=.5, noise_factor=.5, retained_prefix_unchanged=True)
+    if resolution:
+        recipe['protection_noise'] = min(recipe['protection_noise'],
+                                         previous_recipe['protection_noise'])
     if recipe["residual"]:
         values["deformation_kernel_width"] = max(
             values['deformation_kernel_width']*.5,
@@ -378,6 +393,11 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     if finer:
         reason += ('The earlier capture is retained; add a finer independent field '
                    'instead of forcing detail through the same broad movement. ')
+    if resolution:
+        reason += ('Details still need work after the longer inspected test. Keep the '
+                   'improved overall shape and test smaller, more local changes in the '
+                   'marked areas. The remaining distance in each marked area determines '
+                   'capture; protection stays at least as strong. ')
     if contrast:
         reason += (f'Earlier local tests still needed improvement. Check {method.title()} '
                    'on the whole original at this finer scale, keeping the saved shape '
