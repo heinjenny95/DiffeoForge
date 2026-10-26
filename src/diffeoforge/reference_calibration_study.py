@@ -633,6 +633,9 @@ def _prepare_stage(
         from diffeoforge.reference_attachment_comparison import configure as configure_method
 
         configure_method(config, root, manifest, candidate.candidate_id)
+        from diffeoforge.reference_finite_accepted_guard import mark_new_configuration
+
+        mark_new_configuration(config)
         config_path = candidate_directory / "atlas.yaml"
         _write_yaml(config_path, config, overwrite=False)
         records.append(
@@ -2691,6 +2694,7 @@ def _final_configuration(
     from diffeoforge.reference_attachment_comparison import configure as configure_method
 
     configure_method(config, root, manifest, None)
+    config.get("project", {}).get("parameter_provenance", {}).pop("finite_accepted_guard", None)
     config["input"]["directory"] = str(manifest["inputs"]["full_cohort"]["directory"])
     config["input"]["template"] = str(manifest["inputs"]["full_cohort"]["template"])
     config["input"]["subject_pattern"] = str(manifest["inputs"]["full_cohort"]["subject_pattern"])

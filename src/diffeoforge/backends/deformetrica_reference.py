@@ -277,6 +277,9 @@ def render_engine_file_bytes(
                 config["output"].get("checkpoint_mode") == "compact_convergence_export"
             ),
         ).encode("utf-8")
+    from diffeoforge.reference_finite_accepted_guard import extend_engine_files
+
+    rendered = extend_engine_files(config, len(staged_subjects), rendered)
     if config["output"].get("process_control") == "linux_session_v1":
         from diffeoforge.reference_process_control import CONTROL_SOURCE
 
@@ -313,6 +316,11 @@ def generate_engine_files(
         adapter = engine_directory / "sitecustomize.py"
         adapter.write_bytes(rendered["sitecustomize.py"])
         paths.append(adapter)
+    for name in ("finite_accepted_guard.py", "regional_guard_runtime.py", "guard-policy.json"):
+        if name in rendered:
+            asset = engine_directory / name
+            asset.write_bytes(rendered[name])
+            paths.append(asset)
     if "backend_control.py" in rendered:
         control = engine_directory / "backend_control.py"
         control.write_bytes(rendered["backend_control.py"])

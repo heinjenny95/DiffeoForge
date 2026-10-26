@@ -1947,6 +1947,9 @@ def inspect_resume_source(
             f"{source_run}"
         )
     _verify_protected_artifacts(source_run, source_manifest)
+    from diffeoforge.reference_finite_accepted_guard import reject_guarded_resume
+
+    reject_guarded_resume(source_manifest["effective_config"])
     events = _read_events(source_run / "events.jsonl")
     terminal_status = events[-1]["event"]
     if additional_iterations:

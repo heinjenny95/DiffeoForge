@@ -1,5 +1,12 @@
 # Development continuity — v161 protected regional pilot
 
+Newly prepared regional singleton L-BFGS trials now bind finite evaluations,
+accepted states and exports, retaining immutable best parameter checkpoints.
+Generated-adapter native CPU probes preserve baseline finite evaluation and
+accepted-state sequences; numerical and context failures stop explicitly.
+See [scope, qualification and remaining limits](REGIONAL_NUMERICAL_GUARD.md).
+This source change does not install or qualify the complete automatic pilot.
+
 Experimental augmentation now shares bounded immutable original grids within
 one call, with fresh content and file-identity checks. Focused guards and actual
 integrated-source canonical output parity pass; this changes neither fitted

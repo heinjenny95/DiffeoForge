@@ -67,6 +67,26 @@
           "additionalProperties": false,
           "required": ["profile", "scale_reference", "ratios", "sources"],
           "properties": {
+            "finite_accepted_guard": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "scope",
+                "recovery"
+              ],
+              "properties": {
+                "version": {
+                  "const": "new-regional-c5-v1"
+                },
+                "scope": {
+                  "const": "new_single_specimen_probe"
+                },
+                "recovery": {
+                  "const": "none"
+                }
+              }
+            },
             "regional_fit": {
               "type": "object", "additionalProperties": false,
               "required": ["version", "manifest", "sha256"],
