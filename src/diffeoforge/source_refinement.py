@@ -114,6 +114,15 @@ def coarse_input_contacts(receipt, cache=None):
 
 def augment(receipt, points_receipt, grid, faces, directory):
     """Combine independent material-point batches of the same unchanged fields."""
+    from diffeoforge._refinement_grid_cache import _OriginalGridCache
+    from diffeoforge.surface_io import load_surface_mesh
+
+    with _OriginalGridCache(load_surface_mesh) as grids:
+        return _augment(receipt, points_receipt, grid, faces, directory, grids)
+
+
+def _augment(receipt, points_receipt, grid, faces, directory, grids):
+    """Share verified original grids only within the outer augmentation call."""
     from diffeoforge.mesh import read_vtk_points, read_vtk_polydata
     from diffeoforge.regional_fit import _save
 
@@ -123,23 +132,21 @@ def augment(receipt, points_receipt, grid, faces, directory):
     ):
         raise ValueError("Incremental evaluation uses different fitted fields")
     grid = Path(grid)
-    from diffeoforge.surface_io import load_surface_mesh
-
-    reference = load_surface_mesh(grid).geometry
+    reference = grids.get(grid)
     old_source = receipt.get("reference_source")
     if old_source:
         path = Path(old_source["path"])
         if sha256_file(path) != old_source["sha256"]:
             raise ValueError("Cached original source changed")
-        previous = load_surface_mesh(path).geometry
+        previous = grids.get(path)
         if not np.array_equal(reference.vertices[: len(previous.vertices)], previous.vertices):
             raise ValueError("Refinement changed existing original material points")
     directory = Path(directory)
     directory.mkdir()
     result = dict(receipt)
     if receipt["prefix"]:
-        result["prefix"] = augment(
-            receipt["prefix"], points_receipt["prefix"], grid, faces, directory / "prefix"
+        result["prefix"] = _augment(
+            receipt["prefix"], points_receipt["prefix"], grid, faces, directory / "prefix", grids
         )
     before, added = Path(receipt["endpoint"]["path"]), Path(points_receipt["endpoint"]["path"])
     if (

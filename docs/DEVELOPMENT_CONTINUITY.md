@@ -1,5 +1,11 @@
 # Development continuity — v161 protected regional pilot
 
+Experimental augmentation now shares bounded immutable original grids within
+one call, with fresh content and file-identity checks. Focused guards and actual
+integrated-source canonical output parity pass; this changes neither fitted
+fields nor fit acceptance. See [cache scope and verification](ORIGINAL_GRID_AUGMENTATION_CACHE.md).
+The installed runtime remains unchanged while automatic-fit qualification proceeds.
+
 Saved-result diagnosis now distinguishes exact triangle-pair contacts, discrete
 surface representation, numerical stopping and pipeline overhead. Private
 loader/acceptance-observer prototypes are not production changes or a qualified
