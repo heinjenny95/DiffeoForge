@@ -25,6 +25,9 @@ Ordinary atlas, joint-fit and PCA processes do not opt into this regional policy
 - Native exports and final results must bind to an accepted finite state. A
   callback iteration-cap stop is checked against its committed accepted vector;
   it is not reclassified as convergence.
+  When the native callback cap returns without an OptimizeResult, a separate
+  normal-update-return event records the accepted vector, evaluation, native
+  iteration and configured cap. No final-result event is invented.
 - Staged XML, objective inputs, generated adapters, the manifest and the qualified
   native source/profile are checked at startup and around execution/export.
   Observer boundaries also recheck file identities and the frozen control basis.
@@ -75,3 +78,8 @@ and mesh qualification. The guided view preserves inspection and closing,
 with further refinement collapsed as an option. It does not immediately present
 another improvement trial as the required next action after visual acceptance.
 Warnings and common-atlas checks remain visible and retain their own gates.
+
+The explicitly prepared [same-objective successor](V162_ACCEPTED_FIELD_CONTINUATION.md)
+uses the protected original control-point input and a restricted native
+parameter-checkpoint reader. It starts a new optimizer history and does not
+remove the prohibition on automatic recovery or restoring complete SciPy state.

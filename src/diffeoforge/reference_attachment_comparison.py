@@ -132,6 +132,11 @@ def prepare(directory):
 
 
 def prepare_controls(root, manifest, record):
+    from diffeoforge.regional_continuation import bind as bind_numerical
+    from diffeoforge.regional_continuation import marker
+
+    if marker(record):
+        return bind_numerical(root, manifest, record)
     from diffeoforge.reference_fit_search import control_grid
     from diffeoforge.surface_io import load_surface_mesh
 

@@ -12,9 +12,13 @@ def field_inputs(run, cache):
 
     key = str(Path(run).resolve())
     if cache is None:
-        return load_reference_momenta(run, allow_singleton=True)
+        from diffeoforge.reference_guarded_field import bind_original_control_points
+
+        return bind_original_control_points(load_reference_momenta(run, allow_singleton=True))
     if key not in cache:
-        data = load_reference_momenta(run, allow_singleton=True)
+        from diffeoforge.reference_guarded_field import bind_original_control_points
+
+        data = bind_original_control_points(load_reference_momenta(run, allow_singleton=True))
         paths = [
             Path(run) / name
             for name in [
@@ -26,6 +30,7 @@ def field_inputs(run, cache):
             ]
         ]
         paths.extend([data.control_points_path, data.momenta_path])
+        paths.extend(Path(run) / name for name in data.source_hashes)
         paths.extend(
             Path(run) / row["staged_path"]
             for row in data.run_report.manifest["inputs"]

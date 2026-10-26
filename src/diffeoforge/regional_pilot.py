@@ -4,6 +4,8 @@ from pathlib import Path
 
 from diffeoforge.mesh import sha256_file
 
+MINIMUM_NEW_NATIVE_TIMEPOINTS = 37
+
 
 def split_regions(regions):
     problem = [r for r in regions if r.get("purpose", "problem") == "problem"]
@@ -47,7 +49,11 @@ def verify(root, manifest, record):
 
 def proposal(snapshot, identifier, data, *, symptom=None):
     from diffeoforge import reference_guided_pilot as guided
+    from diffeoforge.regional_continuation import proposal as numerical_proposal
 
+    numerical = numerical_proposal(snapshot, identifier, data, symptom=symptom)
+    if numerical:
+        return numerical
     reference = data["anchor"] or data["current_reference"]
     marked = data["regions"]
     symptom = symptom or next((r["symptom"] for r in marked if r["symptom"] != "unsure"), "detail")
@@ -449,6 +455,11 @@ def proposal(snapshot, identifier, data, *, symptom=None):
 
 
 def bind(root, manifest, record):
+    from diffeoforge.regional_continuation import bind as bind_numerical
+    from diffeoforge.regional_continuation import marker
+
+    if marker(record):
+        return bind_numerical(root, manifest, record)
     recipe = (record.get("guided", {}).get("strategy") or {}).get("regional_recipe")
     if not recipe:
         return record
@@ -594,7 +605,8 @@ def bind(root, manifest, record):
     data = json.loads(path.read_text())
     data["retained_run"] = dict(path=str(run), manifest_sha256=sha256_file(run / "manifest.json"))
     data["numerical_protocol"] = dict(
-        version="regional-rk2-v1", integration="rk2", minimum_native_timepoints=19,
+        version="regional-rk2-v1", integration="rk2",
+        minimum_native_timepoints=MINIMUM_NEW_NATIVE_TIMEPOINTS,
         retained_comparison=anchor_evaluation, field_parameters_unchanged=True)
     if residual:
         for row in [
@@ -609,14 +621,22 @@ def bind(root, manifest, record):
 
 
 def configure_numerics(config):
-    """Use the same regional integration contract before binding and at dispatch."""
+    """Set the minimum for newly prepared regional candidates, not saved renders.
+
+    Same-objective successors bypass this policy and retain their exact old grid.
+    """
     config["optimization"]["convergence_tolerance"] = min(
         config["optimization"]["convergence_tolerance"], 1e-6)
     config["model"]["deformation"].update(
-        use_rk2=True, timepoints=max(19, config["model"]["deformation"]["timepoints"]))
+        use_rk2=True, timepoints=max(MINIMUM_NEW_NATIVE_TIMEPOINTS,
+                                   config["model"]["deformation"]["timepoints"]))
 
 
 def configure(config, record):
+    from diffeoforge.regional_continuation import configure as configure_numerical
+
+    if configure_numerical(config, record):
+        return
     declaration = record.get("regional_objective")
     if not declaration:
         config["project"]["parameter_provenance"].pop("regional_fit", None)

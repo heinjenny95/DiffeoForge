@@ -146,6 +146,12 @@ def bind(root, manifest, record):
 
 
 def verify(root, manifest, record):
+    from diffeoforge.regional_continuation import marker
+    from diffeoforge.regional_continuation import verify as verify_numerical
+
+    if marker(record):
+        verify_numerical(root, manifest, record)
+        return
     request = record.get("refinement")
     if not request:
         return

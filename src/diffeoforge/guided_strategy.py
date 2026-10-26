@@ -257,6 +257,12 @@ def verify_strategy(info, record, manifest):
             return False
     elif info.get("goal") == "optimize":
         return False
+    if strategy.get("regional_continuation"):
+        if (not optimization or not strategy.get("regional_recipe")
+                or strategy["regional_continuation"]["reference"] != strategy.get("baseline")
+                or record.get("refinement", {}).get("regional_continuation")
+                != strategy["regional_continuation"]):
+            return False
     values = manifest["plan"]["baseline_effective_values"]
     if info["phase"] in {"validate", "joint"} and any(
             r["values"] != values or r["method"] not in record["methods"].values()
@@ -273,6 +279,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     guided.verify_approvals(approved)
     strategy = dict(info.get("strategy") or {})
     strategy.pop("optimization", None)
+    strategy.pop("regional_continuation", None)
     strategy.pop("regional_recipe", None)
     strategy["previous"] = dict(directory=str(snapshot.study_directory),
         manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))
@@ -303,6 +310,8 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         feedback = capture(comparison_snapshot, comparison["candidate_id"], target, regions=marked)
         feedback["regions_cleared"] = cleared
         strategy["baseline"] = _reference(baseline_snapshot, baseline_id, target)
+        if proposed.get("regional_continuation"):
+            strategy["regional_continuation"] = proposed["regional_continuation"]
         if proposed.get("regional_recipe"):
             strategy["regional_recipe"] = proposed["regional_recipe"]
         strategy["anchor"] = comparison

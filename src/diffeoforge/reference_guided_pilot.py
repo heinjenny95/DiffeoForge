@@ -207,6 +207,7 @@ def _batch(
 
     manifest = study._verify_manifest(source.study_directory)
     config = copy.deepcopy(load_config(source.study_directory / manifest["source_config"]["copy"]))
+    cohort_method = config["optimization"]["method"]
     iterations = (max(ITERATIONS, previous.attachment_comparison["iterations"])
                   if strategy is not None and previous else ITERATIONS)
     optimization = (strategy or {}).get("optimization")
@@ -218,7 +219,8 @@ def _batch(
                         if c.candidate_id == optimization["reference"]["candidate_id"])
         config = copy.deepcopy(load_config(retained.config_path))
         iterations = optimization["iterations"]
-    if (strategy or {}).get("regional_recipe"):
+    if ((strategy or {}).get("regional_recipe")
+            and not (strategy or {}).get("regional_continuation")):
         from diffeoforge.regional_pilot import configure_numerics
 
         configure_numerics(config)
@@ -234,6 +236,15 @@ def _batch(
             ADAPTIVE_VERSION)
     for key in ("initial_momenta", "initial_momenta_subjects", "initial_control_points"):
         config["model"]["deformation"].pop(key, None)
+    if (strategy or {}).get("regional_continuation"):
+        # The transitional source config still describes the full input cohort;
+        # only its selected singleton receives the copied regional objective in
+        # prepare_controls/configure. Never expose old specimen-specific terms
+        # as a shared cohort objective during initial source-path validation.
+        provenance = config["project"]["parameter_provenance"]
+        provenance.pop("regional_fit", None)
+        provenance.pop("finite_accepted_guard", None)
+        config["optimization"]["method"] = cohort_method
     template = load_surface_mesh(source.study_directory / manifest["inputs"]["template"]["copy"])
     _, spacing = control_grid(template.metadata.bounds)
     center = dict(values)

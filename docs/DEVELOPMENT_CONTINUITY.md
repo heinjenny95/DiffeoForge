@@ -1,4 +1,16 @@
-# Development continuity — v161 protected regional pilot
+# Development continuity — v162 accepted-field continuation
+
+v162 source continues a finite, inspected, capped regional field with its actual
+staged objective, original control basis and preserved prefix. It retains the
+human's Suitable decision and avoids repeated full-field verification for each
+improvement-menu option. New regional trials use at least 37 RK2 timepoints;
+same-objective continuations retain their exact old grid. See
+[behavior, precision and boundaries](V162_ACCEPTED_FIELD_CONTINUATION.md).
+Source integration tests pass; a tested v162 installer is still pending.
+Installed runtime remains `d58c4aa` / dev161 and Drive distribution remains v98.
+The real-form practical fit remains preserved without further anatomy tuning.
+
+## Earlier v161 engineering continuation
 
 Newly prepared regional singleton L-BFGS trials now bind finite evaluations,
 accepted states and exports, retaining immutable best parameter checkpoints.

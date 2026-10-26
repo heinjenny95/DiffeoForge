@@ -43,12 +43,16 @@ def inputs(snapshot, identifier, context):
         regional_capture = capture(references.get(capture_reference['directory'], snapshot),
             capture_reference,
             [r for r in marked if r.get('purpose', 'problem') == 'problem'])
-    return dict(anchor=anchor, current=current, target=target, regions=marked,
+    verified = dict(anchor=anchor, current=current, target=target, regions=marked,
                 current_reference=current_reference,
                 severe=severe_regression(snapshot, identifier), references=references,
                 context=context, response_cases=response_cases, response_evidence=response_evidence,
                 regional_capture=regional_capture,
                 spatial_diagonal=study._verify_manifest(snapshot.study_directory)['template_diagonal'])
+    from diffeoforge.regional_continuation import prepare_preview
+
+    verified["_regional_continuation_preview"] = prepare_preview(snapshot, identifier, verified)
+    return verified
 
 
 def propose(snapshot, identifier, request, data):
@@ -76,6 +80,12 @@ def propose(snapshot, identifier, request, data):
         from diffeoforge.regional_pilot import proposal as local_proposal
 
         return local_proposal(snapshot, identifier, data, symptom=symptom)
+    if not explicit or request == "goal:optimize":
+        from diffeoforge.regional_continuation import proposal as numerical_proposal
+
+        numerical = numerical_proposal(snapshot, identifier, data)
+        if numerical:
+            return numerical
     result = proposal(snapshot, identifier, symptom, adaptive=True,
                       starting_from_saved=bool(reference), regions_override=marked)
     goal = request.split(":", 1)[1] if ":" in request else result["goal"]
