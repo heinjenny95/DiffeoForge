@@ -36,6 +36,7 @@ from diffeoforge.desktop.activity import ActivityPool
 from diffeoforge.desktop.calibration_comparison_widget import (
     CalibrationComparisonCanvas3D,
 )
+from diffeoforge.desktop.full_review_policy import FullGeometryReviewMixin
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.desktop.pilot_view_preparation import prepare_pilot_view
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
@@ -493,7 +494,7 @@ class _CompletedPilotRefinementWorker(QRunnable):
             self.signals.finished.emit(self)
 
 
-class CalibrationCandidateViewerDialog(QDialog):
+class _CalibrationCandidateViewerDialog(QDialog):
     """Review the atlas and all subject reconstructions from one immutable run."""
 
     def __init__(
@@ -1360,6 +1361,10 @@ class CalibrationCandidateViewerDialog(QDialog):
             self.review_gate.setText(
                 "Load a pilot specimen with both mesh layers to reject this option."
             )
+
+
+class CalibrationCandidateViewerDialog(FullGeometryReviewMixin, _CalibrationCandidateViewerDialog):
+    """Fit decisions require complete, matching display geometry."""
 
 
 class ReferenceCalibrationDialog(QDialog):
@@ -4505,7 +4510,10 @@ class ReferenceCalibrationDialog(QDialog):
                 "Orange: original specimen. Blue: original template after prealignment. "
                 "This is an input check, not a reconstruction or anatomical approval.")
             dialog.show_reconstruction.setText("Show original template (blue surface)")
-            dialog.exec()
+            try:
+                dialog.exec()
+            finally:
+                dialog.deleteLater()
             return
         if key[0] == "compare-plan-b":
             root, candidate, pairs = prepared
@@ -4513,7 +4521,10 @@ class ReferenceCalibrationDialog(QDialog):
                 root, candidate, self, pairs=pairs, read_only=True
             )
             dialog.setWindowTitle("Plan B comparison — current fit (orange) / Plan B (blue)")
-            dialog.exec()
+            try:
+                dialog.exec()
+            finally:
+                dialog.deleteLater()
             return
         screen_parent = None
         if key[0] == "guided-saved":
@@ -4534,6 +4545,7 @@ class ReferenceCalibrationDialog(QDialog):
             if self._view_closed or root != self.study_directory:
                 return
             reviewed_snapshot, pairs, fit = prepared[:3]
+        dialog = None
         try:
             from diffeoforge.reference_guided_pilot import record as guided_record
 
@@ -4684,6 +4696,9 @@ class ReferenceCalibrationDialog(QDialog):
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.status.setText("Comparison unavailable: " + str(error))
             QMessageBox.warning(self, "Candidate viewer unavailable", str(error))
+        finally:
+            if dialog is not None:
+                dialog.deleteLater()
 
     @Slot(object, object)
     def _review_saved(self, key, snapshot) -> None:

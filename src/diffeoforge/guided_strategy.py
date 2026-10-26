@@ -157,13 +157,20 @@ def state(snapshot):
                 and info["target"]):
             covered.add(info["target"])
     from diffeoforge.guided_feedback import presentation
+    from diffeoforge.method_comparison_followup import provisional_comparison
 
-    return dict(preferred=preferred, checked=len(covered), total=len(info["pilot_order"]),
+    result = dict(preferred=preferred, checked=len(covered), total=len(info["pilot_order"]),
                 phase=info["phase"], preference=preference, cases=cases, last_adjustment=last,
                 feedback={c.candidate_id: presentation(snapshot, c.candidate_id)
                           for c in snapshot.candidates if c.status == "completed"},
                 allowed={c.candidate_id: starting_allowed(snapshot, c.candidate_id)
                          for c in snapshot.candidates if c.status == "completed"})
+    result["provisional_comparison"] = provisional_comparison(snapshot, context=result)
+    from diffeoforge.guided_failed_parent import preview
+
+    result["failed_parents"] = {c.candidate_id: preview(snapshot, c.candidate_id)
+                                for c in snapshot.candidates if c.status == "failed"}
+    return result
 
 
 def remaining_forms(snapshot, identifier, *, context):
@@ -188,8 +195,23 @@ def prepare_proposals(snapshot, context):
                 *("regional:" + k for k in SYMPTOMS)]
     with study.calibration_verification_scope():
         context["proposals"] = {}
+        context["failed_proposals"] = {}
         for candidate in snapshot.candidates:
             identifier = candidate.candidate_id
+            if candidate.status == "failed":
+                if (context.get("failed_parents", {}).get(identifier) or {}).get("available"):
+                    from diffeoforge.guided_failed_parent import inputs as parent_inputs
+                    from diffeoforge.guided_failed_parent import propose as parent_propose
+
+                    verified = parent_inputs(snapshot, identifier, context)
+                    context["failed_proposals"][identifier] = {
+                        request: parent_propose(snapshot, identifier, request, verified)
+                        for request in requests
+                        if request.startswith(("goal:", "regional:"))
+                        and request != "goal:optimize"
+                        or request == "other_method"
+                    }
+                continue
             if not (context["allowed"].get(identifier)
                     or (context["feedback"].get(identifier) or {}).get("selected")):
                 continue
@@ -237,6 +259,10 @@ def verify_strategy(info, record, manifest):
         from diffeoforge.guided_feedback import verify_reference
 
         verify_reference(strategy["anchor"])
+    if strategy.get("failure_parent_recovery"):
+        from diffeoforge.guided_failed_parent import verify_marker
+
+        verify_marker(strategy["failure_parent_recovery"], info, record, manifest)
     optimization = strategy.get("optimization")
     if optimization:
         from diffeoforge.guided_feedback import verify_reference
@@ -281,6 +307,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     strategy.pop("optimization", None)
     strategy.pop("regional_continuation", None)
     strategy.pop("regional_recipe", None)
+    strategy.pop("failure_parent_recovery", None)
     strategy["previous"] = dict(directory=str(snapshot.study_directory),
         manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))
     history = [*info["history"], dict(**strategy["previous"], outcome="adaptive_" + action)]
@@ -288,8 +315,13 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     cases, _last = _context(snapshot)
     feedback = None
     preference = _preference(snapshot)
-    if action == "recover":
-        proposed = trial_proposal(snapshot, identifier, goal or "unsure")
+    if action in {"recover", "recover_from_retained"}:
+        if action == "recover_from_retained":
+            from diffeoforge.guided_failed_parent import trial
+
+            proposed = trial(snapshot, identifier, goal, state(snapshot))
+        else:
+            proposed = trial_proposal(snapshot, identifier, goal or "unsure")
         if not proposed["available"]:
             raise ValueError(proposed.get("blocked_reason", "This unchanged combination was "
                 "already tested. Inspect saved alternatives or choose another adjustment; "
@@ -310,6 +342,8 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         feedback = capture(comparison_snapshot, comparison["candidate_id"], target, regions=marked)
         feedback["regions_cleared"] = cleared
         strategy["baseline"] = _reference(baseline_snapshot, baseline_id, target)
+        if proposed.get("failure_parent_recovery"):
+            strategy["failure_parent_recovery"] = proposed["failure_parent_recovery"]
         if proposed.get("regional_continuation"):
             strategy["regional_continuation"] = proposed["regional_continuation"]
         if proposed.get("regional_recipe"):
@@ -351,6 +385,18 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         order = list(dict.fromkeys([*strategy.get("difficult_targets", []), *info["pilot_order"]]))
         target = next((n for n in order if n not in covered), None)
         phase = "validate" if target else "joint"
+    elif action == "compare_unresolved":
+        from diffeoforge.method_comparison_followup import provisional_comparison
+
+        comparison = provisional_comparison(snapshot, context=dict(cases=cases))
+        if not comparison["available"]:
+            raise ValueError(comparison["explanation"])
+        target = comparison["target"]
+        # New target, fresh ordinary fields. Prior local terms/marks stay solely
+        # in the hash-bound old study/history and cannot leak to another animal.
+        for key in ("baseline", "anchor", "control_basis", "search_family"):
+            strategy.pop(key, None)
+        methods, phase, preference, goal = ("current", "varifold"), "screen", None, None
     elif action == "tie":
         if len(snapshot.candidates) != 2:
             raise ValueError("A further method comparison needs two reviewed methods")

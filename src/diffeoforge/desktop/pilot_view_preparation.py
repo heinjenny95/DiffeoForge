@@ -59,14 +59,18 @@ def prepare_pilot_view(directory: Path, snapshot=None) -> PilotView:
         return PilotView(
             snapshot, manifest, assessment, fits, frozenset(provisional), report,
             sequence_info(root), sequence_progress(root), density_rows,
-            _guidance(snapshot),
+            _guidance(snapshot, manifest),
         )
 
 
-def _guidance(snapshot):
+def _guidance(snapshot, manifest):
     from diffeoforge.guided_strategy import prepare_proposals, state
     from diffeoforge.reference_guided_pilot import record
 
     if record(snapshot) and snapshot.current_stage and snapshot.current_stage.order == 1:
-        return prepare_proposals(snapshot, state(snapshot))
+        from diffeoforge.pilot_input_topology import prepare_for_snapshot
+
+        context = state(snapshot)
+        context["input_topology"] = prepare_for_snapshot(snapshot, manifest)
+        return prepare_proposals(snapshot, context)
     return None

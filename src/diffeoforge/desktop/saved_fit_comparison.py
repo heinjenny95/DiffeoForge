@@ -7,6 +7,7 @@ import numpy as np
 from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from diffeoforge.desktop.calibration_comparison_widget import CalibrationComparisonCanvas3D
+from diffeoforge.desktop.full_review_policy import FullSavedComparisonMixin
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 
 
@@ -67,7 +68,7 @@ def alternatives(snapshot, identifier):
     return tuple(sorted(result, key=lambda r: (not r[1].startswith("Starting fit · "), not r[0])))
 
 
-class SavedFitComparison(QWidget):
+class _SavedFitComparison(QWidget):
     def __init__(self, current, choices, parent=None, *, cache_directory):
         super().__init__(parent)
         self.current = current
@@ -152,3 +153,7 @@ class SavedFitComparison(QWidget):
             canvas.set_comparison_extent((low + high) / 2, float(np.max(high - low)))
         self.canvas.set_linked_camera(self.current.camera_state())
         self.status.setText("Saved comparison. Acceptance applies to the current fit on the left.")
+
+
+class SavedFitComparison(FullSavedComparisonMixin, _SavedFitComparison):
+    """Fit decisions require complete, matching display geometry."""

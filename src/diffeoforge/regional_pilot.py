@@ -427,6 +427,16 @@ def proposal(snapshot, identifier, data, *, symptom=None):
             "Keep the saved deformation as a fixed prefix and add a correction "
             "at the chosen movement scale, then evaluate their true forward composition. "
         )
+    from diffeoforge.pilot_iteration_effort import regional_allowance
+
+    effort = regional_allowance(
+        recipe, marked, getattr(snapshot, "attachment_comparison", {}).get("iterations", 120)
+    )
+    reason += (
+        f"Allow up to {effort['maximum_iterations']} iterations for this local test; "
+        "the solver can finish earlier. This is separate from the short method screen. "
+        "An improving capped field can be continued with the same settings and marks. "
+    )
     return dict(
         goal="regional",
         title=("Improve remaining areas while retaining local detail" if recovery else

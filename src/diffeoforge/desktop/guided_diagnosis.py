@@ -38,7 +38,7 @@ def render(window, snapshot, identifier, layout, guidance):
                                                                         "stop unconfirmed")
         outcome = row.get("outcome") or ("suitable" if row.get("approval") else "not reviewed")
         text = QLabel(f"{title} · {outcome} · {stop} · {row['control_count']} control points"
-                      + (" · marked areas worsened" if "regression" in
+                      + (" · local or whole-shape regression flagged" if "regression" in
                          row.get("region_outcomes", [])
                          else ""))
         text.setWordWrap(True)

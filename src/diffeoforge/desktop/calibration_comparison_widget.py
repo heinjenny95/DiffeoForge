@@ -413,7 +413,7 @@ class CalibrationComparisonCanvas3D(QWidget):
                 or self._reconstruction.display_proxy_error
                 or (
                     f"Display proxies: reconstruction {len(reconstruction_triangles):,} faces. "
-                    "Preview ready — QC decisions are available."
+                    "Preview only — complete geometry is needed for fit decisions."
                 ),
             )
         painter.end()

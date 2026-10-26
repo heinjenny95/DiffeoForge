@@ -91,11 +91,15 @@ def test_comparison_canvas_binds_both_meshes_and_renders(monkeypatch, tmp_path: 
 
 def _wait_pair(application, dialog) -> None:
     deadline = time.monotonic() + 10
-    while not dialog.canvas.comparison_ready and time.monotonic() < deadline:
+    # A proxy/first frame can trigger a final layout repaint. Fit decisions
+    # require the complete pair and its settled frame, including that repaint.
+    while time.monotonic() < deadline:
         application.processEvents()
+        if dialog.canvas.full_resolution_ready and dialog.fail_button.isVisible():
+            break
         time.sleep(0.005)
-    assert dialog.canvas.comparison_ready
-    application.processEvents()
+    assert dialog.canvas.full_resolution_ready
+    assert dialog.fail_button.isVisible()
 
 
 def test_visual_qc_pass_is_locked_until_every_subject_pair_was_opened(

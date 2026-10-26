@@ -224,6 +224,10 @@ def _batch(
         from diffeoforge.regional_pilot import configure_numerics
 
         configure_numerics(config)
+        from diffeoforge.pilot_iteration_effort import regional_allowance
+
+        effort = regional_allowance(strategy["regional_recipe"], feedback["regions"], iterations)
+        iterations = effort["maximum_iterations"]
     cohort = manifest["inputs"]["full_cohort"]
     config["input"].update(
         directory=cohort["directory"],

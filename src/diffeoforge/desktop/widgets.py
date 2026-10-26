@@ -10422,18 +10422,21 @@ class DiffeoForgeWindow(QMainWindow):
         )
         dialog.setWindowTitle("Early atlas check — preserve the approved pilot anatomy")
         dialog.setStyleSheet(self.styleSheet())
-        dialog.exec()
-        if dialog.review_recorded:
-            worker = _EarlyAtlasDecisionWorker(
-                run, dialog.review_complete,
-                dialog._reviewed_pair_ids & dialog._required_pair_ids,
-                dialog.anatomical_notes.text().strip(),
-            )
-            worker.signals.succeeded.connect(self._early_atlas_review_saved)
-            worker.signals.failed.connect(self._preserved_atlas_failed)
-            self._worker = worker
-            self.run_state_label.setText("Verifying and saving your early atlas decision…")
-            self._thread_pool.start(worker)
+        try:
+            dialog.exec()
+            if dialog.review_recorded:
+                worker = _EarlyAtlasDecisionWorker(
+                    run, dialog.review_complete,
+                    dialog._reviewed_pair_ids & dialog._required_pair_ids,
+                    dialog.anatomical_notes.text().strip(),
+                )
+                worker.signals.succeeded.connect(self._early_atlas_review_saved)
+                worker.signals.failed.connect(self._preserved_atlas_failed)
+                self._worker = worker
+                self.run_state_label.setText("Verifying and saving your early atlas decision…")
+                self._thread_pool.start(worker)
+        finally:
+            dialog.deleteLater()
         self._sync_ready_state()
 
     @Slot(object)

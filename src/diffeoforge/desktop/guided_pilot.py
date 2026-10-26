@@ -234,6 +234,10 @@ def render(window, prepared):
             layout.addWidget(
                 InfoDisclosure("Technical failure", candidate.error or "No usable result")
             )
+            if not running and candidate.status == "failed":
+                from diffeoforge.desktop.guided_failed_parent import render as failed_actions
+
+                failed_actions(window, snapshot, candidate, layout, guidance, action)
         if candidate in completed and not running:
             inspect = QPushButton("Inspect " + candidate.label + " fit")
             inspect.setAccessibleName(inspect.text())
@@ -339,6 +343,21 @@ def render(window, prepared):
             None,
             available=len(approved) == 2 and bool(remaining),
         )
+        comparison = guidance.get("provisional_comparison") or {}
+        if len(approved) != 2 and comparison.get("eligible"):
+            note = QLabel(comparison["explanation"])
+            note.setObjectName("status")
+            note.setWordWrap(True)
+            window.content_layout.addWidget(note)
+            if comparison["available"]:
+                button = action(
+                    window.content_layout,
+                    "No clear winner yet → compare another form provisionally (2 tests)",
+                    "compare_unresolved",
+                    None,
+                )
+                button.setToolTip("Next selected form: " + comparison["target"])
+                _set_action_emphasis(button, False)
         if len(approved) == 2 and not remaining:
             tie = QLabel(
                 "Both methods passed the tested forms. Choose a starting method; "
@@ -478,11 +497,8 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
         other.setStyleSheet("QPushButton { border: 1px solid #789994; "
                            "border-radius: 4px; padding: 8px; }")
         layout.addWidget(other)
-    checks = QLabel(
-        "Check alignment and mesh quality if either method misses the same area. "
-        "Protected local trials fit marked areas directly and check transitions and the "
-        "remaining shape. A visible problem does not identify a unique cause. "
-        "Changed settings require renewed checks on the other pilot forms."
-    )
-    checks.setWordWrap(True)
-    layout.addWidget(InfoDisclosure("Input and template checks", checks))
+    from diffeoforge.desktop.guided_input_checks import input_checks
+
+    saved = guidance.get("feedback", {}).get(identifier) or {}
+    reference = saved.get("selected") or saved.get("comparison") or guidance.get("preference")
+    input_checks(window, layout, guidance, reference)

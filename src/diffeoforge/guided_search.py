@@ -5,7 +5,7 @@ from diffeoforge.guided_progress import iteration_limited, next_hypothesis
 from diffeoforge.pilot_recovery import DESCRIPTIONS, proposal
 
 
-def inputs(snapshot, identifier, context):
+def inputs(snapshot, identifier, context, *, regions_override=None, allow_continuation=True):
     """Verify once in the background, shared by all selector previews for this fit."""
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.guided_feedback import regions, selection, severe_regression, verify_reference
@@ -14,7 +14,15 @@ def inputs(snapshot, identifier, context):
     anchor = selection(snapshot, identifier)
     current = _candidate(snapshot, identifier, allow_unreviewed=bool(anchor))
     target = _target(snapshot, identifier)
-    marked = regions(snapshot, identifier, target)
+    marked = regions(snapshot, identifier, target) if regions_override is None else regions_override
+    if regions_override is not None:
+        from diffeoforge.pilot_regions import validate
+
+        manifest = study._verify_manifest(snapshot.study_directory)
+        validate(
+            {target: marked} if marked else {},
+            {r["filename"]: r["sha256"] for r in manifest["inputs"]["subjects"]},
+        )
     strategy = guided.record(snapshot).get("strategy") or {}
     references = {}
     for ref in (anchor, strategy.get("baseline")):
@@ -51,7 +59,8 @@ def inputs(snapshot, identifier, context):
                 spatial_diagonal=study._verify_manifest(snapshot.study_directory)['template_diagonal'])
     from diffeoforge.regional_continuation import prepare_preview
 
-    verified["_regional_continuation_preview"] = prepare_preview(snapshot, identifier, verified)
+    if allow_continuation:
+        verified["_regional_continuation_preview"] = prepare_preview(snapshot, identifier, verified)
     return verified
 
 

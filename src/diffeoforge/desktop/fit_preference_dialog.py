@@ -16,11 +16,12 @@ from PySide6.QtWidgets import (
 )
 
 from diffeoforge.desktop.calibration_comparison_widget import CalibrationComparisonCanvas3D
+from diffeoforge.desktop.full_review_policy import FullFitPreferenceMixin
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.reference_fit_preferences import comparison_choices, verified_fit
 
 
-class FitPreferencePanel(QWidget):
+class _FitPreferencePanel(QWidget):
     selectionChanged = Signal()
 
     def __init__(self, directory, parent=None, *, current_canvas=None):
@@ -401,3 +402,7 @@ class FitPreferencePanel(QWidget):
     def closeEvent(self, event):
         self.shutdown()
         super().closeEvent(event)
+
+
+class FitPreferencePanel(FullFitPreferenceMixin, _FitPreferencePanel):
+    """Fit decisions require complete, matching display geometry."""
