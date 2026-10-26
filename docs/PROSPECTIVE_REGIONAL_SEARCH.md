@@ -212,3 +212,40 @@ are too costly in this experiment to qualify interactive runtime. The policy was
 revised on known data, so this is still development evidence rather than a blind
 independent-specimen test. No installer, installed runtime, cohort objective,
 atlas or PCA is updated or approved by this checkpoint.
+
+## Saved-result diagnosis and private prototypes, 26 October 2026
+
+Separate a floating-point face-selection screen from exact triangle-pair
+intersections. A selected-face count is not a pair count. A closed indexed mesh
+with consistent winding does not establish that its mapped straight triangles
+are disjoint, or that the underlying ambient map is valid. Compare temporal
+grids on identical material points, connectivity and the complete field chain;
+an earlier prefix-only replay cannot qualify a later residual.
+
+A source-domain connectivity diagnostic changes permitted diagonals while
+retaining point coordinates, ordered boundary segments and unrelated faces.
+Check the existing domain itself rather than an idealized parent triangle when
+roundoff and thin triangles affect containment predicates. Unchanged vertices
+alone do not prove an identical three-dimensional piecewise-linear surface;
+record a justified surface-change bound separately. A resource-limited contact
+check has no completed contact verdict and cannot support a repair claim.
+
+Private loader experiments retain immutable parsed arrays within one operation,
+with fresh content hashes and actual file identities on reuse. This can avoid
+repeated parsing without accepting stale geometry. Cache lifetime, retained
+memory, cancellation and whole-pipeline parity remain separate requirements.
+Repeated-load timings under a warm operating-system cache do not establish a
+full-pilot speedup. Preparation, fitting, replay, contact refinement, export and
+independent assessment need distinct clocks.
+
+Before another native optimization, qualify finite objective/gradient checks,
+exact accepted-vector binding and immutable best-accepted parameter snapshots.
+Distinguish a native parameter checkpoint from the optimizer's complete internal
+history. A non-finite trial, accepted cost regression or unbound export must not
+become a successful convergence claim. Failing closed and retaining prior
+evidence is an explicit numerical protocol change; pure synthetic observer
+tests do not qualify it on the native runtime or authorize automatic recovery.
+
+These diagnostics and private prototypes have not changed the production pilot,
+installed runtime or acceptance bounds. A qualified new optimized result,
+interactive runtime evidence and independent-specimen evaluation remain open.

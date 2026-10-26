@@ -1,5 +1,10 @@
 # Development continuity — v161 protected regional pilot
 
+Saved-result diagnosis now distinguishes exact triangle-pair contacts, discrete
+surface representation, numerical stopping and pipeline overhead. Private
+loader/acceptance-observer prototypes are not production changes or a qualified
+new fit. See [diagnostic boundaries and remaining gates](PROSPECTIVE_REGIONAL_SEARCH.md#saved-result-diagnosis-and-private-prototypes-26-october-2026).
+
 The subsequent bounded-basis native search is complete and remains unqualified:
 outside/shape/transition/temporal checks pass, while contact/spatial checks do not.
 See the [latest checkpoint and stop/runtime limits](PROSPECTIVE_REGIONAL_SEARCH.md#subsequent-bounded-basis-checkpoint-25-october-2026).
