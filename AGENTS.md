@@ -39,6 +39,8 @@ paths and file checksums, and verify the copied bytes before removing a local
 copy. Preserve active jobs, installed runtimes, current deliveries and scientific
 input/field dependencies. If the NAS is unavailable, retain local files; do not
 silently substitute a different network destination.
+See [inactive build archiving](docs/BUILD_ARCHIVING.md) for the copy, verification
+and restoration boundary.
 
 Standing installation authorization (2026-09-26): an owner go-ahead to develop a
 new DiffeoForge version includes installing the resulting tested version, without
