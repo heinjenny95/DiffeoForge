@@ -1,8 +1,9 @@
-# Archiving inactive build working copies
+# Archiving inactive builds and owner-selected data
 
 The owner authorizes NAS archiving when local storage is low. This concerns
-explicitly selected inactive packaging working copies. Installed runtimes, current
-deliveries, active jobs and scientific input/field dependencies remain protected.
+explicitly selected inactive packaging working copies and owner-selected data.
+Installed runtimes, current deliveries, active jobs and scientific input/field
+dependencies remain protected.
 Private network locations and archive inventories belong in the owner's local
 handoff and archive, never in this public repository.
 
@@ -31,6 +32,31 @@ and verified completion receipts. Do not repeat transfers or removals to recreat
 a missing summary. Final archive/restoration checks must still pass independently.
 
 Synthetic guard checks cover same-size byte corruption, an unexpected destination
-file, an out-of-scope source and an excluded current build. Actual archive receipts
-separately bind every copied file and unchanged source. These are storage checks,
-not scientific qualification, a software installation or installer distribution.
+file, an out-of-scope source, protected-root overlap, long Windows paths and
+hardlinked files. Actual archive receipts separately bind every copied file and
+unchanged source. These are storage checks, not scientific qualification, a
+software installation or installer distribution.
+
+## Datasets and exact file selections
+
+Resolve the current run's dependencies from its manifests before selecting older
+work for archiving. A latest result can still require older prefix fields, native
+inputs and complete output inventories. Keep that dependency closure local;
+directory age alone does not establish that a run is inactive. Preserve current
+deliveries, landmark corrections, meshes, segmentations and checkpoints outside
+the owner's explicit selection. Check both application and native/backend use,
+including alternative path spellings used by local virtual machines.
+
+A complete-tree manifest binds every relative file and directory under its exact
+root. When only CT stack files or other individual leaves are selected, freeze
+their exact relative paths instead. Record each selected file's size, SHA-256 and
+source identity; use actual Windows file IDs rather than cached directory-entry
+IDs. Verify destination bytes against that selection and recheck unchanged source
+bytes and identities before literal-path removal. Mixed-content parent folders
+remain in place; never recursively remove them to archive selected leaves.
+
+Record original restoration paths for both forms of selection and preserve an
+inventory of unselected sibling data. Maintain per-unit verification and completion
+receipts so a later failure does not obscure earlier completed transfers. A partial
+archive is not a completed batch: restore only verified units and retain unverified
+local data. Restoring an archived dependency does not authorize restarting its run.
