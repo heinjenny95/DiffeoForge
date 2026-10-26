@@ -48,6 +48,10 @@ do not import a development workspace. The packaged profile pins the tested
 Deformetrica 4.3.0 source and dependency versions. An incompatible runtime or
 adapter initialization failure stops before fitting. The compatibility wrapper
 for SciPy's message type remains separate from objective/gradient values.
+Manifest verification accepts the product's exact SHA sidecar with its
+`manifest.json` filename suffix, as well as a bare matching digest. Other
+filenames, suffixes, leading space and extra lines are rejected. Startup
+tracebacks are flushed before the process exits.
 
 ## Verification and limits
 
@@ -65,3 +69,9 @@ and intersection checks still apply. Regional single-form results do not approve
 a common cohort objective, an atlas, PCA or anatomical correspondence. The native
 scientific equations, physical fitting settings and acceptance bounds are not
 changed by this guard.
+
+A saved **Suitable fit** decision remains separate from numerical convergence
+and mesh qualification. The guided view preserves inspection and closing,
+with further refinement collapsed as an option. It does not immediately present
+another improvement trial as the required next action after visual acceptance.
+Warnings and common-atlas checks remain visible and retain their own gates.

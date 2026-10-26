@@ -95,8 +95,9 @@ def extend_engine_files(config, subject_count, rendered):
     result["sitecustomize.py"] = (
         '"""New regional finite accepted guard v1; fail-closed setup."""\ntry:\n'
         + "\n".join("    " + line for line in body.splitlines())
-        + "\nexcept BaseException:\n    import os, traceback\n"
-        "    traceback.print_exc()\n    os._exit(1)\n"
+        + "\nexcept BaseException:\n    import os, sys, traceback\n"
+        "    try:\n        traceback.print_exc()\n        sys.stderr.flush()\n"
+        "    finally:\n        os._exit(1)\n"
     ).encode()
     return result
 

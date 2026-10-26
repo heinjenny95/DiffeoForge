@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
+    QWidget,
 )
 
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
@@ -24,6 +25,11 @@ def render(window, prepared):
     info = record(snapshot)
     guidance = prepared.guidance
     running = window._worker is not None or window._restoring_search
+    regional_accepted = bool(
+        snapshot.attachment_comparison.get("regional_objective")
+        and any(snapshot.visual_reviews.get(c.candidate_id) is True
+                for c in snapshot.candidates if c.status == "completed")
+    )
     controls = (
         window.find_fit_button,
         window.saved_searches_button,
@@ -48,6 +54,8 @@ def render(window, prepared):
     title = QLabel(
         "Joint pilot check"
         if info["phase"] == "joint"
+        else "Suitable fit saved"
+        if regional_accepted
         else "Improve the fit"
         if info.get("goal") or (guidance["preferred"] and any(
             value is False for value in snapshot.visual_reviews.values()))
@@ -67,7 +75,7 @@ def render(window, prepared):
     explanation.setObjectName("pilotScope")
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
-    if info.get("goal"):
+    if info.get("goal") and not regional_accepted:
         from diffeoforge.pilot_recovery import DESCRIPTIONS
 
         reason = DESCRIPTIONS.get(info["goal"])
@@ -114,6 +122,8 @@ def render(window, prepared):
         if running
         else "A trial failed. Inspect details, retry, or choose an approved alternative."
         if failed
+        else "Fit saved as suitable. Inspect or close; further refinement is optional."
+        if regional_accepted
         else "Feedback saved. Choose the next step below."
         if completed and inspected_feedback
         else "Inspect the fit, then choose the next step below."
@@ -192,8 +202,14 @@ def render(window, prepared):
                 failures.append("time-grid stability")
             if not quality.get("spatial_resolution_sufficient", True):
                 failures.append("original-source spatial resolution limit")
-            note = QLabel(("This attempt fails: " + ", ".join(failures)
-                           + ". It will not replace your retained starting fit.") if failures else
+            note = QLabel(
+                "Your suitable-fit decision is saved. Surface checks still report: "
+                + ", ".join(failures)
+                + ". Atlas checks remain separate."
+                if decision is True and failures else
+                "This attempt fails: " + ", ".join(failures)
+                + ". It will not replace your retained starting fit."
+                if failures else
                           "Local, transition and preservation checks passed; inspect anatomy. "
                           "This regional objective still needs a shared cohort protocol.")
             note.setWordWrap(True)
@@ -271,16 +287,25 @@ def render(window, prepared):
                 action(layout, "Use " + candidate.label + " as starting method → improve",
                        "prefer", candidate.candidate_id)
             has_start = bool(feedback and feedback["selected"])
-            if ((decision is False or has_start) and (valid or has_start) and not unresolved
+            if (decision is not True and (decision is False or has_start)
+                    and (valid or has_start) and not unresolved
                     and (guidance["preferred"] == method or has_start or info["phase"] == "joint")):
                 _recovery(window, snapshot, candidate, layout, guidance)
             regional = bool(snapshot.attachment_comparison.get("regional_objective"))
             if decision is True and regional:
-                note = QLabel("This regional fit is saved. Keep refining or inspect earlier fits. "
-                              "It does not certify a common atlas objective.")
+                note = QLabel("This fit is saved as suitable for this specimen. Further "
+                              "refinement is optional. The shared atlas setup still needs "
+                              "its own check.")
                 note.setWordWrap(True)
                 layout.addWidget(note)
-                _recovery(window, snapshot, candidate, layout, guidance)
+                optional = QWidget()
+                optional_layout = QVBoxLayout(optional)
+                _recovery(window, snapshot, candidate, optional_layout, guidance, optional=True)
+                disclosure = InfoDisclosure("Optional further refinement", optional)
+                _set_action_emphasis(disclosure.toggle_button, False)
+                disclosure.toggle_button.setToolTip(
+                    "Show optional adjustments. Opening these controls starts no fit.")
+                layout.addWidget(disclosure)
             if decision is True and info["phase"] != "joint" and not regional:
                 remaining = remaining_forms(snapshot, candidate.candidate_id, context=guidance)
                 action(
@@ -331,13 +356,15 @@ def render(window, prepared):
     window.content_layout.addWidget(InfoDisclosure("Help with visual assessment", unsure))
 
 
-def _recovery(window, snapshot, candidate, layout, guidance):
+def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
     from diffeoforge.pilot_recovery import DESCRIPTIONS
     from diffeoforge.pilot_regions import SYMPTOMS
 
     identifier = candidate.candidate_id
-    heading = QLabel("This configuration has not passed this form. What needs improvement?")
+    heading = QLabel(
+        "Optional: what would you like to improve further?"
+        if optional else "This configuration has not passed this form. What needs improvement?")
     heading.setWordWrap(True)
     heading.setObjectName("status")
     layout.addWidget(heading)

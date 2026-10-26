@@ -148,6 +148,28 @@ def test_real_preparation_plan_and_manifest_include_assets_and_resume_rejects(tm
     plan = plan_reference_preparation(path, run_id="guarded")
     run = prepare_run(path, run_id="guarded")
     manifest = verify_prepared_run(run)
+    # Exercise the UNTOUCHED product sidecar, including its filename suffix.
+    import types
+
+    runtime = types.ModuleType("generated_guard_runtime_test")
+    exec(compile(RUNTIME_SOURCE, "regional_guard_runtime.py", "exec"), runtime.__dict__)
+    runtime.ManifestContext(run / "engine").verify_content()
+    sidecar = run / "manifest.sha256"
+    canonical_bytes = sidecar.read_bytes()
+    canonical = canonical_bytes.decode("utf-8")
+    assert canonical.strip().endswith("  manifest.json")
+    for invalid in (
+        canonical.strip() + " extra",
+        canonical.replace("manifest.json", "wrong.json"),
+        canonical + "\n",
+        " " + canonical,
+        canonical + "changed",
+    ):
+        sidecar.write_bytes(invalid.encode("utf-8"))
+        with pytest.raises(ValueError, match="Manifest/sidecar mismatch"):
+            runtime.ManifestContext(run / "engine")
+    sidecar.write_bytes(canonical_bytes)
+    assert sidecar.read_bytes() == canonical_bytes
     assert manifest["protected_artifacts"] == [
         {k: row[k] for k in ("path", "bytes", "sha256")} for row in plan["protected_files"]
     ]
