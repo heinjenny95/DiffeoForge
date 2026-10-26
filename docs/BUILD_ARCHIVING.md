@@ -25,6 +25,11 @@ An unavailable destination or failed check retains the unverified local copy.
 Completed earlier folders remain recoverable from their independently verified
 archives and receipts if a later folder fails.
 
+If final summary aggregation fails after every folder has completed, retain that
+error and reconstruct only the report from the immutable per-folder manifests
+and verified completion receipts. Do not repeat transfers or removals to recreate
+a missing summary. Final archive/restoration checks must still pass independently.
+
 Synthetic guard checks cover same-size byte corruption, an unexpected destination
 file, an out-of-scope source and an excluded current build. Actual archive receipts
 separately bind every copied file and unchanged source. These are storage checks,
