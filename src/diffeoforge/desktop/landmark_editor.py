@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
 )
 
@@ -29,6 +30,7 @@ from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
 from diffeoforge.desktop.mesh_preview import MeshPreviewModel
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
+from diffeoforge.desktop.workflow_guidance import LANDMARK_GUIDE, LANDMARK_SUMMARY
 from diffeoforge.mesh import sha256_file
 
 SurfacePoint = tuple[float, float, float]
@@ -112,6 +114,19 @@ class LandmarkEditorDialog(QDialog):
             summary.setText(
                 f"Correct {len(self.mesh_paths)} selected specimen(s). Choose a landmark and "
                 "click to replace it. Other specimens keep their saved coordinates.")
+        self.placement_guidance = QLabel(LANDMARK_SUMMARY)
+        self.placement_guidance.setObjectName("landmarkPlacementGuidance")
+        self.placement_guidance.setWordWrap(True)
+        layout.addWidget(self.placement_guidance)
+        guide = QLabel(LANDMARK_GUIDE)
+        guide.setWordWrap(True)
+        guide.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        guide_scroll = QScrollArea()
+        guide_scroll.setWidgetResizable(True)
+        guide_scroll.setMinimumHeight(140)
+        guide_scroll.setMaximumHeight(170)
+        guide_scroll.setWidget(guide)
+        layout.addWidget(InfoDisclosure("Where should I place landmarks?", guide_scroll))
         layout.addWidget(InfoDisclosure("Placement, editing and autosave", explanation))
 
         selectors = QHBoxLayout()
@@ -145,15 +160,19 @@ class LandmarkEditorDialog(QDialog):
         layout.addLayout(selectors)
 
         label_buttons = QHBoxLayout()
-        add_label = QPushButton("Add landmark label")
+        add_label = QPushButton("Add label")
+        add_label.setAccessibleName("Add landmark label")
         add_label.clicked.connect(self._add_label)
-        rename_label = QPushButton("Rename current label")
+        rename_label = QPushButton("Rename label")
+        rename_label.setAccessibleName("Rename current landmark label")
         rename_label.clicked.connect(self._rename_label)
-        remove_label = QPushButton("Remove current label")
+        remove_label = QPushButton("Remove label")
+        remove_label.setAccessibleName("Remove current landmark label")
         remove_label.clicked.connect(self._remove_label)
-        clear_current = QPushButton("Clear current point")
+        clear_current = QPushButton("Clear point")
+        clear_current.setAccessibleName("Clear current landmark point")
         clear_current.clicked.connect(self._clear_current)
-        self.undo_button = QPushButton("Undo last placement")
+        self.undo_button = QPushButton("Undo placement")
         self.undo_button.clicked.connect(self._undo_last_placement)
         self.undo_button.setEnabled(False)
         label_buttons.addWidget(add_label)
@@ -161,6 +180,8 @@ class LandmarkEditorDialog(QDialog):
         label_buttons.addWidget(remove_label)
         label_buttons.addWidget(clear_current)
         label_buttons.addWidget(self.undo_button)
+        for button in (add_label, rename_label, remove_label, clear_current, self.undo_button):
+            button.setObjectName("secondary")
         label_buttons.addStretch()
         if correction:
             for button in (add_label, rename_label, remove_label):
@@ -182,13 +203,16 @@ class LandmarkEditorDialog(QDialog):
         layout.addWidget(self.auto_advance_mesh_check)
 
         self.canvas = InteractiveMeshCanvas3D()
+        self.canvas.setMinimumHeight(280)
         self.canvas.surfacePointPicked.connect(self._place_surface_point)
         layout.addWidget(self.canvas, 1)
 
         navigation = QHBoxLayout()
         previous_mesh = QPushButton("Previous mesh")
+        previous_mesh.setObjectName("secondary")
         previous_mesh.clicked.connect(lambda: self._move_mesh(-1))
         next_mesh = QPushButton("Next mesh")
+        next_mesh.setObjectName("secondary")
         next_mesh.clicked.connect(lambda: self._move_mesh(1))
         self.status_label = QLabel()
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -208,6 +232,7 @@ class LandmarkEditorDialog(QDialog):
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
         self.buttons.button(QDialogButtonBox.StandardButton.Save).setText("Save landmark CSV")
+        self.buttons.button(QDialogButtonBox.StandardButton.Save).setObjectName("primary")
         if correction:
             self.buttons.button(QDialogButtonBox.StandardButton.Save).setText(
                 "Save corrected landmarks")

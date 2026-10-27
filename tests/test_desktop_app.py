@@ -1347,6 +1347,11 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     window.reference_parameter_profile_combo.setCurrentIndex(
         window.reference_parameter_profile_combo.findData("advanced")
     )
+    # This fixture tests stale alignment approval in explicit Advanced setup.
+    # Automatic method comparison requires the separate guided-pilot route.
+    window.reference_attachment_type_combo.setCurrentIndex(
+        window.reference_attachment_type_combo.findData("varifold")
+    )
     window.reference_attachment_ratio_spin.setValue(0.075)
     assert window._request().reference_parameter_ratios["attachment_kernel_width"] == pytest.approx(
         0.075 / window._reference_recommendation.template_diagonal
@@ -3854,9 +3859,10 @@ def test_desktop_can_select_a_saved_completed_run(monkeypatch, tmp_path, referen
     window = DiffeoForgeWindow()
     window._thread_pool = FakePool()  # type: ignore[assignment]
 
+    from PySide6.QtWidgets import QDialog
+
     from diffeoforge.desktop.completed_results import CompletedResultRun
     from diffeoforge.desktop.result_library_dialog import ResultLibraryDialog
-    from PySide6.QtWidgets import QDialog
 
     def choose(dialog):
         dialog.selected_result = CompletedResultRun(run.resolve(), reference=reference)

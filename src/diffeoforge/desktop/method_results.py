@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from diffeoforge.analysis.method_labels import shape_method_description
 from diffeoforge.desktop.media_export import MediaExportController
 from diffeoforge.desktop.morphospace_3d import Morphospace3D
 from diffeoforge.desktop.morphospace_geometry import glyph_topology
@@ -265,6 +266,10 @@ class MethodResultsPanel(QWidget):
         self._export_review = None
         controls.addWidget(self.export)
         layout.addLayout(controls)
+        self.method_hint = QLabel()
+        self.method_hint.setWordWrap(True)
+        self.method_hint.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self.method_hint)
         self.status = QLabel("Choose methods above to calculate or reopen their saved results.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -289,6 +294,7 @@ class MethodResultsPanel(QWidget):
         for dialog in list(self.dialogs):
             dialog.close()
         self.methods.clear()
+        self.method_hint.clear()
         self.plot.scene().clear()
         self.three_d.setEnabled(False)
         self.export.setEnabled(False)
@@ -361,6 +367,7 @@ class MethodResultsPanel(QWidget):
         if self.result is None or self.methods.currentData() is None:
             return
         key = self.methods.currentData()
+        self.method_hint.setText(shape_method_description(key))
         dimensions = self.result[2][key].shape[1]
         self.x_axis.blockSignals(True)
         self.y_axis.blockSignals(True)

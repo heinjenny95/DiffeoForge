@@ -45,6 +45,7 @@ from diffeoforge.analysis.landmarks import (
     import_landmark_txt_folder,
 )
 from diffeoforge.analysis.mesh_scaling import MeshScalingMode
+from diffeoforge.analysis.method_labels import shape_method_description
 from diffeoforge.analysis.slicer_json import import_landmark_json_folder
 from diffeoforge.config import load_config
 from diffeoforge.desktop.activity import ActivityPool
@@ -198,6 +199,7 @@ from diffeoforge.desktop.worker_controller import (
     DesktopWorkerControllerResult,
 )
 from diffeoforge.desktop.worker_protocol import DesktopWorkerEvent
+from diffeoforge.desktop.workflow_guidance import alignment_description
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
 from diffeoforge.input_preflight import (
     MeshInputPreflight,
@@ -349,6 +351,18 @@ QPushButton#infoDisclosureButton:hover { color: #0f5f52; text-decoration: underl
 QFrame#infoDisclosurePanel {
     background: #f2f8f6; border: 1px solid #cee3dd; border-radius: 7px;
 }
+QTabWidget#visualizationTabs::pane {
+    border: 1px solid #dbe4e6; background: #ffffff;
+}
+QTabWidget#visualizationTabs QTabBar::tab {
+    color: #17252a; background: #eef3f4; border: 1px solid #c8d5d7;
+    border-top-left-radius: 5px; border-top-right-radius: 5px;
+    padding: 6px 10px; margin-right: 2px;
+}
+QTabWidget#visualizationTabs QTabBar::tab:selected {
+    background: #ffffff; border-bottom: 2px solid #167c6b; font-weight: 600;
+}
+QTabWidget#visualizationTabs QTabBar::tab:hover { background: #eaf7f4; }
 QLabel#infoDisclosureText { color: #405d61; font-size: 12px; }
 QFrame#parameterHelpPanel {
     background: #f2f8f6; border: 1px solid #cee3dd; border-radius: 7px;
@@ -1286,12 +1300,30 @@ class _ShapeSpaceComparisonDialog(QDialog):
         preset_row.addWidget(self.preset_combo, 1)
         layout.addLayout(preset_row)
 
+        methods_page = QWidget()
+        methods_layout = QVBoxLayout(methods_page)
+        methods_layout.setContentsMargins(0, 0, 8, 0)
         for method_id in ALL_METHOD_IDS:
             check = QCheckBox(METHOD_LABELS[method_id])
+            if method_id == "roberts_2026_cartesian_momenta_rbf_kpca":
+                check.setText("Published Cartesian RBF KernelPCA — Roberts et al. (2026)")
+            check.setToolTip(METHOD_LABELS[method_id])
             check.setObjectName(f"shapeSpaceMethod_{method_id}")
             check.toggled.connect(self._selection_changed)
             self._checks[method_id] = check
-            layout.addWidget(check)
+            methods_layout.addWidget(check)
+            help_text = QLabel(shape_method_description(method_id))
+            help_text.setObjectName("hint")
+            help_text.setWordWrap(True)
+            help_text.setContentsMargins(24, 0, 0, 8)
+            methods_layout.addWidget(help_text)
+        methods_scroll = QScrollArea()
+        methods_scroll.setWidgetResizable(True)
+        methods_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        methods_scroll.setMinimumHeight(280)
+        methods_scroll.setMaximumHeight(440)
+        methods_scroll.setWidget(methods_page)
+        layout.addWidget(methods_scroll, 1)
 
         self.cost_label = QLabel()
         self.cost_label.setObjectName("statusWarning")
@@ -1941,6 +1973,7 @@ class DiffeoForgeWindow(QMainWindow):
 
         self.visualization_panel = VisualizationPanel(self)
         self.visualization_panel.retry_requested.connect(self._start_reference_pca_deformations)
+        self.visualization_panel.r_export_requested.connect(self._open_r_export)
         self.visualization_panel.cancel_requested.connect(self._cancel_visualization)
         self.visualization_panel.mesh_images_applied.connect(self.method_results_panel.set_mesh_images)
         self.visualization_panel.view_applied.connect(self._visualization_view_applied)
@@ -3328,6 +3361,13 @@ class DiffeoForgeWindow(QMainWindow):
         pca_plots_layout.addWidget(self.result_pca_plots_title)
         pca_plots_layout.addWidget(pca_plots_hint)
         pca_plots_layout.addWidget(self.result_pca_method_disclosure)
+        self.result_pca_short_help = QLabel()
+        self.result_pca_short_help.setWordWrap(True)
+        pca_plots_layout.addWidget(self.result_pca_short_help)
+        self.export_r_results_button = QPushButton("Export data for R / geomorph…")
+        self.export_r_results_button.setObjectName("secondary")
+        self.export_r_results_button.clicked.connect(self._open_r_export)
+        pca_plots_layout.addWidget(self.export_r_results_button, 0, Qt.AlignmentFlag.AlignLeft)
         pca_plots_layout.addWidget(scree_panel)
         pca_plots_layout.addWidget(pc1_pc2_panel)
         pca_plots_layout.addWidget(pc2_pc3_panel)
@@ -4362,6 +4402,10 @@ class DiffeoForgeWindow(QMainWindow):
         self.correct_landmarks_button.clicked.connect(self._correct_existing_landmarks)
         correction_row = QHBoxLayout()
         correction_row.addWidget(self.correct_landmarks_button)
+        self.export_r_landmarks_button = QPushButton("Export landmarks for R / geomorph…")
+        self.export_r_landmarks_button.setObjectName("secondary")
+        self.export_r_landmarks_button.clicked.connect(self._open_r_export)
+        correction_row.addWidget(self.export_r_landmarks_button)
         correction_row.addStretch()
         data_form.addRow("", correction_row)
 
@@ -4471,6 +4515,10 @@ class DiffeoForgeWindow(QMainWindow):
         procrustes_hint.setWordWrap(True)
         procrustes_layout.addWidget(self.procrustes_apply_check)
         procrustes_layout.addLayout(procrustes_settings)
+        self.alignment_choice_hint = QLabel()
+        self.alignment_choice_hint.setObjectName("alignmentChoiceHint")
+        self.alignment_choice_hint.setWordWrap(True)
+        procrustes_layout.addWidget(self.alignment_choice_hint)
         procrustes_layout.addWidget(
             InfoDisclosure(
                 "Compare the four alignment and size choices",
@@ -5556,6 +5604,10 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _update_procrustes_controls(self) -> None:
         enabled = self.procrustes_apply_check.isChecked()
+        self.alignment_choice_hint.setText(alignment_description(
+            self._current_procrustes_scaling_mode(), enabled=enabled,
+            reflections=self.procrustes_reflection_check.isChecked(),
+        ))
         for widget in self._procrustes_setting_widgets:
             widget.setEnabled(enabled)
         self.procrustes_target_size_spin.setEnabled(
@@ -5593,6 +5645,22 @@ class DiffeoForgeWindow(QMainWindow):
                 )
             ),
         )
+
+    def _open_r_export(self) -> None:
+        from diffeoforge.desktop.r_export_dialog import RExportDialog
+
+        meshes, landmarks = (), None
+        if self.landmarks_edit.text().strip():
+            try:
+                meshes = self._current_surface_cohort()
+                landmarks = Path(self.landmarks_edit.text().strip()).expanduser().resolve()
+            except (OSError, ValueError):
+                pass  # The dialog explains that the input cohort is not yet selected.
+        dialog = RExportDialog(
+            self, review=self._result_review, landmarks=landmarks, meshes=meshes,
+            unit=self.units_combo.currentData(),
+        )
+        dialog.exec()
 
     def _current_surface_cohort(self) -> tuple[Path, ...]:
         directory = Path(self.mesh_edit.text().strip()).expanduser().resolve()
@@ -12034,6 +12102,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.method_results_panel.clear()
         self._refresh_iteration_extension(review.run_directory)
         method_label = review.pca_method_label
+        self.result_pca_short_help.setText(shape_method_description(review.pca_method_id))
         self.result_pca_title.setText(method_label)
         self.result_pca_plots_title.setText(f"{method_label} plots")
         self.result_pca_scree_title.setText(f"{method_label}: explained variance")

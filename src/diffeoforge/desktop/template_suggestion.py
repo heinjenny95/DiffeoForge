@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
+from diffeoforge.desktop.workflow_guidance import TEMPLATE_GUIDE, TEMPLATE_SUMMARY
 from diffeoforge.pilot_design import suggest_templates
 
 
@@ -30,13 +31,20 @@ class TemplateSuggestionPanel(QWidget):
         self.loader.failed.connect(lambda _key, error: self._failed(error))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        guidance = QLabel(TEMPLATE_SUMMARY)
+        guidance.setWordWrap(True)
+        layout.addWidget(guidance)
         row = QHBoxLayout()
-        self.suggest = QPushButton("Suggest a template")
+        self.suggest = QPushButton("Analyze meshes & suggest template")
+        self.suggest.setObjectName("secondary")
+        self.suggest.setToolTip("Compare this mesh folder in the background; no fitting.")
         self.suggest.clicked.connect(self._suggest)
         row.addWidget(self.suggest)
         self.preview = QPushButton("Preview candidate")
+        self.preview.setObjectName("secondary")
         self.preview.clicked.connect(self._preview)
         self.use = QPushButton("Use suggested template")
+        self.use.setObjectName("primary")
         self.use.clicked.connect(self._apply)
         row.addWidget(self.preview)
         row.addWidget(self.use)
@@ -45,6 +53,7 @@ class TemplateSuggestionPanel(QWidget):
         self.status = QLabel("Optional: recommend a representative starting form before alignment.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        layout.addWidget(InfoDisclosure("How to choose an initial template", TEMPLATE_GUIDE))
         self.alternatives = QComboBox()
         self.alternatives.setAccessibleName("Alternative initial templates")
         details = QWidget(self)

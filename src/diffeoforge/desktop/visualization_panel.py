@@ -119,6 +119,7 @@ class VisualizationPanel(QWidget):
     cancel_requested = Signal()
     view_applied = Signal(object)
     mesh_images_applied = Signal(object, object, str, object)
+    r_export_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -140,8 +141,8 @@ class VisualizationPanel(QWidget):
         self._export_timer.setInterval(50)
         self._export_timer.timeout.connect(self._export_finished)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        title = QLabel("Visualization")
+        layout.setContentsMargins(20, 16, 20, 16)
+        title = QLabel("Explore shape variation")
         title.setObjectName("title")
         layout.addWidget(title)
         self.status = QLabel("Open a reviewed atlas result to view its PCA media.")
@@ -154,7 +155,7 @@ class VisualizationPanel(QWidget):
         self.cancel = QPushButton("Cancel preparation")
         self.cancel.clicked.connect(self.cancel_requested)
         self.cancel.hide()
-        self.export = QPushButton("Export gallery ZIP…")
+        self.export = QPushButton("Export all media (ZIP)…")
         self.export.setObjectName("primary")
         self.export.setEnabled(False)
         self.export.clicked.connect(self._export)
@@ -167,16 +168,32 @@ class VisualizationPanel(QWidget):
         actions.addWidget(self.export_current)
         actions.addWidget(self.export)
         layout.addLayout(actions)
-        layout.addWidget(
+        self.export_current.setObjectName("secondary")
+        data_row = QHBoxLayout()
+        self.export_r = QPushButton("Export data for R / geomorph…")
+        self.export_r.setObjectName("secondary")
+        self.export_r.clicked.connect(self.r_export_requested)
+        data_row.addWidget(self.export_r)
+        data_row.addStretch()
+        layout.addLayout(data_row)
+        self.view_description = QLabel()
+        self.view_description.setWordWrap(True)
+        self.view_description.setObjectName("visualizationViewHelp")
+        layout.addWidget(self.view_description)
+        data_row.addWidget(
             InfoDisclosure(
-                "Methods",
+                "How these views are made",
                 (
                     "Mean and ±2 SD: native shooting. Movies: 17 native samples. "
-                    "Rendering details are saved in media.json."
+                    "These show the same saved PCA, not separate PCA methods. "
+                    "PC signs are conventional; ±2 SD shapes are model summaries, "
+                    "not observed specimens or confidence intervals."
                 ),
             )
         )
         self.tabs = QTabWidget()
+        self.tabs.setObjectName("visualizationTabs")
+        self.tabs.setUsesScrollButtons(True)
         self.mesh_view_controls = QWidget()
         view_controls = QHBoxLayout(self.mesh_view_controls)
         view_controls.setContentsMargins(0, 0, 0, 0)
@@ -188,6 +205,7 @@ class VisualizationPanel(QWidget):
             )
         )
         self.mesh_view_status = QLabel("Choose which surface faces you.")
+        self.mesh_view_status.setWordWrap(True)
         self.mesh_view_status.setTextFormat(Qt.TextFormat.PlainText)
         self.mesh_views.status_changed.connect(self.mesh_view_status.setText)
         view_controls.addWidget(self.mesh_view_status, 1)
@@ -200,10 +218,9 @@ class VisualizationPanel(QWidget):
         self.mesh_size.valueChanged.connect(self._show_plot)
         view_controls.addWidget(self.mesh_size)
         layout.addWidget(self.mesh_view_controls)
-        self.tabs.currentChanged.connect(lambda index: self.mesh_size.setVisible(index == 0))
-        self.tabs.currentChanged.connect(lambda index: self.mesh_size_label.setVisible(index == 0))
+        self.tabs.currentChanged.connect(self._tab_changed)
         layout.addWidget(self.tabs, 1)
-        self.plot_combo, self.plot_view = self._picture_tab("Mesh PCA")
+        self.plot_combo, self.plot_view = self._picture_tab("2D scores")
         self.plot_combo.addItem("PC1 / PC2", (0, 1))
         self.plot_combo.addItem("PC1 / PC3", (0, 2))
         self.plot_combo.addItem("PC2 / PC3", (1, 2))
@@ -213,8 +230,8 @@ class VisualizationPanel(QWidget):
         self.hover_label.setTextFormat(Qt.TextFormat.PlainText)
         self.plot_view.parentWidget().layout().addWidget(self.hover_label)
         self.plot_view.hovered.connect(self.hover_label.setText)
-        self.sd_combo, self.sd_view = self._picture_tab("±2 SD")
-        self.heat_combo, self.heat_view = self._picture_tab("Heatmaps")
+        self.sd_combo, self.sd_view = self._picture_tab("PC shapes")
+        self.heat_combo, self.heat_view = self._picture_tab("Maps")
         heat_legend = QLabel(
                             "Static endpoint maps relative to the mean; "
                             "six views of the same shape. "
@@ -240,7 +257,7 @@ class VisualizationPanel(QWidget):
         self.video = QLabel()
         self.video.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
-        self.video.setMinimumHeight(300)
+        self.video.setMinimumHeight(220)
         video_layout.addWidget(self.video, 1)
         self.video_comparison = VideoComparison()
         video_layout.addWidget(self.video_comparison, 1)
@@ -277,13 +294,36 @@ class VisualizationPanel(QWidget):
         controls.addWidget(self.play)
         controls.addWidget(self.slider, 1)
         video_layout.addLayout(controls)
-        self.tabs.addTab(video_page, "Videos · six views")
+        self.tabs.addTab(video_page, "Movies")
         self.tabs.currentChanged.connect(lambda index: self.player.pause() if index != 3 else None)
         self.tabs.currentChanged.connect(
             lambda index: self.video_comparison.pause() if index != 3 else None
         )
         self.morphospace = Morphospace3D()
-        self.tabs.addTab(self.morphospace, "3D · PC1–PC3")
+        self.morphospace.canvas.setMinimumSize(220, 220)
+        self.tabs.addTab(self.morphospace, "3D scores")
+        self._tab_changed(0)
+
+    def _tab_changed(self, index):
+        descriptions = (
+            "2D scores: meshes sit at saved PC scores. Nearby points are similar on "
+            "these axes; inspect their shapes.",
+            "PC shapes: mean and −2/+2 SD along one PC. Six images show different "
+            "views of the same model shape, not confidence intervals.",
+            "Maps: movement from the mean to a PC endpoint. Distance shows magnitude; "
+            "signed normal movement also shows direction.",
+            "Movies: PC shape change in six synchronized views. These model "
+            "deformations do not show growth or optimizer progress.",
+            "3D scores: rotate PC1–PC3. Meshes stay at their saved scores in the same "
+            "PCA as the 2D view.",
+        )
+        self.view_description.setText(descriptions[index] if 0 <= index < 5 else "")
+        self.mesh_size.setVisible(index == 0)
+        self.mesh_size_label.setVisible(index == 0)
+        labels = ("Export plot…", "Export shapes…", "Export map…", "Export movie…",
+                  "Export 3D view…")
+        if 0 <= index < len(labels):
+            self.export_current.setText(labels[index])
 
     def _picture_tab(self, title):
         page = QWidget()
@@ -450,17 +490,25 @@ class VisualizationPanel(QWidget):
         if any(len(item["scores"]) <= max(x, y) for item in self._items):
             return
         values = [(item["scores"][x], item["scores"][y]) for item in self._items]
-        ranges = [max(p[k] for p in values) - min(p[k] for p in values) for k in (0, 1)]
+        low = [min(p[k] for p in values) for k in (0, 1)]
+        high = [max(p[k] for p in values) for k in (0, 1)]
+        spans = [b-a if b > a else max(abs(a)*.01, 1.) for a, b in zip(low, high, strict=True)]
+        # Pad the axis extent rather than moving any specimen away from its score.
+        # Fixed-pixel mesh glyphs otherwise cover the outer tick labels and title.
+        padding = .3 * max(20, self.mesh_size.value() // count) / 90
+        low = [a-span*padding for a, span in zip(low, spans, strict=True)]
+        high = [b+span*padding for b, span in zip(high, spans, strict=True)]
+        ranges = [b-a for a, b in zip(low, high, strict=True)]
         scene = self.plot_view.scene()
-        offset_x = panel * 1240 - min(v[0] for v in values) / max(ranges[0], 1e-12) * 1000
-        offset_y = max(v[1] for v in values) / max(ranges[1], 1e-12) * 700
+        offset_x = panel * 1240 - low[0] / ranges[0] * 1000
+        offset_y = high[1] / ranges[1] * 700
         left, top = panel * 1240, 0
         pen = QPen(QColor("#dfe9ec"))
         for j in range(6):
             scene.addLine(left + j * 200, top, left + j * 200, top + 700, pen)
             scene.addLine(left, top + j * 140, left + 1000, top + j * 140, pen)
-            a = min(v[0] for v in values) + ranges[0] * j / 5
-            b = max(v[1] for v in values) - ranges[1] * j / 5
+            a = low[0] + ranges[0] * j / 5
+            b = high[1] - ranges[1] * j / 5
             tx = scene.addSimpleText(f"{a:.3g}")
             tx.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
             tx.setPos(left + j * 200 - 15, top + 725)

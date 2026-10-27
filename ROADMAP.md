@@ -1,5 +1,11 @@
 # Roadmap
 
+Source-only owner follow-up, 27 October 2026: landmark/template guidance,
+alignment descriptions, short method help, Visualization organization,
+base R/geomorph handoffs and repository navigation. See the
+[user guide](docs/USER_GUIDE.md) and [export contract](docs/R_EXPORT.md).
+The installed pilot remains unchanged pending explicit installation approval.
+
 v163 permits preview-based fit assessment with optional full detail and repairs
 the [styled inspection resize/render loop](docs/V163_INSPECTION_STABILITY.md).
 Matching nonempty settled-frame gates remain intact. Runtime delivery is tracked separately;

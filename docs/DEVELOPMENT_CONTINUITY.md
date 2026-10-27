@@ -1,4 +1,19 @@
-# Development continuity — v163 stable fit inspection
+# Development continuity — source UI and R handoff follow-up
+
+Current source adds landmark/template guidance, selected-alignment help, short
+shape-space descriptions, a clearer Visualization page and verified handoffs
+for base R or separate geomorph landmark analysis. The shorter repository entry
+point retains the [detailed engineering reference](ENGINEERING_REFERENCE.md).
+See the [user guide](USER_GUIDE.md) and [R export contract](R_EXPORT.md).
+The [verification record and limits](SOURCE_UI_R_FOLLOWUP.md) distinguish this
+tested source follow-up from the installed runtime and owner pilot acceptance.
+
+This is source-only work at the owner's request. Do not install it over the
+current owner test without an explicit later go-ahead. Installed runtime remains
+dev163 / `eff8f7f`; no new version or distribution is implied. No fit, atlas,
+objective, threshold, existing result or approval is changed.
+
+## Installed v163 stable fit inspection
 
 v163 permits approval/rejection/relative feedback on matching settled previews;
 full detail is explicitly optional and no longer automatically loads. Selected

@@ -112,7 +112,8 @@ def test_capped_new_density_field_is_seed_without_replacing_good_comparison(tmp_
     proposed = guided_strategy.trial_proposal(child, "guided-varifold", "detail")
     assert proposed["goal"] == "optimize"
     assert proposed["anchor"] == guided_feedback.reference(base, "guided-varifold")
-    assert proposed["initialization_reference"] == guided_feedback.reference(child, "guided-varifold")
+    assert proposed["initialization_reference"] == guided_feedback.reference(
+        child, "guided-varifold")
     longer = guided.next_action(child.study_directory, "adaptive_recover", "guided-varifold",
                                 goal="detail")
     info = guided.record(longer)
@@ -141,8 +142,10 @@ def test_repeated_detail_switches_explanation_and_ignores_other_targets():
     assert next_hypothesis(cases, "current", "form.vtk", "detail")[0] == "local_motion"
     assert next_hypothesis(cases + [rejected | dict(goal="local_motion")],
                            "current", "form.vtk", "detail")[0] == "density"
-    assert next_hypothesis(cases + [rejected | dict(goal="local_motion"), rejected | dict(goal="density")],
-                           "current", "form.vtk", "detail")[0] == "weight"
+    assert next_hypothesis(
+        cases + [rejected | dict(goal="local_motion"), rejected | dict(goal="density")],
+        "current", "form.vtk", "detail",
+    )[0] == "weight"
 
 
 def test_actual_cap_button_prepares_only_one_successor(tmp_path, monkeypatch):
