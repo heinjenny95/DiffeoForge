@@ -225,6 +225,7 @@ class VisualizationPanel(QWidget):
         self.plot_combo.addItem("PC1 / PC3", (0, 2))
         self.plot_combo.addItem("PC2 / PC3", (1, 2))
         self.plot_combo.addItem("All pairs", "all")
+        self.plot_combo.addItem("PC1 only", (0, None))
         self.plot_combo.currentIndexChanged.connect(self._show_plot)
         self.hover_label = QLabel()
         self.hover_label.setTextFormat(Qt.TextFormat.PlainText)
@@ -301,6 +302,7 @@ class VisualizationPanel(QWidget):
         )
         self.morphospace = Morphospace3D()
         self.morphospace.canvas.setMinimumSize(220, 220)
+        self.morphospace.ready_changed.connect(self._update_export_state)
         self.tabs.addTab(self.morphospace, "3D scores")
         self._tab_changed(0)
 
@@ -317,13 +319,72 @@ class VisualizationPanel(QWidget):
             "3D scores: rotate PC1–PC3. Meshes stay at their saved scores in the same "
             "PCA as the 2D view.",
         )
-        self.view_description.setText(descriptions[index] if 0 <= index < 5 else "")
+        self.view_description.setText(
+            "PC1 scores: this result has only one saved axis. Meshes share one score line; "
+            "no second PC is invented."
+            if index == 0 and self._axis_count() == 1
+            else descriptions[index] if 0 <= index < 5 else ""
+        )
         self.mesh_size.setVisible(index == 0)
         self.mesh_size_label.setVisible(index == 0)
         labels = ("Export plot…", "Export shapes…", "Export map…", "Export movie…",
                   "Export 3D view…")
         if 0 <= index < len(labels):
             self.export_current.setText(labels[index])
+        self._update_export_state()
+
+    def _axis_count(self):
+        return min((len(item["scores"]) for item in self._items), default=0)
+
+    def _available_views(self):
+        axes = self._axis_count()
+        self.tabs.setTabText(0, "PC1 scores" if axes == 1 else "2D scores")
+        self.plot_combo.blockSignals(True)
+        first = None
+        for index in range(self.plot_combo.count()):
+            pair = self.plot_combo.itemData(index)
+            available = axes >= 2 if pair == "all" else all(
+                axis < axes for axis in pair if axis is not None)
+            self.plot_combo.model().item(index).setEnabled(available)
+            if available and first is None:
+                first = index
+        current = self.plot_combo.model().item(self.plot_combo.currentIndex())
+        if first is not None and not current.isEnabled():
+            self.plot_combo.setCurrentIndex(first)
+        self.plot_combo.blockSignals(False)
+        present = (True, self.sd_combo.count() > 0, self.heat_combo.count() > 0,
+                   self.video_combo.count() > 0,
+                   axes >= 3 and "morphospace-3d.npz" in self._records)
+        for index, available in enumerate(present):
+            if not available and self.tabs.currentIndex() == index:
+                self.tabs.setCurrentIndex(0)
+            self.tabs.setTabEnabled(index, available)
+            self.tabs.setTabToolTip(index, "" if available else (
+                "Requires three saved PC coordinates and prepared 3D display geometry."
+                if index == 4 else "This result has no prepared media for this view."
+            ))
+        self._tab_changed(self.tabs.currentIndex())
+
+    def _update_export_state(self, *_args):
+        enabled = (self.directory is not None and not self._view_preparing
+                   and self._export_future is None)
+        self.export.setEnabled(enabled and self._zip_record is not None)
+        ready = False
+        if enabled:
+            index = self.tabs.currentIndex()
+            if index == 0:
+                ready = bool(self._items and self.plot_view.scene().items())
+            elif index in (1, 2):
+                view = self.sd_view if index == 1 else self.heat_view
+                ready = bool(view.scene().items())
+            elif index == 3:
+                ready = self.video_combo.currentData() is not None
+            elif index == 4:
+                ready = self.morphospace.canvas.data is not None
+        self.export_current.setEnabled(ready)
+        self.export_current.setToolTip(
+            "Save the selected view." if ready else "Wait for a saved view to finish loading."
+        )
 
     def _picture_tab(self, title):
         page = QWidget()
@@ -345,6 +406,9 @@ class VisualizationPanel(QWidget):
         self.player.setSource(QUrl())
         self.video_comparison.clear()
         self.directory = None
+        self.video.clear()
+        self.slider.setRange(0, 0)
+        self.play.setText("Play")
         self.base_directory = None
         self._zip_record = None
         self._items = []
@@ -361,6 +425,8 @@ class VisualizationPanel(QWidget):
         self.plot_view.scene().clear()
         self.hover_label.clear()
         self.video_combo.clear()
+        self.status.setText("Open a reviewed atlas result to view its PCA media.")
+        self._available_views()
 
     def load(self, directory: Path):
         # The background preparation worker has verified the complete inventory.
@@ -429,12 +495,11 @@ class VisualizationPanel(QWidget):
         self._show_image(self.heat_combo, self.heat_view)
         self.all_heatmaps_button.setEnabled(self.heat_combo.findData("all") >= 0)
         self._select_video()
+        self._available_views()
         self._show_plot()
-        self.export.setEnabled(self._export_future is None)
-        self.export_current.setEnabled(self._export_future is None)
         display_record = self._records.get("morphospace-3d.npz")
         self.morphospace.canvas.method_label = str(metadata["pca_method"])
-        if display_record is not None:
+        if display_record is not None and self._axis_count() >= 3:
             self.morphospace.load(
                 directory / "morphospace-3d.npz",
                 self._specimen_labels,
@@ -444,7 +509,11 @@ class VisualizationPanel(QWidget):
             )
         else:
             self.morphospace.status.setText("Prepare media again to add a verified 3D view.")
-        self.status.setText("Saved PCA · mean and ±2 SD · six synchronized views")
+        self.status.setText(
+            f"Saved PCA · {self._axis_count()} saved "
+            f"{'axis' if self._axis_count() == 1 else 'axes'} · prepared media only"
+        )
+        self._update_export_state()
         self.view_applied.emit(directory)
         view_label = metadata.get("mesh_view", {}).get("name", "Original mesh view")
         self.mesh_images_applied.emit(
@@ -453,9 +522,7 @@ class VisualizationPanel(QWidget):
 
     def _view_busy(self, busy):
         self._view_preparing = busy
-        enabled = not busy and self.directory is not None and self._export_future is None
-        self.export.setEnabled(enabled)
-        self.export_current.setEnabled(enabled)
+        self._update_export_state()
 
     def _mesh_images_changed(self, images):
         if len(images) != len(self._items):
@@ -472,24 +539,30 @@ class VisualizationPanel(QWidget):
         )
 
     def _show_plot(self):
-        if not self._items:
-            return
-        selection = self.plot_combo.currentData()
-        pairs = [(0, 1), (0, 2), (1, 2)] if selection == "all" else [selection]
         scene = self.plot_view.scene()
         scene.clear()
+        if not self._items:
+            self._update_export_state()
+            return
+        selection = self.plot_combo.currentData()
+        pairs = ([(0, 1), (0, 2), (1, 2)] if selection == "all" else [selection])
+        pairs = [pair for pair in pairs if pair is not None and all(
+            axis < self._axis_count() for axis in pair if axis is not None)]
         self.hover_label.clear()
         for panel, pair in enumerate(pairs):
             self._draw_plot(pair, panel, len(pairs))
         scene.setSceneRect(scene.itemsBoundingRect().adjusted(-80, -80, 80, 80))
         self.plot_view.auto_fit = True
         self.plot_view.fitInView(scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        self._update_export_state()
 
     def _draw_plot(self, pair, panel=0, count=1):
         x, y = pair
-        if any(len(item["scores"]) <= max(x, y) for item in self._items):
+        if any(len(item["scores"]) <= max(axis for axis in pair if axis is not None)
+               for item in self._items):
             return
-        values = [(item["scores"][x], item["scores"][y]) for item in self._items]
+        values = [(item["scores"][x], item["scores"][y] if y is not None else 0.)
+                  for item in self._items]
         low = [min(p[k] for p in values) for k in (0, 1)]
         high = [max(p[k] for p in values) for k in (0, 1)]
         spans = [b-a if b > a else max(abs(a)*.01, 1.) for a, b in zip(low, high, strict=True)]
@@ -506,16 +579,22 @@ class VisualizationPanel(QWidget):
         pen = QPen(QColor("#dfe9ec"))
         for j in range(6):
             scene.addLine(left + j * 200, top, left + j * 200, top + 700, pen)
-            scene.addLine(left, top + j * 140, left + 1000, top + j * 140, pen)
+            if y is not None:
+                scene.addLine(left, top + j * 140, left + 1000, top + j * 140, pen)
             a = low[0] + ranges[0] * j / 5
             b = high[1] - ranges[1] * j / 5
             tx = scene.addSimpleText(f"{a:.3g}")
             tx.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
             tx.setPos(left + j * 200 - 15, top + 725)
-            ty = scene.addSimpleText(f"{b:.3g}")
-            ty.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
-            ty.setPos(left - 70, top + j * 140)
-        title = scene.addSimpleText(f"PC{x + 1} / PC{y + 1}")
+            if y is not None:
+                ty = scene.addSimpleText(f"{b:.3g}")
+                ty.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
+                ty.setPos(left - 70, top + j * 140)
+        if y is None:
+            scene.addLine(left, top+350, left+1000, top+350, pen)
+        title = scene.addSimpleText(
+            f"PC{x + 1} / PC{y + 1}" if y is not None else f"PC{x + 1} · one saved axis"
+        )
         title.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
         title.setPos(left + 400, top - 60)
         caption = scene.addSimpleText("Mesh view: " + self.mesh_views.label)
@@ -540,7 +619,8 @@ class VisualizationPanel(QWidget):
                 if len(self._specimen_labels) >= item["id"]
                 else f"Mesh {item['id']}"
             )
-            glyph.setToolTip(f"{label} · PC{x + 1}: {a:.6g} · PC{y + 1}: {b:.6g}")
+            glyph.setToolTip(f"{label} · PC{x + 1}: {a:.6g}" + (
+                f" · PC{y + 1}: {b:.6g}" if y is not None else ""))
             glyph.setData(0, glyph.toolTip())
 
     def _show_all_heatmaps(self):
@@ -573,11 +653,15 @@ class VisualizationPanel(QWidget):
             view.fit_content()
         elif combo.currentData() is not None:
             view.image(combo.currentData())
+        else:
+            view.scene().clear()
+        self._update_export_state()
 
     def _select_video(self):
         self.player.stop()
         self.video.clear()
         path = self.video_combo.currentData()
+        self.play.setEnabled(path is not None)
         all_videos = path == "all"
         self.video.setVisible(not all_videos)
         self.video_comparison.setVisible(all_videos)
@@ -590,8 +674,10 @@ class VisualizationPanel(QWidget):
                     for i in range(self.video_combo.count() - 1)
                 ]
             )
+            self._update_export_state()
             return
         self.player.setSource(QUrl.fromLocalFile(str(path)) if path else QUrl())
+        self._update_export_state()
 
     def _seek_video(self, position):
         if self.video_combo.currentData() == "all":

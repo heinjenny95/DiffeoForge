@@ -277,6 +277,25 @@ def test_decisions_hidden_until_first_frame_and_again_on_switch_or_failure(tmp_p
         assert dialog.decision_panel.isHidden() and not dialog.review_recorded
         assert dialog.close_button.isVisible()
         assert "display failure" in dialog.status.text()
+        for _ in range(4):
+            app.processEvents()
+            dialog._display_phase()
+            assert "display failure" in dialog.status.text()
+        assert not dialog.display_timer.isActive()
+        assert "display failure" in dialog._comparison_intro.text()
+        assert pairs[1].original_path.name in dialog._comparison_intro.text()
+        assert dialog._comparison_intro.isVisible()
+        dialog.mesh_combo.setCurrentIndex(0)
+        assert pairs[0].original_path.name in dialog._comparison_intro.text()
+        assert "display failure" not in dialog._comparison_intro.text()
+        dialog._pair_failed(1, "Late failure from the previous pair")
+        assert dialog.display_error is None
+        dialog._pair_loaded(0, [
+            _model(pairs[0].original_path), _model(pairs[0].reconstruction_path),
+        ])
+        _wait_pair(app, dialog)
+        assert dialog.canvas.comparison_ready and dialog.fail_button.isEnabled()
+        assert dialog.display_error is None
     finally:
         dialog.close()
         app.processEvents()

@@ -12,8 +12,13 @@ received originals. Mesh validation checks structure, not anatomical completenes
 Avoid an extreme specialization or damaged specimen merely because it has more
 vertices. **Analyze meshes & suggest template** compares geometric descriptors
 and quality warnings in the background without fitting. Preview the suggestion
-and alternatives, then explicitly choose **Use suggested template**. This is
-starting guidance, not anatomical approval or a promised best final atlas.
+and alternatives, then explicitly choose **Use selected template**. Before
+applying a choice, the ranking's complete source cohort is checked in the
+background without parsing the meshes again. You can cancel this check. A new
+analysis retires the previous suggestion immediately, and changed files require
+a fresh recommendation. Changing the file pattern or project retires the old
+recommendation too. Unreadable inputs remain visible as unresolved warnings.
+This is starting guidance, not anatomical approval or a promised best final atlas.
 
 **Landmarks:** use the same identifiable anatomical locations in the same order
 on every mesh, including the template. Use at least three well-spread points
@@ -68,7 +73,10 @@ Visualization separates five views of the saved PCA: **2D scores**, **PC shapes*
 (mean and ±2 SD), **Maps** (endpoint movement), **Movies** (PC deformation in six
 views), and **3D scores** (rotatable PC1–PC3). These tabs are display choices,
 not different PCA methods. Context help explains each tab. **Mesh size** applies
-to 2D glyphs. The current-view export names its medium; **Export all media (ZIP)**
+to 2D glyphs. With only one saved component, **PC1 scores** shows a single score
+line without inventing PC2. Unavailable PC pairs and missing media tabs are
+disabled with explanations. A 3D export waits for its display geometry to load.
+The current-view export names its medium; **Export all media (ZIP)**
 saves the gallery. Exporting does not refit an atlas or recompute PCA.
 
 **Export data for R / geomorph** identifies each data source: a reviewed result

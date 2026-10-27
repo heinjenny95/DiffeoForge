@@ -170,9 +170,18 @@ def test_small_full_pair_remains_settled_after_decision_panel_opens(viewer):
         viewer.app,
         lambda: viewer.v.canvas.full_resolution_ready and viewer.v.fail_button.isVisible(),
     )
-    for _ in range(30):
+    observations = []
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
         viewer.app.processEvents()
+        observations.append((
+            viewer.v.canvas.full_resolution_ready,
+            viewer.v.canvas.width(), viewer.v.canvas.height(),
+            viewer.v.canvas._frames.render_count,
+        ))
         time.sleep(0.01)
+    assert all(row[0] for row in observations[-20:])
+    assert len(set(row[1:] for row in observations[-20:])) == 1
     assert viewer.v.canvas.full_resolution_ready and viewer.v.fail_button.isVisible()
 
 

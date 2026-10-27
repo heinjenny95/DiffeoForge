@@ -73,6 +73,7 @@ def test_r_dialog_disables_unavailable_sources_and_shows_input_roles(qapp, tmp_p
     assert not empty.export_button.isEnabled()
     empty.reject()
     meshes = tuple(tmp_path / name for name in ("template.vtk", "one.vtk", "two.vtk"))
+    (tmp_path / "landmarks.csv").touch()
     dialog = RExportDialog(landmarks=tmp_path / "landmarks.csv", meshes=meshes)
     assert dialog.mode.currentData() == "geomorph" and dialog.export_button.isEnabled()
     assert "2 subjects" in dialog.source.text()

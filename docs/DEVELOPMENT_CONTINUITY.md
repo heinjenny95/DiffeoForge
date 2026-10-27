@@ -1,5 +1,12 @@
 # Development continuity — source UI and R handoff follow-up
 
+The subsequent [workflow robustness review](WORKFLOW_ROBUSTNESS_FOLLOWUP.md)
+adds cancellable complete-cohort source verification when selecting a template,
+retires old suggestions during reanalysis, makes saved views dimension-aware
+and gates exports on view readiness. One-axis PCA is displayed explicitly.
+R export now explains source availability and supplied units. This remains
+uninstalled source work under the same explicit owner deferment.
+
 Current source adds landmark/template guidance, selected-alignment help, short
 shape-space descriptions, a clearer Visualization page and verified handoffs
 for base R or separate geomorph landmark analysis. The shorter repository entry

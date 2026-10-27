@@ -14,9 +14,11 @@ class FullGeometryReviewMixin:
         self.full_requested_at = None
         self.full_ready_at = None
         self.full_error = None
+        self.display_error = None
         self._relative_display_signature = None
         self._full_decision_geometry = None
         super().__init__(*args, **kwargs)
+        self.mark_region_button.setObjectName("secondary")
         self.canvas.original_detail.setText("Load full detail (optional, slower)")
         self.canvas.original_detail.setToolTip(
             "The preview is sufficient to approve, reject or compare this fit. "
@@ -81,32 +83,63 @@ class FullGeometryReviewMixin:
         self.display_started_at = time.monotonic()
         self.full_requested_at = self.full_ready_at = None
         self.full_error = None
+        self.display_error = None
         if hasattr(self, "display_timer"):
             self.display_timer.start()
+        selected = self.mesh_combo.currentData()
+        if selected is not None and (self.fit_preferences or self._compact_review):
+            pair = self._pairs[int(selected)]
+            self._comparison_intro.setText(
+                f"{pair.original_path.name} · Orange: original · Blue: reconstruction"
+            )
         super()._load_selected(index)
 
     def _load_original_detail(self):
         self.full_error = None
+        self.display_error = None
         self.full_requested_at = time.monotonic()
         if hasattr(self, "display_timer"):
             self.display_timer.start()
         super()._load_original_detail()
 
     def _pair_loaded(self, index, models):
+        selected = index[0] if isinstance(index, tuple) else index
+        if selected != self.mesh_combo.currentData():
+            return
+        self.display_error = None
         super()._pair_loaded(index, models)
         self._display_phase()
 
     def _pair_failed(self, key, message):
+        selected = key[0] if isinstance(key, tuple) else key
+        if selected != self.mesh_combo.currentData():
+            return
         if isinstance(key, tuple) and self.canvas.original_model is not None:
             self.full_error = message
             self.canvas.original_detail.setChecked(False)
             self._update_review_progress()
             self._display_phase()
             return
+        self.display_error = message
         super()._pair_failed(key, message)
 
     def _display_phase(self):
         if not hasattr(self, "canvas"):
+            return
+        if self.display_error:
+            if hasattr(self, "display_timer"):
+                self.display_timer.stop()
+            self.status.setText(
+                "Comparison could not be displayed: " + self.display_error
+                + ". Choose another pair or reopen this review to retry."
+            )
+            if self.fit_preferences or self._compact_review:
+                selected = self.mesh_combo.currentData()
+                if selected is not None:
+                    pair = self._pairs[int(selected)]
+                    self._comparison_intro.setText(
+                        f"{pair.original_path.name} · {self.status.text()}"
+                    )
             return
         elapsed = time.monotonic() - self.display_started_at
         if self.canvas.comparison_ready:
@@ -167,11 +200,15 @@ class FullGeometryReviewMixin:
             # stable during rotation/repainting while disabling every decision.
             if self._full_decision_geometry != geometry:
                 self.decision_panel.hide()
-            self.review_gate.setText(
-                "Wait for the original and reconstruction preview image "
-                "to finish rendering before deciding."
-            )
-            self.review_gate.show()
+                self.review_gate.setText(
+                    "Wait for the original and reconstruction preview image "
+                    "to finish rendering before deciding."
+                )
+                self.review_gate.show()
+            # Once this pair was presented, keep the base hint's text and size
+            # while repainting. A longer waiting message can wrap to an extra
+            # line even with retainSizeWhenHidden, resizing the canvas in a loop.
+            # The canvas shows its pending-frame banner; decisions stay disabled.
         if self.guided_feedback:
             self.guided_feedback.set_ready(self._relative_ready() and self._valid_individual)
         self._display_phase()

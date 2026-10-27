@@ -1,5 +1,6 @@
 """Optional background starting-template recommendation in the input step."""
 
+import hashlib
 from pathlib import Path
 from threading import Event
 
@@ -20,11 +21,42 @@ from diffeoforge.desktop.workflow_guidance import TEMPLATE_GUIDE, TEMPLATE_SUMMA
 from diffeoforge.pilot_design import suggest_templates
 
 
+def _identity(path):
+    value = path.stat()
+    return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+
+
+def _verify_selection(bindings, row, cancelled):
+    """Hash the ranking's complete input cohort in a worker, without loading meshes."""
+    expected = {record["path"]: record["sha256"] for record in bindings}
+    if expected.get(row["path"]) != row["sha256"]:
+        raise ValueError("Candidate changed; analyze the meshes again")
+    signatures = []
+    for name, digest in expected.items():
+        if not digest:
+            raise ValueError(
+                "An unreadable input has no verified source. Inspect it and reanalyze."
+            )
+        path = Path(name)
+        before = _identity(path)
+        actual = hashlib.sha256()
+        with path.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                if cancelled.is_set():
+                    raise InterruptedError("Template selection cancelled")
+                actual.update(chunk)
+        if actual.hexdigest() != digest or _identity(path) != before:
+            raise ValueError(f"Input changed: {path.name}. Analyze the meshes again.")
+        signatures.append((name, before))
+    return row, signatures
+
+
 class TemplateSuggestionPanel(QWidget):
     def __init__(self, window):
         super().__init__(window)
         self._owner = window
         self.result = None
+        self._busy = False
         self.cancelled = Event()
         self.loader = PreviewMeshLoader(self)
         self.loader.loaded.connect(self._loaded)
@@ -43,11 +75,16 @@ class TemplateSuggestionPanel(QWidget):
         self.preview = QPushButton("Preview candidate")
         self.preview.setObjectName("secondary")
         self.preview.clicked.connect(self._preview)
-        self.use = QPushButton("Use suggested template")
+        self.use = QPushButton("Use selected template")
         self.use.setObjectName("primary")
         self.use.clicked.connect(self._apply)
         row.addWidget(self.preview)
         row.addWidget(self.use)
+        self.cancel = QPushButton("Cancel check")
+        self.cancel.setObjectName("secondary")
+        self.cancel.clicked.connect(self._cancel)
+        self.cancel.hide()
+        row.addWidget(self.cancel)
         row.addStretch()
         layout.addLayout(row)
         self.status = QLabel("Optional: recommend a representative starting form before alignment.")
@@ -56,9 +93,10 @@ class TemplateSuggestionPanel(QWidget):
         layout.addWidget(InfoDisclosure("How to choose an initial template", TEMPLATE_GUIDE))
         self.alternatives = QComboBox()
         self.alternatives.setAccessibleName("Alternative initial templates")
+        layout.addWidget(self.alternatives)
+        self.alternatives.hide()
         details = QWidget(self)
         details_layout = QVBoxLayout(details)
-        details_layout.addWidget(self.alternatives)
         self.explanation = QLabel()
         self.explanation.setWordWrap(True)
         self.explanation.setTextFormat(Qt.TextFormat.PlainText)
@@ -69,8 +107,10 @@ class TemplateSuggestionPanel(QWidget):
         self.preview.hide()
         self.use.hide()
         self.more.hide()
-        for edit in (window.mesh_edit, window.template_edit):
-            edit.textChanged.connect(self.invalidate)
+        for name in ("mesh_edit", "template_edit", "pattern_edit", "project_edit"):
+            edit = getattr(window, name, None)
+            if edit is not None:
+                edit.textChanged.connect(self.invalidate)
 
     def _paths(self):
         from diffeoforge.surface_io import is_supported_surface_path
@@ -105,10 +145,15 @@ class TemplateSuggestionPanel(QWidget):
         self.cancelled.set()
         self.loader.cancel()
         self.result = None
+        self._busy = False
+        self.alternatives.hide()
         self.use.hide()
         self.preview.hide()
         self.more.hide()
         self.suggest.setEnabled(True)
+        self.use.setEnabled(False)
+        self.preview.setEnabled(False)
+        self.cancel.hide()
         self.status.setText("Optional: recommend a representative starting form before alignment.")
 
     def _suggest(self):
@@ -120,14 +165,15 @@ class TemplateSuggestionPanel(QWidget):
         except (OSError, ValueError) as error:
             self._failed(str(error))
             return
-        self.cancelled.set()
+        self.invalidate()
         self.cancelled = Event()
         cancelled = self.cancelled
         cache = (
             Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation))
             / "mesh-measurements"
         )
-        self.suggest.setEnabled(False)
+        self._set_busy(True)
+        self.cancel.setText("Cancel analysis")
         self.status.setText(f"Comparing {len(paths)} surfaces in background; no fitting…")
         project_edit = getattr(self._owner, "project_edit", None)
         project = project_edit.text().strip() if project_edit else None
@@ -135,6 +181,18 @@ class TemplateSuggestionPanel(QWidget):
             paths,
             lambda: self._measure(paths, cache, cancelled, project),
         )
+
+    def _set_busy(self, busy):
+        self._busy = busy
+        self.suggest.setEnabled(not busy)
+        self.alternatives.setEnabled(not busy)
+        self.use.setEnabled(not busy and self.result is not None)
+        self.preview.setEnabled(not busy and self.result is not None)
+        self.cancel.setVisible(busy)
+
+    def _cancel(self):
+        self.invalidate()
+        self.status.setText("Check cancelled. Your selected template has not changed.")
 
     @staticmethod
     def _measure(paths, cache, cancelled, project):
@@ -148,6 +206,17 @@ class TemplateSuggestionPanel(QWidget):
         row = self.alternatives.currentData()
         if not row:
             return
+        if not self._busy:
+            self.status.setText(row["filename"] + ": " + (
+                "Contrasting alternative to the central suggestion; inspect its features."
+                if row.get("contrasting_alternative") else row["reason"]
+            ))
+            if self.result and self.result["uncertain"]:
+                self.status.setText(self.status.text() + " Similar scores: inspect alternatives.")
+            if self.result and self.result["unreadable_meshes"]:
+                self.status.setText(self.status.text() +
+                    f" {len(self.result['unreadable_meshes'])} meshes still need inspection; "
+                    "they are not excluded from the atlas.")
         lines = [row["reason"],
                  f"Overall distance {row['global_distance']:.2f} · local distance "
                  f"{row['local_distance']:.2f} (smaller means more central)."]
@@ -167,9 +236,35 @@ class TemplateSuggestionPanel(QWidget):
         self.explanation.setText("\n".join(lines))
 
     def _loaded(self, paths, result):
+        if paths and paths[0] == "apply":
+            row, signatures = result
+            selected = self.alternatives.currentData()
+            try:
+                if self.cancelled.is_set():
+                    return
+                if not selected or selected["path"] != row["path"]:
+                    raise ValueError("Candidate selection changed; choose it again")
+                if self._owner._worker is not None:
+                    raise ValueError("Preparation started; the recommendation was not applied.")
+                if {str(p) for p in self._paths()} != {name for name, _ in signatures}:
+                    raise ValueError("Cohort changed; analyze the meshes again")
+                if any(_identity(Path(name)) != identity for name, identity in signatures):
+                    raise ValueError("Input changed during selection; analyze the meshes again")
+            except (OSError, ValueError) as error:
+                self._failed(str(error))
+                return
+            self._set_busy(False)
+            self._owner.template_edit.setText(row["path"])
+            self._owner._adopt_template_format_pattern(Path(row["path"]))
+            self._owner._template_suggestion_accepted = dict(row)
+            self.status.setText(
+                "Starting template selected. Continue with alignment and pilot design."
+            )
+            return
         if paths and paths[0] == "preview":
             from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
 
+            self._set_busy(False)
             if self.result is None or self.alternatives.currentData()["path"] != paths[1]:
                 return
             dialog = QDialog(self)
@@ -181,9 +276,14 @@ class TemplateSuggestionPanel(QWidget):
             canvas.set_model(result[0])
             layout.addWidget(canvas)
             close = QPushButton("Close")
+            close.setObjectName("secondary")
             close.clicked.connect(dialog.accept)
             layout.addWidget(close)
-            dialog.exec()
+            try:
+                dialog.exec()
+            finally:
+                canvas.close()
+                dialog.deleteLater()
             return
         try:
             current = self._paths()
@@ -192,6 +292,8 @@ class TemplateSuggestionPanel(QWidget):
         if paths != current or self.cancelled.is_set():
             return
         self.result = result
+        self._set_busy(False)
+        self.alternatives.blockSignals(True)
         self.alternatives.clear()
         ranked = result["candidates"]
         contrasting = [r for r in ranked[1:] if r["contrasting_alternative"]]
@@ -202,6 +304,7 @@ class TemplateSuggestionPanel(QWidget):
                 ("Starting suggestion · " if index == 0 else "Contrasting form · "
                  if row["contrasting_alternative"] else "Alternative · ") + row["filename"], row
             )
+        self.alternatives.blockSignals(False)
         self.status.setText(
             result["candidates"][0]["filename"]
             + ": "
@@ -218,13 +321,12 @@ class TemplateSuggestionPanel(QWidget):
         self._explain()
         self.use.show()
         self.preview.show()
+        self.alternatives.show()
         self.more.show()
         self.suggest.setEnabled(True)
 
     def _apply(self):
-        from diffeoforge.mesh import sha256_file
-
-        if self._owner._worker is not None or self.result is None:
+        if self._busy or self._owner._worker is not None or self.result is None:
             return
         row = self.alternatives.currentData()
         try:
@@ -232,26 +334,32 @@ class TemplateSuggestionPanel(QWidget):
                 r["path"] for r in self.result["input_binding"]
             } | {r["path"] for r in self.result["unreadable_meshes"]}:
                 raise ValueError("Cohort changed; request a new suggestion")
-            if sha256_file(Path(row["path"])) != row["sha256"]:
-                raise ValueError("Candidate changed; request a new suggestion")
         except (OSError, ValueError) as error:
             self._failed(str(error))
             return
-        accepted = dict(row)
-        self._owner.template_edit.setText(row["path"])
-        self._owner._adopt_template_format_pattern(Path(row["path"]))
-        self._owner._template_suggestion_accepted = accepted
-        self.status.setText("Starting template selected. Continue with alignment and pilot design.")
+        bindings = tuple(self.result["input_binding"]) + tuple(
+            self.result["unreadable_meshes"])
+        self._set_busy(True)
+        self.cancel.setText("Cancel check")
+        self.status.setText("Checking the recommendation's input files in the background…")
+        cancelled = self.cancelled
+        self.loader.request_operation(
+            ("apply", row["path"]),
+            lambda: _verify_selection(bindings, dict(row), cancelled),
+        )
 
     def _preview(self):
-        if self.result is None:
+        if self._busy or self.result is None:
             return
         row = self.alternatives.currentData()
+        self._set_busy(True)
+        self.cancel.setText("Cancel preview")
         self.loader.request_paths(
             ("preview", row["path"]), (Path(row["path"]),), expected=(row["sha256"],)
         )
 
     def _failed(self, error):
+        self.invalidate()
         self.status.setText("Template suggestion: " + error)
         self.suggest.setEnabled(True)
 

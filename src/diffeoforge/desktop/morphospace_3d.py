@@ -305,6 +305,8 @@ class MorphospaceCanvas(QWidget):
 
 
 class Morphospace3D(QWidget):
+    ready_changed = Signal(bool)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -377,6 +379,7 @@ class Morphospace3D(QWidget):
         self.specimens.clear()
         self.canvas.cache.clear()
         self.canvas.update()
+        self.ready_changed.emit(False)
 
     def set_images(self, images):
         self._images = images
@@ -386,8 +389,9 @@ class Morphospace3D(QWidget):
         if self.future is None or not self.future.done():
             return
         self.timer.stop()
+        future, self.future = self.future, None
         try:
-            self.canvas.set_data(self.future.result(), self.labels)
+            self.canvas.set_data(future.result(), self.labels)
             if self._images is not None:
                 self.canvas.set_images(self._images)
             self.specimens.addItems(
@@ -402,4 +406,8 @@ class Morphospace3D(QWidget):
                 else "Drag to rotate · Right-drag to pan · Wheel to zoom · Click for scores"
             )
         except (OSError, ValueError, KeyError) as error:
+            self.canvas.data = None
+            self.canvas.glyph_images = []
+            self.canvas.update()
             self.status.setText(str(error))
+        self.ready_changed.emit(self.canvas.data is not None)

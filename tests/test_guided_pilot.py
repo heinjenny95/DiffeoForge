@@ -1,5 +1,6 @@
 """Synthetic software qualification. No native optimizer or owner data."""
 
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -303,6 +304,10 @@ def test_template_panel_never_changes_a_manual_choice_without_use(tmp_path, monk
     panel._loaded(paths, result)
     assert window.template_edit.text() == str(paths[-1])
     panel._apply()
+    deadline = time.monotonic() + 10
+    while panel._busy and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(.005)
     assert window.template_edit.text() == result["candidates"][0]["path"]
     assert window._template_suggestion_accepted["sha256"] == result["candidates"][0]["sha256"]
     window.close()

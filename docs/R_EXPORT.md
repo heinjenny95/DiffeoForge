@@ -6,6 +6,11 @@ it does not invoke R, install packages, fit an atlas, change input coordinates
 or approve scientific results.
 
 Choose a data type and a new ZIP filename. Work runs outside the GUI thread.
+The dialog lists which sources are selected and explains missing prerequisites.
+geomorph selection requires an existing CSV, a declared template and at least
+two subjects; complete table validation still occurs during export. The action
+is labelled **Save data for R (ZIP)**: this is a data archive, not an installable
+R package. Supplied coordinate units are shown without conversion.
 ZIP entries are byte-verified before exclusive publication. Existing destinations
 are preserved; changed source bindings stop publication. The manifest records
 source hashes, specimen order, representation and output checksums.

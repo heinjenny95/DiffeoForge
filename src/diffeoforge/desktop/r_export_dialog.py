@@ -35,8 +35,9 @@ class RExportDialog(QDialog):
         self.mode.addItem("Saved atlas PCA → base R", "pca")
         self.mode.addItem("Homologous landmarks → geomorph", "geomorph")
         self.mode.model().item(0).setEnabled(review is not None)
-        self.mode.model().item(1).setEnabled(landmarks is not None and len(meshes) >= 3)
-        if review is None and landmarks is not None and len(meshes) >= 3:
+        has_landmarks = landmarks is not None and len(meshes) >= 3 and Path(landmarks).is_file()
+        self.mode.model().item(1).setEnabled(has_landmarks)
+        if review is None and has_landmarks:
             self.mode.setCurrentIndex(1)
         self.description = QLabel()
         self.description.setWordWrap(True)
@@ -45,11 +46,15 @@ class RExportDialog(QDialog):
         self.source.setWordWrap(True)
         self.source.setTextFormat(Qt.TextFormat.PlainText)
         self.source.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.availability = QLabel()
+        self.availability.setWordWrap(True)
+        self.availability.setTextFormat(Qt.TextFormat.PlainText)
         self.status = QLabel("A ZIP contains the data, R scripts and source provenance.")
         self.status.setWordWrap(True)
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.mode)
+        layout.addWidget(self.availability)
         layout.addWidget(self.description)
         layout.addWidget(self.source)
         layout.addStretch()
@@ -59,7 +64,7 @@ class RExportDialog(QDialog):
         self.close_button = QPushButton("Close")
         self.close_button.setObjectName("secondary")
         self.close_button.clicked.connect(self.reject)
-        self.export_button = QPushButton("Save R package (ZIP)…")
+        self.export_button = QPushButton("Save data for R (ZIP)…")
         self.export_button.setObjectName("primary")
         self.export_button.clicked.connect(self._export)
         actions.addWidget(self.close_button)
@@ -73,6 +78,16 @@ class RExportDialog(QDialog):
 
     def _mode_changed(self):
         pca = self.mode.currentData() == "pca"
+        has_landmarks = (self.landmarks is not None and len(self.meshes) >= 3
+                         and Path(self.landmarks).is_file())
+        self.mode.model().item(1).setEnabled(has_landmarks)
+        self.availability.setText(
+            ("Base R: reviewed PCA selected." if self.review is not None
+             else "Base R: open a reviewed atlas result first.") + "\n" +
+            (f"geomorph: landmark CSV selected for {len(self.meshes)-1} subjects; "
+             "checked during export." if has_landmarks else
+             "geomorph: select an existing landmark CSV, template and at least two subjects.")
+        )
         self.description.setText(
             "Export the exact saved specimen scores, explained variance and available loadings. "
             "The base R script loads them without recomputing PCA. No atlas is refitted."
@@ -81,8 +96,7 @@ class RExportDialog(QDialog):
             "array. The template is excluded. A base R loader and an optional geomorph "
             "GPA/PCA example are included. This landmark analysis differs from the atlas PCA."
         )
-        available = self.review is not None if pca else self.landmarks is not None and len(
-            self.meshes) >= 3
+        available = self.review is not None if pca else has_landmarks
         self.export_button.setEnabled(available and self.future is None)
         self.source.setText(
             (f"Reviewed result: {self.review.project_name}\nMethod: {self.review.pca_method_label}"
@@ -90,6 +104,7 @@ class RExportDialog(QDialog):
             if pca else
             (f"Landmark CSV: {self.landmarks}\n{len(self.meshes)-1} subjects; source coordinates "
              "and units are retained. Inspect landmark homology before using geomorph."
+             f" Units: {self.unit or 'not declared'}; no unit conversion."
              if available else "Select a complete landmark CSV and mesh cohort in Inputs first.")
         )
 
@@ -106,7 +121,7 @@ class RExportDialog(QDialog):
             target = target.with_suffix(".zip")
         self.export_button.setEnabled(False)
         self.mode.setEnabled(False)
-        self.status.setText("Verifying sources and writing the R package…")
+        self.status.setText("Verifying sources and writing the data ZIP…")
         if pca:
             self.future = _EXPORTS.submit(export_pca_to_r, self.review, target)
         else:

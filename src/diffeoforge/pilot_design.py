@@ -99,6 +99,7 @@ def suggest_templates(
     for index, path in enumerate(paths):
         if cancel_requested and cancel_requested():
             raise InterruptedError("Template suggestion cancelled")
+        digest = None
         try:
             digest = sha256_file(path)
             key = measurement_key(path, digest, None, 20_000,
@@ -135,7 +136,7 @@ def suggest_templates(
             observations.append((path, observation))
             local.append(detail)
         except (OSError, ValueError, RuntimeError) as error:
-            failures.append(dict(path=str(path), reason=str(error)))
+            failures.append(dict(path=str(path), reason=str(error), sha256=digest))
         if progress_callback:
             progress_callback(index + 1, len(paths), path.name)
     if len(observations) < 3:

@@ -363,6 +363,9 @@ QTabWidget#visualizationTabs QTabBar::tab:selected {
     background: #ffffff; border-bottom: 2px solid #167c6b; font-weight: 600;
 }
 QTabWidget#visualizationTabs QTabBar::tab:hover { background: #eaf7f4; }
+QTabWidget#visualizationTabs QTabBar::tab:disabled {
+    color: #64777c; background: #f4f7f8; border-color: #dbe4e6;
+}
 QLabel#infoDisclosureText { color: #405d61; font-size: 12px; }
 QFrame#parameterHelpPanel {
     background: #f2f8f6; border: 1px solid #cee3dd; border-radius: 7px;
