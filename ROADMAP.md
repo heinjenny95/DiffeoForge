@@ -1,7 +1,8 @@
 # Roadmap
 
-v163 repairs the [styled inspection resize/render loop](docs/V163_INSPECTION_STABILITY.md).
-Complete-frame visual gates remain intact. Runtime delivery is tracked separately;
+v163 permits preview-based fit assessment with optional full detail and repairs
+the [styled inspection resize/render loop](docs/V163_INSPECTION_STABILITY.md).
+Matching nonempty settled-frame gates remain intact. Runtime delivery is tracked separately;
 no fitting objective or scientific acceptance changes.
 
 v161 adds [protected regional pilot fitting](docs/V161_PROTECTED_REGIONAL_PILOT.md):

@@ -384,7 +384,12 @@ class CalibrationComparisonCanvas3D(QWidget):
         image = self._frames.request(key, scene)
         if image is not None:
             painter.drawImage(0, 0, image)
-        presented = key if self._frames.ready(key) and not scene.navigation else None
+        has_geometry = bool(layers) and all(
+            len(layer.vertices) and len(layer.indices) for layer in layers
+        )
+        presented = (
+            key if self._frames.ready(key) and not scene.navigation and has_geometry else None
+        )
         if presented != self._presented_key:
             self._presented_key = presented
             self.fullResolutionReadyChanged.emit()
@@ -398,6 +403,8 @@ class CalibrationComparisonCanvas3D(QWidget):
                 or (
                     "Navigation preview — QC decisions are disabled during movement."
                     if scene.navigation
+                    else "Preview unavailable — retry or load optional full detail."
+                    if not has_geometry
                     else "Rendering selected display resolution in background…"
                 ),
             )
@@ -413,7 +420,7 @@ class CalibrationComparisonCanvas3D(QWidget):
                 or self._reconstruction.display_proxy_error
                 or (
                     f"Display proxies: reconstruction {len(reconstruction_triangles):,} faces. "
-                    "Preview only — complete geometry is needed for fit decisions."
+                    "Preview ready — you can assess this fit. Full detail is optional."
                 ),
             )
         painter.end()

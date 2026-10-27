@@ -84,16 +84,14 @@ def viewer(tmp_path, monkeypatch):
 def show_proxy(viewer):
     v = viewer.v
     v._pair_loaded(0, tuple(model(p, True) for p in viewer.paths))
-    wait(viewer.app, lambda: len(viewer.requests) >= 2)
     wait(viewer.app, lambda: v.canvas.comparison_ready)
     assert not v.canvas.full_resolution_ready
-    assert not v.complete_button.isEnabled() and not v.fail_button.isEnabled()
-    assert not v.mark_region_button.isEnabled() and not v.review_recorded
-    v._record_visual_qc_pass()
-    v._record_visual_qc_fail()
-    v._record_plan_b()
-    assert not v.review_recorded and not v.keep_as_plan_b
-    assert v._reviewed_pair_ids == set()
+    assert len(viewer.requests) == 1  # no automatic complete-mesh load
+    assert not v.canvas.original_detail.isChecked()
+    assert v.complete_button.isEnabled() and v.fail_button.isEnabled()
+    assert v.mark_region_button.isEnabled() and not v.review_recorded
+    assert v._reviewed_pair_ids == {"one"}
+    assert v.display_scopes == {"original.vtk": "preview"}
 
 
 def show_full(viewer):
@@ -107,49 +105,51 @@ def show_full(viewer):
     assert not viewer.v.canvas.reconstruction_model.geometry_is_proxy
 
 
-def test_proxy_waits_for_exact_settled_full_frame_without_convergence_requirement(viewer):
+def test_preview_is_sufficient_to_approve_without_loading_full_geometry(viewer):
     show_proxy(viewer)
-    show_full(viewer)
-    assert "Complete comparison ready" in viewer.v.status.text()
-    assert viewer.v.canvas.original_detail.isChecked()
+    assert "Preview ready" in viewer.v.status.text()
     viewer.v.complete_button.click()
     assert viewer.v.review_passed and viewer.v.review_complete
 
 
-def test_fast_view_and_navigation_block_decisions_until_full_settles_again(viewer):
+def test_preview_navigation_blocks_decisions_until_selected_image_settles(viewer):
     show_proxy(viewer)
-    show_full(viewer)
-    viewer.v.canvas.original_detail.setChecked(False)
-    wait(viewer.app, lambda: viewer.v.canvas.comparison_ready)
-    assert not viewer.v.canvas.full_resolution_ready and not viewer.v.complete_button.isEnabled()
-    assert "Fast preview only" in viewer.v.status.text()
-    viewer.v._record_visual_qc_pass()
-    assert not viewer.v.review_recorded
-    viewer.v.canvas.original_detail.setChecked(True)
-    wait(viewer.app, lambda: viewer.v.canvas.full_resolution_ready)
     viewer.v.canvas._interacting = True
+    viewer.v.canvas._emit_camera()
     viewer.v.canvas.update()
     wait(viewer.app, lambda: any(s.navigation for s in viewer.scenes))
     assert not viewer.v.canvas.full_resolution_ready
     viewer.v._update_review_progress()
     assert not viewer.v.complete_button.isEnabled()
     viewer.v.canvas._interacting = False
+    viewer.v.canvas._emit_camera()
     viewer.v.canvas.update()
-    wait(viewer.app, lambda: viewer.v.canvas.full_resolution_ready)
+    wait(viewer.app, lambda: viewer.v.canvas.comparison_ready)
     assert viewer.v.complete_button.isEnabled() and not viewer.v.review_recorded
 
 
-def test_full_failure_keeps_non_gradeable_preview_and_allows_retry_close(viewer):
+def test_optional_full_failure_keeps_usable_preview_and_allows_retry(viewer):
     show_proxy(viewer)
     viewer.v._pair_failed((0, "detail"), "bounded test error")
     wait(viewer.app, lambda: viewer.v.canvas.comparison_ready)
     assert viewer.v.canvas.reconstruction_model is not None
-    assert "Full geometry unavailable" in viewer.v.status.text()
-    assert not viewer.v.complete_button.isEnabled() and not viewer.v.fail_button.isEnabled()
+    assert "Optional full detail unavailable" in viewer.v.status.text()
+    assert viewer.v.complete_button.isEnabled() and viewer.v.fail_button.isEnabled()
     previous = len(viewer.requests)
     viewer.v.canvas.original_detail.setChecked(True)
     wait(viewer.app, lambda: len(viewer.requests) > previous)
     assert not viewer.v.review_recorded
+
+
+def test_full_detail_load_is_explicit_and_preview_rejection_remains_available(viewer):
+    show_proxy(viewer)
+    viewer.v.canvas.original_detail.setChecked(True)
+    wait(viewer.app, lambda: len(viewer.requests) == 2)
+    assert viewer.requests[-1][0][0] == (0, "detail")
+    show_full(viewer)
+    assert "Full detail ready" in viewer.v.status.text()
+    viewer.v.fail_button.click()
+    assert viewer.v.review_recorded and not viewer.v.review_passed
 
 
 def test_small_full_pair_remains_settled_after_decision_panel_opens(viewer):
@@ -177,13 +177,14 @@ def test_small_full_pair_remains_settled_after_decision_panel_opens(viewer):
 
 
 @pytest.mark.parametrize("size", [(1080, 930), (900, 720), (1400, 1000)])
-def test_styled_review_stays_ready_without_resizing_and_rerendering_itself(viewer, size):
+@pytest.mark.parametrize("preview", [True, False])
+def test_styled_review_stays_ready_without_resizing_and_rerendering_itself(viewer, size, preview):
     from diffeoforge.desktop.widgets import _STYLE
 
     v = viewer.v
     v.setStyleSheet(_STYLE)
     v.resize(*size)
-    show_full(viewer)
+    (show_proxy if preview else show_full)(viewer)
     # The first ready signal is insufficient: hiding the styled hint used to
     # invalidate it at the following layout pass, indefinitely toggling QC.
     deadline = time.monotonic() + 1.0
@@ -191,7 +192,7 @@ def test_styled_review_stays_ready_without_resizing_and_rerendering_itself(viewe
     while time.monotonic() < deadline:
         viewer.app.processEvents()
         sizes.append((v.canvas.width(), v.canvas.height()))
-        readiness.append(v.canvas.full_resolution_ready)
+        readiness.append(v.canvas.comparison_ready)
         render_counts.append(v.canvas._frames.render_count)
         time.sleep(0.005)
     assert len(set(sizes[-30:])) == 1
@@ -213,11 +214,23 @@ def test_styled_review_stays_ready_without_resizing_and_rerendering_itself(viewe
     v.canvas._interacting = False
     v.canvas._emit_camera()
     v.canvas.update()
-    wait(viewer.app, lambda: v.canvas.full_resolution_ready)
+    wait(viewer.app, lambda: v.canvas.comparison_ready)
     deadline = time.monotonic() + 0.4
     while time.monotonic() < deadline:
         viewer.app.processEvents()
-        assert v.canvas.full_resolution_ready
+        assert v.canvas.comparison_ready
         assert (v.canvas.width(), v.canvas.height()) == settled_size
         time.sleep(0.005)
     assert v.complete_button.isEnabled() and v.mark_region_button.isEnabled()
+
+
+def test_missing_preview_geometry_cannot_qualify_a_blank_image(viewer):
+    # A failed reduction of a large full model must not present an empty image
+    # as an adequate preview. The source models alone are insufficient.
+    v = viewer.v
+    v._pair_loaded(0, tuple(model(p, False) for p in viewer.paths))
+    wait(viewer.app, lambda: v.canvas._frames.ready(v.canvas._frame_key()))
+    assert not v.canvas.comparison_ready
+    assert not v.complete_button.isEnabled() and not v.fail_button.isEnabled()
+    v._record_visual_qc_pass()
+    assert not v.review_recorded and len(viewer.requests) == 1

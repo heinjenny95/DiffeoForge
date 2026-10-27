@@ -93,11 +93,11 @@ def case(tmp_path, monkeypatch):
     viewer.resize(1250, 850)
     viewer.show()
     main_models = (
-        model(original, pair.original_sha256),
-        model(current, pair.reconstruction_sha256),
+        model(original, pair.original_sha256, proxy=True),
+        model(current, pair.reconstruction_sha256, proxy=True),
     )
-    viewer._pair_loaded((0, "detail"), main_models)
-    wait(app, lambda: viewer.canvas.full_resolution_ready)
+    viewer._pair_loaded(0, main_models)
+    wait(app, lambda: viewer.canvas.comparison_ready)
     yield SimpleNamespace(
         app=app,
         v=viewer,
@@ -115,7 +115,7 @@ def relative_enabled(case):
     return all(b.isEnabled() for b in case.v.guided_feedback.outcomes.values())
 
 
-def deliver(case, index, *, proxy=False, path=None):
+def deliver(case, index, *, proxy=True, path=None):
     pair = case.choices[index]
     m = (
         model(pair.original_path, pair.original_sha256, proxy),
@@ -130,16 +130,16 @@ def test_alternatives_are_optional_selected_only_and_switches_reject_stale_geome
     assert not case.saved.toggle.isChecked()
     case.saved.toggle.setChecked(True)
     assert not relative_enabled(case) and case.v.guided_feedback_decision is None
-    wait(case.app, lambda: case.v.canvas.full_resolution_ready)
+    wait(case.app, lambda: case.v.canvas.comparison_ready)
     assert case.v.complete_button.isEnabled()  # single-fit suitability remains scoped to current
     assert case.requests[-1][1][1] == (case.pair.original_path, case.choices[0].reconstruction_path)
-    assert "pilot_cache" not in case.requests[-1][2]
+    assert case.requests[-1][2]["pilot_cache"] == case.v._preview_cache
     case.saved.choice.setCurrentIndex(1)
     assert case.saved.canvas.reconstruction_model is None
     deliver(case, 0)  # late previous selection must never appear below the new label
     assert case.saved.canvas.reconstruction_model is None and not relative_enabled(case)
     deliver(case, 1)
-    wait(case.app, lambda: case.saved.full_comparison_ready and case.v.canvas.full_resolution_ready)
+    wait(case.app, lambda: case.saved.full_comparison_ready and case.v.canvas.comparison_ready)
     assert relative_enabled(case)
     case.v.guided_feedback.outcomes["better"].click()
     assert case.v.guided_feedback_decision is not None
@@ -147,37 +147,39 @@ def test_alternatives_are_optional_selected_only_and_switches_reject_stale_geome
     assert not any(b.isChecked() for b in case.v.guided_feedback.outcomes.values())
     assert not relative_enabled(case) and case.v.guided_feedback_decision is None
     case.saved.toggle.setChecked(False)
-    wait(case.app, lambda: case.v.canvas.full_resolution_ready)
+    wait(case.app, lambda: case.v.canvas.comparison_ready)
     assert relative_enabled(case) and not case.v.review_recorded
 
 
-def test_proxy_or_wrong_selected_source_cannot_qualify_and_failure_can_retry(case):
+def test_preview_comparison_can_qualify_but_wrong_selected_source_cannot(case):
     case.saved.toggle.setChecked(True)
     deliver(case, 0, proxy=True)
+    wait(case.app, lambda: case.saved.full_comparison_ready and case.v.canvas.comparison_ready)
+    assert relative_enabled(case)
+    assert not case.saved.canvas.full_resolution_ready
+    case.saved.choice.setCurrentIndex(1)
+    deliver(case, 1, path=case.choices[0].reconstruction_path)
     assert not case.saved.full_comparison_ready and not relative_enabled(case)
     assert case.saved.retry_button.isVisible() and case.saved.canvas.reconstruction_model is None
     before = len(case.requests)
     case.saved.retry_button.click()
     assert len(case.requests) == before + 1 and not case.saved.retry_button.isVisible()
-    deliver(case, 0, path=case.choices[1].reconstruction_path)
-    assert not case.saved.full_comparison_ready and case.saved.retry_button.isVisible()
-    case.saved.retry_button.click()
-    deliver(case, 0)
-    wait(case.app, lambda: case.saved.full_comparison_ready and case.v.canvas.full_resolution_ready)
+    deliver(case, 1)
+    wait(case.app, lambda: case.saved.full_comparison_ready and case.v.canvas.comparison_ready)
     assert relative_enabled(case) and not case.v.review_recorded
-    assert case.saved.canvas.reconstruction_model.sha256 == case.choices[0].reconstruction_sha256
+    assert case.saved.canvas.reconstruction_model.sha256 == case.choices[1].reconstruction_sha256
 
 
 def test_comparison_navigation_blocks_relative_feedback_but_preserves_its_bound_choice(case):
     case.saved.toggle.setChecked(True)
     deliver(case, 0)
-    wait(case.app, lambda: case.saved.full_comparison_ready and case.v.canvas.full_resolution_ready)
+    wait(case.app, lambda: case.saved.full_comparison_ready and case.v.canvas.comparison_ready)
     case.v.guided_feedback.outcomes["same"].click()
     assert case.v.guided_feedback_decision["comparison_displayed"] is True
     case.saved.canvas._interacting = True
     case.saved.canvas._emit_camera()
     case.saved.canvas.update()
-    wait(case.app, lambda: not case.saved.canvas.full_resolution_ready)
+    wait(case.app, lambda: not case.saved.canvas.comparison_ready)
     case.v._update_review_progress()
     assert not relative_enabled(case) and case.v.guided_feedback_decision is None
     case.saved.canvas._interacting = False
@@ -187,7 +189,7 @@ def test_comparison_navigation_blocks_relative_feedback_but_preserves_its_bound_
         case.app,
         lambda: (
             case.saved.full_comparison_ready
-            and case.v.canvas.full_resolution_ready
+            and case.v.canvas.comparison_ready
             and relative_enabled(case)
         ),
     )
@@ -195,7 +197,9 @@ def test_comparison_navigation_blocks_relative_feedback_but_preserves_its_bound_
     assert not case.v.review_recorded
 
 
-def test_legacy_relative_panel_requires_full_current_and_selected_reference(tmp_path, monkeypatch):
+def test_legacy_relative_panel_accepts_matching_preview_and_optional_full_detail(
+    tmp_path, monkeypatch
+):
     from diffeoforge.desktop.fit_preference_dialog import FitPreferencePanel
 
     app = QApplication.instance() or QApplication([])
@@ -205,7 +209,7 @@ def test_legacy_relative_panel_requires_full_current_and_selected_reference(tmp_
     )
     panel = FitPreferencePanel(tmp_path)
     panel.show()
-    assert panel.detail.isChecked()
+    assert not panel.detail.isChecked()
     current = dict(study="now", candidate_id="c")
     ref = dict(study="before", candidate_id="r")
     descriptor = dict(root=str(tmp_path), current=current, best=ref, choices=[ref])
@@ -214,7 +218,8 @@ def test_legacy_relative_panel_requires_full_current_and_selected_reference(tmp_
     comparison = dict(current=current, reference=ref, best=ref)
     paths = tmp_path / "original.vtk", tmp_path / "current.vtk", tmp_path / "saved.vtk"
     for proxy in (True, False):
-        models = [model(p, str(i) * 64, proxy and i == 2) for i, p in enumerate(paths)]
+        panel.detail.setChecked(not proxy)
+        models = [model(p, str(i) * 64, proxy) for i, p in enumerate(paths)]
         panel._loaded("surfaces", (models, comparison))
         wait(
             app,
@@ -222,10 +227,10 @@ def test_legacy_relative_panel_requires_full_current_and_selected_reference(tmp_
                 panel.current_canvas.comparison_ready and panel.reference_canvas.comparison_ready
             ),
         )
-        assert all(b.isEnabled() for b in panel.feedback_buttons.values()) is (not proxy)
+        assert all(b.isEnabled() for b in panel.feedback_buttons.values())
         if proxy:
             panel._choose("same")
-            assert panel.decision is None and not panel.selection_ready
+            assert panel.decision is not None and panel.selection_ready
         else:
             assert (
                 panel.current_canvas.full_resolution_ready

@@ -1,10 +1,14 @@
 # Development continuity — v163 stable fit inspection
 
-v163 fixes a styled waiting-hint/layout feedback loop which repeatedly resized
+v163 permits approval/rejection/relative feedback on matching settled previews;
+full detail is explicitly optional and no longer automatically loads. Selected
+saved comparisons also use bounded source-bound previews. A blank or stale image
+cannot qualify. This supersedes the earlier dev162 full-geometry review policy.
+It also fixes a styled waiting-hint/layout feedback loop which repeatedly resized
 the inspection canvas, invalidated its complete frame and toggled decision
 availability. Actual-stylesheet regression checks cover three window sizes and
 navigation recovery. See [cause, verification and limits](V163_INSPECTION_STABILITY.md).
-This source change leaves fitting and scientific criteria unchanged. Runtime
+This source change leaves fitting parameters and numerical criteria unchanged. Runtime
 dev162 remains installed until a separately verified, idle-application delivery.
 
 ## Earlier v162 pilot review and iteration headroom

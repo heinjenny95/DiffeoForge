@@ -1,4 +1,4 @@
-"""Complete, settled display gates; scientific loading/rendering is unchanged."""
+"""Settled, source-bound preview decisions with optional complete geometry."""
 
 import time
 
@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QPushButton
 
 
 class FullGeometryReviewMixin:
-    """A proxy is a loading/performance view, never evidence for a fit decision."""
+    """The owner may assess the displayed preview; complete detail is optional."""
 
     def __init__(self, *args, **kwargs):
         self.display_started_at = time.monotonic()
@@ -17,10 +17,10 @@ class FullGeometryReviewMixin:
         self._relative_display_signature = None
         self._full_decision_geometry = None
         super().__init__(*args, **kwargs)
-        self.canvas.original_detail.setText("Full geometry for fit decisions")
+        self.canvas.original_detail.setText("Load full detail (optional, slower)")
         self.canvas.original_detail.setToolTip(
-            "Loads both original and reconstruction. Turn off for a fast preview; "
-            "fit decisions require the complete geometry and a settled view."
+            "The preview is sufficient to approve, reject or compare this fit. "
+            "Load complete original and reconstruction geometry only when needed."
         )
         self.display_timer = QTimer(self)
         self.display_timer.setInterval(200)
@@ -56,7 +56,7 @@ class FullGeometryReviewMixin:
         super().done(result)
 
     def _relative_ready(self):
-        if not self.canvas.full_resolution_ready:
+        if not self.canvas.comparison_ready:
             return False
         saved = getattr(self, "saved_comparison", None)
         if saved and saved.toggle.isChecked() and not saved.full_comparison_ready:
@@ -94,10 +94,6 @@ class FullGeometryReviewMixin:
 
     def _pair_loaded(self, index, models):
         super()._pair_loaded(index, models)
-        if not isinstance(index, tuple) and any(m.geometry_is_proxy for m in models):
-            # Keep the ordinary async loader and its source-hash checks. Both
-            # source models are loaded; no refit or new display mesh is invented.
-            QTimer.singleShot(0, lambda: self.canvas.original_detail.setChecked(True))
         self._display_phase()
 
     def _pair_failed(self, key, message):
@@ -113,45 +109,51 @@ class FullGeometryReviewMixin:
         if not hasattr(self, "canvas"):
             return
         elapsed = time.monotonic() - self.display_started_at
-        if self.canvas.full_resolution_ready:
+        if self.canvas.comparison_ready:
             self.full_ready_at = self.full_ready_at or time.monotonic()
             original = self.canvas.original_model.triangle_count
             reconstruction = self.canvas.reconstruction_model.triangle_count
+            scope = "Full detail" if self.canvas.full_resolution_ready else "Preview"
             self.status.setText(
-                f"Complete comparison ready · original {original:,} faces · reconstruction "
+                f"{scope} ready · original {original:,} displayed faces · reconstruction "
                 f"{reconstruction:,} faces · "
                 f"{self.full_ready_at - self.display_started_at:.1f}s display preparation"
             )
+            if self.full_error:
+                self.status.setText(
+                    "Optional full detail unavailable: " + self.full_error
+                    + ". Preview ready; you can still assess this fit."
+                )
             if not self._relative_ready():
                 self.status.setText(
-                    "Current fit ready. The selected comparison still needs complete, "
-                    "settled geometry before relative feedback. "
+                    "Current fit ready. Wait for the selected comparison preview "
+                    "before relative feedback. "
                     "Hide alternatives to assess only this fit."
                 )
         elif self.full_error:
             self.status.setText(
-                "Full geometry unavailable: "
+                "Optional full detail unavailable: "
                 + self.full_error
-                + ". Preview only; retry full geometry or close without recording."
+                + ". The preview can still be assessed once its image is ready."
             )
         elif self.full_requested_at is not None and self._mesh_loader._active is not None:
             self.status.setText(
-                f"Preparing full original and reconstruction · {elapsed:.1f}s display time. "
-                "Preview is a loading view; fit decisions wait for complete geometry."
+                f"Preparing optional full detail · {elapsed:.1f}s display time. "
+                "The preview is sufficient for fit decisions."
             )
         elif self.canvas.original_model is not None and not self.canvas.original_detail.isChecked():
             self.status.setText(
-                "Fast preview only. Enable full geometry before recording a fit decision."
+                "Preparing the preview image. Full detail is optional."
             )
         else:
             self.status.setText(
-                f"Rendering complete comparison · {elapsed:.1f}s display preparation…"
+                f"Rendering the selected comparison · {elapsed:.1f}s display preparation…"
             )
 
     def _update_review_progress(self):
         super()._update_review_progress()
         self._invalidate_changed_relative_display()
-        ready = self.canvas.full_resolution_ready
+        ready = self.canvas.comparison_ready
         geometry = (id(self.canvas.original_model), id(self.canvas.reconstruction_model))
         if ready:
             self._full_decision_geometry = geometry
@@ -161,13 +163,13 @@ class FullGeometryReviewMixin:
             self.maybe_button.setEnabled(False)
             self.mark_region_button.setEnabled(False)
             self.specimen_decision.setEnabled(False)
-            # Once this exact complete pair was presented, keep its panel layout
+            # Once this exact selected pair was presented, keep its panel layout
             # stable during rotation/repainting while disabling every decision.
             if self._full_decision_geometry != geometry:
                 self.decision_panel.hide()
             self.review_gate.setText(
-                "Wait for complete original and reconstruction geometry "
-                "in a settled view before deciding."
+                "Wait for the original and reconstruction preview image "
+                "to finish rendering before deciding."
             )
             self.review_gate.show()
         if self.guided_feedback:
@@ -175,19 +177,19 @@ class FullGeometryReviewMixin:
         self._display_phase()
 
     def _pair_original_presented(self):
-        if self.canvas.full_resolution_ready:
+        if self.canvas.comparison_ready:
             super()._pair_original_presented()
         else:
             self._update_review_progress()
 
     def _record_visual_qc_pass(self):
-        if self.canvas.full_resolution_ready:
+        if self.canvas.comparison_ready:
             super()._record_visual_qc_pass()
         else:
             self._update_review_progress()
 
     def _record_visual_qc_fail(self):
-        if self.canvas.full_resolution_ready:
+        if self.canvas.comparison_ready:
             super()._record_visual_qc_fail()
         else:
             self._update_review_progress()
@@ -205,25 +207,25 @@ class FullGeometryReviewMixin:
         return super().guided_feedback_decision
 
     def _record_plan_b(self):
-        if self.canvas.full_resolution_ready:
+        if self.canvas.comparison_ready:
             super()._record_plan_b()
         else:
             self._update_review_progress()
 
     def _mark_region(self):
-        if self.canvas.full_resolution_ready:
+        if self.canvas.comparison_ready:
             super()._mark_region()
         else:
             self._update_review_progress()
 
 
 class FullSavedComparisonMixin:
-    """Load only the selected optional alternative, using both complete models."""
+    """Load only the selected optional alternative, with matching preview sources."""
 
     def __init__(self, *args, **kwargs):
         self._shown_pair_id = None
         super().__init__(*args, **kwargs)
-        self.retry_button = QPushButton("Retry selected full comparison", self)
+        self.retry_button = QPushButton("Retry selected comparison", self)
         self.retry_button.setObjectName("secondary")
         self.retry_button.clicked.connect(self._request)
         self.retry_button.hide()
@@ -239,7 +241,7 @@ class FullSavedComparisonMixin:
         return bool(
             pair
             and self._shown_pair_id == pair.pair_id
-            and self.canvas.full_resolution_ready
+            and self.canvas.comparison_ready
             and original
             and reconstruction
             and original.path.resolve() == pair.original_path.resolve()
@@ -264,19 +266,20 @@ class FullSavedComparisonMixin:
             return
         pair = self.choice.currentData()
         self.status.setText(
-            "Preparing the selected full comparison… Relative feedback waits for its settled frame."
+            "Preparing the selected comparison preview… Relative feedback waits for its image."
         )
         self.loader.request_paths(
             pair.pair_id,
             (pair.original_path, pair.reconstruction_path),
             expected=(pair.original_sha256, pair.reconstruction_sha256),
+            pilot_cache=self.cache_directory,
         )
 
     def _loaded(self, key, models):
         pair = self.choice.currentData()
         if not self.toggle.isChecked() or not pair or key != pair.pair_id:
             return
-        if any(model.geometry_is_proxy for model in models) or any(
+        if any(
             model.path.resolve() != path.resolve() or model.sha256 != digest
             for model, path, digest in zip(
                 models,
@@ -285,15 +288,14 @@ class FullSavedComparisonMixin:
                 strict=True,
             )
         ):
-            self._full_comparison_failed(key, "Complete models do not match the selected source")
+            self._full_comparison_failed(key, "Displayed models do not match the selected source")
             return
         super()._loaded(key, models)
         if self.canvas.reconstruction_model is None:
             return
-        self.canvas.original_detail.setChecked(True)
         self._shown_pair_id = pair.pair_id
         self.status.setText(
-            "Selected full comparison loaded; relative feedback waits for the settled frame."
+            "Selected comparison loaded; relative feedback waits for its image."
         )
 
     def _full_comparison_failed(self, key, message):
@@ -304,27 +306,22 @@ class FullSavedComparisonMixin:
         self.canvas.clear()
         self.retry_button.show()
         self.status.setText(
-            "Full comparison unavailable: "
+            "Selected comparison unavailable: "
             + message
             + ". Retry this comparison or hide alternatives to assess the current fit."
         )
 
 
 class FullFitPreferenceMixin:
-    """The legacy ranking panel observes the same full-geometry boundary."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if not self._shared_canvas:
-            self.detail.setChecked(True)
+    """The legacy ranking panel also permits matching settled previews."""
 
     @property
     def full_comparison_ready(self):
-        if not self._ready or not self.current_canvas.full_resolution_ready:
+        if not self._ready or not self.current_canvas.comparison_ready:
             return False
         reference = self._comparison.get("reference") if self._comparison else None
         return not reference or bool(
-            self.reference_canvas.full_resolution_ready
+            self.reference_canvas.comparison_ready
             and self.show_comparison.isChecked()
             and self.reference_combo.currentData() == reference
         )
