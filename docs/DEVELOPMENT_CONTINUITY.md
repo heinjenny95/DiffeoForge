@@ -7,8 +7,10 @@ hints, an explicit different-test route from a trusted parent after a
 qualified numerical failure, and additional adaptive saved-field verification
 headroom without changing fitted parameters or accuracy thresholds. See
 [behavior, verification and boundaries](V162_PILOT_REVIEW_AND_EFFORT.md).
-Varied real-form automatic-search qualification and a new exact-package build
-remain separate gates. Installed runtime is still dev161; Drive remains v98.
+Contrasting real-form optimizations, source and exact-package behavior checks,
+and installed byte/state verification are complete for runtime `377b986` /
+dev162. See [installed delivery and remaining limits](V162_DELIVERY.md).
+Anatomical and common-atlas/PCA approval remain separate. Drive remains v98.
 
 ## Earlier v162 accepted-field continuation
 
