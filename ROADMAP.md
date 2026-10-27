@@ -4,6 +4,8 @@ v163 permits preview-based fit assessment with optional full detail and repairs
 the [styled inspection resize/render loop](docs/V163_INSPECTION_STABILITY.md).
 Matching nonempty settled-frame gates remain intact. Runtime delivery is tracked separately;
 no fitting objective or scientific acceptance changes.
+Runtime `eff8f7f` / dev163 is installed; [delivery checks](docs/V163_DELIVERY.md)
+pass. The next owner pilot assessment remains open; no new fits or Drive upload.
 
 v161 adds [protected regional pilot fitting](docs/V161_PROTECTED_REGIONAL_PILOT.md):
 explicit marked-surface terms, retained-shape protection, compatible movement

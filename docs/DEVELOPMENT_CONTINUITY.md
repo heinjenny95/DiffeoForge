@@ -8,8 +8,11 @@ It also fixes a styled waiting-hint/layout feedback loop which repeatedly resize
 the inspection canvas, invalidated its complete frame and toggled decision
 availability. Actual-stylesheet regression checks cover three window sizes and
 navigation recovery. See [cause, verification and limits](V163_INSPECTION_STABILITY.md).
-This source change leaves fitting parameters and numerical criteria unchanged. Runtime
-dev162 remains installed until a separately verified, idle-application delivery.
+This source change leaves fitting parameters and numerical criteria unchanged.
+Runtime `eff8f7f` / dev163 is installed after backup, source/exact-package/native
+Windows checks and installed byte/state verification. See
+[delivery and remaining limits](V163_DELIVERY.md). Existing fits remain usable;
+owner practical review is next. Drive intentionally remains v98.
 
 ## Earlier v162 pilot review and iteration headroom
 

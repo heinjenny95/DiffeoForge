@@ -60,6 +60,11 @@ unrelated software installations or starting scientific runs.
 - Landmarks support prealignment, not atlas attachment terms. Display proxies
   must not silently replace scientific geometry. Numerical completion, a pilot
   recommendation and anatomical/biological approval are distinct.
+- Owner UI clarification (2026-10-27): matching settled display previews are
+  sufficient for visual approval/rejection/comparison. Do not require or
+  automatically load full-resolution meshes for approval; full detail is an
+  explicit option. Preserve source identity, nonempty displayed layers,
+  navigation settling and feedback provenance.
 - Do not tune to match a published PC axis, silently exclude a difficult specimen,
   splice separately fitted momenta into an existing PCA, or manufacture QC approval.
 - Before installation, verify no relevant pilot, atlas, validation or backend job
