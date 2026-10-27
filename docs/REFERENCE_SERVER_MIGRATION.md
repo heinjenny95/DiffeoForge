@@ -132,7 +132,16 @@ Change a monitoring interval only on the owner's request, updating the existing
 monitor rather than creating a duplicate. Preserve its run identity, destination,
 read-only scope and terminal notification rules, then read back the saved schedule.
 A longer interval delays discovery of completion or failure; it does not pause,
-resume or change the scientific job. Keep healthy progress quiet at either cadence.
+resume or change the scientific job. Preserve the owner's notification preference,
+including a short update after each scheduled check when explicitly requested.
+
+For an owner-requested chat transfer, update the existing monitor's destination
+through the app tool and verify the saved target before declaring the transfer
+complete. Preserve the exact prompt, interval, active status and other paused
+monitors. Keep the original binding active until the update succeeds; do not
+create a duplicate or edit scheduler files as a substitute. Transferring the
+monitor does not authorize an extra server poll, scientific process action,
+resumption of paused maintenance or new fitting work.
 
 ## Owner-authorized monitoring access renewal
 
