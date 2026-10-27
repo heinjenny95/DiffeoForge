@@ -6,6 +6,9 @@ import numpy as np
 
 from diffeoforge.mesh import sha256_file
 
+TEMPORAL_COUNTS = (73, 145, 289, 577)
+TEMPORAL_TOLERANCE = 1e-4
+
 
 def compatible(receipt):
     return bool(receipt and receipt.get("integrator") == "rk2"
@@ -27,13 +30,13 @@ def qualify(run, directory, *, source=None):
     vertices = np.asarray(load_surface_mesh(grid).geometry.vertices)
     diagonal = float(np.linalg.norm(np.ptp(vertices, axis=0)))
     checks = []
-    for count in (73, 145, 289):
+    for count in TEMPORAL_COUNTS:
         fine = evaluate(run, directory / f"grid{count}", count=count,
                         _source=grid, _cache=cache)
         delta = movement(Path(coarse["endpoint"]["path"]),
                          Path(fine["endpoint"]["path"]), diagonal)
         checks.append(dict(coarse=coarse["timepoints"], fine=count, **delta))
-        if delta["maximum"] <= 1e-4:
+        if delta["maximum"] <= TEMPORAL_TOLERANCE:
             fine["starting_frame_qualification"] = dict(
                 temporal_checks=checks, temporal_stable=True, optimizer_updates=0,
                 purpose="Same saved momenta; consistent original-source RK2 residual frame")

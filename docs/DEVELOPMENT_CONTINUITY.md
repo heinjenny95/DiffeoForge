@@ -3,8 +3,9 @@
 The current source adds complete-geometry decision gates, optional full saved
 comparisons, modal review cleanup, larger new regional iteration allowances,
 provisional method comparisons without approval, cached selected-pair input
-hints, and an explicit different-test route from a trusted parent after a
-qualified numerical failure. See
+hints, an explicit different-test route from a trusted parent after a
+qualified numerical failure, and additional adaptive saved-field verification
+headroom without changing fitted parameters or accuracy thresholds. See
 [behavior, verification and boundaries](V162_PILOT_REVIEW_AND_EFFORT.md).
 Varied real-form automatic-search qualification and a new exact-package build
 remain separate gates. Installed runtime is still dev161; Drive remains v98.

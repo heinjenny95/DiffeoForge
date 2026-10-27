@@ -7,6 +7,7 @@ import numpy as np
 
 from diffeoforge.mesh import sha256_file
 from diffeoforge.regional_fit import _components, mask, read_plan
+from diffeoforge.regional_frame import TEMPORAL_COUNTS, TEMPORAL_TOLERANCE
 
 
 def _distances(target, target_faces, fitted, fitted_faces, areas):
@@ -236,7 +237,7 @@ def evaluate_and_measure(
         _cache=cache,
     )
     comparisons = []
-    for count in (73, 145, 289):
+    for count in TEMPORAL_COUNTS:
         if count != 73:
             coarse = receipt
             receipt = evaluate(
@@ -252,7 +253,7 @@ def evaluate_and_measure(
             Path(coarse["endpoint"]["path"]), Path(receipt["endpoint"]["path"]), diagonal
         )
         comparisons.append(dict(coarse=coarse["timepoints"], fine=count, **delta))
-        if delta["maximum"] <= 1e-4:
+        if delta["maximum"] <= TEMPORAL_TOLERANCE:
             break
     receipt = refine_evaluation(
         run,
@@ -280,7 +281,8 @@ def evaluate_and_measure(
             Path(coarse["endpoint"]["path"]), Path(receipt["endpoint"]["path"]), diagonal
         )
         comparisons.append(dict(coarse=coarse_count, fine=receipt["timepoints"], **delta))
-        while comparisons[-1]["maximum"] > 1e-4 and receipt["timepoints"] < 289:
+        while (comparisons[-1]["maximum"] > TEMPORAL_TOLERANCE
+               and receipt["timepoints"] < TEMPORAL_COUNTS[-1]):
             coarse = receipt
             count = receipt["timepoints"] * 2 - 1
             receipt = evaluate(
@@ -324,7 +326,7 @@ def evaluate_and_measure(
         receipt["source_refinement"] = refinement
     quality["spatial_resolution_sufficient"] = not (refinement or {}).get("resource_limit", False)
     quality["temporal_grid_checks"] = comparisons
-    quality["temporal_grid_stable"] = comparisons[-1]["maximum"] <= 1e-4
+    quality["temporal_grid_stable"] = comparisons[-1]["maximum"] <= TEMPORAL_TOLERANCE
     receipt["starting_frame_qualification"] = dict(
         temporal_stable=quality["temporal_grid_stable"], temporal_checks=comparisons,
         optimizer_updates=0, purpose="Dense original-source composed RK2 evaluation")

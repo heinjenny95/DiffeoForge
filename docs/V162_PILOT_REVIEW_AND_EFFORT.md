@@ -91,6 +91,18 @@ Preparation and Run remain separate, with fresh idle/terminal UI checks.
 
 ## Verification boundary
 
+Saved-field temporal verification can now reach 577 timepoints when the earlier
+73, 145 and 289 levels do not meet the unchanged maximum-displacement threshold
+of 1e-4 relative to the original template diagonal. Stable earlier levels stop
+immediately. The retained-frame check and the final check after original-source
+spatial refinement use the same limit and threshold. An unresolved final level
+remains unqualified; additional timepoints do not manufacture suitability.
+
+These are Float64 RK2 evaluations of the same saved field, with zero optimizer
+updates. They change neither fitted coefficients nor a prepared fit's declared
+integration grid or iteration allowance. Larger full-surface trajectories require
+more memory; a resource failure remains explicit and preserves prior evidence.
+
 Regression checks exercise actual Qt decision gating, selected-alternative
 switching, ordinary guided preparation and generated native iteration limits.
 Historical numerical-successor and rendering checks retain their earlier grids
