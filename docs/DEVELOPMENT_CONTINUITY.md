@@ -1,4 +1,13 @@
-# Development continuity — v162 pilot review and iteration headroom
+# Development continuity — v163 stable fit inspection
+
+v163 fixes a styled waiting-hint/layout feedback loop which repeatedly resized
+the inspection canvas, invalidated its complete frame and toggled decision
+availability. Actual-stylesheet regression checks cover three window sizes and
+navigation recovery. See [cause, verification and limits](V163_INSPECTION_STABILITY.md).
+This source change leaves fitting and scientific criteria unchanged. Runtime
+dev162 remains installed until a separately verified, idle-application delivery.
+
+## Earlier v162 pilot review and iteration headroom
 
 The current source adds complete-geometry decision gates, optional full saved
 comparisons, modal review cleanup, larger new regional iteration allowances,

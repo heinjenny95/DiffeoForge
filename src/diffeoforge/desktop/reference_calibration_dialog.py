@@ -790,6 +790,11 @@ class _CalibrationCandidateViewerDialog(QDialog):
         self.review_gate = QLabel()
         self.review_gate.setObjectName("status")
         self.review_gate.setWordWrap(True)
+        # Readiness depends on the exact canvas size. Hiding the ready hint must
+        # not resize that canvas and invalidate the frame which hid the hint.
+        gate_policy = self.review_gate.sizePolicy()
+        gate_policy.setRetainSizeWhenHidden(True)
+        self.review_gate.setSizePolicy(gate_policy)
         decision_layout.addWidget(self.review_gate)
         self.anatomical_notes = QLineEdit()
         self.anatomical_notes.setMaxLength(4000)

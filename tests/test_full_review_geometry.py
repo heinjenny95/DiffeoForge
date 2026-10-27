@@ -174,3 +174,50 @@ def test_small_full_pair_remains_settled_after_decision_panel_opens(viewer):
         viewer.app.processEvents()
         time.sleep(0.01)
     assert viewer.v.canvas.full_resolution_ready and viewer.v.fail_button.isVisible()
+
+
+@pytest.mark.parametrize("size", [(1080, 930), (900, 720), (1400, 1000)])
+def test_styled_review_stays_ready_without_resizing_and_rerendering_itself(viewer, size):
+    from diffeoforge.desktop.widgets import _STYLE
+
+    v = viewer.v
+    v.setStyleSheet(_STYLE)
+    v.resize(*size)
+    show_full(viewer)
+    # The first ready signal is insufficient: hiding the styled hint used to
+    # invalidate it at the following layout pass, indefinitely toggling QC.
+    deadline = time.monotonic() + 1.0
+    sizes, readiness, render_counts = [], [], []
+    while time.monotonic() < deadline:
+        viewer.app.processEvents()
+        sizes.append((v.canvas.width(), v.canvas.height()))
+        readiness.append(v.canvas.full_resolution_ready)
+        render_counts.append(v.canvas._frames.render_count)
+        time.sleep(0.005)
+    assert len(set(sizes[-30:])) == 1
+    assert all(readiness[-30:])
+    assert len(set(render_counts[-30:])) == 1
+    assert v.complete_button.isEnabled() and v.fail_button.isEnabled()
+    assert v.mark_region_button.isEnabled()
+    assert not v.review_recorded
+
+    # Actual navigation must still block decisions, with the same viewport on
+    # both sides of the full-frame gate.
+    settled_size = sizes[-1]
+    v.canvas._interacting = True
+    v.canvas._emit_camera()
+    v.canvas.update()
+    viewer.app.processEvents()
+    assert not v.complete_button.isEnabled() and not v.mark_region_button.isEnabled()
+    assert (v.canvas.width(), v.canvas.height()) == settled_size
+    v.canvas._interacting = False
+    v.canvas._emit_camera()
+    v.canvas.update()
+    wait(viewer.app, lambda: v.canvas.full_resolution_ready)
+    deadline = time.monotonic() + 0.4
+    while time.monotonic() < deadline:
+        viewer.app.processEvents()
+        assert v.canvas.full_resolution_ready
+        assert (v.canvas.width(), v.canvas.height()) == settled_size
+        time.sleep(0.005)
+    assert v.complete_button.isEnabled() and v.mark_region_button.isEnabled()

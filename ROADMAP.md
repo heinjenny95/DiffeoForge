@@ -1,5 +1,9 @@
 # Roadmap
 
+v163 repairs the [styled inspection resize/render loop](docs/V163_INSPECTION_STABILITY.md).
+Complete-frame visual gates remain intact. Runtime delivery is tracked separately;
+no fitting objective or scientific acceptance changes.
+
 v161 adds [protected regional pilot fitting](docs/V161_PROTECTED_REGIONAL_PILOT.md):
 explicit marked-surface terms, retained-shape protection, compatible movement
 guides and residual-field composition. Actual DF/native reproduction passes on
