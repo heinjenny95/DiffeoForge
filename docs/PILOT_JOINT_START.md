@@ -46,6 +46,7 @@ assembled initial objective exactly. Source fields and existing fit evidence
 remain unchanged. This establishes initialization correctness, not final fit
 quality or a runtime speedup. A new owner-run joint check remains necessary.
 
-Source dev168 includes this repair. Installed dev167 remains separately recorded
-until a tested package, fresh backup and idle-application verification complete.
+Source dev168 includes this repair. Runtime `9aff468` / dev168 is installed after
+exact-package, fresh backup/idle and installed byte/state verification. See the
+[delivery record](V168_DELIVERY.md).
 Drive distribution is unchanged; no installer upload was requested.

@@ -1,14 +1,15 @@
-# Development continuity — dev168 joint initialization repair
+# Development continuity — verified dev168 joint initialization delivery
 
 Source dev168 transfers verified accepted individual fields to new adaptive joint
 checks on one original basis, exposes accepted-fit recovery, rejects incompatible
 local seeds and identical rejected joint starts, and reports per-form regression.
 Shared estimation flags and numerical settings remain unchanged. See
 [scope, source binding and qualification](PILOT_JOINT_START.md).
-Installed dev167 / `1a15025` remains the last verified installation pending the
-new exact-package, fresh backup and idle-application checks. No owner fit was
-restarted and no Drive upload was requested. Final joint fit quality remains an
-owner review; copied zero-step evaluations do not establish anatomical success.
+Runtime `9aff468` / dev168 is installed after exact-package, fresh backup/idle and
+complete installed byte/state verification. See the [delivery record](V168_DELIVERY.md).
+No owner fit was restarted and no Drive upload was requested. Final joint fit
+quality remains an owner review; copied zero-step evaluations do not establish
+anatomical success or a runtime speedup.
 
 ## Verified dev167 desktop delivery
 
