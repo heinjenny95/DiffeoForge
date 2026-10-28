@@ -6,6 +6,13 @@ preserve unrelated changes and private scientific work.
 
 ## Standing owner instruction
 
+Owner priority (2026-10-28): the feature cutoff is **2026-11-15**. Focus on a
+usable, reliable pilot and bounded waiting/cancellation. Clarify iteration effort
+against observed fit quality before further feature expansion. Do not silently
+raise iteration limits, relax accuracy or deploy an unqualified experimental
+solver. After the cutoff, stabilize the agreed functionality rather than adding
+new features. Existing scientific work and owner-paused side work stay preserved.
+
 After every completed feature, fix, configuration or documentation change:
 
 1. Commit and push only task-scoped code/tests/documentation to the established

@@ -1,5 +1,12 @@
 # Development continuity — verified dev164 desktop delivery
 
+Owner priority on October 28: **November 15, 2026 is the feature cutoff**.
+The usable pilot, bounded waiting and reliable cancellation take priority over
+feature expansion. First resolve iteration effort versus actual local/global
+surface improvement using immutable saved states. Keep the separately authorized
+alternative-method experiment outside production; speed alone does not qualify
+it. See the [deadline and iteration decision contract](PILOT_DEADLINE_AND_ITERATIONS.md).
+
 The [detail-routing repair](PILOT_DETAIL_ROUTING.md) addresses owner feedback about
 long local fits with remaining short/missing projections. Rewording detail/missing
 no longer suppresses trusted evidence for a new finer residual hypothesis.
