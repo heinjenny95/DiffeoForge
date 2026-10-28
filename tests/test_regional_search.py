@@ -78,10 +78,12 @@ def test_first_marked_fit_reoptimizes_the_existing_broad_basis_then_checks_other
 
     info = dict(goal='regional', pilot_order=[1])
     monkeypatch.setattr(guided, 'record', lambda _: info)
+    snapshot = SimpleNamespace(plan=SimpleNamespace(
+        pilot_subject_count=1, baseline_parameter_ratios={}))
     data = proposal_data()
     data['regions'] = [dict(symptom='detail')]
     data['regional_capture'] = dict(original_to_fit_p95=.3)
-    initial = regional_pilot.proposal(None, 'x', data, symptom='detail')
+    initial = regional_pilot.proposal(snapshot, 'x', data, symptom='detail')
     assert initial['regional_recipe']['phase'] == 'initial_warm'
     assert initial['initialization'] == 'learned'
     assert initial['values'] == data['anchor']['values']
@@ -97,7 +99,7 @@ def test_first_marked_fit_reoptimizes_the_existing_broad_basis_then_checks_other
     data['current'].metrics = dict(attachment_comparison=dict(subjects={
         'shape.vtk': dict(regional_quality=dict(outside_preserved=True, shape_preserved=True,
             active_surface=[dict(original_to_fit_p95=.1)], local_improved=True))}))
-    other = regional_pilot.proposal(None, 'x', data, symptom='detail')
+    other = regional_pilot.proposal(snapshot, 'x', data, symptom='detail')
     assert other['regional_recipe']['phase'] == 'coarse_method_check'
     assert other['method'] != initial['method']
     assert other['initialization'] == 'learned'
@@ -107,7 +109,7 @@ def test_first_marked_fit_reoptimizes_the_existing_broad_basis_then_checks_other
     assert other['regional_recipe']['protection_reference'] == common
     assert other['anchor'] == data['anchor']  # Human comparison stays available.
     data['regions'] = [dict(symptom='detail', radius=.2)]
-    changed = regional_pilot.proposal(None, 'x', data, symptom='detail')
+    changed = regional_pilot.proposal(snapshot, 'x', data, symptom='detail')
     assert changed['regional_recipe']['phase'] != 'coarse_method_check'
 
 

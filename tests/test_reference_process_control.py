@@ -8,7 +8,61 @@ import time
 
 import pytest
 
-from diffeoforge.reference_process_control import CONTROL_SOURCE
+from diffeoforge.reference_process_control import CONTROL_SOURCE, request_live_cancel
+
+
+def live_attempt(root):
+    import hashlib
+
+    (root / "logs").mkdir()
+    manifest = dict(run_id="owned", source_config=dict(sha256="f" * 64),
+        effective_config=dict(output=dict(process_control="linux_session_v1")))
+    raw = json.dumps(manifest).encode()
+    (root / "manifest.json").write_bytes(raw)
+    (root / "manifest.sha256").write_text(hashlib.sha256(raw).hexdigest()+" manifest.json\n")
+    token = "a" * 64
+    (root / "logs/backend-control-token").write_text(token)
+    receipt = dict(state="running", boot_id="synthetic-boot",
+        token_sha256=hashlib.sha256(token.encode()).hexdigest(),
+        identity=dict(pid=123, parent=122, group=123, session=123,
+                      start_ticks=456, cwd=str(root)))
+    (root / "logs/backend-control.json").write_text(json.dumps(receipt))
+    return receipt
+
+
+def test_direct_cancel_is_bound_to_this_running_attempt_without_signalling(tmp_path):
+    original = live_attempt(tmp_path)
+    assert request_live_cancel(tmp_path, run_id="owned", config_sha256="f" * 64)
+    command = json.loads((tmp_path / "logs/backend-cancel.json").read_text())
+    assert command == dict(token="a" * 64, operation="cancel")
+    assert json.loads((tmp_path / "logs/backend-control.json").read_text()) == original
+    assert not list((tmp_path / "logs").glob(".backend-cancel-*.tmp"))
+
+
+@pytest.mark.parametrize("change", ["config", "run", "manifest", "nonce", "cwd",
+                                    "session", "completed", "missing"])
+def test_direct_cancel_refuses_unbound_or_finished_attempts(tmp_path, change):
+    receipt = live_attempt(tmp_path)
+    run, config = "owned", "f" * 64
+    if change == "config":
+        config = "0" * 64
+    if change == "run":
+        run = "other"
+    if change == "manifest":
+        (tmp_path / "manifest.json").write_text("{}")
+    if change == "nonce":
+        receipt["token_sha256"] = "0" * 64
+    if change == "cwd":
+        receipt["identity"]["cwd"] = str(tmp_path.parent)
+    if change == "session":
+        receipt["identity"]["session"] += 1
+    if change == "completed":
+        receipt["state"] = "completed"
+    if change == "missing":
+        (tmp_path / "logs/backend-control-token").unlink()
+    (tmp_path / "logs/backend-control.json").write_text(json.dumps(receipt))
+    assert not request_live_cancel(tmp_path, run_id=run, config_sha256=config)
+    assert not (tmp_path / "logs/backend-cancel.json").exists()
 
 
 def test_control_source_is_standalone_and_native_math_is_not_imported():

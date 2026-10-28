@@ -50,6 +50,24 @@ def _event(request, sequence, kind, payload) -> str:
     ).to_json_line()
 
 
+def test_live_cancel_reaches_supervisor_without_waiting_for_worker_stdin(tmp_path, monkeypatch):
+    request = _request(tmp_path)
+    controller = ReferenceExecutionController(request)
+    controller._state = "running"
+    controller._request_written = True
+    controller._process = SimpleNamespace(poll=lambda: None)
+    delivered = []
+    monkeypatch.setattr(controller_module, "request_live_cancel", lambda *args, **kwargs:
+                        delivered.append((args, kwargs)) or True)
+    monkeypatch.setattr(controller, "_send_cancel_locked", lambda *_:
+                        pytest.fail("A stalled worker pipe must not delay supervisor delivery"))
+    assert controller.request_cancel() and controller.state == "cancelling"
+    assert not controller.request_cancel() and len(delivered) == 1
+    assert delivered[0][0] == (request.destination,)
+    assert delivered[0][1] == dict(run_id=request.run_id,
+                                  config_sha256=request.expected_config_sha256)
+
+
 def _accepted(request, sequence=0) -> str:
     return _event(
         request,

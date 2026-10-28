@@ -21,6 +21,7 @@ from diffeoforge.desktop.reference_worker_protocol import (
     ReferenceWorkerEventLedger,
 )
 from diffeoforge.desktop.worker_protocol import parse_json_object, sha256_file
+from diffeoforge.reference_process_control import request_live_cancel
 from diffeoforge.result_report import collect_run_report
 from diffeoforge.runs import verify_prepared_run
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
@@ -208,6 +209,13 @@ class ReferenceExecutionController:
                 return True
             if process.poll() is not None:
                 return False
+            if request_live_cancel(
+                self.request.destination, run_id=self.request.run_id,
+                config_sha256=self.request.expected_config_sha256,
+            ):
+                self._cancel_sent = True
+                self._state = "cancelling"
+                return True
             return self._send_cancel_locked(process)
 
     def run(

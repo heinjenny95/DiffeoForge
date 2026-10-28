@@ -1,5 +1,72 @@
 """Protected Linux process supervision; native numerical code is unchanged."""
 
+
+def request_live_cancel(run_directory, *, run_id, config_sha256):
+    """Deliver to this launch's supervisor without waiting for worker pipe I/O.
+
+    Only a currently running, immutable matching native/WSL attempt qualifies.
+    The supervisor independently checks its nonce and original process/session
+    identity before signalling. Missing or mismatched evidence uses the existing
+    cooperative worker route instead; this function never signals a PID.
+    """
+    import hashlib
+    import json
+    from pathlib import Path, PureWindowsPath
+    from uuid import uuid4
+
+    root = Path(run_directory)
+    temporary = None
+    try:
+        if not root.is_absolute() or root.resolve() != root:
+            return False
+        names = ("manifest.json", "manifest.sha256", "logs/backend-control.json",
+                 "logs/backend-control-token")
+        for name in names:
+            path = root / name
+            if path.is_symlink() or not path.resolve().is_relative_to(root):
+                return False
+        raw = (root / "manifest.json").read_bytes()
+        manifest = json.loads(raw)
+        if (hashlib.sha256(raw).hexdigest() !=
+                (root / "manifest.sha256").read_text().split()[0]
+                or manifest["run_id"] != run_id
+                or manifest["source_config"]["sha256"] != config_sha256
+                or manifest["effective_config"]["output"].get("process_control")
+                != "linux_session_v1"):
+            return False
+        receipt = json.loads((root / "logs/backend-control.json").read_text())
+        token = (root / "logs/backend-control-token").read_text().strip()
+        identity = receipt["identity"]
+        aliases = {str(root).replace("\\", "/").casefold()}
+        windows = PureWindowsPath(root)
+        if len(windows.drive) == 2 and windows.drive[1] == ":":
+            aliases.add(("/mnt/" + windows.drive[0].lower() + "/" +
+                         "/".join(windows.parts[1:])).casefold())
+        if (receipt.get("state") != "running" or not receipt.get("boot_id")
+                or len(token) != 64 or any(c not in "0123456789abcdef" for c in token)
+                or receipt.get("token_sha256") != hashlib.sha256(token.encode()).hexdigest()
+                or identity.get("cwd", "").replace("\\", "/").casefold() not in aliases
+                or any(type(identity.get(key)) is not int or identity[key] <= 0
+                       for key in ("pid", "parent", "start_ticks", "session", "group"))
+                or identity["pid"] != identity["session"]
+                or identity["pid"] != identity["group"]):
+            return False
+        # Unique temporary names permit a simultaneous cooperative request.
+        temporary = root / "logs" / (".backend-cancel-" + uuid4().hex + ".tmp")
+        with temporary.open("x", encoding="utf-8") as stream:
+            json.dump({"token": token, "operation": "cancel"}, stream)
+        temporary.replace(root / "logs/backend-cancel.json")
+        return True
+    except (OSError, ValueError, KeyError, TypeError, IndexError):
+        return False
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 # Python 3.8 compatible: runs under the WSL system interpreter without importing
 # Deformetrica or sitecustomize. The child retains the original runtime/env/cwd.
 CONTROL_SOURCE = r"""

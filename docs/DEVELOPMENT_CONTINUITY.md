@@ -1,11 +1,25 @@
 # Development continuity — source UI and R handoff follow-up
 
+The [detail-routing repair](PILOT_DETAIL_ROUTING.md) addresses owner feedback about
+long local fits with remaining short/missing projections. Rewording detail/missing
+no longer suppresses trusted evidence for a new finer residual hypothesis.
+Same-objective continuation and all numerical/preservation gates remain strict.
+The owner explicitly authorized packaging and installation of dev164 on October
+28, including all preceding UI/R improvements. This establishes no fitting
+throughput speedup or anatomical success guarantee. The owner ended the next
+attempt externally; preserve it as interrupted and do not restart it.
+
+Cancellation now has a direct launch-bound supervisor route which avoids waiting
+for the execution worker's stdin reader. See [scope and verification](PILOT_CANCELLATION.md).
+Backup, idle checks, exact-package checks and installed byte verification remain
+required before announcing delivery.
+
 The subsequent [workflow robustness review](WORKFLOW_ROBUSTNESS_FOLLOWUP.md)
 adds cancellable complete-cohort source verification when selecting a template,
 retires old suggestions during reanalysis, makes saved views dimension-aware
 and gates exports on view readiness. One-axis PCA is displayed explicitly.
 R export now explains source availability and supplied units. This remains
-uninstalled source work under the same explicit owner deferment.
+part of the owner-authorized dev164 delivery scope.
 
 Current source adds landmark/template guidance, selected-alignment help, short
 shape-space descriptions, a clearer Visualization page and verified handoffs
@@ -15,10 +29,10 @@ See the [user guide](USER_GUIDE.md) and [R export contract](R_EXPORT.md).
 The [verification record and limits](SOURCE_UI_R_FOLLOWUP.md) distinguish this
 tested source follow-up from the installed runtime and owner pilot acceptance.
 
-This is source-only work at the owner's request. Do not install it over the
-current owner test without an explicit later go-ahead. Installed runtime remains
-dev163 / `eff8f7f`; no new version or distribution is implied. No fit, atlas,
-objective, threshold, existing result or approval is changed.
+The earlier source-only installation deferment was lifted by the owner's explicit
+October 28 request. Until dev164 delivery is independently verified, the last
+verified installed runtime remains dev163 / `eff8f7f`. No fit, atlas, objective,
+threshold, existing result or approval is changed. No Drive upload was requested.
 
 ## Installed v163 stable fit inspection
 

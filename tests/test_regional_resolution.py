@@ -150,3 +150,60 @@ def test_bad_distance_is_unknown_instead_of_a_finer_recommendation(bad):
     ]["measurements"]
     rows[0]["repeats"][0]["original_to_fit_p95"] = bad
     assert response(data, info, numerical, "detail") is None
+
+
+def reviewed_proposal(monkeypatch, *, previous_symptom="detail", trusted=True):
+    from diffeoforge import reference_guided_pilot as guided
+    from diffeoforge import regional_continuation as continuation
+
+    data, info, numerical = fixture()
+    values = dict(attachment_kernel_width=.09, deformation_kernel_width=.36,
+                  initial_control_point_spacing=.54, noise_std=.02)
+    anchor = dict(target="sample.vtk", method="current", values=values, candidate_id="before")
+    data.update(anchor=anchor, current_reference=dict(anchor, candidate_id="trial"),
+                regional_capture=dict(original_to_fit_p95=.10))
+    recipe = dict(phase="initial_warm", symptom=previous_symptom, focus_width=.06,
+                  focus_noise=.006, protection_noise=.02, protection_halo=.36,
+                  protection_close_distance=.01, protection_tolerance=.005)
+    info.update(goal="regional", pilot_order=["sample.vtk"], strategy=dict(regional_recipe=recipe))
+    data["context"]["cases"] = [dict(
+        family="regional", target="sample.vtk", method="current", reference=anchor,
+        regions=deepcopy(data["regions"]), regional_recipe=deepcopy(recipe))]
+    monkeypatch.setattr(guided, "record", lambda _: info)
+    # The trust gate is isolated here; the real symptom filter and immutable
+    # preview binding are exercised, alongside actual quality/recipe selection.
+    monkeypatch.setattr(continuation, "_proposal", lambda *_: numerical if trusted else None)
+    data["_regional_continuation_preview"] = continuation.prepare_preview(None, "trial", data)
+    return data
+
+
+@pytest.mark.parametrize("before,after", [("detail", "missing"), ("missing", "detail")])
+def test_reworded_detail_symptom_can_select_finer_new_field(monkeypatch, before, after):
+    from diffeoforge import regional_continuation as continuation
+    from diffeoforge.regional_pilot import proposal
+
+    data = reviewed_proposal(monkeypatch, previous_symptom=before)
+    assert continuation.proposal(None, "trial", data, symptom=after) is None
+    result = proposal(None, "trial", data, symptom=after)
+    assert result["regional_recipe"]["phase"] == "local_resolution"
+    assert result["initialization"] == "residual"
+    assert result["initialization_reference"] == data["current_reference"]
+    assert result["method"] == "current" and not result["numerical_extension"]
+    assert result["values"]["deformation_kernel_width"] == .18
+    assert result["regional_recipe"]["protection_tolerance"] == .005
+    assert result["regional_recipe"]["protection_noise"] <= .02
+    assert "regional_continuation" not in result
+
+
+@pytest.mark.parametrize("untrusted", ["field", "changed_marks", "quality"])
+def test_rewording_never_bypasses_trust_or_quality(monkeypatch, untrusted):
+    from diffeoforge.regional_pilot import proposal
+
+    data = reviewed_proposal(monkeypatch, trusted=untrusted != "field")
+    if untrusted == "changed_marks":
+        data["regions"][0]["source_sha256"] = "0" * 64
+    if untrusted == "quality":
+        row = data["current"].metrics["attachment_comparison"]["subjects"]["sample.vtk"]
+        row["regional_quality"]["outside_preserved"] = False
+    result = proposal(None, "trial", data, symptom="missing")
+    assert result["regional_recipe"]["phase"] != "local_resolution"

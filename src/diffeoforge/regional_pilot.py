@@ -52,14 +52,21 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     from diffeoforge.regional_continuation import proposal as numerical_proposal
     from diffeoforge.regional_resolution import response as resolution_response
 
+    info = guided.record(snapshot)
     numerical = numerical_proposal(snapshot, identifier, data, symptom=symptom)
-    resolution = resolution_response(data, guided.record(snapshot), numerical, symptom)
+    resolution_evidence = numerical
+    previous_symptom = ((info.get("strategy") or {}).get("regional_recipe") or {}).get("symptom")
+    if resolution_evidence is None and {previous_symptom, symptom} == {"detail", "missing"}:
+        # Rewording the remaining detail does not invalidate a trusted prior
+        # field for a NEW resolution hypothesis. Keep the strict symptom gate
+        # for an unchanged-objective continuation and all field/mark checks.
+        resolution_evidence = numerical_proposal(snapshot, identifier, data)
+    resolution = resolution_response(data, info, resolution_evidence, symptom)
     if numerical and not resolution:
         return numerical
     reference = data["anchor"] or data["current_reference"]
     marked = data["regions"]
     symptom = symptom or next((r["symptom"] for r in marked if r["symptom"] != "unsure"), "detail")
-    info = guided.record(snapshot)
     cases = [
         r
         for r in data["context"]["cases"]
