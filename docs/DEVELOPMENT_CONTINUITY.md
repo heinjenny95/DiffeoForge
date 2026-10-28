@@ -1,11 +1,15 @@
 # Development continuity — verified dev165 desktop delivery
 
-Current source follow-up: [terminal numerical failure guidance](PILOT_NUMERICAL_FAILURES.md)
-exposes sealed guard reasons and prevents the same failed regional trial from
-being launched again. Source checks passed; this follow-up is not yet installed.
-An observed gradient-consistency failure remains a numerical investigation, not
-a fit-quality judgement or a reason to add iterations. The numerical guard stays
-unchanged; dev165 / `9b09531` below remains the installed runtime.
+Current qualified source is dev166: the
+[surface-gradient root repair](PILOT_GRADIENT_REPEATABILITY.md) replaces the
+non-reproducible legacy CPU vertex retrieval with equivalent deterministic
+indexing for new guarded regional trials. Native copied-input repeatability,
+normal completion/export and focused source checks passed. The next-step schema
+failure is also fixed by clearing the complete regional runtime contract during
+cohort staging. Native L-BFGS tolerance stops are recognized separately.
+The [earlier error-handling repair](PILOT_NUMERICAL_FAILURES.md) is included.
+Packaging/installation verification is pending; dev165 / `9b09531` remains the
+last verified installed runtime until a delivery record supersedes it.
 
 The dev165 [intermediate-review implementation](PILOT_INTERMEDIATE_REVIEW.md)
 adds ten-minute active-work reviews to newly prepared guarded regional fits.

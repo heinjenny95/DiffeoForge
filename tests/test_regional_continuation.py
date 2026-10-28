@@ -494,7 +494,10 @@ def test_guided_search_and_regional_direct_route_use_same_continuation(case):
         assert row["goal"] == "optimize" and row["regional_continuation"]
 
 
-def test_actual_batch_staging_never_presents_regional_terms_as_full_cohort(case, monkeypatch):
+@pytest.mark.parametrize("new_runtime_markers", [False, True])
+def test_actual_batch_staging_never_presents_regional_terms_as_full_cohort(
+    case, monkeypatch, new_runtime_markers,
+):
     from test_guided_pilot import origin
 
     from diffeoforge.config import load_config
@@ -502,6 +505,13 @@ def test_actual_batch_staging_never_presents_regional_terms_as_full_cohort(case,
     original_root = case.tmp / "origin-fixture"
     original_root.mkdir()
     source = origin(original_root)
+    if new_runtime_markers:
+        from diffeoforge.pilot_review_assets import DECLARATION as REVIEW
+        from diffeoforge.reference_surface_gather import DECLARATION as GATHER
+
+        case.config["project"]["parameter_provenance"].update(
+            pilot_review=dict(REVIEW), surface_gather=dict(GATHER)
+        )
     manifest = study._verify_manifest(source.study_directory)
     origin_config = load_config(source.study_directory / manifest["source_config"]["copy"])
     case.config["project"]["parameter_provenance"]["recommendation"] = copy.deepcopy(
@@ -539,6 +549,7 @@ def test_actual_batch_staging_never_presents_regional_terms_as_full_cohort(case,
     config = captured["config"]
     provenance = config["project"]["parameter_provenance"]
     assert "regional_fit" not in provenance and "finite_accepted_guard" not in provenance
+    assert "pilot_review" not in provenance and "surface_gather" not in provenance
     assert config["optimization"]["method"] == origin_config["optimization"]["method"]
     assert config["model"]["deformation"]["timepoints"] == 37
     assert captured["kwargs"]["pilot_max_iterations"] == 8

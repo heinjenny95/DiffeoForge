@@ -19,6 +19,13 @@ def declaration(config):
     return config.get("project", {}).get("parameter_provenance", {}).get("finite_accepted_guard")
 
 
+def clear_runtime_markers(config):
+    """Remove the complete regional runtime contract from a cohort staging config."""
+    provenance = config.get("project", {}).get("parameter_provenance", {})
+    for name in ("finite_accepted_guard", "pilot_review", "surface_gather"):
+        provenance.pop(name, None)
+
+
 def mark_new_configuration(config):
     """Called only while writing a newly created candidate configuration."""
     from diffeoforge.regional_fit import declaration as regional
@@ -26,8 +33,7 @@ def mark_new_configuration(config):
 
     provenance = config["project"].get("parameter_provenance", {})
     if not regional(config):
-        provenance.pop("finite_accepted_guard", None)
-        provenance.pop("pilot_review", None)
+        clear_runtime_markers(config)
         return
     plan = read_plan(config)
     if (
@@ -45,13 +51,19 @@ def mark_new_configuration(config):
     from diffeoforge.pilot_review_assets import DECLARATION as REVIEW
 
     provenance["pilot_review"] = dict(REVIEW)
+    from diffeoforge.reference_surface_gather import DECLARATION as GATHER
+
+    provenance["surface_gather"] = dict(GATHER)
 
 
 def extend_engine_files(config, subject_count, rendered):
     entry = declaration(config)
     if entry is None:
-        if config.get("project", {}).get("parameter_provenance", {}).get("pilot_review"):
-            raise ConfigurationError("Intermediate review requires the regional finite accepted guard")
+        provenance = config.get("project", {}).get("parameter_provenance", {})
+        if provenance.get("pilot_review") or provenance.get("surface_gather"):
+            raise ConfigurationError(
+                "Review/surface indexing requires the regional finite accepted guard"
+            )
         return rendered
     from diffeoforge.regional_fit import read_plan
 
@@ -88,6 +100,17 @@ def extend_engine_files(config, subject_count, rendered):
         },
         "runtime": RUNTIME_PROFILE,
     }
+    gather = config["project"].get("parameter_provenance", {}).get("surface_gather")
+    if gather is not None:
+        from diffeoforge.reference_surface_gather import DECLARATION as GATHER
+        from diffeoforge.reference_surface_gather import SOURCE as GATHER_SOURCE
+
+        if gather != GATHER:
+            raise ConfigurationError("Unsupported deterministic CPU surface gather declaration")
+        result["cpu_surface_gather.py"] = GATHER_SOURCE
+        policy["surface_gather"] = dict(
+            declaration=dict(GATHER), sha256=hashlib.sha256(GATHER_SOURCE).hexdigest()
+        )
     result["guard-policy.json"] = (
         json.dumps(policy, sort_keys=True, indent=2, allow_nan=False) + "\n"
     ).encode()
@@ -98,9 +121,13 @@ def extend_engine_files(config, subject_count, rendered):
         "_df_guard_context = _df_guard_install(_df_guard_Path(__file__).resolve().parent, "
         "_df_guard, compatible_minimize=_df_message_compat, raw_minimize=_df_minimize)\n"
     )
+    if gather is not None:
+        body += "from cpu_surface_gather import install as _df_gather_install\n"
+        body += "_df_gather_install(_df_guard_context)\n"
     review = config["project"].get("parameter_provenance", {}).get("pilot_review")
     if review is not None:
-        from diffeoforge.pilot_review_assets import DECLARATION as REVIEW, SOURCE
+        from diffeoforge.pilot_review_assets import DECLARATION as REVIEW
+        from diffeoforge.pilot_review_assets import SOURCE
 
         if review != REVIEW:
             raise ConfigurationError("Unsupported pilot review declaration")

@@ -401,13 +401,13 @@ def _collect_reference_calibration_metrics_from_report(
             maximum_iterations=report.max_iterations,
         )
     )
-    converged = stop.signal == "tolerance_threshold"
+    converged = stop.signal in {"tolerance_threshold", "lbfgs_tolerance"}
     if stop.signal == "pilot_review_request":
         from diffeoforge.pilot_live_review import verified_finish
 
         verified_finish(run)
     notes = (
-        "Only Deformetrica's explicit tolerance-threshold message is treated as "
+        "Only supported explicit native tolerance messages are treated as "
         "optimizer convergence evidence; it is not proof of adequate registration.",
         "Surface distances use at most 5,000 deterministic vertices per direction "
         "and are not Deformetrica's configured attachment metric.",

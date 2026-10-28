@@ -190,7 +190,7 @@ def render(window, prepared):
         if total is not None:
             state += f" · {total / 60:.1f} min total"
             if runtime is not None:
-                state += f" ({runtime / 60:.1f} min fitting)"
+                state += f" ({runtime / 60:.1f} min including review waits)"
         elif runtime is not None:
             state += f" · {runtime / 60:.1f} min"
         from diffeoforge.guided_progress import iteration_limited

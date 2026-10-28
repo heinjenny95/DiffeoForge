@@ -247,7 +247,9 @@ def _batch(
         # as a shared cohort objective during initial source-path validation.
         provenance = config["project"]["parameter_provenance"]
         provenance.pop("regional_fit", None)
-        provenance.pop("finite_accepted_guard", None)
+        from diffeoforge.reference_finite_accepted_guard import clear_runtime_markers
+
+        clear_runtime_markers(config)
         config["optimization"]["method"] = cohort_method
     template = load_surface_mesh(source.study_directory / manifest["inputs"]["template"]["copy"])
     _, spacing = control_grid(template.metadata.bounds)

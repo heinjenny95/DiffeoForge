@@ -153,6 +153,7 @@
         "reported_stop_signal": {
           "enum": [
             "tolerance_threshold",
+            "lbfgs_tolerance",
             "maximum_iterations",
             "line_search_exhausted",
             "unknown"

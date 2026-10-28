@@ -677,6 +677,9 @@ def configure(config, record):
     declaration = record.get("regional_objective")
     if not declaration:
         config["project"]["parameter_provenance"].pop("regional_fit", None)
+        from diffeoforge.reference_finite_accepted_guard import clear_runtime_markers
+
+        clear_runtime_markers(config)
         return
     config["project"]["parameter_provenance"]["regional_fit"] = declaration
     config["optimization"].update(

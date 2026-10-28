@@ -78,6 +78,7 @@ def test_new_regionals_declare_explicit_guard_and_correct_initializer(tmp_path, 
         "regional_guard_runtime.py",
         "guard-policy.json",
         "pilot_review_runtime.py",
+        "cpu_surface_gather.py",
     }
     assert generated["model.xml"] == legacy["model.xml"]
     assert generated["data_set.xml"] == legacy["data_set.xml"]

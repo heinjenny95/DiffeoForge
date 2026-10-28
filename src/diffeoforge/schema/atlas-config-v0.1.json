@@ -42,7 +42,7 @@
     }}}
   }, {
     "if": {"properties": {"project": {"properties": {"parameter_provenance": {
-      "required": ["pilot_review"]
+      "anyOf": [{"required": ["pilot_review"]}, {"required": ["surface_gather"]}]
     }}, "required": ["parameter_provenance"]}}},
     "then": {"properties": {"project": {"properties": {"parameter_provenance": {
       "required": ["finite_accepted_guard", "regional_fit"]
@@ -74,6 +74,11 @@
           "additionalProperties": false,
           "required": ["profile", "scale_reference", "ratios", "sources"],
           "properties": {
+            "surface_gather": {
+              "type": "object", "additionalProperties": false,
+              "required": ["version"],
+              "properties": {"version": {"const": "deterministic-cpu-surface-gather-v1"}}
+            },
             "pilot_review": {
               "type": "object", "additionalProperties": false,
               "required": ["version", "interval_seconds"],

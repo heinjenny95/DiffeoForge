@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import math
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,7 @@ from diffeoforge.result_report import ConvergenceRow
 
 ReferenceStopSignal = Literal[
     "tolerance_threshold",
+    "lbfgs_tolerance",
     "maximum_iterations",
     "line_search_exhausted",
     "pilot_review_request",
@@ -77,6 +79,19 @@ def detect_reference_stop_evidence(
             "The accepted field is exported and still requires geometry and visual checks; "
             "native optimizer convergence is not claimed.",
             "The review receipt identifies the exact accepted parameter state.",
+        )
+    if re.search(
+        r"(?m)^(?:.* - )?>> convergence: "
+        r"(?:rel_reduction_of_f_<=_factr\*epsmch|norm_of_projected_gradient_<=_pgtol)\s*$",
+        normalized,
+    ):
+        return ReferenceStopEvidence(
+            "lbfgs_tolerance",
+            "Native L-BFGS reported its objective-change or projected-gradient stopping "
+            "threshold. This numerical stop does not establish adequate surface fit "
+            "or anatomical suitability.",
+            "The curve shows logged objective evaluations. Accepted-state and export "
+            "bindings are verified separately.",
         )
     if final_iteration is not None and final_iteration >= maximum_iterations:
         return ReferenceStopEvidence(

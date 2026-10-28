@@ -55,6 +55,11 @@ retaining useful earlier fits. A numerical stop and a suitable anatomical fit
 are different decisions. Source-interface changes do not require restarting an
 existing owner test.
 
+Saved problem-area marks remain active until explicitly cleared. To request an
+unmarked follow-up, use **Clear marked areas** in the fit inspector and save the
+feedback before preparing the next trial. An already prepared trial keeps its
+recorded inputs and objective.
+
 ## Understand shape-space methods
 
 Short descriptions appear beside method choices and saved-method views. Method

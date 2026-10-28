@@ -14,6 +14,40 @@ from diffeoforge.result_report import ConvergenceRow
 SVG = "{http://www.w3.org/2000/svg}"
 
 
+@pytest.mark.parametrize("message", [
+    ">> CONVERGENCE: REL_REDUCTION_OF_F_<=_FACTR*EPSMCH",
+    "2026-10-28 13:05:37 - native.scipy - INFO - >> CONVERGENCE: "
+    "REL_REDUCTION_OF_F_<=_FACTR*EPSMCH",
+    ">> CONVERGENCE: NORM_OF_PROJECTED_GRADIENT_<=_PGTOL",
+])
+def test_explicit_native_lbfgs_tolerance_is_recognized_separately(message):
+    stop = detect_reference_stop_evidence(message, final_iteration=346, maximum_iterations=600)
+    assert stop.signal == "lbfgs_tolerance"
+    assert "does not establish" in stop.summary
+
+
+@pytest.mark.parametrize("message", [
+    "CONVERGENCE: REL_REDUCTION_OF_F_<=_FACTR*EPSMCH",  # Not the native emitter.
+    ">> CONVERGENCE: unsupported criterion",
+    "The process returned 0.",
+])
+def test_generic_completion_does_not_create_a_tolerance_claim(message):
+    assert detect_reference_stop_evidence(
+        message, final_iteration=346, maximum_iterations=600
+    ).signal == "unknown"
+
+
+@pytest.mark.parametrize("terminal,expected", [
+    (">> Number of line search loops exceeded. Stopping.", "line_search_exhausted"),
+    (">> STOP: PILOT REVIEW REQUEST (accepted state; not convergence)", "pilot_review_request"),
+])
+def test_lbfgs_text_cannot_hide_a_failure_or_explicit_review_stop(terminal, expected):
+    message = ">> CONVERGENCE: REL_REDUCTION_OF_F_<=_FACTR*EPSMCH\n" + terminal
+    assert detect_reference_stop_evidence(
+        message, final_iteration=346, maximum_iterations=600
+    ).signal == expected
+
+
 def test_reference_convergence_svg_is_static_repeatable_and_bounded(tmp_path: Path) -> None:
     rows = (
         ConvergenceRow(0, -100.0, -95.0, -5.0),
