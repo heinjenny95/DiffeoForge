@@ -99,6 +99,13 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 ## Owner-requested cleanup
 
+- [ ] Show the control-point count before pilot/atlas execution, directly beside
+  control-point spacing in Effective parameters. Use the verified actual count
+  for a supplied seed; otherwise show a precomputed grid count or clearly label
+  an estimate. Refresh it when template, grid or seed changes and distinguish
+  spacing from count. Displaying the count must not start fitting. Owner request,
+  28 October 2026: backlog only; implementation remains open.
+
 - [ ] Give all action buttons a visible normal-state outline or bounded surface
   so they are clearly distinct from explanatory text, including secondary pilot
   actions currently presented as plain text. Preserve action hierarchy, disabled
