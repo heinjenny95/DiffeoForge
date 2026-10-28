@@ -171,6 +171,10 @@ def test_slow_review_save_keeps_event_loop_live_and_never_fakes_qc(
         def __init__(self, *args, **kwargs):
             self.anatomical_notes = notes
             self.feature_observations = {}
+            self.problem_regions = {}
+            self.cleared_region_subjects = set()
+            self.guided_feedback_decision = None
+            self._guided_feedback_only = False
             self.subject_decisions = {}
             self._pairs = (pair,)
             self._reviewed_pair_ids = set()
@@ -180,6 +184,9 @@ def test_slow_review_save_keeps_event_loop_live_and_never_fakes_qc(
             self.fit_preferences, self.keep_as_plan_b = None, False
 
         def _update_review_progress(self):
+            pass
+
+        def deleteLater(self):
             pass
 
         def exec(self):

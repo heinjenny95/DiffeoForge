@@ -8,7 +8,13 @@ from diffeoforge.pilot_recovery import DESCRIPTIONS, proposal
 def inputs(snapshot, identifier, context, *, regions_override=None, allow_continuation=True):
     """Verify once in the background, shared by all selector previews for this fit."""
     from diffeoforge import reference_calibration_study as study
-    from diffeoforge.guided_feedback import regions, selection, severe_regression, verify_reference
+    from diffeoforge.guided_feedback import (
+        local_strategy_reference,
+        regions,
+        selection,
+        severe_regression,
+        verify_reference,
+    )
     from diffeoforge.guided_strategy import _candidate, _reference, _target
 
     anchor = selection(snapshot, identifier)
@@ -23,12 +29,12 @@ def inputs(snapshot, identifier, context, *, regions_override=None, allow_contin
             {target: marked} if marked else {},
             {r["filename"]: r["sha256"] for r in manifest["inputs"]["subjects"]},
         )
-    strategy = guided.record(snapshot).get("strategy") or {}
+    baseline = local_strategy_reference(snapshot, "baseline")
     references = {}
-    for ref in (anchor, strategy.get("baseline")):
+    for ref in (anchor, baseline):
         if ref and ref["directory"] not in references:
             references[ref["directory"]] = verify_reference(ref)
-    for comparison in (anchor, strategy.get("baseline")):
+    for comparison in (anchor, baseline):
         latest_density = next((r for r in reversed(context["cases"])
                                if r.get("family", r.get("goal")) == "density"
                                and (r.get("comparison") or r.get("reference")) == comparison
@@ -51,7 +57,8 @@ def inputs(snapshot, identifier, context, *, regions_override=None, allow_contin
         regional_capture = capture(references.get(capture_reference['directory'], snapshot),
             capture_reference,
             [r for r in marked if r.get('purpose', 'problem') == 'problem'])
-    verified = dict(anchor=anchor, current=current, target=target, regions=marked,
+    verified = dict(anchor=anchor, baseline=baseline, current=current, target=target,
+                regions=marked,
                 current_reference=current_reference,
                 severe=severe_regression(snapshot, identifier), references=references,
                 context=context, response_cases=response_cases, response_evidence=response_evidence,
@@ -69,7 +76,7 @@ def propose(snapshot, identifier, request, data):
     info = guided.record(snapshot)
     strategy = info.get("strategy") or {}
     context, marked = data["context"], data["regions"]
-    baseline = strategy.get("baseline")
+    baseline = data.get("baseline")
     from_base = request.startswith("base:")
     if from_base and not baseline:
         raise ValueError("No earlier settings are bound to this test")

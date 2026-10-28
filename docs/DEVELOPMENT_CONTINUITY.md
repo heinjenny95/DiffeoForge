@@ -1,5 +1,11 @@
 # Development continuity — verified dev166 desktop delivery
 
+Source dev167 fixes the next-form feedback transition: local comparison fields
+are retired when changing animals, while shared settings/control locations stay
+bound. Existing immutable coverage views are read compatibly without changing
+their fits. See [scope and verification](PILOT_CROSS_FORM_FEEDBACK.md).
+Packaging/installation verification is pending; dev166 remains installed.
+
 Current qualified source is dev166: the
 [surface-gradient root repair](PILOT_GRADIENT_REPEATABILITY.md) replaces the
 non-reproducible legacy CPU vertex retrieval with equivalent deterministic

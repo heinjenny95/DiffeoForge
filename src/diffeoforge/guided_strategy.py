@@ -409,6 +409,11 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         methods, phase, preference = ("current", "varifold"), "screen", None
     else:
         raise ValueError("Unknown interactive pilot action")
+    if target != info["target"]:
+        # Shared method settings/control locations transfer to coverage checks;
+        # a previous animal's local comparison and search do not.
+        for key in ("baseline", "anchor", "search_family"):
+            strategy.pop(key, None)
     strategy["preference"] = preference
     return dict(source=source, previous=snapshot, phase=phase, target=target, methods=methods,
         values=values, approved=approved, history=history, spent=info["screen_trials_spent"],

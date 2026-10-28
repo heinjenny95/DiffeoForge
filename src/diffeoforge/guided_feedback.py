@@ -85,6 +85,27 @@ def _same_source(snapshot, ref):
     return parent
 
 
+def local_strategy_reference(snapshot, role):
+    """Keep legacy coverage history without treating another form as a local fit."""
+    info = guided.record(snapshot)
+    ref = (info.get("strategy") or {}).get(role)
+    if ref is None:
+        return None
+    parent = verify_reference(ref)
+    other = guided.record(parent)
+    if Path(info["origin"]).resolve() != Path(other["origin"]).resolve():
+        raise ValueError("A starting fit must use the same cohort and original form")
+    if ref["target"] != info["target"]:
+        # Earlier immutable coverage studies retained the previous form's
+        # refinement history. Its valid shared settings/control basis remain
+        # provenance, but its field cannot be this form's comparison or seed.
+        if (info["phase"] in {"screen", "validate", "joint"}
+                and not snapshot.attachment_comparison.get("regional_objective")):
+            return None
+        raise ValueError("A starting fit must use the same cohort and original form")
+    return ref
+
+
 def selection(snapshot, identifier):
     """Latest explicit preference wins; no geometry metric invents a human preference."""
     for event in reversed(study._load_events(snapshot.study_directory)):
@@ -98,12 +119,9 @@ def selection(snapshot, identifier):
             _same_source(snapshot, event["comparison"])
             return (event["current"] if event["outcome"] == "better"
                     and not severe_regression(snapshot, identifier) else event["comparison"])
-    strategy = guided.record(snapshot).get("strategy") or {}
-    anchor = strategy.get("anchor") or strategy.get("baseline")
-    if anchor and anchor["target"] == guided.record(snapshot)["target"]:
-        _same_source(snapshot, anchor)
-        return anchor
-    return None
+    return local_strategy_reference(snapshot, "anchor") or local_strategy_reference(
+        snapshot, "baseline"
+    )
 
 
 def choices(snapshot, identifier):
@@ -145,10 +163,7 @@ def presentation(snapshot, identifier):
         return None
     with study.calibration_verification_scope():
         rows = choices(snapshot, identifier)
-        strategy = info.get("strategy") or {}
-        comparison = strategy.get("baseline")
-        if comparison:
-            _same_source(snapshot, comparison)
+        comparison = local_strategy_reference(snapshot, "baseline")
         selected = selection(snapshot, identifier)
         current = None
         try:

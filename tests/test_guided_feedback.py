@@ -165,6 +165,14 @@ def test_reviewed_earlier_fit_is_reused_without_recalculating_it(tmp_path, monke
     assert guided.record(continued)["approved"] == [
         guided._approved_record(base, "guided-varifold")
     ]
+    next_strategy = guided.record(continued)["strategy"]
+    assert not {"baseline", "anchor", "search_family"} & next_strategy.keys()
+    assert next_strategy["control_basis"] == feedback.reference(base, "guided-varifold")
+    checked = run_batch(continued, monkeypatch)
+    context = strategy.state(checked)
+    assert context["feedback"]["guided-varifold"]["comparison"] is None
+    assert context["feedback"]["guided-varifold"]["selected"] is None
+    assert checked.candidates[0].status == "completed" and not checked.visual_reviews
 
 
 @pytest.mark.parametrize("invalid", ["not_seen", "other_form", "wrong_region"])
