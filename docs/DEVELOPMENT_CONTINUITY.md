@@ -1,21 +1,25 @@
-# Development continuity — verified dev164 desktop delivery
+# Development continuity — verified dev165 desktop delivery
 
 The dev165 [intermediate-review implementation](PILOT_INTERMEDIATE_REVIEW.md)
 adds ten-minute active-work reviews to newly prepared guarded regional fits.
 Continuation keeps the same optimizer in memory; a requested early finish remains
 distinct from native convergence and still undergoes export/QC. The owner's goal
 is captured projections and the right overall shape, allowing small surface
-differences. This source change is being qualified separately from installation;
-the last verified installed runtime below remains dev164 until a delivery record
-explicitly supersedes it. The alternative-method investigation is closed at the
-owner's request; do not pursue it further.
+differences. Runtime `9b09531` / dev165 is installed after native preservation,
+exact-package Windows/process checks, fresh backup/idle checks and installed
+byte/state verification. See the [delivery record](V165_DELIVERY.md).
+The next practical check is the owner's new regional fit; existing prepared/running
+studies retain their recorded behavior. The alternative-method investigation is
+closed at the owner's request; do not pursue it further.
 
 Owner priority on October 28: **November 15, 2026 is the feature cutoff**.
 The usable pilot, bounded waiting and reliable cancellation take priority over
 feature expansion. First resolve iteration effort versus actual local/global
-surface improvement using immutable saved states. Keep the separately authorized
-alternative-method experiment outside production; speed alone does not qualify
-it. See the [deadline and iteration decision contract](PILOT_DEADLINE_AND_ITERATIONS.md).
+surface improvement using immutable saved states. Keep the preserved alternative-
+method results outside production. See the
+[deadline and iteration decision contract](PILOT_DEADLINE_AND_ITERATIONS.md).
+
+## Earlier dev164 desktop delivery
 
 The [detail-routing repair](PILOT_DETAIL_ROUTING.md) addresses owner feedback about
 long local fits with remaining short/missing projections. Rewording detail/missing
@@ -49,7 +53,7 @@ tested source follow-up from the installed runtime and owner pilot acceptance.
 
 The earlier source-only installation deferment was lifted by the owner's explicit
 October 28 request. The independently verified
-installed runtime is now dev164 / `724bb14`. No fit, atlas, objective,
+installed runtime at that delivery was dev164 / `724bb14`. No fit, atlas, objective,
 threshold, existing result or approval is changed. No Drive upload was requested.
 
 ## Earlier v163 stable fit inspection

@@ -77,3 +77,6 @@ checks are separate from exact-package and installation verification. A stale
 appearance fixture failed identically on the previous source; its assertion now
 compares the pilot with the current main-window palette instead of an obsolete
 hardcoded color. No application appearance change was needed.
+
+The exact-package and installed-runtime checks subsequently passed for dev165;
+see the [delivery record and remaining practical check](V165_DELIVERY.md).

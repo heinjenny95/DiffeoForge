@@ -8,8 +8,9 @@ Existing computations, accepted results and owner-paused side work remain protec
 This document fixes the implementation priority and acceptance contract. The
 dev165 [intermediate-review implementation](PILOT_INTERMEDIATE_REVIEW.md) now
 provides accepted-state pauses after ten active minutes for newly prepared guarded
-regional trials. Package/install verification remains separate; existing prepared
-studies retain their recorded behavior. The owner's acceptance goal is captured
+regional trials. Its [package and installation verification](V165_DELIVERY.md)
+has passed; existing prepared studies retain their recorded behavior.
+The owner's acceptance goal is captured
 projections and the right overall shape, with small surface differences allowed.
 
 ## First resolve effort versus actual improvement
@@ -63,7 +64,8 @@ also require honest reporting of noninterruptible work and cancellation latency.
 
 ## Qualification before solver adoption
 
-The separately authorized 2026 method experiment is isolated from production.
+The separately authorized 2026 method experiment is closed at the owner's request;
+retain its results separately from production and start no further variants.
 Timing, preparation, export and independent quality checks must be reported
 separately. Author-code speed claims are not established for a new anatomy merely
 by importing the package. Retain divergent trials and repeated-run differences.
