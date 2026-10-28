@@ -34,6 +34,6 @@ adaptive proposals, retained
 failed-parent recovery, full pilot-view responsiveness and save behavior. The
 read-only real view also rendered its completed count and inspection action.
 
-The source follow-up is dev167; installation and package verification are recorded
-separately. dev166 remains the last verified installed runtime until the delivery
-record supersedes it.
+The qualified source and verified installed runtime are dev167 / `1a15025`.
+Exact-package, installation and preservation checks are in the
+[delivery record](V167_DELIVERY.md); distribution remains separately tracked.

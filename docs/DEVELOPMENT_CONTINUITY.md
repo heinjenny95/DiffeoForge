@@ -1,12 +1,15 @@
-# Development continuity — verified dev166 desktop delivery
+# Development continuity — verified dev167 desktop delivery
 
 Source dev167 fixes the next-form feedback transition: local comparison fields
 are retired when changing animals, while shared settings/control locations stay
 bound. Existing immutable coverage views are read compatibly without changing
 their fits. See [scope and verification](PILOT_CROSS_FORM_FEEDBACK.md).
-Packaging/installation verification is pending; dev166 remains installed.
+Runtime `1a15025` / dev167 is installed after exact-package, fresh backup/idle
+and installed byte/state verification. See the [delivery record](V167_DELIVERY.md).
 
-Current qualified source is dev166: the
+## Earlier dev166 gradient repair
+
+The qualified dev166 source: the
 [surface-gradient root repair](PILOT_GRADIENT_REPEATABILITY.md) replaces the
 non-reproducible legacy CPU vertex retrieval with equivalent deterministic
 indexing for new guarded regional trials. Native copied-input repeatability,
@@ -14,7 +17,7 @@ normal completion/export and focused source checks passed. The next-step schema
 failure is also fixed by clearing the complete regional runtime contract during
 cohort staging. Native L-BFGS tolerance stops are recognized separately.
 The [earlier error-handling repair](PILOT_NUMERICAL_FAILURES.md) is included.
-Runtime `d099732` / dev166 is installed after exact-package display/cancel,
+Runtime `d099732` / dev166 was installed after exact-package display/cancel,
 fresh backup/idle and installed byte/state verification. See the
 [delivery record and limits](V166_DELIVERY.md).
 
