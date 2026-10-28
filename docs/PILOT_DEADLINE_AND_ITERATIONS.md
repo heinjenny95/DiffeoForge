@@ -5,10 +5,12 @@ Prioritize a usable, reliable pilot, reasonable waiting and reliable cancellatio
 After the cutoff, stabilize the agreed functionality rather than expanding it.
 Existing computations, accepted results and owner-paused side work remain protected.
 
-This document fixes the implementation priority and acceptance contract. It does
-not claim that the controls below are already implemented in the installed app.
-The verified desktop remains [dev164](V164_DELIVERY.md); this documentation change
-requires no replacement installer or new scientific computation.
+This document fixes the implementation priority and acceptance contract. The
+dev165 [intermediate-review implementation](PILOT_INTERMEDIATE_REVIEW.md) now
+provides accepted-state pauses after ten active minutes for newly prepared guarded
+regional trials. Package/install verification remains separate; existing prepared
+studies retain their recorded behavior. The owner's acceptance goal is captured
+projections and the right overall shape, with small surface differences allowed.
 
 ## First resolve effort versus actual improvement
 

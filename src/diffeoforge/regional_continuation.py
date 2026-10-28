@@ -382,7 +382,7 @@ def _proposal(snapshot, identifier, data):
         regional_recipe=copy.deepcopy(recipe),
         regional_continuation=marker,
         numerical_extension=True,
-        optimization_iterations=current.metrics["maximum_iterations"] * 2,
+        optimization_iterations=current.metrics["maximum_iterations"],
         remaining_checks=max(0, len(info["pilot_order"]) - 1),
         hypothesis_count=(info.get("strategy") or {}).get("hypothesis_count", 0),
         contrast_level=0,

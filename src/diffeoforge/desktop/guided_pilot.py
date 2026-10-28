@@ -185,6 +185,8 @@ def render(window, prepared):
 
         if iteration_limited(candidate):
             state += " · iteration limit, provisional"
+        elif (candidate.metrics or {}).get("optimizer_stop_signal") == "pilot_review_request":
+            state += " · ended at intermediate review, not converged"
         label = QLabel(state)
         label.setWordWrap(True)
         layout.addWidget(label)

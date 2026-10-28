@@ -27,6 +27,7 @@ def mark_new_configuration(config):
     provenance = config["project"].get("parameter_provenance", {})
     if not regional(config):
         provenance.pop("finite_accepted_guard", None)
+        provenance.pop("pilot_review", None)
         return
     plan = read_plan(config)
     if (
@@ -41,11 +42,16 @@ def mark_new_configuration(config):
             "New guarded regional runs require explicit recoverable original control points"
         )
     provenance["finite_accepted_guard"] = dict(DECLARATION)
+    from diffeoforge.pilot_review_assets import DECLARATION as REVIEW
+
+    provenance["pilot_review"] = dict(REVIEW)
 
 
 def extend_engine_files(config, subject_count, rendered):
     entry = declaration(config)
     if entry is None:
+        if config.get("project", {}).get("parameter_provenance", {}).get("pilot_review"):
+            raise ConfigurationError("Intermediate review requires the regional finite accepted guard")
         return rendered
     from diffeoforge.regional_fit import read_plan
 
@@ -92,6 +98,15 @@ def extend_engine_files(config, subject_count, rendered):
         "_df_guard_context = _df_guard_install(_df_guard_Path(__file__).resolve().parent, "
         "_df_guard, compatible_minimize=_df_message_compat, raw_minimize=_df_minimize)\n"
     )
+    review = config["project"].get("parameter_provenance", {}).get("pilot_review")
+    if review is not None:
+        from diffeoforge.pilot_review_assets import DECLARATION as REVIEW, SOURCE
+
+        if review != REVIEW:
+            raise ConfigurationError("Unsupported pilot review declaration")
+        result["pilot_review_runtime.py"] = SOURCE
+        body += "from pilot_review_runtime import install as _df_review_install\n"
+        body += "_df_review_install(_df_guard_context, _df_guard)\n"
     result["sitecustomize.py"] = (
         '"""New regional finite accepted guard v1; fail-closed setup."""\ntry:\n'
         + "\n".join("    " + line for line in body.splitlines())

@@ -1,5 +1,15 @@
 # Development continuity — verified dev164 desktop delivery
 
+The dev165 [intermediate-review implementation](PILOT_INTERMEDIATE_REVIEW.md)
+adds ten-minute active-work reviews to newly prepared guarded regional fits.
+Continuation keeps the same optimizer in memory; a requested early finish remains
+distinct from native convergence and still undergoes export/QC. The owner's goal
+is captured projections and the right overall shape, allowing small surface
+differences. This source change is being qualified separately from installation;
+the last verified installed runtime below remains dev164 until a delivery record
+explicitly supersedes it. The alternative-method investigation is closed at the
+owner's request; do not pursue it further.
+
 Owner priority on October 28: **November 15, 2026 is the feature cutoff**.
 The usable pilot, bounded waiting and reliable cancellation take priority over
 feature expansion. First resolve iteration effort versus actual local/global

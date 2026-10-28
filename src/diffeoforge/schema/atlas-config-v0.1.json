@@ -40,6 +40,13 @@
     "then": {"properties": {"project": {"required": ["parameter_provenance"],
       "properties": {"parameter_provenance": {"required": ["regional_fit"]}}
     }}}
+  }, {
+    "if": {"properties": {"project": {"properties": {"parameter_provenance": {
+      "required": ["pilot_review"]
+    }}, "required": ["parameter_provenance"]}}},
+    "then": {"properties": {"project": {"properties": {"parameter_provenance": {
+      "required": ["finite_accepted_guard", "regional_fit"]
+    }}}}}
   }],
   "properties": {
     "schema_version": {
@@ -67,6 +74,14 @@
           "additionalProperties": false,
           "required": ["profile", "scale_reference", "ratios", "sources"],
           "properties": {
+            "pilot_review": {
+              "type": "object", "additionalProperties": false,
+              "required": ["version", "interval_seconds"],
+              "properties": {
+                "version": {"const": "accepted-pilot-review-v1"},
+                "interval_seconds": {"const": 600}
+              }
+            },
             "finite_accepted_guard": {
               "type": "object",
               "additionalProperties": false,

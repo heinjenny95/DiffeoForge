@@ -91,7 +91,10 @@ def test_independent_pilot_retains_main_window_appearance(tmp_path, monkeypatch)
         assert pilot.windowFlags() & Qt.WindowType.WindowMinimizeButtonHint
         title = pilot.findChild(QLabel, "title")
         assert title.font().pixelSize() == 30
-        assert title.palette().color(QPalette.ColorRole.WindowText).name() == "#123b3a"
+        main_title = window.findChild(QLabel, "title")
+        assert title.palette().color(QPalette.ColorRole.WindowText) == main_title.palette().color(
+            QPalette.ColorRole.WindowText
+        )
         primary = next(
             button for button in pilot.findChildren(QPushButton, "primary") if button.isEnabled()
         )

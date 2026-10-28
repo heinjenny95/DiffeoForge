@@ -286,7 +286,7 @@ def case(tmp_path, monkeypatch, request):
 def test_same_or_better_capped_field_preserves_objective_despite_prior_extension(case, outcome):
     case.data["context"]["feedback"][case.identifier]["feedback"]["outcome"] = outcome
     proposal = continuation.proposal(case.snapshot, case.identifier, case.data)
-    assert proposal["numerical_extension"] and proposal["optimization_iterations"] == 8
+    assert proposal["numerical_extension"] and proposal["optimization_iterations"] == 4
     assert proposal["regional_recipe"] == case.recipe
     assert proposal["initialization_reference"] == case.ref
     assert not proposal["regional_continuation"]["anatomical_approval"]

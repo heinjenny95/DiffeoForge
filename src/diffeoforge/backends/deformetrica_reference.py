@@ -316,7 +316,8 @@ def generate_engine_files(
         adapter = engine_directory / "sitecustomize.py"
         adapter.write_bytes(rendered["sitecustomize.py"])
         paths.append(adapter)
-    for name in ("finite_accepted_guard.py", "regional_guard_runtime.py", "guard-policy.json"):
+    for name in ("finite_accepted_guard.py", "regional_guard_runtime.py", "guard-policy.json",
+                 "pilot_review_runtime.py"):
         if name in rendered:
             asset = engine_directory / name
             asset.write_bytes(rendered[name])

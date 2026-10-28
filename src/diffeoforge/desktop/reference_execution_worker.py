@@ -275,16 +275,29 @@ def run_reference_execution_worker(
         started = time.monotonic()
         last_iteration: int | None = None
         latest_resources: Mapping[str, object] | None = None
+        review_wait_started = None
+        review_wait_seconds = 0.0
+        has_review = bool(config.get("project", {}).get("parameter_provenance", {}).get("pilot_review"))
 
         def observe_line(line: str) -> None:
-            nonlocal last_iteration
+            nonlocal last_iteration, review_wait_started, review_wait_seconds
             if cancel_event.is_set() or request.final_export_only:
                 # execute_run delivers and verifies the backend cancellation.
                 # Raising here would bypass that handshake on the next log line.
                 return
+            now = time.monotonic()
+            if has_review and line.startswith("DF_PILOT_REVIEW waiting "):
+                if review_wait_started is None:
+                    review_wait_started = now
+                return
+            if has_review and line.startswith("DF_PILOT_REVIEW decision "):
+                if review_wait_started is not None:
+                    review_wait_seconds += now - review_wait_started
+                    review_wait_started = None
+                return
             progress = tracker.observe(
                 line,
-                elapsed_seconds=time.monotonic() - started,
+                elapsed_seconds=now - started - review_wait_seconds,
             )
             if progress is not None:
                 last_iteration = progress.iteration

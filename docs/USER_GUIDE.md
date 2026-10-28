@@ -42,6 +42,12 @@ previous preview. See [alignment contracts](PROCRUSTES_ALIGNMENT.md).
 
 ## Test the pilot
 
+The practical goal is captured important projections and the right overall shape;
+small surface differences can remain. Newly prepared guarded regional fits offer
+an [intermediate review after ten active minutes](PILOT_INTERMEDIATE_REVIEW.md).
+Allow another ten minutes in the same optimizer, or finish fitting and let the
+normal export/QC complete. This does not silently change existing prepared studies.
+
 Compare methods and contrasting forms before using settings for the cohort.
 Matching settled previews suffice for approving, rejecting and comparing pilot
 fits; full detail is optional. Mark problem areas and explain the error, while

@@ -402,6 +402,10 @@ def _collect_reference_calibration_metrics_from_report(
         )
     )
     converged = stop.signal == "tolerance_threshold"
+    if stop.signal == "pilot_review_request":
+        from diffeoforge.pilot_live_review import verified_finish
+
+        verified_finish(run)
     notes = (
         "Only Deformetrica's explicit tolerance-threshold message is treated as "
         "optimizer convergence evidence; it is not proof of adequate registration.",

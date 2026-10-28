@@ -841,6 +841,11 @@ class _CalibrationCandidateViewerDialog(QDialog):
             self.complete_button.fontMetrics().horizontalAdvance(self.complete_button.text()) + 64
         )
         self.complete_button.setToolTip("I inspected every specimen and accept all their fits.")
+        if self.fit_preferences:
+            self.complete_button.setToolTip(
+                "The important projections are captured and the overall shape is right. "
+                "Small surface differences can remain; further refinement is optional."
+            )
         self.complete_button.setEnabled(False)
         self.complete_button.clicked.connect(self._record_visual_qc_pass)
         controls.addStretch()
@@ -1691,6 +1696,13 @@ class ReferenceCalibrationDialog(QDialog):
         self.progress.setValue(0)
         self.progress.setFormat("Ready")
         root.addWidget(self.progress)
+        from diffeoforge.desktop.pilot_live_review import PilotLiveReviewPanel
+
+        self._pilot_review_panel = PilotLiveReviewPanel(
+            self, active=lambda: self._worker is not None
+            and not getattr(getattr(self._worker, "runner", None), "_cancel_requested", False)
+        )
+        root.addWidget(self._pilot_review_panel)
         self.status = QLabel()
         self.status.setObjectName("statusSuccess")
         self.status.setWordWrap(True)
@@ -3951,6 +3963,10 @@ class ReferenceCalibrationDialog(QDialog):
         elif kind == "adaptive_search_decision":
             self.status.setText(str(event["rationale"]))
         elif kind == "candidate_started":
+            if event.get("run_directory"):
+                review_run = (self.study_directory / str(event["run_directory"])).resolve()
+                if review_run.is_relative_to(self.study_directory.resolve()):
+                    self._pilot_review_panel.set_run(review_run)
             self._progress_context = dict(
                 candidate=candidate_id, phase="Preparing reference fit", iteration=None, cap=None
             )
@@ -3979,6 +3995,8 @@ class ReferenceCalibrationDialog(QDialog):
                 self.status.setText(f"{self._progress_label(candidate_id)}: {payload['message']}")
             elif worker["kind"] == "activity":
                 self.status.setText(
+                    "Paused for your intermediate review; optimizer kept in memory."
+                    if self._pilot_review_panel.waiting else
                     f"{self._progress_label(candidate_id)}: "
                     f"{self._progress_context.get('phase', 'Engine active')}"
                     + (
@@ -3999,6 +4017,7 @@ class ReferenceCalibrationDialog(QDialog):
                 "No further fitting is running in this phase.")
             self._thread_pool.indicator.label.setText(self.status.text())
         elif kind == "candidate_completed":
+            self._pilot_review_panel.clear()
             self._render(event.get("snapshot"))
             candidate = next(c for c in self._snapshot.candidates if c.candidate_id == candidate_id)
             root = self.study_directory

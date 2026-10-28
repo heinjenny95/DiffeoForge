@@ -15,6 +15,7 @@ ReferenceStopSignal = Literal[
     "tolerance_threshold",
     "maximum_iterations",
     "line_search_exhausted",
+    "pilot_review_request",
     "unknown",
 ]
 
@@ -68,6 +69,14 @@ def detect_reference_stop_evidence(
                 "optimizer-convergence claim."
             ),
             "The plot contains every objective state recorded in convergence.csv.",
+        )
+    if ">> stop: pilot review request (accepted state; not convergence)" in normalized:
+        return ReferenceStopEvidence(
+            "pilot_review_request",
+            "Fitting ended at the researcher's intermediate review request. "
+            "The accepted field is exported and still requires geometry and visual checks; "
+            "native optimizer convergence is not claimed.",
+            "The review receipt identifies the exact accepted parameter state.",
         )
     if final_iteration is not None and final_iteration >= maximum_iterations:
         return ReferenceStopEvidence(
