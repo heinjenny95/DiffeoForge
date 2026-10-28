@@ -29,6 +29,39 @@ def test_nonlocal_history_is_not_a_local_reference(phase, monkeypatch, tmp_path)
     assert verified == [ref]
 
 
+def test_joint_recovery_keeps_the_new_explicit_single_form_field(tmp_path, monkeypatch):
+    # Exercise actual transition planning, without geometry/optimizer activity.
+    # Recovery from a cohort target (None) binds a fresh, valid individual role;
+    # that role must survive the same target-change boundary as coverage.
+    (tmp_path / "study.json").write_text("{}", encoding="utf-8")
+    values = dict(attachment_kernel_width=.1, deformation_kernel_width=.4,
+                  noise_std=.02, initial_control_point_spacing=.5)
+    ref = dict(directory=str(tmp_path), candidate_id="joint", target="one.vtk",
+               method="current", values=values)
+    snapshot = SimpleNamespace(study_directory=tmp_path,
+        plan=SimpleNamespace(effective_values=values),
+        attachment_comparison={"guided": dict(origin=str(tmp_path), phase="joint", target=None,
+            approved=[], history=[], strategy={}, screen_trials_spent=4)})
+    proposed = dict(available=True, initialization_reference=ref, target="one.vtk", values=values,
+                    method="current", anchor=ref, numerical_extension=False, goal="detail")
+    monkeypatch.setattr(guided, "_origin", lambda _: (snapshot, None))
+    monkeypatch.setattr(guided, "verify_approvals", lambda _: None)
+    monkeypatch.setattr(strategy, "_context", lambda _: ([], None))
+    monkeypatch.setattr(strategy, "_preference", lambda _: None)
+    monkeypatch.setattr(strategy, "trial_proposal", lambda *_a, **_k: proposed)
+    monkeypatch.setattr(strategy, "_reference", lambda *_a, **_k: ref)
+    monkeypatch.setattr(strategy, "_compatible", lambda *_a: [])
+    monkeypatch.setattr(strategy, "capture", lambda *_a, **_k: {})
+    monkeypatch.setattr(feedback, "verify_reference", lambda _: snapshot)
+    monkeypatch.setattr(feedback, "region_state", lambda *_a: ([], False))
+    plan = strategy._plan_transition(snapshot, "recover", "joint")
+    assert plan["phase"] == "refine" and plan["target"] == "one.vtk"
+    assert plan["strategy"]["baseline"] == plan["strategy"]["anchor"] == ref
+    assert plan["strategy"]["search_family"] == "detail"
+    assert plan["strategy"]["control_basis"] == ref
+    assert not plan["approved"]
+
+
 def legacy_coverage(tmp_path, monkeypatch):
     base = approve(run_batch(initial(tmp_path), monkeypatch), "guided-varifold")
     next_form = guided.next_action(base.study_directory, "adaptive_confirm", "guided-varifold")

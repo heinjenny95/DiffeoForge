@@ -409,9 +409,10 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         methods, phase, preference = ("current", "varifold"), "screen", None
     else:
         raise ValueError("Unknown interactive pilot action")
-    if target != info["target"]:
+    if target != info["target"] and phase != "refine":
         # Shared method settings/control locations transfer to coverage checks;
-        # a previous animal's local comparison and search do not.
+        # a previous animal's local comparison and search do not. Recovery into
+        # an individual refinement has just bound its own explicit local field.
         for key in ("baseline", "anchor", "search_family"):
             strategy.pop(key, None)
     strategy["preference"] = preference

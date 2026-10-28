@@ -7,10 +7,13 @@ for the next animal. The strict same-cohort/same-original guard rejected this.
 The failed view could retain its earlier queued display even though the solver
 had already completed and the normal result/event receipts were saved.
 
-New target transitions now clear the local baseline, anchor and search family.
+New coverage-target transitions clear the local baseline, anchor and search family.
 Shared method settings and the separately bound control-point basis remain
 available for coverage checks. This does not transfer an individual's learned
 deformation to another animal, change the objective, or grant anatomical approval.
+Recovery from a shared joint check into a targeted individual refinement retains
+the explicit local field just bound for that form. Its target change is distinct
+from advancing to an independent coverage check.
 
 Existing immutable screen/coverage/joint history is handled during read-only
 presentation: verify the inherited fit, inspection and cohort bindings, then
@@ -26,7 +29,8 @@ Synthetic journeys cover refined-to-coverage transitions, reopening inherited
 history, proposal isolation and rejection of foreign-cohort/local-objective
 references. No owner fit needs to be recomputed to repair this view.
 
-71 distinct focused source checks passed, including adaptive proposals, retained
+72 distinct focused source checks passed, including joint-to-individual recovery,
+adaptive proposals, retained
 failed-parent recovery, full pilot-view responsiveness and save behavior. The
 read-only real view also rendered its completed count and inspection action.
 
