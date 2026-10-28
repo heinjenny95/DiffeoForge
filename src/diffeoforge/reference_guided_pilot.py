@@ -199,6 +199,7 @@ def _batch(
     feedback=None, coverage_extension=None, strategy=None,
 ):
     from diffeoforge import reference_calibration_study as study
+    from diffeoforge.guided_joint_initialization import references as joint_references
     from diffeoforge.reference_attachment_comparison import ITERATIONS
     from diffeoforge.reference_attachment_comparison import VERSION as METRIC_VERSION
     from diffeoforge.reference_fit_search import control_grid
@@ -341,6 +342,9 @@ def _batch(
                 k: config["optimization"][k] for k in ("freeze_template", "freeze_control_points")
             },
             scope="All original pilot targets" if phase == "joint" else "One original target only",
+            **({"joint_initialization": dict(version="accepted-singletons-v1",
+                references=joint_references(approved))}
+               if phase == "joint" and strategy is not None else {}),
             **({"refinement": dict(version="guided-refinement-v1", reference=refinement)}
                if refinement else {}),
             guided=dict(

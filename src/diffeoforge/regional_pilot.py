@@ -464,6 +464,15 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         "the solver can finish earlier. This is separate from the short method screen. "
         "An improving capped field can be continued with the same settings and marks. "
     )
+    # A cohort reconstruction is a useful visual comparison, but its moving
+    # template/control basis cannot seed the frozen singleton protocol. Check
+    # before offering the action; bind() retains the complete field checks.
+    seed_parent = data["references"].get(seed["directory"], snapshot)
+    if seed_parent.plan.pilot_subject_count != 1:
+        available = False
+        blocked = ("This joint fit cannot be reused as a protected single-form field. "
+                   "Return to the accepted single-form fit above, or inspect and choose "
+                   "a compatible earlier single-form fit. No fresh restart is prepared.")
     return dict(
         goal="regional",
         title=("Improve remaining areas while retaining local detail" if recovery else

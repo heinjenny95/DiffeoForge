@@ -1,5 +1,6 @@
 """Compact guided actions, separate method cards and visible recovery after rejection."""
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -22,6 +23,7 @@ def render(window, prepared):
     snapshot = prepared.snapshot
     # Let the scroll area grow its content rather than compressing recovery cards.
     window.content_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+    window.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
     info = record(snapshot)
     guidance = prepared.guidance
     guard_failures = guidance.get("guard_failures", {})
@@ -76,6 +78,25 @@ def render(window, prepared):
     explanation.setObjectName("pilotScope")
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
+    if info["phase"] == "joint":
+        flags = snapshot.attachment_comparison.get("confirmation_freeze_settings", {})
+        moving = [name for key, name in (("freeze_template", "template"),
+                  ("freeze_control_points", "control points")) if flags.get(key) is False]
+        conditions = QLabel(
+            "The individual checks kept template and control points fixed. "
+            + ("This joint test also estimates the shared " + " and ".join(moving) + ". "
+               if moving else "This joint test retains those fixed settings. ")
+            + ("It starts from all accepted individual deformation fields on the same "
+               "original basis; optimizer history starts anew. "
+               if snapshot.attachment_comparison.get("joint_initialization") else
+               "It starts new deformation fields; the accepted individual fields are "
+               "not its initialization. ")
+            + "The shared model can still change individual fits. "
+            "Review every form; individual suitability does not "
+            "approve this joint result.")
+        conditions.setWordWrap(True)
+        conditions.setObjectName("jointFitConditions")
+        window.content_layout.addWidget(conditions)
     if info.get("goal") and not regional_accepted and not guard_failures:
         from diffeoforge.pilot_recovery import DESCRIPTIONS
 
@@ -164,6 +185,7 @@ def render(window, prepared):
         )
         card.setProperty("pilotCandidate", candidate.candidate_id)
         layout = QVBoxLayout(card)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         method_title = QLabel(candidate.label)
         method_title.setObjectName("sectionTitle")
         layout.addWidget(method_title)
@@ -260,6 +282,11 @@ def render(window, prepared):
 
                 failed_actions(window, snapshot, candidate, layout, guidance, action)
         if candidate in completed and not running:
+            from diffeoforge.desktop.guided_accepted_fit import render as accepted_fit
+
+            accepted_fit(window, candidate.candidate_id, layout,
+                         guidance.get("accepted_fits", {}).get(candidate.candidate_id)
+                         if decision is not True else None)
             inspect = QPushButton("Inspect " + candidate.label + " fit")
             inspect.setAccessibleName(inspect.text())
             inspect.setProperty("pilotCandidate", candidate.candidate_id)
@@ -286,8 +313,14 @@ def render(window, prepared):
                 layout.addWidget(label)
             guards = [r["refinement_guard"] for r in subjects.values() if r.get("refinement_guard")]
             if any(g["outcome"] == "regression" for g in guards):
-                warning = QLabel("This test worsened whole-shape agreement. Keep the earlier "
-                                 "starting fit and inspect the difference before another change.")
+                regressed = [name for name, row in subjects.items()
+                             if row.get("refinement_guard", {}).get("outcome") == "regression"]
+                warning = QLabel(
+                    "Joint fitting worsened agreement compared with your accepted individual "
+                    "fit(s): " + ", ".join(regressed) + ". Inspect these forms before approval."
+                    if snapshot.attachment_comparison.get("joint_initialization") else
+                    "This test worsened whole-shape agreement. Keep the earlier "
+                    "starting fit and inspect the difference before another change.")
                 warning.setObjectName("statusWarning")
                 warning.setWordWrap(True)
                 layout.addWidget(warning)

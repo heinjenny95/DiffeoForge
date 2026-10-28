@@ -1,4 +1,16 @@
-# Development continuity — verified dev167 desktop delivery
+# Development continuity — dev168 joint initialization repair
+
+Source dev168 transfers verified accepted individual fields to new adaptive joint
+checks on one original basis, exposes accepted-fit recovery, rejects incompatible
+local seeds and identical rejected joint starts, and reports per-form regression.
+Shared estimation flags and numerical settings remain unchanged. See
+[scope, source binding and qualification](PILOT_JOINT_START.md).
+Installed dev167 / `1a15025` remains the last verified installation pending the
+new exact-package, fresh backup and idle-application checks. No owner fit was
+restarted and no Drive upload was requested. Final joint fit quality remains an
+owner review; copied zero-step evaluations do not establish anatomical success.
+
+## Verified dev167 desktop delivery
 
 Source dev167 fixes the next-form feedback transition: local comparison fields
 are retired when changing animals, while shared settings/control locations stay

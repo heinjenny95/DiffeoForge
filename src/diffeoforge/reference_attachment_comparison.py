@@ -161,7 +161,10 @@ def prepare_controls(root, manifest, record):
         result = bind(root, manifest, result)
     from diffeoforge.regional_pilot import bind as bind_regional
 
-    return bind_regional(root, manifest, result)
+    result = bind_regional(root, manifest, result)
+    from diffeoforge.guided_joint_initialization import bind as bind_joint
+
+    return bind_joint(root, manifest, result)
 
 
 def verify(root, manifest):
@@ -171,6 +174,9 @@ def verify(root, manifest):
     from diffeoforge.guided_refinement import verify as verify_refinement
 
     verify_refinement(root, manifest, record)
+    from diffeoforge.guided_joint_initialization import verify as verify_joint
+
+    verify_joint(root, manifest, record)
     from diffeoforge.regional_pilot import verify as verify_regional
 
     verify_regional(root, manifest, record)
@@ -294,6 +300,10 @@ def configure(config, root, manifest, candidate_id):
             initial_control_point_spacing=controls["spacing"],
         )
         refinement = record.get("refinement")
+        joint = record.get("joint_initialization")
+        if joint:
+            deformation.update(initial_momenta=str(root / joint["momenta"]["copy"]),
+                               initial_momenta_subjects=joint["subjects"])
         if refinement and refinement["initialization"] in {"learned", "nested"}:
             deformation.update(initial_momenta=str(root / refinement["momenta"]["copy"]),
                                initial_momenta_subjects=[refinement["reference"]["target"]])
@@ -431,6 +441,17 @@ def measure(root, manifest, candidate, run, *, cancelled=lambda: False, event_ca
             original, fitted,
             original_key=row["sha256"],
         )
+        joint = manifest["attachment_comparison"].get("joint_initialization")
+        if joint:
+            from diffeoforge.guided_feedback import verify_reference
+            from diffeoforge.guided_refinement import geometry_guard
+
+            ref = next(r for r in joint["references"] if r["target"] == row["filename"])
+            parent = verify_reference(ref)
+            retained = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
+            baseline = retained.metrics["attachment_comparison"]["subjects"][row["filename"]]
+            subjects[row["filename"]]["refinement_guard"] = geometry_guard(
+                baseline, subjects[row["filename"]])
         if quality:
             subjects[row["filename"]]["regional_quality"] = quality
         feedback = manifest["attachment_comparison"].get("guided", {}).get("feedback")

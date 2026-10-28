@@ -108,6 +108,7 @@ def test_spacing_can_improve_without_changing_parts_but_outside_and_shape_regres
 
 def proposal_data():
     ref = dict(
+        directory="synthetic-singleton",
         target="shape.vtk",
         method="varifold",
         values=dict(
@@ -118,6 +119,8 @@ def proposal_data():
         ),
     )
     return dict(
+        references={"synthetic-singleton": SimpleNamespace(
+            plan=SimpleNamespace(pilot_subject_count=1))},
         anchor=ref,
         current_reference=dict(ref, candidate_id="new"),
         regions=[dict(symptom="gap")],

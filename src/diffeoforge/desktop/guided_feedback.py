@@ -135,8 +135,16 @@ def render_starting_fits(window, snapshot, identifier, layout, data):
             inspect_start.clicked.connect(lambda: window._open_guided_saved_fit(selected))
             layout.addWidget(inspect_start)
         if selection["approved"] and not selection["current"]:
+            blocked = data.get("joint_blocked")
+            if blocked:
+                note = QLabel(blocked)
+                note.setWordWrap(True)
+                note.setObjectName("jointRepeatBlocked")
+                layout.addWidget(note)
             use = QPushButton("Use reviewed starting fit → check remaining forms")
-            _set_action_emphasis(use, True)
+            use.setEnabled(not blocked)
+            use.setToolTip(blocked or "")
+            _set_action_emphasis(use, not blocked)
             use.clicked.connect(lambda: window._start_pilot(
                 adaptive=False, guided_action=("adaptive_confirm_start", identifier, None)))
             layout.addWidget(use)

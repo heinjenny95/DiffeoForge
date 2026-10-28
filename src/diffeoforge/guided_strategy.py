@@ -170,6 +170,11 @@ def state(snapshot):
 
     result["failed_parents"] = {c.candidate_id: preview(snapshot, c.candidate_id)
                                 for c in snapshot.candidates if c.status == "failed"}
+    from diffeoforge.guided_accepted_fit import preview as accepted_fit
+
+    result["accepted_fits"] = {c.candidate_id: accepted_fit(snapshot, c.candidate_id, cases)
+                               for c in snapshot.candidates
+                               if result["allowed"].get(c.candidate_id)}
     return result
 
 
@@ -385,6 +390,13 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         order = list(dict.fromkeys([*strategy.get("difficult_targets", []), *info["pilot_order"]]))
         target = next((n for n in order if n not in covered), None)
         phase = "validate" if target else "joint"
+        if phase == "joint":
+            from diffeoforge.guided_accepted_fit import rejected_joint
+            from diffeoforge.guided_joint_initialization import references
+
+            blocked = rejected_joint(snapshot, preference, proposed_references=references(approved))
+            if blocked:
+                raise ValueError(blocked)
     elif action == "compare_unresolved":
         from diffeoforge.method_comparison_followup import provisional_comparison
 
@@ -423,6 +435,10 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
 
 def transition(snapshot, action, identifier, *, goal=None):
     """Called under the existing transition lock; never dispatch an optimizer."""
+    if action == "restore_accepted":
+        from diffeoforge.guided_accepted_fit import select
+
+        return select(snapshot, identifier, goal)
     if action in {"select_start", "feedback"}:
         from diffeoforge.guided_feedback import save_feedback, select
 
