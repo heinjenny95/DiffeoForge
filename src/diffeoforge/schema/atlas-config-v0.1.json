@@ -936,7 +936,7 @@
                         "pilot_subject_count": {"type": "integer", "minimum": 2},
                         "observations": {
                           "type": "array",
-                          "minItems": 3,
+                          "minItems": 1,
                           "items": {
                             "type": "object",
                             "additionalProperties": false,

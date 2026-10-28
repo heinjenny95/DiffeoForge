@@ -1,4 +1,14 @@
-# Development continuity — verified dev168 joint initialization delivery
+# Development continuity — dev169 retained pilot finish repair
+
+dev169 repairs final configuration serialization when one approved joint fit was
+retained through later stages. It restores the verified inherited review during
+reopening and permits retrying a partially written finish without a new fit,
+duplicate decision or overwritten evidence. Sparse timing does not become a
+calibrated runtime estimate. See [scope and verification](PILOT_FINISH_RECOVERY.md).
+The installed baseline remains the verified dev168 below until separate package,
+backup/idle and installed-byte verification establishes a new delivery.
+
+## Verified dev168 joint initialization delivery
 
 Source dev168 transfers verified accepted individual fields to new adaptive joint
 checks on one original basis, exposes accepted-fit recovery, rejects incompatible

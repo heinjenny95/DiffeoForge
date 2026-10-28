@@ -289,6 +289,12 @@ def test_seed_binding_uses_real_run_inventory_and_rejects_tampered_geometry(tmp_
     monkeypatch.setattr(study, "_verify_manifest", lambda _: {"inputs": {"subjects": subjects}})
     seed = adaptive.bind_learned_seed(snapshot, "seed", tmp_path / "copied")
     assert set(seed["files"]) == {"template", "control_points", "momenta"}
+    copied = {p: p.read_bytes() for p in (tmp_path / "copied").rglob("*") if p.is_file()}
+    assert adaptive.bind_learned_seed(snapshot, "seed", tmp_path / "copied") == seed
+    assert all(p.read_bytes() == value for p, value in copied.items())
+    next(iter(copied)).write_bytes(b"changed")
+    with pytest.raises(ValueError, match="Existing learned seed differs"):
+        adaptive.bind_learned_seed(snapshot, "seed", tmp_path / "copied")
     (run / "output/DeterministicAtlas__EstimatedParameters__Momenta.txt").write_text("changed")
     with pytest.raises(RuntimeError, match="evidence failed|checksum|Momenta"):
         adaptive.bind_learned_seed(snapshot, "seed", tmp_path / "tampered")

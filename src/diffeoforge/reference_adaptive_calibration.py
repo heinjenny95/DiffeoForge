@@ -293,7 +293,11 @@ def bind_learned_seed(snapshot, center_id, destination):
         ("momenta", inputs.momenta_path, str(inputs.momenta_record["sha256"])),
     ):
         target = destination / "adaptive-seed" / (role + path.suffix)
-        study._copy_bound(path, target, digest)
+        if target.exists():
+            if sha256_file(target) != digest:
+                raise ValueError("Existing learned seed differs from its bound source")
+        else:
+            study._copy_bound(path, target, digest)
         files[role] = {"copy": study._relative_path(destination, target), "sha256": digest}
     effective = inputs.run_report.manifest["effective_config"]
     return {

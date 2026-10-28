@@ -1914,8 +1914,11 @@ def _load_verified_calibration_study(
             )
     selected_values, selected_candidates = _selected_state(events)
     final_events = [event for event in events if event["event"] == "study_completed"]
-    if _reopen_final:
-        if not final_events:
+    pending_finish = not final_events and any(
+        e["event"] == "stage_selected" and e.get("final_pilot_completion") for e in events
+    )
+    if _reopen_final or pending_finish:
+        if _reopen_final and not final_events:
             raise ReferenceCalibrationStudyError("Refinement requires a completed pilot")
         selected_values, selected_candidates = _selected_state(tuple(
             e for e in events if not (
@@ -2083,11 +2086,9 @@ def _load_verified_calibration_study(
         if _restore_reviews
         else {}
     )
-    for event in events:
-        if event["event"] == "stage_retained" and event.get("stage_id") == stage.stage_id:
-            candidate_id = event["candidate"]["candidate_id"]
-            # This is the same bound output, not approval of a newly calculated fit.
-            visual_reviews.setdefault(candidate_id, True)
+    from diffeoforge.reference_stage_retention import restore_retained_reviews
+
+    visual_reviews = restore_retained_reviews(root, events, stage.stage_id, visual_reviews)
     awaiting = any(
         event["event"] == "stage_awaiting_review" and event["stage_id"] == stage.stage_id
         for event in events
@@ -2841,8 +2842,12 @@ def _final_configuration(
         ]
     validate_schema(config)
     final_path = root / "selected" / "atlas-calibrated.yaml"
-    final_path.parent.mkdir(parents=True, exist_ok=False)
-    _write_yaml(final_path, config, overwrite=False)
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    if final_path.exists():
+        if yaml.safe_load(final_path.read_text(encoding="utf-8")) != config:
+            raise ReferenceCalibrationStudyError("Existing final configuration differs")
+    else:
+        _write_yaml(final_path, config, overwrite=False)
     return final_path
 
 
@@ -3299,12 +3304,15 @@ def _write_calibration_report(
     )
     json_path = root / CALIBRATION_REPORT_JSON
     html_path = root / CALIBRATION_REPORT_HTML
-    _write_json(json_path, report, overwrite=False)
-    write_text_safely(
-        html_path,
-        _calibration_report_html(report),
-        overwrite=False,
-    )
+    for path, rendered in (
+        (json_path, _canonical_json(report, indent=2)),
+        (html_path, _calibration_report_html(report)),
+    ):
+        if path.exists():
+            if path.read_text(encoding="utf-8") != rendered:
+                raise ReferenceCalibrationStudyError("Existing final calibration report differs")
+        else:
+            write_text_safely(path, rendered, overwrite=False)
     return json_path, html_path
 
 
@@ -3488,63 +3496,72 @@ def _record_reference_calibration_stage_selection(
         for candidate in snapshot.current_stage.candidates
         if candidate.candidate_id == selected_candidate_id
     )
-    _append_event(
-        root,
-        "stage_selected",
-        {
-            "stage_id": snapshot.current_stage.stage_id,
-            "candidate_id": selected_candidate_id,
-            "parameter_values": selected.values,
-            "visual_approvals": dict(visual_approvals),
-            "visual_review_policy": (
-                "retained_preceding_review_v1"
-                if retained_event
-                else "explicit_every_specimen_fit_with_display_scope_v3"
-            ),
-            **({"retained_source": retained_event["retained_source"]} if retained_event else {}),
-            "visual_display_scopes": dict(snapshot.visual_display_scopes),
-            "problem_regions": dict(snapshot.problem_regions),
-            "visual_review_status": {
-                candidate.candidate_id: (
-                    "passed"
-                    if visual_approvals.get(candidate.candidate_id) is True
-                    else (
-                        "failed"
-                        if visual_approvals.get(candidate.candidate_id) is False
-                        else "not_performed"
-                    )
+    selection_record = {
+        "stage_id": snapshot.current_stage.stage_id,
+        "candidate_id": selected_candidate_id,
+        "parameter_values": selected.values,
+        "visual_approvals": dict(visual_approvals),
+        "visual_review_policy": (
+            "retained_preceding_review_v1"
+            if retained_event
+            else "explicit_every_specimen_fit_with_display_scope_v3"
+        ),
+        **({"retained_source": retained_event["retained_source"]} if retained_event else {}),
+        "visual_display_scopes": dict(snapshot.visual_display_scopes),
+        "problem_regions": dict(snapshot.problem_regions),
+        "visual_review_status": {
+            candidate.candidate_id: (
+                "passed"
+                if visual_approvals.get(candidate.candidate_id) is True
+                else (
+                    "failed"
+                    if visual_approvals.get(candidate.candidate_id) is False
+                    else "not_performed"
                 )
-                for candidate in snapshot.candidates
-            },
-            "assessment": assessment.as_manifest(),
-            "selection_mode": selection_mode,
-            "selection_reason": selection_reason,
-            "researcher_decision": selection_mode.startswith("researcher_"),
-            **({"final_pilot_completion": final_completion} if final_completion else {}),
-            **(
-                {
-                    "iteration_limit_provisional": {
-                        "version": "iteration-limit-exploration-v1",
-                        "converged": False,
-                        "binding": _candidate_review_binding(
-                            next(
-                                c
-                                for c in snapshot.candidates
-                                if c.candidate_id == selected_candidate_id
-                            )
-                        ),
-                        "retained_source": retained_event.get("iteration_limit_provisional")
-                        if retained_event
-                        else None,
-                        "limitation": "Parameter exploration only; numerical qualification "
-                        "and full-cohort confirmation remain required.",
-                    }
-                }
-                if provisional
-                else {}
-            ),
+            )
+            for candidate in snapshot.candidates
         },
-    )
+        "assessment": assessment.as_manifest(),
+        "selection_mode": selection_mode,
+        "selection_reason": selection_reason,
+        "researcher_decision": selection_mode.startswith("researcher_"),
+        **({"final_pilot_completion": final_completion} if final_completion else {}),
+        **(
+            {
+                "iteration_limit_provisional": {
+                    "version": "iteration-limit-exploration-v1",
+                    "converged": False,
+                    "binding": _candidate_review_binding(
+                        next(
+                            c
+                            for c in snapshot.candidates
+                            if c.candidate_id == selected_candidate_id
+                        )
+                    ),
+                    "retained_source": retained_event.get("iteration_limit_provisional")
+                    if retained_event
+                    else None,
+                    "limitation": "Parameter exploration only; numerical qualification "
+                    "and full-cohort confirmation remain required.",
+                }
+            }
+            if provisional
+            else {}
+        ),
+    }
+    pending = next((e for e in reversed(_load_events(root))
+                    if e["event"] == "stage_selected"
+                    and e.get("stage_id") == snapshot.current_stage.stage_id), None)
+    if pending is not None:
+        if not final_completion or any(
+            pending.get(key) != selection_record.get(key)
+            for key in ("candidate_id", "parameter_values", "selection_mode",
+                        "final_pilot_completion")
+        ):
+            raise ReferenceCalibrationStudyError("Pending final pilot decision differs")
+        # Retry serialization using the same verified owner decision, never a new fit.
+    else:
+        _append_event(root, "stage_selected", selection_record)
     manifest = _verify_manifest(root)
     selected_values, selected_candidates = _selected_state(_load_events(root))
     if snapshot.current_stage.order < len(snapshot.plan.stages):
@@ -3560,7 +3577,11 @@ def _record_reference_calibration_stage_selection(
         )
     else:
         events = _load_events(root)
-        decision_event_hash = str(events[-1]["event_hash"])
+        decision_event_hash = str(next(
+            e["event_hash"] for e in reversed(events)
+            if e["event"] == "stage_selected"
+            and e["stage_id"] == snapshot.current_stage.stage_id
+        ))
         selection_modes = {
             str(event["stage_id"]): str(event.get("selection_mode", "researcher_manual"))
             for event in events

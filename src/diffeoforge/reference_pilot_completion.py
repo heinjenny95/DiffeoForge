@@ -423,7 +423,7 @@ def verify_final_decision(root, plan, events):
     ]
     if not selections:
         return
-    from diffeoforge.reference_stage_retention import _candidate
+    from diffeoforge.reference_stage_retention import _candidate, restore_retained_reviews
 
     identifiers = {
         e["candidate_id"]
@@ -459,8 +459,11 @@ def verify_final_decision(root, plan, events):
             None,
             None,
             None,
-            visual_reviews=study._load_candidate_reviews(
-                earlier + reviews, plan.stages[-1].stage_id, candidates
+            visual_reviews=restore_retained_reviews(
+                root, earlier, plan.stages[-1].stage_id,
+                study._load_candidate_reviews(
+                    earlier + reviews, plan.stages[-1].stage_id, candidates
+                ),
             ),
         )
         expected = decision(snapshot, event["candidate_id"])

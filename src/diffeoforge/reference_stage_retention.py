@@ -158,6 +158,16 @@ def verify_reference(root, record):
     return candidate
 
 
+def restore_retained_reviews(root, events, stage_id, reviews):
+    """Inherit only verified unchanged outputs; explicit later rejection wins."""
+    result = dict(reviews)
+    for event in events:
+        if event["event"] == "stage_retained" and event.get("stage_id") == stage_id:
+            verify_reference(root, event)
+            result.setdefault(event["candidate"]["candidate_id"], True)
+    return result
+
+
 def overlay_plan(plan, events):
     """The append-only event binds additions; the original plan remains immutable."""
     from diffeoforge.reference_calibration import _canonical_hash
