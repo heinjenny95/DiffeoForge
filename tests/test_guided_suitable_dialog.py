@@ -155,6 +155,7 @@ def panel(monkeypatch):
         app=app,
         window=window,
         snapshot=snapshot,
+        guidance=context,
         candidate=candidate,
         invoked=invoked,
         inspected=inspected,
@@ -162,6 +163,52 @@ def panel(monkeypatch):
     )
     window.close()
     app.processEvents()
+
+
+def test_numerical_failure_explains_stop_and_disables_same_retry(panel, monkeypatch):
+    import os
+
+    from PySide6.QtWidgets import QLabel
+
+    from diffeoforge.desktop import guided_failed_parent
+
+    monkeypatch.setattr(guided_failed_parent, "render", lambda *_: None)
+    panel.candidate.status = "failed"
+    panel.candidate.metrics = None
+    panel.candidate.error = "Deformetrica finished with return code 1 and status 'failed'"
+    panel.snapshot.visual_reviews.clear()
+    panel.guidance["guard_failures"] = {panel.candidate.candidate_id: dict(
+        reason="inconsistent_FG_for_identical_parameters",
+        message="Numerical consistency check stopped this trial: identical parameters "
+        "produced different objective or gradient values. Inspect the retained earlier fit.",
+    )}
+    panel.window.layout().addWidget(panel.window.start_button)
+    panel.render()
+    assert not panel.window.start_button.isEnabled()
+    assert "cannot be rerun" in panel.window.start_button.text()
+    assert "cannot be rerun" in panel.window.start_button.toolTip()
+    assert "retry" not in panel.window.status.text()
+    assert any("identical parameters" in label.text() and label.isVisible()
+               for label in panel.window.content.findChildren(QLabel))
+    assert not any("Optimize longer" in label.text() and label.isVisible()
+                   for label in panel.window.content.findChildren(QLabel))
+    panel.window.start_button.click()
+    assert not panel.invoked
+    capture = os.environ.get("DF_GUARD_UI_CAPTURE")
+    if capture:
+        from PySide6.QtGui import QFont, QFontDatabase
+
+        from diffeoforge.desktop.appearance import Appearance, themed_style
+        from diffeoforge.desktop.widgets import _STYLE
+
+        panel.window.setWindowTitle("Synthetic failure-view test — no owner fit started")
+        font_id = QFontDatabase.addApplicationFont("C:/Windows/Fonts/segoeui.ttf")
+        assert font_id >= 0
+        panel.app.setFont(QFont(QFontDatabase.applicationFontFamilies(font_id)[0], 10))
+        panel.window.setStyleSheet(themed_style(_STYLE, Appearance()))
+        panel.window.resize(1050, 730)
+        panel.app.processEvents()
+        assert panel.window.grab().save(capture)
 
 
 def test_suitable_capped_warning_fit_stops_default_refinement_but_keeps_inspection(panel):

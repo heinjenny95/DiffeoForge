@@ -24,6 +24,7 @@ def render(window, prepared):
     window.content_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
     info = record(snapshot)
     guidance = prepared.guidance
+    guard_failures = guidance.get("guard_failures", {})
     running = window._worker is not None or window._restoring_search
     regional_accepted = bool(
         snapshot.attachment_comparison.get("regional_objective")
@@ -75,7 +76,7 @@ def render(window, prepared):
     explanation.setObjectName("pilotScope")
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
-    if info.get("goal") and not regional_accepted:
+    if info.get("goal") and not regional_accepted and not guard_failures:
         from diffeoforge.pilot_recovery import DESCRIPTIONS
 
         reason = DESCRIPTIONS.get(info["goal"])
@@ -97,20 +98,27 @@ def render(window, prepared):
         c for c in snapshot.candidates if c.status not in {"completed", "failed", "interrupted"}
     ]
     failed = [c for c in snapshot.candidates if c.status in {"failed", "interrupted"}]
+    retry_blocked = any(c.candidate_id in guard_failures for c in pending)
     window.progress.setVisible(running or bool(completed))
     window.progress.setRange(0, len(snapshot.candidates))
     window.progress.setValue(len(completed))
     window.progress.setFormat(f"{len(completed)} of {len(snapshot.candidates)} trials completed")
     window.start_button.setText(
-        f"Run joint check · {snapshot.plan.pilot_subject_count} specimens"
+        "Review numerical failure · this test cannot be rerun"
+        if retry_blocked
+        else f"Run joint check · {snapshot.plan.pilot_subject_count} specimens"
         if info["phase"] == "joint"
         else f"Compare Current / Varifold · {len(pending)} trials on 1 specimen"
         if len(snapshot.candidates) == 2
         else "Run prepared test · 1 trial on 1 specimen"
     )
     window.start_button.setVisible(bool(pending))
-    window.start_button.setEnabled(not running)
-    _set_action_emphasis(window.start_button, bool(pending) and not running)
+    window.start_button.setEnabled(not running and not retry_blocked)
+    window.start_button.setToolTip(
+        "Inspect the retained fit and numerical failure. The same failed test cannot be rerun."
+        if retry_blocked else ""
+    )
+    _set_action_emphasis(window.start_button, bool(pending) and not running and not retry_blocked)
     window.cancel_button.setVisible(running)
     window.cancel_button.setEnabled(running)
     inspected_feedback = any(
@@ -120,6 +128,8 @@ def render(window, prepared):
     window.status.setText(
         "Computing the confirmed batch…"
         if running
+        else "Numerical check stopped a trial. Inspect the retained fit and failure details."
+        if retry_blocked
         else "A trial failed. Inspect details, retry, or choose an approved alternative."
         if failed
         else "Fit saved as suitable. Inspect or close; further refinement is optional."
@@ -161,7 +171,9 @@ def render(window, prepared):
         feedback = guidance.get("feedback", {}).get(candidate.candidate_id)
         already_inspected = bool(feedback and feedback.get("current_inspected"))
         state = (
-            "Suitable for this form"
+            candidate.status.title()
+            if candidate.status in {"failed", "interrupted"}
+            else "Suitable for this form"
             if decision is True
             else "Needs improvement"
             if decision is False
@@ -233,8 +245,15 @@ def render(window, prepared):
             starting.setWordWrap(True)
             layout.addWidget(starting)
         if candidate in failed:
+            failure = guard_failures.get(candidate.candidate_id)
+            if failure:
+                note = QLabel(failure["message"])
+                note.setWordWrap(True)
+                note.setObjectName("statusWarning")
+                layout.addWidget(note)
             layout.addWidget(
-                InfoDisclosure("Technical failure", candidate.error or "No usable result")
+                InfoDisclosure("Technical failure", failure["reason"] if failure
+                               else candidate.error or "No usable result")
             )
             if not running and candidate.status == "failed":
                 from diffeoforge.desktop.guided_failed_parent import render as failed_actions

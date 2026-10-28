@@ -12,9 +12,10 @@ def render(window, snapshot, candidate, layout, guidance, action):
     reference = evidence.get("reference")
     if not reference:
         return
-    note = QLabel(evidence["reason"])
-    note.setWordWrap(True)
-    layout.addWidget(note)
+    if identifier not in guidance.get("guard_failures", {}):
+        note = QLabel(evidence["reason"])
+        note.setWordWrap(True)
+        layout.addWidget(note)
     inspect = QPushButton("Inspect retained earlier fit")
     _set_action_emphasis(inspect, False)
     inspect.clicked.connect(lambda: window._open_guided_saved_fit(reference))

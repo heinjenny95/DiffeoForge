@@ -2174,6 +2174,11 @@ def _launch_request(
     manifest: Mapping[str, Any],
     candidate: CalibrationStudyCandidateState,
 ) -> DesktopReferenceLaunchRequest:
+    from diffeoforge.reference_guard_failure import for_candidate
+
+    failure = for_candidate(candidate)
+    if failure:
+        raise ReferenceCalibrationStudyError(failure["message"])
     attempt = candidate.attempts + 1
     run_id = f"pilot-attempt-{attempt:02d}"
     destination = (candidate.config_path.parent / "runs" / run_id).resolve()

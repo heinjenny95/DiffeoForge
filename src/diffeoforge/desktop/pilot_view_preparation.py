@@ -71,6 +71,12 @@ def _guidance(snapshot, manifest):
         from diffeoforge.pilot_input_topology import prepare_for_snapshot
 
         context = state(snapshot)
+        from diffeoforge.reference_guard_failure import for_candidate
+
+        context["guard_failures"] = {
+            c.candidate_id: failure for c in snapshot.candidates
+            if (failure := for_candidate(c)) is not None
+        }
         context["input_topology"] = prepare_for_snapshot(snapshot, manifest)
         return prepare_proposals(snapshot, context)
     return None

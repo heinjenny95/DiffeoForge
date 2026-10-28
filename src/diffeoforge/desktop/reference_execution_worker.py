@@ -278,7 +278,9 @@ def run_reference_execution_worker(
         review_wait_started = None
         review_wait_seconds = 0.0
         review_finished = False
-        has_review = bool(config.get("project", {}).get("parameter_provenance", {}).get("pilot_review"))
+        has_review = bool(
+            config.get("project", {}).get("parameter_provenance", {}).get("pilot_review")
+        )
 
         def observe_line(line: str) -> None:
             nonlocal last_iteration, review_wait_started, review_wait_seconds, review_finished
@@ -386,6 +388,11 @@ def run_reference_execution_worker(
                 "Deformetrica stopped after cancellation; terminal evidence was preserved.",
             )
         if return_code != 0 or report.result["status"] != "completed":
+            from diffeoforge.reference_guard_failure import read_failure
+
+            failure = read_failure(run_directory)
+            if failure:
+                raise RuntimeError(f"{failure['message']} [{failure['reason']}]")
             raise RuntimeError(
                 f"Deformetrica finished with return code {return_code} and "
                 f"status {report.result['status']!r}"

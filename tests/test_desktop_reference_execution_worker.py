@@ -103,6 +103,36 @@ def _run(
     return code, events, stderr.getvalue()
 
 
+def test_failed_worker_reports_specific_guard_reason(tmp_path, monkeypatch):
+    from diffeoforge import reference_guard_failure
+
+    request = _request(tmp_path)
+    monkeypatch.setattr(execution_worker, "collect_preflight", lambda *_a, **_k: object())
+    monkeypatch.setattr(execution_worker, "assess_reference_production_readiness",
+                        lambda _: SimpleNamespace(production_scale=False, ready=True, blockers=()))
+
+    def prepare(*_args, **_kwargs):
+        request.destination.mkdir(parents=True)
+        return request.destination
+
+    def execute(*_args, **_kwargs):
+        (request.destination / "result.json").write_text('{"status":"failed"}')
+        return 1
+
+    monkeypatch.setattr(execution_worker, "prepare_run", prepare)
+    monkeypatch.setattr(execution_worker, "execute_run", execute)
+    monkeypatch.setattr(execution_worker, "collect_run_report",
+                        lambda _: SimpleNamespace(checks=(), result={"status": "failed"}))
+    monkeypatch.setattr(reference_guard_failure, "read_failure", lambda _: dict(
+        message="Identical parameters produced different gradient values.",
+        reason="inconsistent_FG_for_identical_parameters"))
+    code, events, _stderr = _run(request)
+    assert code == 1
+    assert events[-1].payload["outcome"] == "failed"
+    assert "inconsistent_FG_for_identical_parameters" in events[-1].payload["message"]
+    assert "different gradient" in events[-1].payload["message"]
+
+
 def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -260,11 +290,13 @@ def test_intermediate_review_wait_is_excluded_and_finish_reports_exporting(tmp_p
             line_callback(value)
 
         line(101., "---------------- Iteration: 0 ----------------")
-        line(105., ">> Log-likelihood = -1.000E+01 [ attachment = -8.000E+00 ; regularity = -2.000E+00 ]")
+        line(105., ">> Log-likelihood = -1.000E+01 "
+             "[ attachment = -8.000E+00 ; regularity = -2.000E+00 ]")
         line(110., "DF_PILOT_REVIEW waiting at accepted state 2")
         line(200., "DF_PILOT_REVIEW decision continue")
         line(201., "---------------- Iteration: 1 ----------------")
-        line(205., ">> Log-likelihood = -9.000E+00 [ attachment = -7.000E+00 ; regularity = -2.000E+00 ]")
+        line(205., ">> Log-likelihood = -9.000E+00 "
+             "[ attachment = -7.000E+00 ; regularity = -2.000E+00 ]")
         line(210., "DF_PILOT_REVIEW waiting at accepted state 3")
         line(300., "DF_PILOT_REVIEW decision finish")
         activity_callback(200., "Writing the accepted result", "stdout")

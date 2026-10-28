@@ -1,5 +1,12 @@
 # Development continuity — verified dev165 desktop delivery
 
+Current source follow-up: [terminal numerical failure guidance](PILOT_NUMERICAL_FAILURES.md)
+exposes sealed guard reasons and prevents the same failed regional trial from
+being launched again. Source checks passed; this follow-up is not yet installed.
+An observed gradient-consistency failure remains a numerical investigation, not
+a fit-quality judgement or a reason to add iterations. The numerical guard stays
+unchanged; dev165 / `9b09531` below remains the installed runtime.
+
 The dev165 [intermediate-review implementation](PILOT_INTERMEDIATE_REVIEW.md)
 adds ten-minute active-work reviews to newly prepared guarded regional fits.
 Continuation keeps the same optimizer in memory; a requested early finish remains
