@@ -41,7 +41,9 @@ parameters and normal guard return. The result is labelled
 `pilot_review_request`, **not convergence**. Ordinary export, geometry, preservation
 and visual checks still follow; ending optimization does not approve anatomy or
 a shared atlas/PCA configuration. Existing suitable-fit decisions retain their
-meaning: remaining refinement is optional.
+meaning: remaining refinement is optional. Activity after an explicit finish is
+labelled export/checking with no more fitting; review waiting is excluded from
+optimizer progress-rate estimates.
 
 The incoming native working surface is shown during a pause. A composed residual
 field still requires its ordinary original-source evaluation after finalization;

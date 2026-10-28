@@ -237,5 +237,8 @@ def test_live_panel_loads_optional_detail_and_sends_one_generation_bound_decisio
     command = json.loads((bound["folder"] / "command.json").read_text())
     assert command["action"] == "finish" and command["nonce"] == bound["live"]["nonce"]
     assert not panel.continue_button.isEnabled() and not panel.finish_button.isEnabled()
+    panel.active = lambda: False
+    panel.poll()
+    assert panel.bound is None and panel.run is None and panel.isHidden()
     panel.timer.stop()
     panel.close()

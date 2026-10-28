@@ -236,6 +236,53 @@ def test_small_cohort_storage_failure_stops_before_preparation(tmp_path, monkeyp
     assert not request.destination.exists()
 
 
+def test_intermediate_review_wait_is_excluded_and_finish_reports_exporting(tmp_path, monkeypatch):
+    request = _request(tmp_path)
+    monkeypatch.setattr(execution_worker, "collect_preflight", lambda *a, **k: object())
+    monkeypatch.setattr(execution_worker, "assess_reference_production_readiness",
+                        lambda _: SimpleNamespace(production_scale=False, ready=True, blockers=()))
+    config = execution_worker.load_config(request.config_path)
+    config["project"].setdefault("parameter_provenance", {})["pilot_review"] = {
+        "version": "accepted-pilot-review-v1", "interval_seconds": 600,
+    }
+    monkeypatch.setattr(execution_worker, "verify_prepared_run",
+                        lambda _: {"effective_config": config})
+    clock = [100.0]
+    monkeypatch.setattr(execution_worker.time, "monotonic", lambda: clock[0])
+
+    def prepare(*_a, **_k):
+        request.destination.mkdir(parents=True)
+        return request.destination
+
+    def execute(_run, *, line_callback, activity_callback, **_kwargs):
+        def line(now, value):
+            clock[0] = now
+            line_callback(value)
+
+        line(101., "---------------- Iteration: 0 ----------------")
+        line(105., ">> Log-likelihood = -1.000E+01 [ attachment = -8.000E+00 ; regularity = -2.000E+00 ]")
+        line(110., "DF_PILOT_REVIEW waiting at accepted state 2")
+        line(200., "DF_PILOT_REVIEW decision continue")
+        line(201., "---------------- Iteration: 1 ----------------")
+        line(205., ">> Log-likelihood = -9.000E+00 [ attachment = -7.000E+00 ; regularity = -2.000E+00 ]")
+        line(210., "DF_PILOT_REVIEW waiting at accepted state 3")
+        line(300., "DF_PILOT_REVIEW decision finish")
+        activity_callback(200., "Writing the accepted result", "stdout")
+        (request.destination / "result.json").write_text('{"status":"completed"}', encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(execution_worker, "prepare_run", prepare)
+    monkeypatch.setattr(execution_worker, "execute_run", execute)
+    monkeypatch.setattr(execution_worker, "collect_run_report",
+                        lambda _: SimpleNamespace(checks=(), result={"status": "completed"}))
+    code, events, stderr = _run(request)
+    assert code == 0 and not stderr
+    progress = [e.payload for e in events if e.kind == "progress"]
+    assert [p["elapsed_seconds"] for p in progress] == [5., 15.]
+    activity = [e.payload for e in events if e.kind == "activity"]
+    assert activity[-1]["state"] == "exporting"
+
+
 def test_reference_execution_worker_cancels_before_preparation_without_mutation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -5,6 +5,27 @@ import pytest
 from pilot_view_helpers import wait_pilot_view
 
 
+def test_early_finish_activity_explains_export_instead_of_more_optimization(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from test_reference_calibration_study import _project
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+    from diffeoforge.reference_calibration_study import create_reference_calibration_study
+
+    application = QApplication.instance() or QApplication([])
+    snapshot = create_reference_calibration_study(_project(tmp_path), tmp_path / "pilot")
+    dialog = ReferenceCalibrationDialog(snapshot.study_directory)
+    wait_pilot_view(dialog)
+    identifier = snapshot.candidates[0].candidate_id
+    dialog._progress_context = dict(phase="Optimizing", iteration=12, cap=600)
+    dialog._event(dict(event="candidate_worker_event", candidate_id=identifier,
+        worker_event=dict(kind="activity", payload=dict(state="exporting", elapsed_seconds=640.))))
+    assert "Exporting" in dialog.status.text() and "no more fitting" in dialog.status.text()
+    assert "Optimizing" not in dialog.status.text()
+    dialog.close()
+    application.processEvents()
+
+
 def test_pilot_minimize_progress_escape_and_idle_close(tmp_path, monkeypatch):
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")

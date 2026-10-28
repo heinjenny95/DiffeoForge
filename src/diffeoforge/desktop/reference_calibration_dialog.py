@@ -3994,6 +3994,8 @@ class ReferenceCalibrationDialog(QDialog):
                 )
                 self.status.setText(f"{self._progress_label(candidate_id)}: {payload['message']}")
             elif worker["kind"] == "activity":
+                if payload.get("state") == "exporting":
+                    self._progress_context.update(phase="Exporting and checking · no more fitting")
                 self.status.setText(
                     "Paused for your intermediate review; optimizer kept in memory."
                     if self._pilot_review_panel.waiting else

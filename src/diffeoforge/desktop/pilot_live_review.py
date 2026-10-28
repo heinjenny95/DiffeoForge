@@ -74,8 +74,10 @@ class PilotLiveReviewPanel(QFrame):
         self.hide()
 
     def poll(self):
-        if self.run is None or not self.active():
-            self.hide()
+        if self.run is None:
+            return
+        if not self.active():
+            self.clear()
             return
         try:
             # All mesh parsing and hashing is performed in the loader worker.
