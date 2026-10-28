@@ -1,4 +1,4 @@
-# Development continuity — source UI and R handoff follow-up
+# Development continuity â€” source UI and R handoff follow-up
 
 The [detail-routing repair](PILOT_DETAIL_ROUTING.md) addresses owner feedback about
 long local fits with remaining short/missing projections. Rewording detail/missing
@@ -11,8 +11,9 @@ attempt externally; preserve it as interrupted and do not restart it.
 
 Cancellation now has a direct launch-bound supervisor route which avoids waiting
 for the execution worker's stdin reader. See [scope and verification](PILOT_CANCELLATION.md).
-Backup, idle checks, exact-package checks and installed byte verification remain
-required before announcing delivery.
+Fresh backup, idle checks, exact-package checks and installed byte/state
+verification passed for runtime `724bb14` / dev164. See the
+[delivery record and limits](V164_DELIVERY.md).
 
 The subsequent [workflow robustness review](WORKFLOW_ROBUSTNESS_FOLLOWUP.md)
 adds cancellable complete-cohort source verification when selecting a template,
@@ -30,11 +31,11 @@ The [verification record and limits](SOURCE_UI_R_FOLLOWUP.md) distinguish this
 tested source follow-up from the installed runtime and owner pilot acceptance.
 
 The earlier source-only installation deferment was lifted by the owner's explicit
-October 28 request. Until dev164 delivery is independently verified, the last
-verified installed runtime remains dev163 / `eff8f7f`. No fit, atlas, objective,
+October 28 request. The independently verified
+installed runtime is now dev164 / `724bb14`. No fit, atlas, objective,
 threshold, existing result or approval is changed. No Drive upload was requested.
 
-## Installed v163 stable fit inspection
+## Earlier v163 stable fit inspection
 
 v163 permits approval/rejection/relative feedback on matching settled previews;
 full detail is explicitly optional and no longer automatically loads. Selected
@@ -179,7 +180,7 @@ Source/exact frozen/installed workflow, cache and existing-result heatmap checks
 owner project/state and Qt settings are preserved. See [verified delivery](V156_DELIVERY.md). Do not infer a new scientific run or
 biological improvement from development checks. Older snapshots below are historical.
 
-v155 source adds **Correct/change existing landmarks…** in Step 1, with searchable
+v155 source adds **Correct/change existing landmarksâ€¦** in Step 1, with searchable
 multiple selection and loaded existing points. Save merges only selected points
 into a separate complete CSV, activates it and invalidates prior GPA/input review.
 Other coordinates, original files and saved fits remain preserved. No scientific
@@ -268,7 +269,7 @@ historical.
 
 Owner first use exposed a missing modal-opening case in v145: the correct fit
 window was selected, but preparation stayed marked busy until that window closed,
-so review was compressed at 1000×. v146 publishes loader activity before result
+so review was compressed at 1000Ã—. v146 publishes loader activity before result
 callbacks enter modal review. All 56 focused source cases pass, including the
 actual asynchronous pilot opener and decoded rotating-mesh frames. See
 [cause, repair and verification boundaries](V146_MODAL_REVIEW_RECORDING.md).
@@ -279,16 +280,16 @@ and post-probe owner-file/settings preservation checks pass. See
 [delivery](V146_DELIVERY.md). Independent owner acceptance remains open; prior
 v145 direct-viewer probes did not cover this production transition.
 
-The owner's v145 clarification restores normal interaction to 10×, including
-paths and landmarks, and records only ready pilot fit evaluation at 2×.
-Calculation/loading remain 1000×. See [scope and checks](V145_PILOT_REVIEW_RECORDING.md).
+The owner's v145 clarification restores normal interaction to 10Ã—, including
+paths and landmarks, and records only ready pilot fit evaluation at 2Ã—.
+Calculation/loading remain 1000Ã—. See [scope and checks](V145_PILOT_REVIEW_RECORDING.md).
 Runtime `4ba6bf9` / `dev145` is installed after full backup and fresh idle guards.
 All 26 focused source cases, exact frozen/installed actual-viewer MP4 probes,
 bundle/registry/startup/media and owner-file/settings preservation checks pass.
 See [verified delivery](V145_DELIVERY.md). Independent real-pilot first use remains
 open. The v144 installation snapshot below is historical.
 
-v144 changes human review/decision recording to 1× and retains 1000× calculation
+v144 changes human review/decision recording to 1Ã— and retains 1000Ã— calculation
 and loading. The tested Windows runtime `6aa6650` / `dev144` is installed after
 full backup and fresh idle checks. All 25 focused source cases, exact frozen/
 installed recording probes, bundle/registry/startup/media and preservation checks
@@ -404,7 +405,7 @@ v137 moves repeated pilot presentation verification, comparison preparation,
 review saving and stage selections off the GUI thread, retaining fresh worker
 snapshots and limiting verification reuse to a single read. Process recording
 continues across all pilot/atlas tasks in one project session. Busy workflow
-phases use 1000×; required review/decision phases use 10×, independent of mouse or
+phases use 1000Ã—; required review/decision phases use 10Ã—, independent of mouse or
 keyboard activity. Unresponsive GUI intervals are omitted after recovery and
 documented in the timing companion. Manual recording finish or app close saves
 the video. Scientific/approval gates remain unchanged. See
@@ -504,7 +505,7 @@ startup. See [verified delivery](V131_DELIVERY.md). Source, runtime and installe
 distribution remain separate; demo removal remains an open task.
 
 v130 adds owner-authorized, remembered opt-in DiffeoForge-only process recording:
-10× active interaction, 300× long waits, and automatic MP4 export after each
+10Ã— active interaction, 300Ã— long waits, and automatic MP4 export after each
 completed computation with immediate follow-up recording. Encoding uses bounded
 background work and compressed segments; verified local exports, explicit
 capture-gap labels and presentation-only partial recovery preserve scientific
@@ -577,10 +578,10 @@ The tested Windows build is installed after full backup and fresh idle guards;
 source/frozen/installed access checks passed. See [delivery](V127_DELIVERY.md).
 
 v126 adds an explicit density comparison of one chosen reviewed joint fit. A
-separate sibling study compares a matched reference with nested 1.5×/2× common
+separate sibling study compares a matched reference with nested 1.5Ã—/2Ã— common
 bases; all remaining scientific settings stay fixed and original approvals remain
 unchanged. Each new fit pauses for its own QC. Selection and fixed-state numerical
-checks remain explicit; A–E screens and full-cohort jobs do not run automatically.
+checks remain explicit; Aâ€“E screens and full-cohort jobs do not run automatically.
 See [scope, protocol and limits](V126_CONTROL_DENSITY.md). Build/installation
 evidence is tracked separately from source work and scientific first use.
 The tested Windows build is installed locally after full backup and fresh idle
@@ -856,7 +857,7 @@ recorded saved pilot files remain unchanged; no private fit or retry was started
 See [separate delivery evidence](V106_DELIVERY.md). Drive intentionally retains v98.
 
 v105 permits explicit provisional selection of a valid, whole-pilot visually
-approved joint fit stopped only at the iteration limit in stages 1–3. Original
+approved joint fit stopped only at the iteration limit in stages 1â€“3. Original
 convergence evidence and automatic ranking remain unchanged. Exact retained
 baselines carry the warning through stages 2/3; stage 4 remains strict. Reports
 and exported provenance disclose earlier provisional decisions. See
