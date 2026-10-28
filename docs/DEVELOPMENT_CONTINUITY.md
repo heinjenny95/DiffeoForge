@@ -1,4 +1,4 @@
-# Development continuity — verified dev165 desktop delivery
+# Development continuity — verified dev166 desktop delivery
 
 Current qualified source is dev166: the
 [surface-gradient root repair](PILOT_GRADIENT_REPEATABILITY.md) replaces the
@@ -8,15 +8,18 @@ normal completion/export and focused source checks passed. The next-step schema
 failure is also fixed by clearing the complete regional runtime contract during
 cohort staging. Native L-BFGS tolerance stops are recognized separately.
 The [earlier error-handling repair](PILOT_NUMERICAL_FAILURES.md) is included.
-Packaging/installation verification is pending; dev165 / `9b09531` remains the
-last verified installed runtime until a delivery record supersedes it.
+Runtime `d099732` / dev166 is installed after exact-package display/cancel,
+fresh backup/idle and installed byte/state verification. See the
+[delivery record and limits](V166_DELIVERY.md).
+
+## Earlier dev165 intermediate-review delivery
 
 The dev165 [intermediate-review implementation](PILOT_INTERMEDIATE_REVIEW.md)
 adds ten-minute active-work reviews to newly prepared guarded regional fits.
 Continuation keeps the same optimizer in memory; a requested early finish remains
 distinct from native convergence and still undergoes export/QC. The owner's goal
 is captured projections and the right overall shape, allowing small surface
-differences. Runtime `9b09531` / dev165 is installed after native preservation,
+differences. Runtime `9b09531` / dev165 was installed after native preservation,
 exact-package Windows/process checks, fresh backup/idle checks and installed
 byte/state verification. See the [delivery record](V165_DELIVERY.md).
 The next practical check is the owner's new regional fit; existing prepared/running

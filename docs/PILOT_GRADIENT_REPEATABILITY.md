@@ -56,6 +56,6 @@ stop takes precedence. This recognizes a native numerical stop; geometry and
 human suitability checks remain separate. Backend duration labels explicitly
 include review waits rather than presenting that whole duration as active fitting.
 
-The qualified source is dev166. Installation and exact-package verification are
-recorded separately; the last verified installed runtime remains dev165 until
-the delivery record supersedes it.
+The qualified source and verified installed runtime are dev166 / `d099732`.
+Exact-package, installation and preservation checks are recorded in the
+[delivery record](V166_DELIVERY.md); distribution remains separately tracked.
