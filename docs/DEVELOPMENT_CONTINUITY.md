@@ -5,8 +5,10 @@ retained through later stages. It restores the verified inherited review during
 reopening and permits retrying a partially written finish without a new fit,
 duplicate decision or overwritten evidence. Sparse timing does not become a
 calibrated runtime estimate. See [scope and verification](PILOT_FINISH_RECOVERY.md).
-The installed baseline remains the verified dev168 below until separate package,
-backup/idle and installed-byte verification establishes a new delivery.
+Runtime `0ddfa6b` / dev169 is installed after exact-package, fresh
+backup/idle and complete installed-byte/state verification. See the
+[delivery record](V169_DELIVERY.md). The existing saved pilot can be finished
+without another optimization or integration check. Drive was not updated.
 
 ## Verified dev168 joint initialization delivery
 
