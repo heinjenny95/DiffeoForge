@@ -211,6 +211,8 @@ def _batch(
     cohort_method = config["optimization"]["method"]
     iterations = (max(ITERATIONS, previous.attachment_comparison["iterations"])
                   if strategy is not None and previous else ITERATIONS)
+    if goal == "shared_check":
+        iterations = ITERATIONS
     optimization = (strategy or {}).get("optimization")
     if optimization:
         from diffeoforge.guided_feedback import verify_reference
@@ -241,6 +243,12 @@ def _batch(
             ADAPTIVE_VERSION)
     for key in ("initial_momenta", "initial_momenta_subjects", "initial_control_points"):
         config["model"]["deformation"].pop(key, None)
+    if ((strategy or {}).get("shared_model_check")
+            and not strategy.get("regional_recipe")
+            and not strategy.get("regional_continuation")):
+        from diffeoforge.guided_shared_check import configure
+
+        configure(config, strategy["shared_model_check"], cohort_method)
     if (strategy or {}).get("regional_continuation"):
         # The transitional source config still describes the full input cohort;
         # only its selected singleton receives the copied regional objective in
@@ -280,7 +288,8 @@ def _batch(
         CalibrationCandidate(
             "guided-" + method,
             method.title() + (" · joint confirmation" if phase == "joint" else
-                              " · protected local fit" if goal == "regional" else ""),
+                              " · protected local fit" if goal == "regional" else
+                              " · atlas-model check" if goal == "shared_check" else ""),
             tuple(sorted(center.items())),
             "One bounded original-surface trial; explicit visual review",
         )

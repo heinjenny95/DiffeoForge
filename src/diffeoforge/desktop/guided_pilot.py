@@ -55,7 +55,9 @@ def render(window, prepared):
     window._visually_reviewed_candidates = set(snapshot.visual_reviews)
     window._visually_approved_candidates = {k for k, v in snapshot.visual_reviews.items() if v}
     title = QLabel(
-        "Joint pilot check"
+        "Check the suitable fit with the atlas model"
+        if info.get("goal") == "shared_check"
+        else "Joint pilot check"
         if info["phase"] == "joint"
         else "Suitable fit saved"
         if regional_accepted
@@ -78,6 +80,13 @@ def render(window, prepared):
     explanation.setObjectName("pilotScope")
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
+    if info.get("goal") == "shared_check":
+        note = QLabel("Your suitable local fit remains saved. This separate check starts "
+                      "from its saved field, template, control points and time grid and uses "
+                      "the standard atlas surface objective. Its result needs a new review "
+                      "before checking the remaining forms. Run starts only when you choose it.")
+        note.setWordWrap(True)
+        window.content_layout.addWidget(note)
     if info["phase"] == "joint":
         flags = snapshot.attachment_comparison.get("confirmation_freeze_settings", {})
         moving = [name for key, name in (("freeze_template", "template"),
@@ -153,6 +162,9 @@ def render(window, prepared):
         if retry_blocked
         else "A trial failed. Inspect details, retry, or choose an approved alternative."
         if failed
+        else "Suitable fit saved. Next: prepare its atlas-model check below."
+        if regional_accepted and any(row.get("available") for row in
+            guidance.get("shared_model_checks", {}).values())
         else "Fit saved as suitable. Inspect or close; further refinement is optional."
         if regional_accepted
         else "Feedback saved. Choose the next step below."
@@ -287,6 +299,20 @@ def render(window, prepared):
             accepted_fit(window, candidate.candidate_id, layout,
                          guidance.get("accepted_fits", {}).get(candidate.candidate_id)
                          if decision is not True else None)
+            if decision is True and snapshot.attachment_comparison.get("regional_objective"):
+                check = guidance.get("shared_model_checks", {}).get(candidate.candidate_id)
+                if check and check["available"]:
+                    next_check = action(layout,
+                        "Use suitable fit → prepare atlas-model check", "shared_check",
+                        candidate.candidate_id,
+                        available=guidance.get("allowed", {}).get(candidate.candidate_id, False))
+                    next_check.setToolTip("Keeps the saved local fit and prepares one separate "
+                        "standard-objective test from its complete field. Local constraints "
+                        "and approval remain with the local fit. No new fit starts here.")
+                elif check:
+                    reason = QLabel(check["reason"])
+                    reason.setWordWrap(True)
+                    layout.addWidget(reason)
             inspect = QPushButton("Inspect " + candidate.label + " fit")
             inspect.setAccessibleName(inspect.text())
             inspect.setProperty("pilotCandidate", candidate.candidate_id)

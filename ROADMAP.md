@@ -99,6 +99,12 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 ## Owner-requested cleanup
 
+- [x] Repair the suitable-local-fit dead end: preserve the accepted field and
+  expose an explicit standard-objective check, followed by its own review and
+  consistent coverage/joint preparation. No regional approval is promoted to the
+  common model. See [scope and limits](docs/PILOT_SUITABLE_NEXT_STEP.md).
+
+
 - [x] Make "+300 iterations" attempt up to 300 additional iterations from the
   latest verified fit/optimizer state. Repeated continuations must build on each
   other (N to N+300 to N+600), with cumulative iteration count and additional

@@ -79,7 +79,17 @@ def _compatible(snapshot, method, values, cases=()):
             *(c["approval"] for c in cases if c.get("approval"))]
     def common_objective(row):
         manifest = study._verify_manifest(Path(row["directory"]))
-        return not manifest.get("attachment_comparison", {}).get("regional_objective")
+        if manifest.get("attachment_comparison", {}).get("regional_objective"):
+            return False
+        marker = (guided.record(snapshot).get("strategy") or {}).get("shared_model_check")
+        if marker:
+            from diffeoforge.guided_shared_check import compatible
+
+            parent = study.load_reference_calibration_study(Path(row["directory"]))
+            candidate = next(c for c in parent.candidates
+                             if c.candidate_id == row["candidate_id"])
+            return compatible(marker, candidate)
+        return True
 
     return list({(r["directory"], r["candidate_id"]): r for r in rows
                  if r["method"] == method and r["values"] == values
@@ -154,7 +164,8 @@ def state(snapshot):
     for candidate in snapshot.candidates:
         if (snapshot.visual_reviews.get(candidate.candidate_id) is True
                 and snapshot.attachment_comparison["methods"][candidate.candidate_id] == preferred
-                and info["target"]):
+                and info["target"]
+                and not snapshot.attachment_comparison.get("regional_objective")):
             covered.add(info["target"])
     from diffeoforge.guided_feedback import presentation
     from diffeoforge.method_comparison_followup import provisional_comparison
@@ -175,6 +186,12 @@ def state(snapshot):
     result["accepted_fits"] = {c.candidate_id: accepted_fit(snapshot, c.candidate_id, cases)
                                for c in snapshot.candidates
                                if result["allowed"].get(c.candidate_id)}
+    if snapshot.attachment_comparison.get("regional_objective"):
+        from diffeoforge.guided_shared_check import preview as shared_preview
+
+        result["shared_model_checks"] = {
+            c.candidate_id: shared_preview(snapshot, c.candidate_id) for c in snapshot.candidates
+            if snapshot.visual_reviews.get(c.candidate_id) is True}
     return result
 
 
@@ -235,7 +252,7 @@ def trial_proposal(snapshot, identifier, symptom, *, context=None):
         return propose(snapshot, identifier, symptom, inputs(snapshot, identifier, context))
 
 
-def verify_strategy(info, record, manifest):
+def verify_strategy(info, record, manifest, study_root=None):
     """A new protocol has per-action scope, provenance and QC gates, not a total cap."""
     strategy = info.get("strategy")
     if (not isinstance(strategy, dict) or info.get("coverage_extension")
@@ -299,6 +316,10 @@ def verify_strategy(info, record, manifest):
             r["values"] != values or r["method"] not in record["methods"].values()
             for r in info["approved"]):
         return False
+    if strategy.get("shared_model_check"):
+        from diffeoforge.guided_shared_check import verify
+
+        verify(info, record, manifest, study_root)
     return True
 
 
@@ -367,6 +388,20 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         preference = preference if preference and preference["method"] == methods[0] else None
         approved = _compatible(snapshot, methods[0], values, cases)
         phase, goal = "refine", proposed["goal"]
+    elif action == "shared_check":
+        from diffeoforge.guided_shared_check import declaration
+
+        marker = declaration(snapshot, identifier)
+        strategy["shared_model_check"] = marker
+        strategy["baseline"] = marker["reference"]
+        strategy["control_basis"] = marker["reference"]
+        strategy["anchor"] = marker["reference"]
+        strategy.pop("search_family", None)
+        preference = None
+        approved = []  # Local approval never supplies common-objective coverage.
+        target, values, methods = (info["target"], marker["reference"]["values"],
+                                   (marker["reference"]["method"],))
+        phase, goal = "refine", "shared_check"
     elif action in {"confirm", "confirm_start"}:
         accepted, accepted_id = snapshot, identifier
         if action == "confirm_start":

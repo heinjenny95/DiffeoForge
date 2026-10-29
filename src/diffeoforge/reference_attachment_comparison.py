@@ -218,7 +218,7 @@ def verify(root, manifest):
                                       or not verify_coverage_extension(
                     info, original, record["methods"],
                     manifest["plan"]["baseline_effective_values"])))
-                or (adaptive and not verify_strategy(info, record, manifest))
+                or (adaptive and not verify_strategy(info, record, manifest, root))
                 or (info["phase"] == "joint" and actual != expected)
                 or (info["phase"] != "joint" and actual != {
                     info["target"]: expected.get(info["target"])})):

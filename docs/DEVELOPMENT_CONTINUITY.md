@@ -1,3 +1,12 @@
+# Development continuity — dev171 suitable-fit continuation
+
+An approved protected local fit now offers an explicit, field-preserving route to
+prepare a separate standard-atlas-objective check. The original approval remains
+local; new review and common-model coverage/joint gates are retained. See
+[behavior, verification and limits](PILOT_SUITABLE_NEXT_STEP.md).
+Source/native engineering checks pass; package and installation records follow.
+Existing owner fits remain unchanged. No scientific owner optimizer was started.
+
 # Development continuity — dev170 current pilot To-do implementation
 
 The three current requests (cumulative +300, control-point count before starting,
