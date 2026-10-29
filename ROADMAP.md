@@ -99,6 +99,15 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 ## Owner-requested cleanup
 
+- [ ] Make "+300 iterations" attempt up to 300 additional iterations from the
+  latest verified fit/optimizer state. Repeated continuations must build on each
+  other (N to N+300 to N+600), with cumulative iteration count and additional
+  allowance shown separately. Preserve parameters, precision and tolerance and
+  honor an earlier native convergence stop. Retain optimizer state where available;
+  disclose any necessary optimizer-history restart. Do not present repeated runs
+  from the same older seed as cumulative progress. Owner request, 29 October 2026:
+  backlog only; no implementation, installation or new fitting requested.
+
 - [ ] Show the control-point count before pilot/atlas execution, directly beside
   control-point spacing in Effective parameters. Use the verified actual count
   for a supplied seed; otherwise show a precomputed grid count or clearly label
