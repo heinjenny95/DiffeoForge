@@ -496,7 +496,9 @@ def technical_metric_text(metrics: Mapping[str, object]) -> str:
             "Original likelihood and surface-distance metrics are not claimed at the new grid.\n"
             "This remains a provisional pilot; a new full-cohort atlas must confirm its fit."
         )
-    return (
+    from diffeoforge.pilot_iteration_accounting import text
+
+    return text(metrics) + (
         "Surface-distance QC, 95th percentile: "
         f"{float(metrics['residual_p95']):.6g}\n"
         "Surface-distance QC, median: "

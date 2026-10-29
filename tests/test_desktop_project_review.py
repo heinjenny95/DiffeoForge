@@ -121,6 +121,47 @@ def test_reference_review_exposes_data_assisted_evidence(tmp_path: Path) -> None
     assert any("cannot be inferred" in warning for warning in review.warnings)
 
 
+def test_reference_review_shows_verified_seed_count_before_execution(tmp_path: Path) -> None:
+    import yaml
+
+    setup = create_project(ProjectSetupRequest(
+        mesh_directory=MESH_DIRECTORY, project_directory=tmp_path / "count",
+        units="millimeter", engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+    ))
+    points = setup.config_path.parent / "seed-controls.txt"
+    points.write_text("0 0 0\n\n1 0 0\n0 1 0\n", encoding="utf-8")
+    config = yaml.safe_load(setup.config_path.read_text(encoding="utf-8"))
+    config["model"]["deformation"]["initial_control_points"] = points.name
+    setup.config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    before = points.read_bytes()
+    review = review_project(setup.config_path, setup.engine)
+    rows = {r.label: r.value for r in review.parameters}
+    assert rows["Control-point count"] == "3 supplied points (verified)"
+    assert points.read_bytes() == before
+    assert not list(setup.config_path.parent.glob("runs/*"))
+
+
+def test_reference_grid_count_is_labelled_estimate_and_refreshes_with_spacing(tmp_path: Path):
+    import yaml
+
+    setup = create_project(ProjectSetupRequest(
+        mesh_directory=MESH_DIRECTORY, project_directory=tmp_path / "estimate",
+        units="millimeter", engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+    ))
+    first = review_project(setup.config_path, setup.engine)
+    row = next(r for r in first.parameters if r.label == "Control-point count")
+    assert "grid estimate" in row.value
+    config = yaml.safe_load(setup.config_path.read_text(encoding="utf-8"))
+    config["model"]["deformation"]["initial_control_point_spacing"] *= 2
+    setup.config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    second = review_project(setup.config_path, setup.engine)
+    updated = next(r for r in second.parameters if r.label == row.label)
+    def count(r):
+        return int(r.value.split()[1].replace(",", ""))
+    assert count(updated) < count(row)
+    assert first.config_sha256 != second.config_sha256
+
+
 def test_reference_review_verifies_and_exposes_procrustes_evidence(tmp_path: Path) -> None:
     setup = create_project(
         ProjectSetupRequest(

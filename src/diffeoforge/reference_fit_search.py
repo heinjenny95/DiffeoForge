@@ -290,6 +290,15 @@ def configure_trial(config, root, directory, manifest, candidate_id):
             seed = search["warm_seed"]
             d["initial_momenta"] = os.path.relpath(root / seed["copy"], directory)
             d["initial_momenta_subjects"] = seed["subject_labels"]
+            if (search.get("progressive") or {}).get("phase") == "continue":
+                from diffeoforge.reference_pca import load_reference_momenta
+
+                effective = load_reference_momenta(
+                    seed["source_run"], allow_singleton=True
+                ).run_report.manifest["effective_config"]
+                config["optimization"] = copy.deepcopy(effective["optimization"])
+                config["optimization"]["max_iterations"] = search["iterations"]
+                config["runtime"] = copy.deepcopy(effective["runtime"])
     validate_schema(config)
 
 

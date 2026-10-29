@@ -41,7 +41,10 @@ def overlay_plan(plan, events):
     changed = False
     for e in declarations(events):
         row = e["candidate"]
-        if e.get("version") != VERSION or e["stage_id"] != plan.stages[-1].stage_id:
+        from diffeoforge.reference_pilot_continuation import VERSION as CONTINUATION_VERSION
+
+        if (e.get("version") not in {VERSION, CONTINUATION_VERSION}
+                or e["stage_id"] != plan.stages[-1].stage_id):
             raise ValueError("Unknown pilot qualification declaration")
         stage = plan.stages[-1]
         if stage.order != 4 or row["candidate_id"] in {c.candidate_id for c in stage.candidates}:
@@ -81,6 +84,12 @@ def _configuration(root, source, folder, seed, iterations, tolerance, count=None
 
 def verify_declaration(root, event, events):
     """Verify sources and prospective criteria before considering any outcome."""
+    from diffeoforge.reference_pilot_continuation import VERSION as CONTINUATION_VERSION
+
+    if event.get("version") == CONTINUATION_VERSION:
+        from diffeoforge.reference_pilot_continuation import verify
+
+        return verify(root, event, events)
     earlier = tuple(e for e in events if e["sequence"] < event["sequence"])
     source = event["source"]
     completed = next(
@@ -376,8 +385,13 @@ def run(runner, *, candidate_id=None, event_callback=None, iterations=100, finer
         event_callback(
             dict(
                 event="qualification_progress",
-                phase="optimizer_check",
+                phase="optimizer_continuation" if pending.get("checkpoint_continuation")
+                else "optimizer_check",
                 iterations=pending["iterations"],
+                initial_iteration=pending.get("checkpoint_continuation", {}).get(
+                    "initial_iteration"),
+                maximum_iterations=pending.get("checkpoint_continuation", {}).get(
+                    "maximum_iterations"),
             )
         )
     runner.run_current_stage(event_callback=event_callback, candidate_ids={identifier})

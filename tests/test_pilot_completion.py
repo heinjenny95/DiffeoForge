@@ -301,7 +301,9 @@ def test_capped_dialog_requires_recorded_qc_and_explicit_provisional_finish(tmp_
     assert "provisionally" in dialog.advance_button.text()
     assert not dialog._assessment.balanced_candidate_id
     dialog.continuation_iterations.setValue(400)
-    assert all("Optional strict check" in b.text() for b in dialog._continuation_buttons.values())
+    assert not dialog.continuation_iterations.isEnabled()
+    assert all("+300 iterations" in b.text() for b in dialog._continuation_buttons.values())
+    assert all("total)" in b.text() for b in dialog._continuation_buttons.values())
     monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.No)
     dialog._advance()
     assert study.load_reference_calibration_study(done.study_directory).status == "awaiting_review"

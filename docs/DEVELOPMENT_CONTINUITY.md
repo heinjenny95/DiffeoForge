@@ -1,3 +1,13 @@
+# Development continuity — dev170 current pilot To-do implementation
+
+The three current requests (cumulative +300, control-point count before starting,
+and visibly bounded action buttons) are implemented. See
+[behavior, verification and limitations](V170_PILOT_CONTINUATION.md).
+Existing fits and approvals are retained; no owner computation is started.
+Package/installation verification is recorded separately when completed.
+Historical unchecked research and independent-acceptance gates are not new
+requests and are not marked fulfilled by these source changes.
+
 # Development continuity — dev169 retained pilot finish repair
 
 dev169 repairs final configuration serialization when one approved joint fit was

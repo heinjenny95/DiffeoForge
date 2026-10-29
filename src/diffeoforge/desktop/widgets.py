@@ -306,7 +306,7 @@ QLabel#brandMark { background: #54c6a1; color: #0b302f; border-radius: 18px;
 QLabel#brand { color: #ffffff; font-size: 20px; font-weight: 700; }
 QLabel#railCaption { color: #b9d1cd; font-size: 12px; }
 QPushButton#stepActive, QPushButton#stepAvailable, QPushButton#stepFuture {
-    background: transparent; border: 0; border-radius: 6px; min-height: 20px;
+    background: transparent; border: 1px solid #789b97; border-radius: 6px; min-height: 20px;
     padding: 10px 6px; text-align: left;
 }
 QPushButton#stepActive { color: #ffffff; font-weight: 700; }
@@ -336,16 +336,21 @@ QComboBox#primaryChoice {
     background: #e5f5ed; border: 2px solid #167c6b; color: #123b3a;
     font-weight: 700;
 }
-QPushButton { border-radius: 6px; min-height: 34px; padding: 2px 13px; font-weight: 600; }
+QPushButton {
+    background: #eef3f4; border: 1px solid #c8d5d7; color: #24474b;
+    border-radius: 6px; min-height: 34px; padding: 2px 13px; font-weight: 600;
+}
+QPushButton:hover { background: #eaf7f4; border-color: #268f7a; }
+QPushButton:disabled { background: #f4f7f8; border-color: #cbd7da; color: #64777c; }
 QPushButton#secondary { background: #eef3f4; border: 1px solid #c8d5d7; color: #24474b; }
 QPushButton#parameterHelpButton {
-    background: transparent; border: 0; color: #167c6b; min-height: 24px;
-    padding: 2px 1px; text-align: left; font-size: 12px; font-weight: 650;
+    background: #f2f8f6; border: 1px solid #b7dcd2; color: #167c6b; min-height: 24px;
+    padding: 2px 7px; text-align: left; font-size: 12px; font-weight: 650;
 }
 QPushButton#parameterHelpButton:hover { color: #0f5f52; text-decoration: underline; }
 QPushButton#infoDisclosureButton {
-    background: transparent; border: 0; color: #167c6b; min-height: 25px;
-    padding: 2px 1px; text-align: left; font-size: 12px; font-weight: 700;
+    background: #f2f8f6; border: 1px solid #b7dcd2; color: #167c6b; min-height: 25px;
+    padding: 2px 7px; text-align: left; font-size: 12px; font-weight: 700;
 }
 QPushButton#infoDisclosureButton:hover { color: #0f5f52; text-decoration: underline; }
 QFrame#infoDisclosurePanel {

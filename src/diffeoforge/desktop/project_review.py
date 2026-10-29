@@ -473,6 +473,34 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
     report_path = default_preflight_report_path(config_path)
     write_preflight_report(preflight, report_path, overwrite=report_path.exists())
 
+    if preflight.inputs.initial_control_points is not None:
+        from diffeoforge.reference_pca import read_deformetrica_control_points
+
+        with preflight.inputs.initial_control_points.open(encoding="utf-8") as handle:
+            expected_count = sum(bool(line.strip()) for line in handle)
+        count = len(read_deformetrica_control_points(
+            preflight.inputs.initial_control_points, expected_count=expected_count,
+        ))
+        controls = ReviewItem(
+            "Control-point count", f"{count:,} supplied points (verified)",
+            "Actual count in the verified initial control-point file. The spacing value "
+            "does not regenerate or replace this supplied basis.",
+        )
+    else:
+        bounds = [item.bounds for item in (preflight.template, *preflight.subjects)]
+        spacing = float(deformation["initial_control_point_spacing"])
+        count = math.prod(
+            max(1, math.ceil((max(b[2 * axis + 1] for b in bounds)
+                             - min(b[2 * axis] for b in bounds)) / spacing) + 1)
+            for axis in range(3)
+        )
+        controls = ReviewItem(
+            "Control-point count", f"approximately {count:,} initial points (grid estimate)",
+            "Pre-run estimate from the measured cohort bounds and spacing; the native "
+            "initialization can differ. No grid or fit has been computed. Updated when "
+            "the template, cohort, spacing or supplied seed changes.",
+        )
+
     parameters = (
         ReviewItem(
             "Parameter source",
@@ -507,6 +535,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             _number(deformation["initial_control_point_spacing"]),
             "Controls the density of the initial deformation parameters.",
         ),
+        controls,
         ReviewItem(
             "Time discretization",
             f"{deformation['timepoints']} time points · RK2 {_setting(deformation['use_rk2'])}",

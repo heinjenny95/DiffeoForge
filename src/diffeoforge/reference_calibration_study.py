@@ -2181,6 +2181,14 @@ def _launch_request(
     if failure:
         raise ReferenceCalibrationStudyError(failure["message"])
     attempt = candidate.attempts + 1
+    continuation = next((e for e in _load_events(root)
+                         if e["event"] == "pilot_qualification_declared"
+                         and e["candidate"]["candidate_id"] == candidate.candidate_id
+                         and e.get("checkpoint_continuation")), None)
+    if continuation:
+        from diffeoforge.reference_pilot_continuation import launch
+
+        return launch(root, continuation, attempt)
     run_id = f"pilot-attempt-{attempt:02d}"
     destination = (candidate.config_path.parent / "runs" / run_id).resolve()
     launcher = manifest["launcher"]
@@ -2269,6 +2277,11 @@ class ReferenceCalibrationStudyRunner:
             if self._cancel_requested:
                 break
             request = _launch_request(self.study_directory, manifest, candidate)
+            from diffeoforge.pilot_iteration_accounting import annotate, offset
+
+            iteration_offset = (
+                0 if request.resume_source else offset(manifest, candidate.candidate_id)
+            )
             pipeline_started = time.monotonic()
             started = _append_event(
                 self.study_directory,
@@ -2279,6 +2292,7 @@ class ReferenceCalibrationStudyRunner:
                     "attempt": candidate.attempts + 1,
                     "request_id": request.request_id,
                     "run_directory": _relative_path(self.study_directory, request.destination),
+                    "iteration_offset": iteration_offset,
                 },
             )
             if event_callback is not None:
@@ -2305,6 +2319,15 @@ class ReferenceCalibrationStudyRunner:
                 if result.completed:
                     metrics = collect_reference_calibration_run_metrics(request.destination)
                     measured = metrics.as_manifest()
+                    annotate(measured, iteration_offset)
+                    if request.resume_source is not None:
+                        record = next(e for e in _load_events(self.study_directory)
+                                      if e["event"] == "pilot_qualification_declared"
+                                      and e["candidate"]["candidate_id"] == candidate.candidate_id)
+                        measured["pilot_continuation"] = {
+                            **record["checkpoint_continuation"],
+                            "source_candidate_id": record["source"]["candidate_id"],
+                        }
                     if manifest.get("control_density"):
                         from diffeoforge.reference_control_density import measure_fit
 

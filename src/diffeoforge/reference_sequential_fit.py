@@ -557,13 +557,9 @@ def _run_specimen_sequence(
                 raise ValueError("Invalid longer-fit iteration budget")
             from diffeoforge.reference_progressive_fit import seed_request
 
-            best = state.get("best_fits", {}).get(str(info["index"]))
-            if best:
-                from diffeoforge.reference_fit_preferences import verified_fit
-
-                snapshot = verified_fit(root, state, best)
-                candidate_id = best["candidate_id"]
-                values = _values(snapshot, candidate_id)
+            # An explicit continuation uses the selected result, never silently
+            # rewinds to the older preferred fit. Restoring it is a separate action.
+            values = _values(snapshot, candidate_id)
             seed = seed_request(snapshot, candidate_id, root, values)
             from diffeoforge.reference_progressive_fit import VERSION as PROGRESSIVE_VERSION
 

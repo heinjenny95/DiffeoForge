@@ -411,6 +411,14 @@ class _CalibrationStageWorker(QRunnable):
                     event_callback=emit,
                 )
             elif self.continuation is not None:
+                current = load_reference_calibration_study(self.runner.study_directory)
+                if current.current_stage and current.current_stage.order == 4:
+                    from diffeoforge.reference_pilot_continuation import run
+
+                    candidate_id, iterations = self.continuation
+                    result = run(self.runner, candidate_id, iterations, event_callback=emit)
+                    self.signals.succeeded.emit(result)
+                    return
                 from diffeoforge.reference_adaptive_calibration import create_selected_continuation
                 from diffeoforge.reference_calibration_study import (
                     next_reference_calibration_search_extension_destination,
@@ -1889,8 +1897,24 @@ class ReferenceCalibrationDialog(QDialog):
         for letter, button in self._continuation_buttons.items():
             prefix = "Continue saved fit" if self._individual_checkpoint() else f"Continue {letter}"
             if self._snapshot.current_stage and self._snapshot.current_stage.order == 4:
-                prefix = "Optional strict check"
-            button.setText(f"{prefix}: +{self.continuation_iterations.value()} iterations")
+                from diffeoforge.reference_pilot_continuation import latest
+
+                source = latest(self._snapshot, button.property("continuationCandidateId"))
+                total = (source.metrics or {}).get("final_iteration")
+                button.setText(
+                    f"Continue saved fit: +300 iterations ({total} → {total + 300} total)"
+                    if type(total) is int else "Continue saved fit: +300 iterations"
+                )
+                continue
+            from diffeoforge.pilot_iteration_accounting import total
+
+            source = next(c for c in self._snapshot.candidates
+                          if c.candidate_id == button.property("continuationCandidateId"))
+            count = total(source.metrics or {})
+            extra = self.continuation_iterations.value()
+            button.setText(f"{prefix}: +{extra} iterations"
+                           + (f" ({count} → {count + extra} total)"
+                              if type(count) is int else ""))
 
     def _render(self, snapshot: ReferenceCalibrationStudySnapshot | None = None,
                 *, prepared=None) -> None:
@@ -1948,6 +1972,17 @@ class ReferenceCalibrationDialog(QDialog):
         self.screen_controls.hide()
         self.screen_notice.hide()
         stage = self._snapshot.current_stage
+        checkpoint_budget = bool(stage and stage.order == 4)
+        self.continuation_iterations.setEnabled(not checkpoint_budget)
+        if checkpoint_budget:
+            self.continuation_iterations.blockSignals(True)
+            self.continuation_iterations.setValue(300)
+            self.continuation_iterations.blockSignals(False)
+        self.continuation_iterations.setToolTip(
+            "Checkpoint continuation adds exactly 300 to the latest total cap."
+            if checkpoint_budget else
+            "Additional optimization budget on the selected saved-fit branch."
+        )
         self.selection_combo.setMaximumWidth(16_777_215 if stage and stage.order == 4 else 360)
         self.density_button.setVisible(
             not self._density_record
@@ -3198,22 +3233,37 @@ class ReferenceCalibrationDialog(QDialog):
                 f"Continue {option_letter}: +{self.continuation_iterations.value()} iterations"
             )
             self._continuation_buttons[option_letter] = continuation
+            continuation.setProperty("continuationCandidateId", candidate.candidate_id)
+            from diffeoforge.pilot_iteration_accounting import total
+
+            count = total(metrics)
+            extra = self.continuation_iterations.value()
+            if type(count) is int:
+                continuation.setText(continuation.text() + f" ({count} → {count + extra} total)")
             _set_action_emphasis(continuation, False)
             continuation.setToolTip(
-                "Same parameters and learned state; only additional iterations."
+                "Same parameters and saved field; additional optimization budget. "
+                "The native optimizer history restarts; cumulative and local counts are separate."
             )
             if self._snapshot.current_stage.order == 4:
+                from diffeoforge.reference_pilot_continuation import latest
+
+                source = latest(self._snapshot, candidate.candidate_id)
+                total = (source.metrics or {}).get("final_iteration")
                 continuation.setText(
-                    f"Optional strict check: +{self.continuation_iterations.value()} iterations"
+                    f"Continue saved fit: +300 iterations ({total} → {total + 300} total)"
+                    if type(total) is int else "Continue saved fit: +300 iterations"
                 )
                 continuation.setToolTip(
-                    "An optional legacy check at tolerance 1e-6 or tighter. It can take hours "
-                    "and is not required for explicit provisional completion. "
-                    "Existing fits stay saved."
+                    "Restores the latest completed checkpoint on this continuation branch. "
+                    "Adds 300 to its total cap; parameters, precision and tolerance stay the same. "
+                    "Native gradient/step-size history restarts. Earlier convergence can stop it. "
+                    "Earlier fits and approvals remain saved."
                 )
             if self._individual_checkpoint():
                 continuation.setText(
                     f"Continue saved fit: +{self.continuation_iterations.value()} iterations"
+                    + (f" ({count} → {count + extra} total)" if type(count) is int else "")
                 )
                 continuation.setToolTip(
                     "Continues this specimen from its verified saved momentum field. "
@@ -3227,6 +3277,13 @@ class ReferenceCalibrationDialog(QDialog):
                 and metrics.get("optimizer_stop_signal")
                 in {"maximum_iterations", "tolerance_threshold"}
             )
+            if self._snapshot.current_stage.order == 4:
+                continuation.setEnabled(
+                    continuation.isEnabled()
+                    and (source.metrics or {}).get("optimizer_stop_signal") == "maximum_iterations"
+                    and (source.metrics or {}).get("metric_version")
+                    != "fixed-state-resolution-adoption-v1"
+                )
             continuation.clicked.connect(
                 lambda _checked=False, value=candidate: self._start_selected_continuation(value)
             )
@@ -3647,10 +3704,7 @@ class ReferenceCalibrationDialog(QDialog):
         if self._snapshot.current_stage and self._snapshot.current_stage.order == 4:
             self._start_pilot(
                 adaptive=False,
-                qualification=True,
-                qualification_source=candidate.candidate_id,
-                qualification_iterations=self.continuation_iterations.value(),
-                strict_optimizer=True,
+                continuation=(candidate.candidate_id, 300),
             )
             return
         if self._individual_checkpoint():
@@ -3848,6 +3902,12 @@ class ReferenceCalibrationDialog(QDialog):
                     f"Checking optimizer stability: up to {event['iterations']} "
                     "tighter-tolerance iterations. Saved model retained."
                 )
+            elif event["phase"] == "optimizer_continuation":
+                self.status.setText(
+                    f"Continuing saved checkpoint: {event['initial_iteration']} → "
+                    f"{event['maximum_iterations']} total iterations "
+                    f"(+{event['iterations']} allowance). Same parameters and tolerance."
+                )
             else:
                 self.status.setText(
                     f"Fixed-model Shooting: {event['timepoints']} timepoints · "
@@ -3968,7 +4028,8 @@ class ReferenceCalibrationDialog(QDialog):
                 if review_run.is_relative_to(self.study_directory.resolve()):
                     self._pilot_review_panel.set_run(review_run)
             self._progress_context = dict(
-                candidate=candidate_id, phase="Preparing reference fit", iteration=None, cap=None
+                candidate=candidate_id, phase="Preparing reference fit", iteration=None, cap=None,
+                iteration_offset=event.get("iteration_offset", 0),
             )
             self.status.setText(f"{self._progress_label(candidate_id)}: preparing reference fit.")
             label = self._candidate_state_labels.get(candidate_id)
@@ -3978,15 +4039,19 @@ class ReferenceCalibrationDialog(QDialog):
             worker = event["worker_event"]
             payload = worker["payload"]
             if worker["kind"] == "progress":
+                offset = self._progress_context.get("iteration_offset", 0)
                 self._progress_context.update(
                     candidate=candidate_id,
                     phase="Optimizing",
-                    iteration=payload["iteration"],
-                    cap=payload["maximum_iterations"],
+                    iteration=offset + payload["iteration"],
+                    cap=offset + payload["maximum_iterations"],
                 )
                 self.status.setText(
                     f"{self._progress_label(candidate_id)}: Deformetrica iteration "
-                    f"{payload['iteration']} of {payload['maximum_iterations']}."
+                    f"{offset + payload['iteration']} of "
+                    f"{offset + payload['maximum_iterations']} total."
+                    + (f" New optimizer: {payload['iteration']} of "
+                       f"{payload['maximum_iterations']}; saved field retained." if offset else "")
                 )
             elif worker["kind"] == "phase":
                 self._progress_context.update(

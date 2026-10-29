@@ -99,27 +99,26 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 ## Owner-requested cleanup
 
-- [ ] Make "+300 iterations" attempt up to 300 additional iterations from the
+- [x] Make "+300 iterations" attempt up to 300 additional iterations from the
   latest verified fit/optimizer state. Repeated continuations must build on each
   other (N to N+300 to N+600), with cumulative iteration count and additional
   allowance shown separately. Preserve parameters, precision and tolerance and
   honor an earlier native convergence stop. Retain optimizer state where available;
   disclose any necessary optimizer-history restart. Do not present repeated runs
   from the same older seed as cumulative progress. Owner request, 29 October 2026:
-  backlog only; no implementation, installation or new fitting requested.
+  implemented in dev170; see [behavior and limits](docs/V170_PILOT_CONTINUATION.md).
 
-- [ ] Show the control-point count before pilot/atlas execution, directly beside
+- [x] Show the control-point count before pilot/atlas execution, directly beside
   control-point spacing in Effective parameters. Use the verified actual count
   for a supplied seed; otherwise show a precomputed grid count or clearly label
   an estimate. Refresh it when template, grid or seed changes and distinguish
   spacing from count. Displaying the count must not start fitting. Owner request,
-  28 October 2026: backlog only; implementation remains open.
+  28 October 2026; implemented in dev170 with an explicit estimate/actual distinction.
 
-- [ ] Give all action buttons a visible normal-state outline or bounded surface
+- [x] Give all action buttons a visible normal-state outline or bounded surface
   so they are clearly distinct from explanatory text, including secondary pilot
   actions currently presented as plain text. Preserve action hierarchy, disabled
-  states and light/dark readability. Owner request, 23 October 2026: backlog only,
-  no implementation or new fits. See [acceptance](docs/NEXT_VERSION_PLAN.md#pending-distinguish-buttons-from-explanatory-text--23-october-2026).
+  states and light/dark readability. Owner request, 23 October 2026; implemented in dev170 without owner fits. See [acceptance](docs/NEXT_VERSION_PLAN.md#pending-distinguish-buttons-from-explanatory-text--23-october-2026).
 
 - [ ] Repair pilot refinement that turns an almost-correct first fit into grossly
   incorrect alternatives after local-detail feedback. Audit actual initialization

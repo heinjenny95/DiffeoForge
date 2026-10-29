@@ -107,6 +107,25 @@ def test_warm_continuation_copies_exact_field_and_checks_basis(tmp_path, monkeyp
     assert config["optimization"]["max_iterations"] == 80
     assert manifest["fit_search"]["warm_seed"]["source_run_sha256"] == seed["source_run_sha256"]
     assert not successor.visual_reviews
+    from diffeoforge.pilot_iteration_accounting import total
+
+    first_total = total(candidate.metrics)
+    assert total(successor.candidates[0].metrics) == (
+        first_total + successor.candidates[0].metrics["final_iteration"]
+    )
+    mock_singleton(monkeypatch, successor)
+    next_fit = sequence.run_specimen_sequence(runner, action=("retry", cid, 300))
+    next_manifest = study._verify_manifest(next_fit.study_directory)
+    assert next_manifest["fit_search"]["warm_seed"]["source_study"] == str(
+        successor.study_directory
+    )
+    assert load_config(next_fit.candidates[0].config_path)["optimization"]["max_iterations"] == 300
+    assert total(next_fit.candidates[0].metrics) == (
+        total(successor.candidates[0].metrics) + next_fit.candidates[0].metrics["final_iteration"]
+    )
+    from diffeoforge import reference_pca
+
+    monkeypatch.setattr(reference_pca, "load_reference_momenta", lambda *a, **k: inputs)
     from diffeoforge.backends.deformetrica_reference import build_command, render_engine_file_bytes
     from diffeoforge.config import ConfigurationError, validate_input_paths, validate_schema
 
