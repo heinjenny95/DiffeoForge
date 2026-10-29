@@ -4,7 +4,8 @@ An approved protected local fit now offers an explicit, field-preserving route t
 prepare a separate standard-atlas-objective check. The original approval remains
 local; new review and common-model coverage/joint gates are retained. See
 [behavior, verification and limits](PILOT_SUITABLE_NEXT_STEP.md).
-Source/native engineering checks pass; package and installation records follow.
+Runtime `fc203d1` / dev171 is installed after exact-package, backup/idle
+and installed-byte/state checks. See the [delivery record](V171_DELIVERY.md).
 Existing owner fits remain unchanged. No scientific owner optimizer was started.
 
 # Development continuity — dev170 current pilot To-do implementation
