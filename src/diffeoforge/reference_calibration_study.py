@@ -1528,6 +1528,11 @@ def _selected_state(
 
 def calibration_candidate_run_directory(candidate: CalibrationStudyCandidateState) -> Path:
     """Resolve preserved run evidence through verified successor links for QC."""
+    with calibration_verification_scope():
+        return _resolve_candidate_run_directory(candidate)
+
+
+def _resolve_candidate_run_directory(candidate: CalibrationStudyCandidateState) -> Path:
     current = candidate
     seen: set[Path] = set()
     for _ in range(64):
@@ -1813,6 +1818,8 @@ def calibration_verification_scope():
         _LOAD_CONTEXT.resolution_checks = {}
         _LOAD_CONTEXT.manifests = {}
         _LOAD_CONTEXT.manifest_witnesses = {}
+        _LOAD_CONTEXT.retained_references = {}
+        _LOAD_CONTEXT.retained_witnesses = {}
     try:
         yield
     finally:
@@ -1821,6 +1828,8 @@ def calibration_verification_scope():
             del _LOAD_CONTEXT.resolution_checks
             del _LOAD_CONTEXT.manifests
             del _LOAD_CONTEXT.manifest_witnesses
+            del _LOAD_CONTEXT.retained_references
+            del _LOAD_CONTEXT.retained_witnesses
 
 
 def load_reference_calibration_study(

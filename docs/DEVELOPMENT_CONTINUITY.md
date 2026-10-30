@@ -1,5 +1,13 @@
 # Development continuity — dev176 delivery candidate
 
+The complete pilot-state read and retained-run/reference walks now share scoped
+ancestor verification. Operation-local retained caching watches journals,
+optional review creation, configs and output receipts; later actions start fresh.
+Protected capture also uses the existing bounded distinct-contrast guard rather
+than repeating an identical discarded trial.17 focused cases plus a retained-cycle
+case pass, including eight added scope/tamper/retry cases; lint passes. The broader completion/retention
+sweep is running before freeze. See [history checks](PILOT_HISTORY_READS.md).
+
 Version176 collects the tested Retain-source/progress preservation, free material
 selection/control coverage, fixed optimizer coordinates, full instruction scope,
 finer unchanged-field checks and independent protected capture. The scientific

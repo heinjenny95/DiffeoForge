@@ -91,6 +91,14 @@ def proposal(snapshot, identifier, data, info, symptom):
     retention = data.get('retention_context')
     available = not retention or (retention['available'] and retention['automatic_start_allowed'])
     blocked = retention['reason'] if retention and not available else ''
+    from diffeoforge.regional_search import distinct
+
+    distinct_available, changed = distinct(recipe, values, reference['method'], seed,
+                                            data['context']['cases'], quality)
+    available &= distinct_available
+    if not distinct_available:
+        blocked = ('This protected contrast already reached its numerical weight guard. '
+                   'Keep the saved fit and review the marks or movement scale.')
     parent = data['references'].get(seed['directory'], snapshot)
     if parent.plan.pilot_subject_count != 1:
         available = False
@@ -100,6 +108,8 @@ def proposal(snapshot, identifier, data, info, symptom):
         reason=f'Work on area {index} of {len(problem)}, which has the largest measured remaining '
         'surface mismatch. Keep the complete starting fit and the Retain areas. '
         'Use a broad capture range with separate local movement; all your marks remain saved. '
+        + ('An earlier identical test is retained; this is a distinct weight contrast. '
+           if changed else '') +
         'Review after about 10 active minutes, then check all important projections. '
         'This test does not approve the other areas or the final anatomy.',
         target=reference['target'], method=reference['method'], values=values,

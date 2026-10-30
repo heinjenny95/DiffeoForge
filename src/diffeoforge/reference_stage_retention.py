@@ -89,6 +89,47 @@ def _previous(snapshot, *, for_qualification=False):
 
 
 def verify_reference(root, record):
+    """Share immutable ancestor checks through the complete retained-field chain."""
+    from diffeoforge import reference_calibration_study as study
+
+    with study.calibration_verification_scope():
+        key = Path(root).resolve(), study._canonical_hash(record)
+        cache = study._LOAD_CONTEXT.retained_references
+        witnesses = study._LOAD_CONTEXT.retained_witnesses
+        if key in cache:
+            if cache[key] is None:
+                raise study.ReferenceCalibrationStudyError('Cyclic retained-fit reference')
+            study._verify_manifest(Path(record['retained_source']['study_directory']))
+            if any(_optional_identity(p) != identity for p, identity in witnesses.items()):
+                raise study.ReferenceCalibrationStudyError(
+                    'Retained evidence changed during this action')
+            return copy.deepcopy(cache[key])
+        cache[key] = None
+        try:
+            candidate = _verify_reference(root, record)
+            source = Path(record['retained_source']['study_directory']).resolve()
+            series, _ = study._search_extension_series(source)
+            paths = {Path(root)/study.STUDY_MANIFEST, Path(root)/study.STUDY_EVENTS,
+                     Path(root)/'visual-reviews.json', source/study.STUDY_EVENTS,
+                     series/'visual-reviews.json', candidate.config_path}
+            if candidate.run_directory:
+                paths.update(candidate.run_directory/name for name in (
+                    'manifest.json', 'result.json', 'output-inventory.json', 'evidence.json'))
+            witnesses.update({p: _optional_identity(p) for p in paths})
+            cache[key] = copy.deepcopy(candidate)
+            return candidate
+        except BaseException:
+            cache.pop(key, None)
+            raise
+
+
+def _optional_identity(path):
+    from diffeoforge import reference_calibration_study as study
+
+    return study._manifest_file_identity(path) if path.exists() else None
+
+
+def _verify_reference(root, record):
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.config import load_config
     from diffeoforge.mesh import sha256_file

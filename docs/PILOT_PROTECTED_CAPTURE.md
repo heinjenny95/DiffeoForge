@@ -43,3 +43,9 @@ measured patch capture, stronger native weighting with the same acceptance bound
 and native time-grid preparation. These are explicit numerical hypotheses, not a
 universal anatomical fit or ten-minute completion guarantee. Each new specimen
 and any later shared-cohort protocol require their own verification and review.
+
+An identical discarded test on the same seed is not silently repeated. The
+existing bounded contrast policy changes local/protection weighting according to
+the measured failure, or exposes its weight guard for input review. Other
+parameters and the preserved seed remain explicit; this is not automatic fitting
+or an automatic recovery of a failed optimizer.

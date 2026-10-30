@@ -76,6 +76,22 @@ def test_numeric_extension_other_symptoms_and_small_ordinary_miss_are_unchanged(
     assert proposal(None, 'x', data, info, 'detail') is None
 
 
+def test_failed_identical_protected_capture_does_not_repeat_the_same_trial():
+    data, info = setup_data()
+    first = proposal(None, 'x', data, info, 'detail')
+    data['context']['cases'] = [dict(reference=first['initialization_reference'],
+        method=first['method'], values=first['values'],
+        regional_recipe=deepcopy(first['regional_recipe']))]
+    data['current'].metrics = dict(attachment_comparison=dict(subjects={'shape.vtk': dict(
+        regional_quality=dict(marked_regions=deepcopy(data['regions']),
+            numerical_selection_suitable=False, no_new_intersection_flags=False))}))
+    next_test = proposal(None, 'x', data, info, 'detail')
+    assert next_test['values'] == first['values']
+    assert next_test['initialization_reference'] == first['initialization_reference']
+    assert next_test['regional_recipe']['focus_noise'] == first['regional_recipe']['focus_noise']*2
+    assert 'distinct weight contrast' in next_test['reason']
+
+
 def test_reverse_unknown_stays_unknown_and_active_scope_cannot_change():
     regions = [dict(symptom='detail', radius=.3)]
     rows = capture_rows([dict(region=regions[0], repeats=[dict(

@@ -159,6 +159,14 @@ def _read_context(snapshot):
 
 def state(snapshot):
     """Prepared in the background together with the evidence presentation."""
+    # Context, approvals and next-form previews traverse many of the same
+    # ancestors. One read action must share verification across the WHOLE view,
+    # not close its scope after _context and rebuild each lineage for every row.
+    with study.calibration_verification_scope():
+        return _read_state(snapshot)
+
+
+def _read_state(snapshot):
     info = guided.record(snapshot)
     preference = _preference(snapshot)
     preferred = preference["method"] if preference else info.get("selected_method")
