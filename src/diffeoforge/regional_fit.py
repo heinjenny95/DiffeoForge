@@ -319,6 +319,8 @@ def prepare(
     fixed_regions=(),
     protection_close_distance=None,
     protection_tolerance=None,
+    capture_profile=False,
+    fixed_noise_divisor=4,
 ):
     """Prepare native terms from feedback; no optimizer, oracle or acceptance.
 
@@ -380,6 +382,14 @@ def prepare(
                              "Choose the saved fit where that part is correct, or revise the area.")
     source_selected, proposals = select(selection, sf, tv, tf, focus_regions, fixed_ids,
                                         infer=guide_noise is None)
+    capture_measurement = None
+    if capture_profile:
+        from diffeoforge.regional_protected_capture import patch_capture_width
+
+        focus_width, capture_measurement = patch_capture_width(
+            selection, sf, tv, tf, source_selected, focus_regions)
+    if fixed_noise_divisor not in {4, 16}:
+        raise ValueError('Unknown fixed-area weight policy')
     root.mkdir(parents=True)
     objects = []
 
@@ -442,7 +452,7 @@ def prepare(
     fixed_protection = None
     if len(fixed_ids):
         limit = diagonal * 1e-4
-        fixed_noise = min(protection_noise, limit / 4)
+        fixed_noise = min(protection_noise, limit / fixed_noise_divisor)
         objects.append(dict(id="fixed", kind="Landmark", noise_std=fixed_noise,
             source=asset("fixed-source.vtk", sv[fixed_ids]),
             target=asset("fixed-target.vtk", fixed_selection[fixed_ids])))
@@ -528,6 +538,8 @@ def prepare(
     )
     if fixed_protection:
         data["fixed_protection"] = fixed_protection
+    if capture_measurement:
+        data['patch_capture'] = capture_measurement
     if automatic_path:
         data['automatic_reference'] = asset('automatic-reference.vtk', selection, sf)
     path = root / "regional-plan.json"

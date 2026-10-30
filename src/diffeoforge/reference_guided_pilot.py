@@ -230,7 +230,7 @@ def _batch(
             and not (strategy or {}).get("regional_continuation")):
         from diffeoforge.regional_pilot import configure_numerics
 
-        configure_numerics(config)
+        configure_numerics(config, recipe=strategy['regional_recipe'])
         from diffeoforge.pilot_iteration_effort import regional_allowance
 
         effort = regional_allowance(strategy["regional_recipe"], feedback["regions"], iterations)

@@ -119,9 +119,12 @@ def bind(root, manifest, record, recipe):
         options = dict(full_surface=recipe.get('control_scope') == 'full_surface')
         if recipe.get('control_budget_policy'):
             options['budget_policy'] = recipe['control_budget_policy']
+        from diffeoforge.regional_protected_capture import active_regions
+
+        regions = active_regions(recipe, record['guided']['feedback']['regions'])
         controls, spacing, coverage = supported_controls(
             source.geometry.vertices, original.geometry.vertices,
-            record['guided']['feedback']['regions'], width, **options)
+            regions, width, **options)
     control_path = root / "residual-controls.txt"
     np.savetxt(control_path, controls, fmt="%.17g")
     residual = dict(

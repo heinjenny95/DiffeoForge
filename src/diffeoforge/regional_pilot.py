@@ -61,6 +61,11 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     from diffeoforge.regional_resolution import response as resolution_response
 
     info = guided.record(snapshot)
+    from diffeoforge.regional_protected_capture import proposal as protected_proposal
+
+    protected = protected_proposal(snapshot, identifier, data, info, symptom)
+    if protected:
+        return protected
     numerical = numerical_proposal(snapshot, identifier, data, symptom=symptom)
     resolution_evidence = numerical
     previous_symptom = ((info.get("strategy") or {}).get("regional_recipe") or {}).get("symptom")
@@ -539,6 +544,10 @@ def bind(root, manifest, record):
     feedback = record["guided"]["feedback"]
     regions = feedback["regions"]
     problem, guides, fixed = split_regions(regions)
+    requested = problem
+    from diffeoforge.regional_protected_capture import active_regions
+
+    problem = active_regions(recipe, problem)
     if not problem:
         raise ValueError("Mark a problem area as well as already good protected areas")
     guides = guides or problem
@@ -704,6 +713,8 @@ def bind(root, manifest, record):
         guide_points=recipe["guide_points"],
         protection_close_distance=recipe.get('protection_close_distance'),
         protection_tolerance=recipe.get('protection_tolerance'),
+        **(dict(capture_profile=True, fixed_noise_divisor=recipe['fixed_noise_divisor'])
+           if recipe.get('protected_capture') else {}),
     )
     import json
     import shutil
@@ -711,6 +722,12 @@ def bind(root, manifest, record):
     path = Path(declaration["manifest"])
     data = json.loads(path.read_text())
     data['instruction_regions'] = regions
+    if recipe.get('protected_capture'):
+        data['requested_regions'] = requested
+        recipe = dict(recipe, focus_width=next(o for o in data['objects']
+                                               if o['id'] == 'focus')['kernel_width'])
+        record = dict(record, guided=dict(record['guided'], strategy=dict(
+            record['guided']['strategy'], regional_recipe=recipe)))
     data["retained_run"] = dict(path=str(run), manifest_sha256=sha256_file(run / "manifest.json"))
     data['automatic_reference_run'] = dict(path=str(seed_run),
         manifest_sha256=sha256_file(seed_run / 'manifest.json'))
@@ -735,7 +752,7 @@ def bind(root, manifest, record):
     return dict(record, regional_objective=declaration)
 
 
-def configure_numerics(config):
+def configure_numerics(config, *, recipe=None):
     """Set the minimum for newly prepared regional candidates, not saved renders.
 
     Same-objective successors bypass this policy and retain their exact old grid.
@@ -745,6 +762,9 @@ def configure_numerics(config):
     config["model"]["deformation"].update(
         use_rk2=True, timepoints=max(MINIMUM_NEW_NATIVE_TIMEPOINTS,
                                    config["model"]["deformation"]["timepoints"]))
+    if (recipe or {}).get('protected_capture'):
+        config['model']['deformation']['timepoints'] = max(
+            config['model']['deformation']['timepoints'], recipe['native_timepoints'])
 
 
 def configure(config, record):
@@ -763,4 +783,5 @@ def configure(config, record):
     config["optimization"].update(
         method="lbfgs", max_line_search_iterations=30, save_every_n_iterations=1_000_000
     )
-    configure_numerics(config)
+    recipe = (record.get('guided', {}).get('strategy') or {}).get('regional_recipe') or {}
+    configure_numerics(config, recipe=recipe)

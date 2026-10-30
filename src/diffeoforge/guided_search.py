@@ -59,7 +59,8 @@ def inputs(snapshot, identifier, context, *, regions_override=None, allow_contin
 
         regional_capture = capture(references.get(capture_reference['directory'], snapshot),
             capture_reference,
-            [r for r in marked if r.get('purpose', 'problem') == 'problem'])
+            [r for r in marked if r.get('purpose', 'problem') == 'problem'],
+            **(dict(per_region=True) if any(r.get('purpose') == 'fixed' for r in marked) else {}))
     verified = dict(anchor=anchor, baseline=baseline, current=current, target=target,
                 regions=marked,
                 retention_context=retention,

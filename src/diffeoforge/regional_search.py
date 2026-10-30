@@ -2,21 +2,39 @@
 import numpy as np
 
 
-def capture(snapshot, reference, regions):
+def capture(snapshot, reference, regions, *, per_region=False):
     """Background-only evidence from this retained fit, never a successful oracle."""
     candidate = next(c for c in snapshot.candidates
                      if c.candidate_id == reference['candidate_id'])
     quality = ((candidate.metrics or {}).get('attachment_comparison', {})
                .get('subjects', {}).get(reference['target'], {}).get('regional_quality', {}))
-    if quality and regions == quality.get('surface_regions', quality.get('marked_regions')):
+    if (not per_region and quality
+            and regions == quality.get('surface_regions', quality.get('marked_regions'))):
         rows = quality['active_surface']
     else:
         from diffeoforge.pilot_recovery import capture as measure
 
         measured = measure(snapshot, candidate.candidate_id, reference['target'], regions=regions)
         rows = [repeat for area in measured['baseline'] for repeat in area['repeats']]
-    return dict(reference=reference, regions=regions,
-                original_to_fit_p95=max(r['original_to_fit_p95'] for r in rows))
+    result = dict(reference=reference, regions=regions,
+                  original_to_fit_p95=max(r['original_to_fit_p95'] for r in rows))
+    if per_region:
+        result['per_region'] = capture_rows(measured['baseline'])
+    return result
+
+
+def capture_rows(measurements):
+    """Keep missing reverse samples unknown and every brush separately identified."""
+    rows = []
+    for area in measurements:
+        forward = max(r['original_to_fit_p95'] for r in area['repeats'])
+        back = [r['fit_to_original_p95'] for r in area['repeats']
+                if r.get('fit_to_original_p95') is not None]
+        reverse = max(back) if back else None
+        rows.append(dict(region=area['region'], original_to_fit_p95=forward,
+                         fit_to_original_p95=reverse,
+                         symmetric_tail=max(forward, reverse or 0)))
+    return rows
 
 
 def controls(source, target, regions, width, *, limit=2000, full_surface=False,
@@ -71,7 +89,7 @@ def controls(source, target, regions, width, *, limit=2000, full_surface=False,
 def distinct(recipe, values, method, seed, cases, quality):
     """Do not repeat an identical objective/basis on a discarded same starting field."""
     keys = ('focus_width', 'focus_noise', 'protection_noise', 'guide_noise',
-            'protection_halo', 'residual', 'control_support', 'control_scope')
+            'protection_halo', 'residual', 'control_support', 'control_scope', 'active_regions')
     def repeated():
         return any(r.get('reference') == seed and r.get('method') == method
                    and r.get('values') == values and r.get('regional_recipe')

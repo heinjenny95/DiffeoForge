@@ -1,3 +1,15 @@
+# Development continuity — protected missing-feature capture
+
+New explicit missing/detail requests with Retain and a far per-brush miss use
+measured free-patch capture independently of local movement width. Work the
+largest remaining brush first, retain every instruction, preserve useful current
+fields and independently protect the inspected Retain source. New profile
+preparation uses145RK2; stronger native fixed-area weighting leaves the unchanged
+post-fit bound intact. Six new cases and40 overlapping targeted cases pass;
+120 other cases passed in the preceding sweep. A new isolated native product
+trial is in progress, without owner journal writes or anatomical approval.
+See [behavior and limits](PILOT_PROTECTED_CAPTURE.md). Installed dev175 unchanged.
+
 # Development continuity — warm material support and full instruction scope
 
 New preparation detects when a declared local warm basis misses newly selected
