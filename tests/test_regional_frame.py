@@ -141,14 +141,14 @@ def _accuracy_fixture(tmp_path, monkeypatch, *, stable_at, refined=False):
     return grid, calls
 
 
-@pytest.mark.parametrize('stable_at', [73, 145, 289, 577])
+@pytest.mark.parametrize('stable_at', [73, 145, 289, 577, 1153])
 def test_saved_frame_uses_only_needed_accuracy_level(tmp_path, monkeypatch, stable_at):
     from diffeoforge import regional_frame
 
     grid, calls = _accuracy_fixture(tmp_path, monkeypatch, stable_at=stable_at)
     receipt = regional_frame.qualify(tmp_path / 'saved-run', tmp_path / 'check')
     assert [count for count, _source in calls] == [
-        count for count in (37, 73, 145, 289, 577) if count <= stable_at]
+        count for count in (37, 73, 145, 289, 577, 1153) if count <= stable_at]
     assert all(source == grid for _count, source in calls)
     assert receipt['timepoints'] == stable_at
     assert receipt['starting_frame_qualification']['temporal_stable']
@@ -158,14 +158,14 @@ def test_saved_frame_uses_only_needed_accuracy_level(tmp_path, monkeypatch, stab
 def test_saved_frame_unresolved_at_new_bound_stays_unqualified(tmp_path, monkeypatch):
     from diffeoforge import regional_frame
 
-    _grid, calls = _accuracy_fixture(tmp_path, monkeypatch, stable_at=1153)
+    _grid, calls = _accuracy_fixture(tmp_path, monkeypatch, stable_at=2305)
     with pytest.raises(ValueError, match='numerically unresolved'):
         regional_frame.qualify(tmp_path / 'saved-run', tmp_path / 'check')
-    assert [count for count, _source in calls] == [37, 73, 145, 289, 577]
+    assert [count for count, _source in calls] == [37, 73, 145, 289, 577, 1153]
     assert not (tmp_path / 'check/qualification.json').exists()
 
 
-@pytest.mark.parametrize('stable_at', [73, 577, 1153])
+@pytest.mark.parametrize('stable_at', [73, 577, 1153, 2305])
 @pytest.mark.parametrize('refined', [False, True])
 def test_final_quality_checks_full_final_grid_at_unchanged_tolerance(
     tmp_path, monkeypatch, stable_at, refined
@@ -187,10 +187,10 @@ def test_final_quality_checks_full_final_grid_at_unchanged_tolerance(
         tmp_path, dict(attachment_comparison=dict(regional_objective=True)),
         SimpleNamespace(candidate_id='test', config_path=tmp_path / 'atlas.yaml'),
         tmp_path / 'saved-run')
-    assert max(count for count, _source in calls) <= 577
-    assert quality['temporal_grid_stable'] is (refined or stable_at <= 577)
+    assert max(count for count, _source in calls) <= 1153
+    assert quality['temporal_grid_stable'] is (refined or stable_at <= 1153)
     assert quality['numerical_selection_suitable'] == quality['temporal_grid_stable']
-    expected = 577 if refined else min(stable_at, 577)
+    expected = max(577, min(stable_at, 1153)) if refined else min(stable_at, 1153)
     assert quality['evaluation']['timepoints'] == expected
     assert quality['evaluation']['optimizer_updates'] == 0
     assert measured == [quality['evaluation']['endpoint']['path']]

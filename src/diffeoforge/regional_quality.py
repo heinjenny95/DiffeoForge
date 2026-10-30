@@ -306,6 +306,21 @@ def evaluate_and_measure(
                 event_callback=event_callback,
                 _cache=cache,
             )
+            # A finer time grid can reveal extra spatial curvature. Recheck the
+            # original material mesh at that grid; an older refinement receipt
+            # cannot qualify this new endpoint by being copied onto it.
+            receipt = refine_evaluation(
+                run, receipt,
+                destination.with_name(destination.name + f'-spatial-t{count}-refine'),
+                plan, cancelled=cancelled, event_callback=event_callback, cache=cache)
+            refinement = receipt.get('source_refinement')
+            finer_grid = Path(receipt['reference_source']['path'])
+            if sha256_file(finer_grid) != sha256_file(final_grid):
+                coarse = evaluate(
+                    run, destination.with_name(destination.name + f'-spatial-t{count}-coarse'),
+                    count=coarse['timepoints'], _source=finer_grid, _cache=cache,
+                    cancelled=cancelled, event_callback=event_callback)
+            final_grid = finer_grid
             delta = movement(
                 Path(coarse["endpoint"]["path"]), Path(receipt["endpoint"]["path"]), diagonal
             )

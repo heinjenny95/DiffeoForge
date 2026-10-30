@@ -1,3 +1,13 @@
+# Development continuity — bounded finer field qualification
+
+Field-only RK2 evaluation can now reach1153timepoints at the unchanged1e-4
+normalized temporal bound. A time correction rechecks spatial resolution and
+compares both endpoints on the final common material grid. Unresolved fields
+still fail; optimizer coefficients/budgets and historical receipts are unchanged.
+34 targeted cases pass (four new), lint and an independent fixed-field private
+qualification pass. Anatomy remains pending. See [behavior and limits](PILOT_FINE_FIELD_CHECKS.md).
+Installed runtime remains dev175 pending verified delivery.
+
 # Development continuity — preserve new numerical progress
 
 Automatic outside anchors now use the numerical seed independently of explicit

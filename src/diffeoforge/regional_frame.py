@@ -6,7 +6,7 @@ import numpy as np
 
 from diffeoforge.mesh import sha256_file
 
-TEMPORAL_COUNTS = (73, 145, 289, 577)
+TEMPORAL_COUNTS = (73, 145, 289, 577, 1153)
 TEMPORAL_TOLERANCE = 1e-4
 
 
