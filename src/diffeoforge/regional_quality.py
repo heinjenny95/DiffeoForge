@@ -41,7 +41,8 @@ def _distances(target, target_faces, fitted, fitted_faces, areas):
     return rows
 
 
-def measure(config, fitted_path, *, source_path=None, baseline_path=None):
+def measure(config, fitted_path, *, source_path=None, baseline_path=None,
+            automatic_baseline_path=None):
     from diffeoforge.surface_io import load_surface_mesh
 
     plan = read_plan(config)
@@ -118,7 +119,11 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None):
     if plan.get('protection_close_distance') and retained:
         from diffeoforge.reference_fit_search import distances_to_surface, surface_samples
 
-        ov, of = np.asarray(original.vertices, float), np.asarray(original.triangles, int)
+        automatic = original
+        if plan.get('automatic_reference'):
+            automatic = load_surface_mesh(automatic_baseline_path or
+                root / plan['automatic_reference']['copy']).geometry
+        ov, of = np.asarray(automatic.vertices, float), np.asarray(automatic.triangles, int)
         for seed in (2026102903, 2026102904):
             points = surface_samples(tv, tf, 8192, seed=seed)
             points = points[~mask(points, plan['focus_regions'], halo=plan['protection_halo'])]
@@ -320,15 +325,31 @@ def evaluate_and_measure(
             event_callback=event_callback,
             _cache=cache,
         )
+    automatic = None
+    auto_run = plan.get('automatic_reference_run')
+    if auto_run:
+        if sha256_file(Path(auto_run['path']) / 'manifest.json') != auto_run['manifest_sha256']:
+            raise ValueError('Automatic numerical seed run changed')
+        if (baseline and Path(auto_run['path']).resolve()
+                == Path(plan['retained_run']['path']).resolve()):
+            automatic = baseline
+        else:
+            automatic = evaluate(
+                auto_run['path'], destination.with_name(destination.name+'-automatic'),
+                count=receipt['timepoints'], _source=grid, _cache=cache,
+                cancelled=cancelled, event_callback=event_callback)
     source = receipt["prefix"]["endpoint"]["path"] if receipt["prefix"] else str(grid)
     quality = measure(
         config,
         receipt["endpoint"]["path"],
         source_path=source,
         baseline_path=baseline["endpoint"]["path"] if baseline else None,
+        automatic_baseline_path=automatic['endpoint']['path'] if automatic else None,
     )
     if baseline:
         quality["baseline_evaluation"] = baseline
+    if automatic:
+        quality['automatic_baseline_evaluation'] = automatic
     if refinement:
         receipt["source_refinement"] = refinement
     quality["spatial_resolution_sufficient"] = not (refinement or {}).get("resource_limit", False)

@@ -65,6 +65,13 @@ def read_plan(config):
             or sha256_file(path.parent / grid["copy"]) != grid["sha256"]
         ):
             raise ValueError("Original source grid changed")
+    automatic = data.get('automatic_reference')
+    if automatic:
+        asset = path.parent / automatic['copy']
+        if (Path(automatic['copy']).name != automatic['copy']
+                or not asset.is_file() or asset.stat().st_size != automatic['bytes']
+                or sha256_file(asset) != automatic['sha256']):
+            raise ValueError('Automatic preservation reference changed')
     for item in data["objects"]:
         if (
             not re.fullmatch(r"[a-z][a-z0-9_]{0,39}", item["id"])
@@ -127,6 +134,9 @@ def assets(config):
             result.append(
                 (root / grid["copy"], Path("input/regional") / grid["copy"], grid["sha256"])
             )
+    if plan.get('automatic_reference'):
+        row = plan['automatic_reference']
+        result.append((root / row['copy'], Path('input/regional') / row['copy'], row['sha256']))
     for item in plan["objects"]:
         for role in ["source", "target"]:
             row = item[role]
@@ -293,6 +303,7 @@ def prepare(
     guide_noise=None,
     guide_points=192,
     retained_path=None,
+    automatic_path=None,
     fixed_regions=(),
     protection_close_distance=None,
     protection_tolerance=None,
@@ -322,6 +333,15 @@ def prepare(
         ):
             raise ValueError("Retained field needs identical source connectivity for protection")
         selection = np.asarray(retained.vertices, float)
+    fixed_selection = selection
+    if automatic_path:
+        automatic = load_surface_mesh(automatic_path).geometry
+        if np.asarray(automatic.vertices).shape != sv.shape or not np.array_equal(
+            automatic.triangles, sf
+        ):
+            raise ValueError('Numerical starting fit needs matching material connectivity '
+                             'for automatic outside protection')
+        selection = np.asarray(automatic.vertices, float)
     focus_regions = focus_regions or regions
     halo = diagonal * 0.065 if protection_halo is None else protection_halo
     if (
@@ -340,9 +360,10 @@ def prepare(
     from diffeoforge.regional_preservation import VERSION as FIXED_VERSION
     from diffeoforge.regional_preservation import vertex_ids
 
-    fixed_ids = vertex_ids(selection, sf, fixed_regions) if fixed_regions else np.array([], int)
+    fixed_ids = (vertex_ids(fixed_selection, sf, fixed_regions)
+                 if fixed_regions else np.array([], int))
     for region in fixed_regions:
-        if len(vertex_ids(selection, sf, [region])) < 3:
+        if len(vertex_ids(fixed_selection, sf, [region])) < 3:
             raise ValueError("A Retain area has no surface patch in this starting fit. "
                              "Choose the saved fit where that part is correct, or revise the area.")
     source_selected, proposals = select(selection, sf, tv, tf, focus_regions, fixed_ids,
@@ -383,6 +404,10 @@ def prepare(
     ids = ids[(~mask(selection[ids], focus_regions, halo=halo)
                & ~np.isin(ids, movable_ids))
               | mask(selection[ids], fixed_regions)]
+    if automatic_path:
+        # Explicit Retain has its own numerical source. Do not pull those same
+        # material vertices toward a different automatic numerical seed as well.
+        ids = ids[~np.isin(ids, fixed_ids)]
     if protection_close_distance is not None:
         close = distances_to_surface(selection[ids], tv, tf) <= protection_close_distance
         ids = ids[close | mask(selection[ids], fixed_regions)]
@@ -390,12 +415,13 @@ def prepare(
         raise ValueError("The marked region leaves too little surface for outside protection")
     protected = sv[ids]
     protection = "already-close original source"
-    if retained_path and (
+    if automatic_path or (retained_path and (
         fixed_regions
         or np.quantile(distances_to_surface(protected, tv, tf), 0.95) > diagonal * 1e-6
-    ):
+    )):
         protected = selection[ids]
-        protection = "retained fit outside the marked transition halo"
+        protection = ('current numerical seed outside the marked transition halo' if automatic_path
+                      else "retained fit outside the marked transition halo")
     a = asset("protect-source.vtk", sv[ids])
     b = asset("protect-target.vtk", protected)
     objects.append(
@@ -407,7 +433,7 @@ def prepare(
         fixed_noise = min(protection_noise, limit / 4)
         objects.append(dict(id="fixed", kind="Landmark", noise_std=fixed_noise,
             source=asset("fixed-source.vtk", sv[fixed_ids]),
-            target=asset("fixed-target.vtk", selection[fixed_ids])))
+            target=asset("fixed-target.vtk", fixed_selection[fixed_ids])))
         fixed_protection = dict(version=FIXED_VERSION, vertices=len(fixed_ids), limit=limit,
             reference_diagonal=diagonal,
             noise_std=fixed_noise, selection="all marked material vertices and incident faces",
@@ -490,6 +516,8 @@ def prepare(
     )
     if fixed_protection:
         data["fixed_protection"] = fixed_protection
+    if automatic_path:
+        data['automatic_reference'] = asset('automatic-reference.vtk', selection, sf)
     path = root / "regional-plan.json"
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return dict(version=VERSION, manifest=str(path.resolve()), sha256=sha256_file(path))

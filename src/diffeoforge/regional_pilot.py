@@ -642,6 +642,21 @@ def bind(root, manifest, record):
                 )
     if residual:
         fit_source = root / residual["source"]["copy"]
+    seed_ref = record['refinement']['reference']
+    seed_parent = verify_reference(seed_ref)
+    seed_candidate = next(c for c in seed_parent.candidates
+                          if c.candidate_id == seed_ref['candidate_id'])
+    seed_run = study.calibration_candidate_run_directory(seed_candidate)
+    automatic_evaluation = (anchor_evaluation if seed_run.resolve() == run.resolve()
+                            else retained_evaluation(record, seed_run, feedback['target']))
+    if not compatible(automatic_evaluation):
+        automatic_evaluation = record.get('refinement', {}).get('parent_evaluation')
+    if (not compatible(automatic_evaluation)
+            or Path(automatic_evaluation['source_run']).resolve() != seed_run.resolve()):
+        original = anchor_evaluation.get('reference_source')
+        automatic_evaluation = qualify(seed_run, root / 'automatic-seed-qualification',
+                                       source=original['path'] if original else None)
+    verify_source(automatic_evaluation)
     declaration = prepare(
         root / "regional-objective",
         fit_source,
@@ -650,6 +665,7 @@ def bind(root, manifest, record):
         focus_regions=problem,
         fixed_regions=fixed,
         retained_path=retained,
+        automatic_path=automatic_evaluation['endpoint']['path'],
         focus_width=recipe["focus_width"],
         focus_noise=recipe["focus_noise"],
         protection_noise=recipe["protection_noise"],
@@ -665,6 +681,8 @@ def bind(root, manifest, record):
     path = Path(declaration["manifest"])
     data = json.loads(path.read_text())
     data["retained_run"] = dict(path=str(run), manifest_sha256=sha256_file(run / "manifest.json"))
+    data['automatic_reference_run'] = dict(path=str(seed_run),
+        manifest_sha256=sha256_file(seed_run / 'manifest.json'))
     data["numerical_protocol"] = dict(
         version="regional-rk2-v1", integration="rk2",
         minimum_native_timepoints=MINIMUM_NEW_NATIVE_TIMEPOINTS,

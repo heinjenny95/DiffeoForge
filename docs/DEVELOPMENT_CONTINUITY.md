@@ -1,3 +1,13 @@
+# Development continuity — preserve new numerical progress
+
+Automatic outside anchors now use the numerical seed independently of explicit
+Retain, which keeps its inspected saved source. New stages cannot pull a newly
+improved part back toward an older whole-field comparison through that automatic
+term. Both references are staged/verified separately; full QC evaluates matching
+material frames. 85 targeted cases pass (two new), lint passes. Existing fields
+and plans stay unchanged. See [behavior and limits](PILOT_PROGRESS_PRESERVATION.md).
+Installed runtime remains dev175 pending verified delivery.
+
 # Development continuity — movable material and actual-source support
 
 New regional focus surfaces exclude fixed-incident triangles. Missing features
