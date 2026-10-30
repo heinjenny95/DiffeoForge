@@ -1,3 +1,13 @@
+# Development continuity — dev176 delivery candidate
+
+Version176 collects the tested Retain-source/progress preservation, free material
+selection/control coverage, fixed optimizer coordinates, full instruction scope,
+finer unchanged-field checks and independent protected capture. The scientific
+method remains native Deformetrica; existing fields are preserved. Source version
+is not an installed-delivery claim. Packaging, exact frozen UI/cancellation and
+backup/idle installation verification remain required; installed dev175 and the
+separate distributed binary remain unchanged until their own verified actions.
+
 # Development continuity — protected missing-feature capture
 
 New explicit missing/detail requests with Retain and a far per-brush miss use
