@@ -4641,6 +4641,13 @@ class ReferenceCalibrationDialog(QDialog):
                 compare_preferences=self._individual_checkpoint()
                 and Path(root).resolve() == self.study_directory.resolve(),
             )
+            if key[0] == "guided-saved":
+                dialog.setWindowTitle("Saved starting fit — comparison only")
+                dialog.findChild(QLabel, "title").setText("Saved starting fit")
+                dialog._comparison_intro.setText(
+                    "Orange: original · Blue: saved reconstruction. Close this comparison "
+                    "and choose Work from this starting fit to edit its areas or prepare "
+                    "another test. This view does not change the saved fit or its review.")
             dialog.anatomical_notes.setText(
                 reviewed_snapshot.visual_review_notes.get(candidate.candidate_id, "")
             )
