@@ -1,20 +1,54 @@
-# Development continuity — dev176 delivery candidate
+# Development continuity — dev176 verified delivery (31 October 2026)
+
+Engineering build `0.0.0.dev176` is installed after a fresh idle check and verified
+runtime/settings backup. All 3,473 bundle files match the frozen inventory;
+installer exit, six evidence companions, license, uninstall version and location,
+owner project inventories, desktop state and Qt settings are verified. The prior
+dev175 runtime remains recoverable. Runtime source is
+`fd8ca09a9db1a2d95d5793c51511d713c757eb64`; this delivery note is a later
+documentation-only commit and does not require another binary build. No installer
+upload, release, tag or merge was performed; Drive distribution remains separate.
+
+The fresh normal 64-case pilot regression sweep passes, covering next-form,
+individual/joint/finish paths, retained results, intermediate review, withdrawals,
+assets and numerical checks. Exact packaged Windows views, a read-only historical
+checkpoint replay and an owned harmless WSL cancellation test also pass. The
+controlled cancellation took 17.7 seconds, left an outside process running and
+preserved its test checkpoint; this is not a scientific-fit cancellation claim.
+
+New isolated complex-shape capture/detail stages and a subsequent deliberately
+selected local residual correction pass full composed-field preservation,
+intersection, spatial and temporal checks without changing owner fits, native
+accuracy bounds or iteration caps. Numerical qualification does not establish
+anatomical acceptance: a narrow projection still needs owner review. Local fit
+time, complete worker time and additional qualification time are recorded
+separately in the private project-local report. There is no demonstrated overall
+speedup against an earlier long fit, raw-data ten-minute fit, universal dataset
+success or full-cohort/atlas qualification claim.
+
+For a new local attempt, explicitly choose the good saved working fit and prepare
+a new test. Existing prepared configurations and saved results are not rewritten.
+The closed experimental solver study, paused side work and existing accepted
+atlas/PCA remain unchanged.
+
+# Development continuity — dev176 implementation history
 
 The complete pilot-state read and retained-run/reference walks now share scoped
 ancestor verification. Operation-local retained caching watches journals,
 optional review creation, configs and output receipts; later actions start fresh.
 Protected capture also uses the existing bounded distinct-contrast guard rather
 than repeating an identical discarded trial.17 focused cases plus a retained-cycle
-case pass, including eight added scope/tamper/retry cases; lint passes. The broader completion/retention
-sweep is running before freeze. See [history checks](PILOT_HISTORY_READS.md).
+case pass, including eight added scope/tamper/retry cases; lint passes. The broader
+completion/retention sweep and frozen delivery checks subsequently passed as
+recorded above. See [history checks](PILOT_HISTORY_READS.md).
 
 Version176 collects the tested Retain-source/progress preservation, free material
 selection/control coverage, fixed optimizer coordinates, full instruction scope,
 finer unchanged-field checks and independent protected capture. The scientific
 method remains native Deformetrica; existing fields are preserved. Source version
-is not an installed-delivery claim. Packaging, exact frozen UI/cancellation and
-backup/idle installation verification remain required; installed dev175 and the
-separate distributed binary remain unchanged until their own verified actions.
+is separate from installed and distributed state. Packaging, exact frozen
+UI/cancellation and backup/idle installation verification are now complete for
+dev176; the separately distributed binary remains unchanged.
 
 # Development continuity — protected missing-feature capture
 
