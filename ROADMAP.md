@@ -3,8 +3,10 @@
 - [x] Keep completed-fit review and suitable-fit next-animal preparation outside
   scrolling history, including composed regional fits. Individual shape reviews
   remain separate from matching common-model coverage and joint approval.
-  dev174 source implementation; package/installation verification pending.
-  [Behavior and limits](docs/PILOT_NEXT_FORM.md).
+  dev174 verified installed; 119 unique workflow/UI cases and exact-package checks pass.
+  [Behavior and limits](docs/PILOT_NEXT_FORM.md),
+  [dead-end checks](docs/PILOT_DEAD_END_CHECKS.md),
+  [delivery](docs/V174_DELIVERY.md).
 
 - [x] Make an earlier selected fit a visible working source, bind next preparation
   to its complete field, and edit multiple independently instructed surface areas

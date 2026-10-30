@@ -2,10 +2,12 @@
 
 A suitable composed regional fit now has a next-animal preparation action and a
 sticky completed-result review button. Individual shape decisions remain separate
-from ordinary common-model coverage and later joint approval. Source verification
-and 81 unique workflow/UI cases pass; dev173 remains installed until a tested
-package, fresh backup and idle-application check permit replacement.
-See [behavior and limits](PILOT_NEXT_FORM.md). No owner trial is prepared or run.
+from ordinary common-model coverage and later joint approval. Runtime `713b6dc` /
+dev174 is verified installed after exact-package checks, fresh backup, idle guard
+and installed-byte/project-state comparison. 119 unique source workflow/UI cases
+pass, including 38 additional dead-end cases. See the [workflow and limits](PILOT_NEXT_FORM.md),
+[dead-end checks](PILOT_DEAD_END_CHECKS.md) and [delivery record](V174_DELIVERY.md).
+No owner trial was prepared or run. Existing fits/reviews stay unchanged; no Drive upload.
 
 # Development continuity — dev173 working fit and multiple area instructions
 
