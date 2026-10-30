@@ -211,7 +211,7 @@ def _batch(
     cohort_method = config["optimization"]["method"]
     iterations = (max(ITERATIONS, previous.attachment_comparison["iterations"])
                   if strategy is not None and previous else ITERATIONS)
-    if goal == "shared_check":
+    if goal in {"shared_check", "next_form", "form_model_check"}:
         iterations = ITERATIONS
     optimization = (strategy or {}).get("optimization")
     if optimization:
@@ -222,6 +222,10 @@ def _batch(
                         if c.candidate_id == optimization["reference"]["candidate_id"])
         config = copy.deepcopy(load_config(retained.config_path))
         iterations = optimization["iterations"]
+    if (strategy or {}).get("form_progress") and not optimization:
+        from diffeoforge.pilot_form_progress import configure
+
+        configure(config, strategy["form_progress"], cohort_method)
     if ((strategy or {}).get("regional_recipe")
             and not (strategy or {}).get("regional_continuation")):
         from diffeoforge.regional_pilot import configure_numerics

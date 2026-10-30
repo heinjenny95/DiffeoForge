@@ -1,3 +1,12 @@
+# Development continuity — dev174 individual-fit next-form route
+
+A suitable composed regional fit now has a next-animal preparation action and a
+sticky completed-result review button. Individual shape decisions remain separate
+from ordinary common-model coverage and later joint approval. Source verification
+and 81 unique workflow/UI cases pass; dev173 remains installed until a tested
+package, fresh backup and idle-application check permit replacement.
+See [behavior and limits](PILOT_NEXT_FORM.md). No owner trial is prepared or run.
+
 # Development continuity — dev173 working fit and multiple area instructions
 
 An earlier selected fit now has a real working view and a dedicated preparation

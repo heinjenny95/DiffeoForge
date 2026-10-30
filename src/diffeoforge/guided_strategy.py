@@ -89,6 +89,11 @@ def _compatible(snapshot, method, values, cases=()):
             candidate = next(c for c in parent.candidates
                              if c.candidate_id == row["candidate_id"])
             return compatible(marker, candidate)
+        progress = (guided.record(snapshot).get("strategy") or {}).get("form_progress")
+        if progress:
+            from diffeoforge.pilot_form_progress import compatible
+
+            return compatible(row, progress["protocol"])
         return True
 
     return list({(r["directory"], r["candidate_id"]): r for r in rows
@@ -192,6 +197,20 @@ def state(snapshot):
         result["shared_model_checks"] = {
             c.candidate_id: shared_preview(snapshot, c.candidate_id) for c in snapshot.candidates
             if snapshot.visual_reviews.get(c.candidate_id) is True}
+    if (snapshot.plan.pilot_subject_count == 1 and info["phase"] != "joint"
+            and (snapshot.attachment_comparison.get("regional_objective")
+                 or (info.get("strategy") or {}).get("form_progress"))):
+        from diffeoforge.pilot_form_progress import preview
+
+        result["next_forms"] = {c.candidate_id: preview(snapshot, c.candidate_id, result)
+                                for c in snapshot.candidates
+                                if snapshot.visual_reviews.get(c.candidate_id) is True}
+    if (info.get("strategy") or {}).get("form_progress"):
+        from diffeoforge.pilot_form_progress import marker
+
+        progress = marker(snapshot)
+        result["form_progress_summary"] = dict(
+            shapes=len(progress["reviews"]), checked=result["checked"], total=result["total"])
     return result
 
 
@@ -327,6 +346,10 @@ def verify_strategy(info, record, manifest, study_root=None):
         return False
     if strategy.get("shared_model_check"):
         from diffeoforge.guided_shared_check import verify
+
+        verify(info, record, manifest, study_root)
+    if strategy.get("form_progress"):
+        from diffeoforge.pilot_form_progress import verify
 
         verify(info, record, manifest, study_root)
     return True
@@ -483,6 +506,10 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
 
 def transition(snapshot, action, identifier, *, goal=None):
     """Called under the existing transition lock; never dispatch an optimizer."""
+    if action in {"next_form", "form_model_check"}:
+        from diffeoforge.pilot_form_progress import transition as next_form
+
+        return next_form(snapshot, identifier, model=action == "form_model_check")
     if action == "restore_accepted":
         from diffeoforge.guided_accepted_fit import select
 

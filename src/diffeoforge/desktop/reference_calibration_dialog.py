@@ -1754,6 +1754,7 @@ class ReferenceCalibrationDialog(QDialog):
         close.clicked.connect(self.reject)
         self.close_button = close
         self.next_step_button = QPushButton()
+        self._guided_footer_action = None
         self.next_step_button.clicked.connect(self._perform_final_next_step)
         self.next_step_button.hide()
         _set_action_emphasis(self.next_step_button, True)
@@ -1921,6 +1922,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.finer_resolution_button.hide()
         self.next_step_button.hide()
         self.final_check_summary.hide()
+        self._guided_footer_action = None
         self.status.show()
         self._assessment = None
         self._snapshot = prepared.snapshot
@@ -2833,6 +2835,12 @@ class ReferenceCalibrationDialog(QDialog):
     def _perform_final_next_step(self) -> None:
         if (self._worker is not None or self._restoring_search
                 or self._view_loading or self._review_saving):
+            return
+        guided_action = getattr(self, "_guided_footer_action", None)
+        if guided_action is not None:
+            root, action, identifier = guided_action
+            if root == self.study_directory:
+                self._start_pilot(adaptive=False, guided_action=(action, identifier, None))
             return
         step = getattr(self, "_final_next_step", None)
         if step is None:

@@ -21,6 +21,8 @@ def render(window, prepared):
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
 
     snapshot = prepared.snapshot
+    window._guided_footer_action = None
+    window.next_step_button.hide()
     # Let the scroll area grow its content rather than compressing recovery cards.
     window.content_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
     window.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -46,7 +48,6 @@ def render(window, prepared):
         window.advance_button,
         window.compare_options_button,
         window.use_provisional_button,
-        window.review_next_button,
         window.denser_model_button,
     )
     window._guided_hidden_visibility = {c: not c.isHidden() for c in controls}
@@ -55,7 +56,11 @@ def render(window, prepared):
     window._visually_reviewed_candidates = set(snapshot.visual_reviews)
     window._visually_approved_candidates = {k for k, v in snapshot.visual_reviews.items() if v}
     title = QLabel(
-        "Check the suitable fit with the atlas model"
+        "Check the next pilot form"
+        if info.get("goal") == "next_form"
+        else "Check the common model"
+        if info.get("goal") == "form_model_check"
+        else "Check the suitable fit with the atlas model"
         if info.get("goal") == "shared_check"
         else "Joint pilot check"
         if info["phase"] == "joint"
@@ -80,6 +85,17 @@ def render(window, prepared):
     explanation.setObjectName("pilotScope")
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
+    next_forms = guidance.get("next_forms", {})
+    valid_next = next((row for row in next_forms.values() if row.get("available")), None)
+    progress_summary = valid_next or guidance.get("form_progress_summary")
+    if progress_summary:
+        progress_note = QLabel(
+            f"Shape review: {progress_summary['shapes']} / {progress_summary['total']} forms. "
+            f"Common-model checks: {progress_summary['checked']} / "
+            f"{progress_summary['total']}. Your suitable individual fits stay saved; "
+            "a common atlas needs separate matching-model checks and joint review.")
+        progress_note.setWordWrap(True)
+        window.content_layout.addWidget(progress_note)
     if info.get("goal") == "shared_check":
         note = QLabel("Your suitable local fit remains saved. This separate check starts "
                       "from its saved field, template, control points and time grid and uses "
@@ -123,6 +139,14 @@ def render(window, prepared):
         why.setWordWrap(True)
         window.content_layout.addWidget(why)
     completed = [c for c in snapshot.candidates if c.status == "completed"]
+    window.review_next_button.setText("Review finished fit" if len(completed) == 1
+                                      else "Review next completed fit")
+    window.review_next_button.setVisible(bool(completed) and not running)
+    window.review_next_button.setEnabled(bool(completed) and not running)
+    window.review_next_button.setToolTip(
+        "Open the completed result and choose Suitable fit or Needs improvement.")
+    _set_action_emphasis(window.review_next_button,
+                        any(c.candidate_id not in snapshot.visual_reviews for c in completed))
     pending = [c for c in snapshot.candidates if c.status != "completed"]
     unresolved = [
         c for c in snapshot.candidates if c.status not in {"completed", "failed", "interrupted"}
@@ -162,6 +186,10 @@ def render(window, prepared):
         if retry_blocked
         else "A trial failed. Inspect details, retry, or choose an approved alternative."
         if failed
+        else "Suitable fit saved. Use the next-form action below."
+        if any(row.get("available") for row in next_forms.values())
+        else "Suitable fit saved. Review the next-form input issue below."
+        if next_forms
         else "Suitable fit saved. Next: prepare its atlas-model check below."
         if regional_accepted and any(row.get("available") for row in
             guidance.get("shared_model_checks", {}).values())
@@ -173,6 +201,19 @@ def render(window, prepared):
         if completed
         else "Ready. Preparing this plan has started no fits."
     )
+    if not running and not unresolved:
+        for identifier, following in next_forms.items():
+            if following.get("available"):
+                window.next_step_button.setText(following["label"])
+                window.next_step_button.setVisible(True)
+                window.next_step_button.setEnabled(True)
+                window.next_step_button.setToolTip(
+                    "Save this individual review and prepare one separate next check. "
+                    "Earlier fits remain unchanged. Run starts only when you choose it.")
+                window._guided_footer_action = (snapshot.study_directory,
+                    "adaptive_" + following["action"], identifier)
+                _set_action_emphasis(window.next_step_button, True)
+                break
 
     def action(layout, label, kind, identifier, *, goal=None, available=True):
         button = QPushButton(label, window.content)
@@ -191,7 +232,8 @@ def render(window, prepared):
     for candidate in snapshot.candidates:
         feedback = guidance.get("feedback", {}).get(candidate.candidate_id)
         working = guidance.get("working_proposals", {}).get(candidate.candidate_id)
-        separate_start = bool(working and candidate.status == "completed" and not running)
+        separate_start = bool(working and candidate.status == "completed" and not running
+                              and snapshot.visual_reviews.get(candidate.candidate_id) is not True)
         if separate_start:
             from diffeoforge.desktop.guided_feedback import render_starting_fits
 
@@ -310,10 +352,17 @@ def render(window, prepared):
         if candidate in completed and not running:
             from diffeoforge.desktop.guided_accepted_fit import render as accepted_fit
 
+            following = next_forms.get(candidate.candidate_id)
+            if following and not following.get("available"):
+                reason = QLabel("Next form could not be prepared: " + following["reason"])
+                reason.setWordWrap(True)
+                reason.setObjectName("statusWarning")
+                layout.addWidget(reason)
             accepted_fit(window, candidate.candidate_id, layout,
                          guidance.get("accepted_fits", {}).get(candidate.candidate_id)
                          if decision is not True else None)
-            if decision is True and snapshot.attachment_comparison.get("regional_objective"):
+            if (decision is True and snapshot.attachment_comparison.get("regional_objective")
+                    and candidate.candidate_id not in next_forms):
                 check = guidance.get("shared_model_checks", {}).get(candidate.candidate_id)
                 if check and check["available"]:
                     next_check = action(layout,
@@ -372,9 +421,18 @@ def render(window, prepared):
                     render_starting_fits,
                 )
 
-                render_feedback(window, snapshot, candidate.candidate_id, layout, feedback)
+                history_body = QWidget()
+                history_layout = QVBoxLayout(history_body)
+                feedback_layout = history_layout if decision is True else layout
+                render_feedback(window, snapshot, candidate.candidate_id, feedback_layout, feedback)
                 if not separate_start:
-                    render_starting_fits(window, snapshot, candidate.candidate_id, layout, feedback)
+                    render_starting_fits(window, snapshot, candidate.candidate_id,
+                                         feedback_layout, feedback)
+                if decision is True:
+                    layout.addWidget(InfoDisclosure(
+                        "Earlier fits and optional feedback", history_body))
+                else:
+                    history_body.deleteLater()
             if decision is False and not valid:
                 explanation = QLabel(
                     "This result is technically invalid. Check the failure, input meshes and "
@@ -405,7 +463,8 @@ def render(window, prepared):
                 disclosure.toggle_button.setToolTip(
                     "Show optional adjustments. Opening these controls starts no fit.")
                 layout.addWidget(disclosure)
-            if decision is True and info["phase"] != "joint" and not regional:
+            if (decision is True and info["phase"] != "joint" and not regional
+                    and candidate.candidate_id not in next_forms):
                 remaining = remaining_forms(snapshot, candidate.candidate_id, context=guidance)
                 action(
                     layout,

@@ -7,7 +7,7 @@ import pytest
 
 
 @pytest.fixture
-def panel(monkeypatch):
+def panel(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import (
         QApplication,
@@ -53,9 +53,15 @@ def panel(monkeypatch):
         "denser_model_button",
         "start_button",
         "cancel_button",
+        "next_step_button",
     ):
         setattr(window, name, QPushButton(name, window))
     window.close_button = QPushButton("Close", window)
+    window.study_directory = tmp_path
+    window._view_loading = False
+    window._review_saving = False
+    window.layout().addWidget(window.review_next_button)
+    window.layout().addWidget(window.next_step_button)
     _set_action_emphasis(window.close_button, False)
     window.close_button.clicked.connect(window.close)
     window.layout().addWidget(window.close_button)
@@ -104,6 +110,7 @@ def panel(monkeypatch):
         ),
     )
     snapshot = SimpleNamespace(
+        study_directory=tmp_path,
         candidates=(candidate,),
         visual_reviews={candidate.candidate_id: False},
         attachment_comparison=dict(
