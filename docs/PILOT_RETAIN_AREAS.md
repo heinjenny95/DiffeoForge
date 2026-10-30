@@ -39,11 +39,18 @@ Iteration/time allowances, convergence tolerance and scientific approval gates
 are not relaxed. The first review remains after ten active minutes.
 
 Qualification: 109 unique source cases (eight new dense-retention/UI cases), lint,
-and a new bounded public three-part native CPU trial with one thread. With
-Float32/37-point RK2 and a 60-iteration cap, the intended part's mean vertex error
+and new bounded public three-part native CPU and CUDA/KeOps trials with one CPU
+thread. In the CPU trial, with Float32/37-point RK2 and a 60-iteration cap,
+the intended part's mean vertex error
 fell from 0.2 to 0.002380439 model units. The marked part's maximum movement was
 3.891103e-5 (within its declared bound); the other unchanged part moved at most
 1.666434e-5. The native run returned zero with no numerical-guard violation. This
 is controlled engineering evidence, not prospective anatomy, speed or convergence
 qualification for an owner specimen. Owner trials were not restarted or changed.
-Packaging and installed state are tracked separately.
+The GPU trial reduced intended-part mean error to 0.001321217, with marked-part
+maximum movement 7.592891e-6 and other-part movement at most 1.058296e-5. It also
+returned zero with no guard violation. CPU and GPU fields were independently
+evaluated at 73 time points without optimizer updates; complete retained-patch,
+outside/local and no-new-intersection checks passed on both. This is not a native
+CPU/GPU trajectory-identity or ant anatomical-quality claim.
+dev175 is verified installed; see [delivery evidence](V175_DELIVERY.md).

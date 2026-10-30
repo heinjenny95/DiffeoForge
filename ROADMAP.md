@@ -1,8 +1,9 @@
 # Roadmap
 
 - [x] Repair explicit Retain areas with dense separate native constraints and
-  whole-patch/early-review displacement checks. dev175 source qualified on public
-  fixtures; package/installation pending. [Behavior and limits](docs/PILOT_RETAIN_AREAS.md).
+  whole-patch/early-review displacement checks. dev175 verified installed; source,
+  public native CPU/GPU and exact-package checks pass. Existing fits retained.
+  [Behavior and limits](docs/PILOT_RETAIN_AREAS.md), [delivery](docs/V175_DELIVERY.md).
 
 - [x] Keep completed-fit review and suitable-fit next-animal preparation outside
   scrolling history, including composed regional fits. Individual shape reviews

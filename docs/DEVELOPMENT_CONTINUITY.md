@@ -1,12 +1,13 @@
-# Development continuity — dev175 explicit Retain-area repair (source)
+# Development continuity — dev175 explicit Retain-area repair
 
 New fixed-position areas receive dense material-vertex constraints with a separate
 native weight. Full-patch maximum displacement is checked after fitting and at
 intermediate review, including compatible legacy previews. Existing prepared
-trials/fits remain immutable. 109 source cases and a fresh public native CPU case
-pass; package/installation qualification is pending. dev174 remains installed.
-See [behavior, scientific limits and verification](PILOT_RETAIN_AREAS.md).
-No owner fit was started or altered. No Drive upload, sideagents or NAS work.
+trials/fits remain immutable. 109 source cases, public native CPU/GPU trials and
+73-point fixed-field checks pass. Runtime `19caa2d` / dev175 is verified installed
+after exact-package, backup/idle, installed-byte and owner-state verification.
+See [behavior and limits](PILOT_RETAIN_AREAS.md) and [delivery](V175_DELIVERY.md).
+No owner trial was started or altered. No Drive upload, side agents or NAS work.
 
 # Development continuity — dev174 individual-fit next-form route
 
