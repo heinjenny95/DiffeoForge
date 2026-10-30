@@ -1,5 +1,10 @@
 # Roadmap
 
+- [x] Bind regional proposal quality to the exact requested marks, so newly
+  marked missing features keep measured capture instead of inheriting an older
+  patch's detail recommendation. Source dev172 verified; existing trials and
+  approvals retained. [Scope and limits](docs/PILOT_MARK_SCOPE.md).
+
 Source-only owner follow-up, 27 October 2026: landmark/template guidance,
 alignment descriptions, short method help, Visualization organization,
 base R/geomorph handoffs and repository navigation. See the

@@ -172,7 +172,9 @@ def test_feedback_recipes_keep_preference_and_balance_transitions_without_promot
         attachment_comparison=dict(
             subjects={
                 "shape.vtk": dict(
-                    regional_quality=dict(outside_preserved=True, shape_preserved=True)
+                    regional_quality=dict(
+                        marked_regions=deepcopy(data['regions']),
+                        outside_preserved=True, shape_preserved=True)
                 )
             }
         )

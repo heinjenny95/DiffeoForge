@@ -1,3 +1,4 @@
+from copy import deepcopy
 from types import SimpleNamespace
 
 import numpy as np
@@ -97,7 +98,9 @@ def test_first_marked_fit_reoptimizes_the_existing_broad_basis_then_checks_other
         regional_recipe=initial['regional_recipe'])]
     data['anchor'] = data['current_reference'] = dict(common, candidate_id='first-model-fit')
     data['current'].metrics = dict(attachment_comparison=dict(subjects={
-        'shape.vtk': dict(regional_quality=dict(outside_preserved=True, shape_preserved=True,
+        'shape.vtk': dict(regional_quality=dict(
+            marked_regions=deepcopy(data['regions']),
+            outside_preserved=True, shape_preserved=True,
             active_surface=[dict(original_to_fit_p95=.1)], local_improved=True))}))
     other = regional_pilot.proposal(snapshot, 'x', data, symptom='detail')
     assert other['regional_recipe']['phase'] == 'coarse_method_check'
@@ -127,7 +130,9 @@ def test_finer_movement_does_not_also_jump_to_a_much_stronger_local_weight(monke
     data['context']['cases'] = [dict(family='regional', target='shape.vtk',
         method=data['anchor']['method'], regions=data['regions'], regional_recipe=previous)]
     data['current'].metrics = dict(attachment_comparison=dict(subjects={
-        'shape.vtk': dict(regional_quality=dict(outside_preserved=True, shape_preserved=True,
+        'shape.vtk': dict(regional_quality=dict(
+            marked_regions=deepcopy(data['regions']),
+            outside_preserved=True, shape_preserved=True,
             active_surface=[dict(original_to_fit_p95=.02)], local_improved=True))}))
     result = regional_pilot.proposal(None, 'x', data, symptom='detail')
     assert result['initialization'] == 'residual'
@@ -207,7 +212,9 @@ def test_reached_finer_scale_keeps_capture_and_adds_independent_detail_field(mon
     data['context']['cases'] = [dict(family='regional', target='shape.vtk', outcome='worse')]*2
     data['regional_capture'] = dict(original_to_fit_p95=.03)
     data['current'].metrics = dict(attachment_comparison=dict(subjects={
-        'shape.vtk': dict(regional_quality=dict(local_improved=True, outside_preserved=True,
+        'shape.vtk': dict(regional_quality=dict(
+            marked_regions=deepcopy(data['regions']),
+            local_improved=True, outside_preserved=True,
             shape_preserved=True, active_surface=[dict(original_to_fit_p95=.03)]))}))
     result = regional_pilot.proposal(None, 'x', data, symptom='detail')
     recipe = result['regional_recipe']
@@ -257,6 +264,7 @@ def test_local_gain_with_remaining_whole_error_rebalances_same_field(monkeypatch
     data['regional_capture'] = dict(original_to_fit_p95=.01)
     data['current'].metrics = dict(maximum_iterations=120, attachment_comparison=dict(subjects={
         'shape.vtk': dict(repeats=[dict(p95=.04), dict(p95=.041)], regional_quality=dict(
+            marked_regions=deepcopy(data['regions']),
             local_improved=True, outside_preserved=True, shape_preserved=True,
             active_surface=[dict(original_to_fit_p95=.01)]))}))
     result = regional_pilot.proposal(None, 'x', data, symptom='detail')
@@ -294,7 +302,9 @@ def test_far_unmarked_feature_broadens_global_capture_without_restarting_local_f
     before = dict(data['current_reference']['values'])
     data['current'].metrics = dict(attachment_comparison=dict(subjects={
         'shape.vtk': dict(repeats=[dict(p95=.04, p99=.1, regional_tail=.3)],
-            regional_quality=dict(numerical_selection_suitable=True, outside_preserved=True,
+            regional_quality=dict(
+                marked_regions=deepcopy(data['regions']),
+                numerical_selection_suitable=True, outside_preserved=True,
                 shape_preserved=True, active_surface=[dict(original_to_fit_p95=.01)]))}))
     result = regional_pilot.proposal(None, 'x', data, symptom='detail')
     recipe = result['regional_recipe']
@@ -322,7 +332,9 @@ def test_finer_local_step_keeps_full_support_requirement_in_the_marked_halo(monk
     data['context']['cases'] = [dict(family='regional', target='shape.vtk', outcome='better')]*2
     data['regional_capture'] = dict(original_to_fit_p95=.03)
     data['current'].metrics = dict(attachment_comparison=dict(subjects={
-        'shape.vtk': dict(regional_quality=dict(local_improved=True, outside_preserved=True,
+        'shape.vtk': dict(regional_quality=dict(
+            marked_regions=deepcopy(data['regions']),
+            local_improved=True, outside_preserved=True,
             shape_preserved=True, active_surface=[dict(original_to_fit_p95=.03)]))}))
     result = regional_pilot.proposal(None, 'x', data, symptom='detail')
     assert result['regional_recipe']['residual']
@@ -443,6 +455,7 @@ def test_reached_marked_detail_recovers_remaining_surface_without_discarding_fie
     data['context']['cases'] = [dict(family='regional', target='shape.vtk', outcome='better')]*3
     data['current'].metrics = dict(attachment_comparison=dict(subjects={
         'shape.vtk': dict(repeats=[dict(p95=.04, regional_tail=.2)], regional_quality=dict(
+            marked_regions=deepcopy(data['regions']),
             numerical_selection_suitable=True, outside_preserved=True, shape_preserved=True,
             outside_displacement_p95=.0001, outside_position_limit=.005,
             active_surface=[dict(original_to_fit_p95=.004, fit_to_original_p95=.004)]))}))
@@ -555,7 +568,9 @@ def test_surface_noise_change_does_not_redefine_physical_preservation_limits(mon
     data['regional_capture'] = dict(original_to_fit_p95=.02)
     data['current_reference']['values'] = dict(data['current_reference']['values'], noise_std=.01)
     data['current'].metrics = dict(attachment_comparison=dict(subjects={'shape.vtk':
-        dict(regional_quality=dict(outside_preserved=True, shape_preserved=True,
+        dict(regional_quality=dict(
+            marked_regions=deepcopy(data['regions']),
+            outside_preserved=True, shape_preserved=True,
             active_surface=[dict(original_to_fit_p95=.02)]))}))
     recipe = regional_pilot.proposal(None, 'x', data, symptom='detail')['regional_recipe']
     for key in ('protection_close_distance', 'protection_tolerance', 'protection_halo'):

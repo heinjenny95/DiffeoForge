@@ -1,3 +1,11 @@
+# Development continuity — dev172 changed-mark capture repair
+
+New/changed problem marks no longer inherit improvement measured on older marks
+when selecting a regional proposal. The freshly bound capture measurement guides
+the next hypothesis and the saved field remains retained. Existing trials and
+reviews remain unchanged. See [behavior and limits](PILOT_MARK_SCOPE.md).
+Source verification passed; package and installation records follow separately.
+
 # Development continuity — dev171 suitable-fit continuation
 
 An approved protected local fit now offers an explicit, field-preserving route to

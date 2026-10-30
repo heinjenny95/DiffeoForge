@@ -159,9 +159,12 @@ def reviewed_proposal(monkeypatch, *, previous_symptom="detail", trusted=True):
     data, info, numerical = fixture()
     values = dict(attachment_kernel_width=.09, deformation_kernel_width=.36,
                   initial_control_point_spacing=.54, noise_std=.02)
-    anchor = dict(target="sample.vtk", method="current", values=values, candidate_id="before")
+    anchor = dict(directory="synthetic-singleton", target="sample.vtk", method="current",
+                  values=values, candidate_id="before")
     data.update(anchor=anchor, current_reference=dict(anchor, candidate_id="trial"),
-                regional_capture=dict(original_to_fit_p95=.10))
+                regional_capture=dict(original_to_fit_p95=.10),
+                references={anchor['directory']: SimpleNamespace(
+                    plan=SimpleNamespace(pilot_subject_count=1))})
     recipe = dict(phase="initial_warm", symptom=previous_symptom, focus_width=.06,
                   focus_noise=.006, protection_noise=.02, protection_halo=.36,
                   protection_close_distance=.01, protection_tolerance=.005)

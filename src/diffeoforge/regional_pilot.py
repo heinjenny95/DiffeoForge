@@ -47,6 +47,14 @@ def verify(root, manifest, record):
         raise ValueError("Regional fitting recipe changed")
 
 
+def _quality_for_regions(candidate, target, regions):
+    quality = ((candidate.metrics or {}).get('attachment_comparison', {})
+               .get('subjects', {}).get(target, {}).get('regional_quality') or {})
+    # Reaching the old patch says nothing about a newly marked missing surface.
+    # Keep the saved field, but use freshly measured capture for changed marks.
+    return quality if quality.get('marked_regions') == regions else {}
+
+
 def proposal(snapshot, identifier, data, *, symptom=None):
     from diffeoforge import reference_guided_pilot as guided
     from diffeoforge.regional_continuation import proposal as numerical_proposal
@@ -79,13 +87,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     level = len(cases)
     seed = reference
     feedback = (data["context"].get("feedback", {}).get(identifier) or {}).get("feedback") or {}
-    quality = (
-        (data["current"].metrics or {})
-        .get("attachment_comparison", {})
-        .get("subjects", {})
-        .get(reference["target"], {})
-        .get("regional_quality", {})
-    )
+    quality = _quality_for_regions(data['current'], reference['target'], marked)
     previous_recipe = (info.get('strategy') or {}).get('regional_recipe') or {}
     retry_global = None
     retained_surface = None
@@ -103,7 +105,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
                        .get('subjects', {}).get(reference['target'], {}))
         old_tail = max((r['p95'] for r in row.get('repeats', [])), default=0)
         new_tail = max((r['p95'] for r in current_row.get('repeats', [])), default=0)
-        trusted = row.get('regional_quality') or {}
+        trusted = _quality_for_regions(candidate, reference['target'], marked)
         if (trusted.get('numerical_selection_suitable')
                 and trusted.get('marked_regions') == marked
                 and (feedback['outcome'] == 'worse'
