@@ -636,6 +636,11 @@ def _prepare_stage(
         from diffeoforge.reference_finite_accepted_guard import mark_new_configuration
 
         mark_new_configuration(config)
+        from diffeoforge.regional_continuation import marker as numerical_successor
+        from diffeoforge.regional_coordinates import prepare_new as prepare_coordinates
+
+        prepare_coordinates(config, candidate_directory,
+            same_objective=bool(numerical_successor(manifest.get('attachment_comparison') or {})))
         config_path = candidate_directory / "atlas.yaml"
         _write_yaml(config_path, config, overwrite=False)
         records.append(
@@ -3185,9 +3190,9 @@ def _calibration_report_html(report: Mapping[str, object]) -> str:
         stability_summary = (
             "Metric-weight support: "
             + ("not available" if weight_stability is None else f"{float(weight_stability):.1%}")
-            + " · Subject-resampling support: "
+            + " Â· Subject-resampling support: "
             + ("not available" if subject_stability is None else f"{float(subject_stability):.1%}")
-            + " · Score separation: "
+            + " Â· Score separation: "
             + ("not available" if score_margin is None else f"{float(score_margin):.4f}")
         )
         flags = "".join(f"<li>{html.escape(str(flag))}</li>" for flag in item["sensitivity_flags"])
@@ -3506,7 +3511,7 @@ def _record_reference_calibration_stage_selection(
     ):
         raise ReferenceCalibrationStudyError(
             "Provisional selection requires a complete, valid, visually approved joint fit "
-            "stopped only at the iteration limit in stages 1–3. Other evidence failures "
+            "stopped only at the iteration limit in stages 1â€“3. Other evidence failures "
             "and stage 4 cannot be bypassed."
         )
     if not selected_assessment.eligible and not provisional and not final_completion:

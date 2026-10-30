@@ -6,6 +6,7 @@ rendered bytes. Native finite objective/gradient/line-search values are untouche
 
 import hashlib
 import json
+from pathlib import Path
 
 from diffeoforge.config import ConfigurationError
 from diffeoforge.reference_guard_assets import C5_SOURCE, RUNTIME_PROFILE, RUNTIME_SOURCE
@@ -22,7 +23,9 @@ def declaration(config):
 def clear_runtime_markers(config):
     """Remove the complete regional runtime contract from a cohort staging config."""
     provenance = config.get("project", {}).get("parameter_provenance", {})
-    for name in ("finite_accepted_guard", "pilot_review", "surface_gather"):
+    for name in (
+        "finite_accepted_guard", "pilot_review", "surface_gather", "regional_conditioning",
+    ):
         provenance.pop(name, None)
 
 
@@ -60,7 +63,9 @@ def extend_engine_files(config, subject_count, rendered):
     entry = declaration(config)
     if entry is None:
         provenance = config.get("project", {}).get("parameter_provenance", {})
-        if provenance.get("pilot_review") or provenance.get("surface_gather"):
+        if any(provenance.get(k) for k in (
+            "pilot_review", "surface_gather", "regional_conditioning",
+        )):
             raise ConfigurationError(
                 "Review/surface indexing requires the regional finite accepted guard"
             )
@@ -111,10 +116,42 @@ def extend_engine_files(config, subject_count, rendered):
         policy["surface_gather"] = dict(
             declaration=dict(GATHER), sha256=hashlib.sha256(GATHER_SOURCE).hexdigest()
         )
+    coordinates = config['project'].get('parameter_provenance', {}).get('regional_conditioning')
+    if coordinates:
+        policy['coordinates'] = dict(coordinates,
+            physical_gradient_stopping='coordinate_gtol=physical_gtol*lambda_min/sqrt(3N)',
+            native_objective_and_gradient_unchanged=True)
     result["guard-policy.json"] = (
         json.dumps(policy, sort_keys=True, indent=2, allow_nan=False) + "\n"
     ).encode()
     body += "\nfrom pathlib import Path as _df_guard_Path\n"
+    conditioning = config['project'].get('parameter_provenance', {}).get('regional_conditioning')
+    if conditioning:
+        from diffeoforge.regional_coordinate_assets import SOURCE as CONDITION_SOURCE
+        from diffeoforge.regional_coordinates import validate
+
+        validate(config)
+        source = Path(conditioning['matrix'])
+        payload = source.read_bytes()
+        if hashlib.sha256(payload).hexdigest() != conditioning['sha256']:
+            raise ConfigurationError('Conditioning matrix identity changed')
+        result['linear_conditioning.py'] = CONDITION_SOURCE
+        result['conditioning.npy'] = payload
+        body += "from linear_conditioning import bind as _df_condition_bind\n"
+        body += "from deformetrica.core.estimators import scipy_optimize as _df_condition_native\n"
+        body += (
+            "if (_df_condition_native.minimize is not _df_message_compat\n"
+            "        and _df_condition_native.minimize is not _df_minimize):\n"
+            "    raise ValueError('Unexpected pre-conditioning native alias')\n"
+            "_df_message_compat = _df_condition_bind(\n"
+            "    _df_message_compat,\n"
+            "    _df_guard_Path(__file__).resolve().parent / 'conditioning.npy',\n"
+            + "    " + repr(conditioning['sha256']) + ",\n"
+            "    trace_path=_df_guard_Path(__file__).resolve().parent.parent\n"
+            "        / 'logs/conditioning-receipt.json')\n"
+        )
+        body += "_df_scipy.minimize = _df_message_compat\n"
+        body += "_df_condition_native.minimize = _df_message_compat\n"
     body += "import finite_accepted_guard as _df_guard\n"
     body += "from regional_guard_runtime import install as _df_guard_install\n"
     body += (

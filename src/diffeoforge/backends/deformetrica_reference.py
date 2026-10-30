@@ -318,7 +318,7 @@ def generate_engine_files(
         paths.append(adapter)
     for name in ("finite_accepted_guard.py", "regional_guard_runtime.py", "cpu_surface_gather.py",
                  "guard-policy.json",
-                 "pilot_review_runtime.py"):
+                 "pilot_review_runtime.py", "linear_conditioning.py", "conditioning.npy"):
         if name in rendered:
             asset = engine_directory / name
             asset.write_bytes(rendered[name])

@@ -1,6 +1,18 @@
+# Development continuity — protected regional optimizer coordinates
+
+New frozen regional plans with explicit fixed patches prepare a hash-bound
+positive coordinate map. Native physical f/g, accepted states, callbacks and
+mathematical guard sources are retained; physical gradient stopping is
+conservatively scaled and ftol/budgets/bounds stay unchanged. Ordinary cohort
+staging clears the marker; historical plans and numerical extensions preserve
+their existing contract. 55 source cases pass (seven new), lint and two new
+exact-source public native cold/warm trials pass. Anatomy and prospective speed
+remain separate. See [behavior and limits](PILOT_REGIONAL_COORDINATES.md).
+Installed runtime remains dev175 pending verified delivery.
+
 # Development continuity — bounded finer field qualification
 
-Field-only RK2 evaluation can now reach1153timepoints at the unchanged1e-4
+Field-only RK2 evaluation can now reach 1153 time points at the unchanged 1e-4
 normalized temporal bound. A time correction rechecks spatial resolution and
 compares both endpoints on the final common material grid. Unresolved fields
 still fail; optimizer coefficients/budgets and historical receipts are unchanged.

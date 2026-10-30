@@ -87,6 +87,39 @@
                 "interval_seconds": {"const": 600}
               }
             },
+            "regional_conditioning": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "matrix",
+                "sha256",
+                "controls",
+                "control_points_sha256"
+              ],
+              "properties": {
+                "version": {
+                  "const": "retain-linear-coordinates-v1"
+                },
+                "matrix": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "controls": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000
+                },
+                "control_points_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
             "finite_accepted_guard": {
               "type": "object",
               "additionalProperties": false,
