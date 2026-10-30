@@ -4,7 +4,8 @@ New/changed problem marks no longer inherit improvement measured on older marks
 when selecting a regional proposal. The freshly bound capture measurement guides
 the next hypothesis and the saved field remains retained. Existing trials and
 reviews remain unchanged. See [behavior and limits](PILOT_MARK_SCOPE.md).
-Source verification passed; package and installation records follow separately.
+Runtime `610dba4` / dev172 is verified installed after exact-package,
+backup/idle and installed-byte/state checks. See the [delivery record](V172_DELIVERY.md).
 
 # Development continuity — dev171 suitable-fit continuation
 

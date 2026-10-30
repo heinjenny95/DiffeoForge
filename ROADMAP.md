@@ -2,8 +2,9 @@
 
 - [x] Bind regional proposal quality to the exact requested marks, so newly
   marked missing features keep measured capture instead of inheriting an older
-  patch's detail recommendation. Source dev172 verified; existing trials and
-  approvals retained. [Scope and limits](docs/PILOT_MARK_SCOPE.md).
+  patch's detail recommendation. dev172 verified installed; existing trials and
+  approvals retained. [Scope and limits](docs/PILOT_MARK_SCOPE.md),
+  [delivery checks](docs/V172_DELIVERY.md).
 
 Source-only owner follow-up, 27 October 2026: landmark/template guidance,
 alignment descriptions, short method help, Visualization organization,
