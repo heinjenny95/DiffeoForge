@@ -52,6 +52,21 @@ def distances_to_surface(points, vertices, faces):
     return values
 
 
+def grouped_surface_distances(groups, vertices, faces):
+    """One isolated MeshLab call for independent queries on the same full surface.
+
+    Preserve query order, samples and empty groups. The native maximum search
+    distance still exceeds the entire combined geometry's bounding diagonal;
+    batching cannot introduce a distance cutoff or substitute a vertex proxy.
+    """
+    arrays = [np.asarray(group, float).reshape(-1, 3) for group in groups]
+    counts = [len(group) for group in arrays]
+    if not sum(counts):
+        return [np.empty(0, float) for _ in arrays]
+    values = distances_to_surface(np.concatenate(arrays), vertices, faces)
+    return list(np.split(values, np.cumsum(counts)[:-1]))
+
+
 def surface_fit(first, second):
     av, af = first.vertices, first.triangles
     bv, bf = second.vertices, second.triangles

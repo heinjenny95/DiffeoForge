@@ -91,12 +91,17 @@ def measure(original, reconstruction, regions):
     Reverse distances use reconstructed samples in the same 3D sphere. An empty
     reverse sample is unknown, never a zero error or proof of correspondence.
     """
-    from diffeoforge.reference_fit_search import distances_to_surface, surface_samples
+    from diffeoforge.reference_fit_search import grouped_surface_distances, surface_samples
 
+    if not regions:
+        return []
     av, af = np.asarray(original.vertices, float), np.asarray(original.triangles, int)
     bv, bf = np.asarray(reconstruction.vertices, float), np.asarray(reconstruction.triangles, int)
     diagonal = float(np.linalg.norm(np.ptp(av, axis=0)))
     result = []
+    seeds = (20261022, 20261023)
+    reverse_samples = {seed: surface_samples(bv, bf, 8192, seed=seed) for seed in seeds}
+    forward_groups, reverse_groups = [], []
     for row in regions:
         from diffeoforge.regional_fit import mask as region_mask
 
@@ -104,25 +109,29 @@ def measure(original, reconstruction, regions):
         if not chosen.any():
             raise ValueError("The marked brush contains no original face centres; enlarge it")
         repeats = []
-        for seed in (20261022, 20261023):
+        for seed in seeds:
             points = surface_samples(av, af[chosen], 2048, seed=seed)
-            distances = distances_to_surface(points, bv, bf)
-            reverse = surface_samples(bv, bf, 8192, seed=seed)
+            reverse = reverse_samples[seed]
             reverse = reverse[region_mask(reverse, [row])]
-            back = distances_to_surface(reverse, av, af) if len(reverse) else None
+            forward_groups.append(points)
+            reverse_groups.append(reverse)
             repeats.append(
                 dict(
-                    original_to_fit_p95=float(np.quantile(distances, 0.95)),
-                    original_to_fit_mean=float(np.mean(distances)),
-                    original_to_fit_p99=float(np.quantile(distances, 0.99)),
-                    fit_to_original_p95=float(np.quantile(back, 0.95))
-                    if back is not None
-                    else None,
                     reverse_count=len(reverse),
                 )
             )
         result.append(
             dict(region=row, selected_faces=int(chosen.sum()), diagonal=diagonal, repeats=repeats)
+        )
+    forward = grouped_surface_distances(forward_groups, bv, bf)
+    reverse = grouped_surface_distances(reverse_groups, av, af)
+    repeats = [repeat for row in result for repeat in row["repeats"]]
+    for repeat, distances, back in zip(repeats, forward, reverse, strict=True):
+        repeat.update(
+            original_to_fit_p95=float(np.quantile(distances, 0.95)),
+            original_to_fit_mean=float(np.mean(distances)),
+            original_to_fit_p99=float(np.quantile(distances, 0.99)),
+            fit_to_original_p95=float(np.quantile(back, 0.95)) if len(back) else None,
         )
     return result
 

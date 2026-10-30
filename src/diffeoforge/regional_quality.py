@@ -11,7 +11,7 @@ from diffeoforge.regional_frame import TEMPORAL_COUNTS, TEMPORAL_TOLERANCE
 
 
 def _distances(target, target_faces, fitted, fitted_faces, areas):
-    from diffeoforge.reference_fit_search import distances_to_surface, surface_samples
+    from diffeoforge.reference_fit_search import grouped_surface_distances, surface_samples
 
     rows = []
     a = target_faces[mask(target[target_faces].mean(1), areas)]
@@ -24,9 +24,12 @@ def _distances(target, target_faces, fitted, fitted_faces, areas):
         centre = target[a].mean(axis=(0, 1))
         nearest = np.argmin(np.linalg.norm(fitted[fitted_faces].mean(1) - centre, axis=1))
         b = fitted_faces[[nearest]]
-    for seed in (2026102901, 2026102902):
-        x = distances_to_surface(surface_samples(target, a, 2048, seed=seed), fitted, fitted_faces)
-        y = distances_to_surface(surface_samples(fitted, b, 2048, seed=seed), target, target_faces)
+    seeds = (2026102901, 2026102902)
+    forward = grouped_surface_distances(
+        [surface_samples(target, a, 2048, seed=seed) for seed in seeds], fitted, fitted_faces)
+    reverse = grouped_surface_distances(
+        [surface_samples(fitted, b, 2048, seed=seed) for seed in seeds], target, target_faces)
+    for x, y in zip(forward, reverse, strict=True):
         rows.append(
             dict(
                 original_to_fit_mean=float(x.mean()),

@@ -1,3 +1,12 @@
+# Development continuity — batched marked-area QC, source implementation
+
+Independent query groups on the same full surface now share one isolated MeshLab
+call. Sampling, seeds, direction/repeat metrics and accuracy bounds are unchanged;
+empty reverse queries remain unknown. 29 targeted source/native-worker cases
+(four new) and a private read-only old/new metric-identity check pass. This reduces
+checking overhead, not optimization effort. See [behavior and verification](PILOT_QC_BATCHING.md).
+Installed runtime remains dev175 pending the next tested delivery.
+
 # Development continuity — Retain source binding, source implementation
 
 Retain instructions now resolve to their inspected numerical source independently
