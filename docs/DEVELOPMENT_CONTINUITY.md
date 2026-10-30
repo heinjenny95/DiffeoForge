@@ -5,7 +5,8 @@ route that binds its complete saved field. Multiple original-surface points can
 be edited in one session with independent improve/retain instructions. Historical
 fits/reviews remain intact; old failed results remain searchable comparisons.
 See [behavior, verification and limits](PILOT_WORKING_FIT_AND_AREAS.md).
-Source implementation is complete; package/installation verification follows.
+Runtime `e3b3a59` / dev173 is verified installed after exact-package,
+backup/idle and installed-byte/state checks. See the [delivery record](V173_DELIVERY.md).
 No owner trial has been prepared or started. Drive distribution remains separate.
 
 # Development continuity — dev172 changed-mark capture repair

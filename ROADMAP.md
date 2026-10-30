@@ -2,8 +2,9 @@
 
 - [x] Make an earlier selected fit a visible working source, bind next preparation
   to its complete field, and edit multiple independently instructed surface areas
-  in one session. Source dev173; package/installation checks pending.
-  [Behavior and limits](docs/PILOT_WORKING_FIT_AND_AREAS.md).
+  in one session. dev173 verified installed after exact-package and backup/idle checks.
+  [Behavior and limits](docs/PILOT_WORKING_FIT_AND_AREAS.md),
+  [delivery checks](docs/V173_DELIVERY.md).
 
 - [x] Bind regional proposal quality to the exact requested marks, so newly
   marked missing features keep measured capture instead of inheriting an older
