@@ -108,6 +108,11 @@ def local_strategy_reference(snapshot, role):
 
 def selection(snapshot, identifier):
     """Latest explicit preference wins; no geometry metric invents a human preference."""
+    from diffeoforge.retained_mark_source import context as retained_context
+
+    retention = retained_context(snapshot, identifier)
+    if retention and retention["available"] and retention["automatic_start_allowed"]:
+        return retention["reference"]
     for event in reversed(study._load_events(snapshot.study_directory)):
         if (event["event"] == "guided_joint_starting_fit_selected"
                 and event["current"]["candidate_id"] == identifier):
@@ -181,10 +186,12 @@ def presentation(snapshot, identifier):
         explicitly_selected = any(e["event"] == "guided_starting_fit_selected"
                                   for e in study._load_events(snapshot.study_directory))
         from diffeoforge.guided_accepted_fit import rejected_joint
+        from diffeoforge.retained_mark_source import context as retained_context
 
         joint_blocked = rejected_joint(snapshot, selected) if selected and any(
             row["reference"] == selected and row["approved"] for row in rows) else None
         return dict(choices=rows, comparison=comparison, selected=selected,
+                    retention_context=retained_context(snapshot, identifier),
                     joint_blocked=joint_blocked,
                     current_inspected=bool(current and inspected(snapshot, identifier)),
                     feedback=feedback[-1] if feedback else None,

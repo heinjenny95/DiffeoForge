@@ -21,6 +21,9 @@ def inputs(snapshot, identifier, context, *, regions_override=None, allow_contin
     current = _candidate(snapshot, identifier, allow_unreviewed=bool(anchor))
     target = _target(snapshot, identifier)
     marked = regions(snapshot, identifier, target) if regions_override is None else regions_override
+    from diffeoforge.retained_mark_source import context as retained_context
+
+    retention = retained_context(snapshot, identifier, rows=marked)
     if regions_override is not None:
         from diffeoforge.pilot_regions import validate
 
@@ -59,6 +62,7 @@ def inputs(snapshot, identifier, context, *, regions_override=None, allow_contin
             [r for r in marked if r.get('purpose', 'problem') == 'problem'])
     verified = dict(anchor=anchor, baseline=baseline, current=current, target=target,
                 regions=marked,
+                retention_context=retention,
                 current_reference=current_reference,
                 severe=severe_regression(snapshot, identifier), references=references,
                 context=context, response_cases=response_cases, response_evidence=response_evidence,

@@ -308,6 +308,8 @@ def _proposal(snapshot, identifier, data):
     feedback = (data["context"].get("feedback", {}).get(identifier) or {}).get("feedback") or {}
     previous_marks = (info.get("feedback") or {}).get("regions")
     marks = data["regions"]
+    from diffeoforge.retained_mark_source import current_is_bound
+
     if (
         not recipe
         or not ref
@@ -317,6 +319,7 @@ def _proposal(snapshot, identifier, data):
         or not iteration_limited(current)
         or not marks
         or previous_marks != marks
+        or not current_is_bound(data)
     ):
         return None
     # Historical unguarded runs need no field import or mesh-derived report work
@@ -412,6 +415,7 @@ def _preview_binding(snapshot, identifier, data):
             recipe=(info.get("strategy") or {}).get("regional_recipe"),
             previous_marks=info.get("feedback"),
             suitable=getattr(snapshot, "visual_reviews", {}).get(identifier),
+            retention_context=data.get("retention_context"),
         )
     )
 

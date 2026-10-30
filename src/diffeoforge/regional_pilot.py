@@ -89,11 +89,15 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     feedback = (data["context"].get("feedback", {}).get(identifier) or {}).get("feedback") or {}
     quality = _quality_for_regions(data['current'], reference['target'], marked)
     previous_recipe = (info.get('strategy') or {}).get('regional_recipe') or {}
+    from diffeoforge.retained_mark_source import current_is_bound
+
+    same_retained_source = current_is_bound(data)
     retry_global = None
     retained_surface = None
     if (previous_recipe.get('phase') == 'whole_recovery'
             and feedback.get('outcome') in {'same', 'worse'}
-            and reference != data['current_reference'] and data['current_reference']):
+            and reference != data['current_reference'] and data['current_reference']
+            and same_retained_source):
         from diffeoforge.guided_feedback import verify_reference
 
         retained = verify_reference(reference)
@@ -129,6 +133,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         info.get("goal") == "regional"
         and not retry_global
         and data["current_reference"]
+        and same_retained_source
         and quality.get("outside_preserved")
         and quality.get("shape_preserved")
         and quality.get("no_new_intersection_flags", True)
@@ -143,6 +148,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     problem, guides, _fixed = split_regions(marked)
     available = bool(problem and reference)
     blocked = "Mark the problem area before preparing a protected local test."
+    retention = data.get("retention_context")
     if symptom in {"alignment", "topology", "view"}:
         available = False
         blocked = {
@@ -212,6 +218,10 @@ def proposal(snapshot, identifier, data, *, symptom=None):
                                     and r['target'] == reference['target']
                                     and r.get('regions', marked) == marked
                                     for r in data['context']['cases']))
+    if data.get("retention_context") and not same_retained_source:
+        # An older contrast cannot silently replace the newly resolved Retain
+        # source merely because the same target/mark geometry was tested there.
+        coarse_other = False
     finer = bool(evidence and previous_recipe.get('focus_width')
                  and recipe['focus_width'] < previous_recipe['focus_width']*.8)
     method = reference['method']
@@ -475,6 +485,9 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         blocked = ("This joint fit cannot be reused as a protected single-form field. "
                    "Return to the accepted single-form fit above, or inspect and choose "
                    "a compatible earlier single-form fit. No fresh restart is prepared.")
+    if retention and (not retention["available"] or not retention["automatic_start_allowed"]):
+        available = False
+        blocked = retention["reason"]
     return dict(
         goal="regional",
         title=("Improve remaining areas while retaining local detail" if recovery else

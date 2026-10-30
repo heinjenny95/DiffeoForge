@@ -117,6 +117,13 @@ def render_starting_fits(window, snapshot, identifier, layout, data):
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
 
     selected = data["selected"]
+    retention = data.get("retention_context")
+    if retention:
+        note = QLabel(retention["reason"])
+        note.setWordWrap(True)
+        note.setObjectName("status" if retention["available"]
+                           and retention["automatic_start_allowed"] else "statusWarning")
+        layout.addWidget(note)
     selection = next((r for r in data["choices"] if r["reference"] == selected), None)
     feedback = data.get("feedback")
     if feedback and feedback["outcome"] in {"worse", "same", "unsure"}:

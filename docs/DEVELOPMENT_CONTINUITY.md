@@ -1,3 +1,15 @@
+# Development continuity — Retain source binding, source implementation
+
+Retain instructions now resolve to their inspected numerical source independently
+of a whole-fit fallback. Explicit working-fit choices take precedence; mixed or
+unconfirmed sources have an actionable working-fit route. Newer seeds and
+same-objective continuation cannot substitute an objective protecting a different
+saved field. Existing journals and approvals remain unchanged. 97 targeted source
+cases pass (nine new reference/escape cases), lint and read-only real-history/UI
+checks pass. Separate bounded development trials continue; they do not yet
+qualify a new automatic fitting recipe. Installed runtime remains dev175 until a
+subsequent verified delivery. See [Retain behavior and limits](PILOT_RETAIN_AREAS.md).
+
 # Development continuity — dev175 explicit Retain-area repair
 
 New fixed-position areas receive dense material-vertex constraints with a separate

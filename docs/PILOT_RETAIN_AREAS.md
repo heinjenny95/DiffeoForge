@@ -22,6 +22,21 @@ shape, splice two independently fitted fields together or approve anatomy.
 The chosen starting fit is displayed in the working-fit card. To restore a
 projection from an earlier state, that inspected saved fit remains selectable.
 
+New feedback reading also follows each Retain mark back to the inspected saved
+fit where it was introduced. A whole-fit fallback caused by an outside-quality
+regression must not silently change that local reference. A Better decision can
+identify the numerical source without creating anatomical approval. Retain marks
+introduced on a nonpreferred whole fit require an explicit working-fit choice;
+the software does not automatically reuse a known bad whole field. Inherited
+marks keep their source when a later attempt is judged worse. A newer explicit
+working-fit choice takes precedence. Marks referring to several different fields
+require one working fit and confirmation together, rather than field splicing.
+The working-fit card explains this choice and retains its direct inspection/edit
+action. Same-objective continuation and reuse of a newer seed must bind the same
+retained run and its manifest; a legacy objective protecting an older fallback is
+not treated as equivalent. Existing journals, approvals and saved fields are read
+without rewriting them.
+
 The post-check now uses maximum displacement over the whole retained patch,
 including the refined material grid, instead of checking only the old sampled
 ids. Intermediate review also checks the retained vertices and prominently reports
