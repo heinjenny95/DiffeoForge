@@ -244,11 +244,14 @@ def test_original_source_grid_is_bound_and_staged_with_residual(tmp_path):
         read_plan(config)
 
 
-@pytest.mark.parametrize("symptom", ["detail", "curvature"])
+@pytest.mark.parametrize("symptom", ["detail", "curvature", "unsupported_detail"])
 def test_real_pilot_transition_stages_regional_assets_without_launching(
     tmp_path, monkeypatch, symptom
 ):
     import shutil
+
+    unsupported = symptom == 'unsupported_detail'
+    symptom = 'detail' if unsupported else symptom
 
     from test_guided_pilot import run_batch
     from test_interactive_pilot import initial
@@ -313,13 +316,19 @@ def test_real_pilot_transition_stages_regional_assets_without_launching(
             field_paths=dict(control_points=str(controls), momenta=str(momenta)),
             controls_sha256=sha256_file(controls), momenta_sha256=sha256_file(momenta))
     monkeypatch.setattr(regional_frame, "qualify", qualified_frame)
+    if unsupported:
+        from diffeoforge import regional_warm_support
+
+        monkeypatch.setattr(regional_warm_support, 'assess', lambda *a, **k: dict(
+            version='warm-material-support-v1', passed=False,
+            material_vertices=8, maximum=.3, declared_bound=.04))
     protected = {p: sha256_file(p) for p in base.study_directory.rglob("*") if p.is_file()}
     child = guided.next_action(
         base.study_directory, "adaptive_recover", "guided-varifold", goal="regional:" + symptom
     )
     config = load_config(child.candidates[0].config_path)
     plan = read_plan(config)
-    expected = "learned"
+    expected = "residual" if unsupported else "learned"
     assert child.attachment_comparison["refinement"]["initialization"] == expected
     assert plan["retained_reference"] and len(plan["objects"]) == 2
     assert config["optimization"]["method"] == "lbfgs"
@@ -338,6 +347,7 @@ def test_real_pilot_transition_stages_regional_assets_without_launching(
     verify_prepared_run(prepared)
     assert (prepared / "input/regional/plan.json").is_file()
     if expected == "residual":
+        assert not plan['warm_source_support']['passed']
         assert plan["residual"]["inherited_fields_unchanged"]
         assert "initial_momenta" not in config["model"]["deformation"]
         model = ET.parse(prepared / "engine/model.xml")

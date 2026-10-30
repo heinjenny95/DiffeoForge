@@ -8,7 +8,7 @@ def capture(snapshot, reference, regions):
                      if c.candidate_id == reference['candidate_id'])
     quality = ((candidate.metrics or {}).get('attachment_comparison', {})
                .get('subjects', {}).get(reference['target'], {}).get('regional_quality', {}))
-    if quality and regions == quality.get('marked_regions'):
+    if quality and regions == quality.get('surface_regions', quality.get('marked_regions')):
         rows = quality['active_surface']
     else:
         from diffeoforge.pilot_recovery import capture as measure

@@ -657,6 +657,36 @@ def bind(root, manifest, record):
         automatic_evaluation = qualify(seed_run, root / 'automatic-seed-qualification',
                                        source=original['path'] if original else None)
     verify_source(automatic_evaluation)
+    from diffeoforge.regional_warm_support import assess as assess_warm_support
+
+    support = assess_warm_support(
+        root, record, residual, fit_source, automatic_evaluation['endpoint']['path'],
+        retained, root / target['copy'], problem, fixed, guide_noise=recipe['guide_noise'])
+    if support and not support['passed']:
+        # Keep the old coefficients on their own basis as a complete prefix;
+        # adding controls to that nonzero field in place is not a warm restart.
+        from diffeoforge.regional_residual import bind as bind_supported_residual
+
+        recipe = dict(recipe, residual=True, phase='detail',
+                      control_support='source-target-coverage-v1',
+                      warm_support_response=support)
+        guided = dict(record['guided'])
+        strategy = dict(guided['strategy'], regional_recipe=recipe, initialization='residual')
+        strategy['reason'] = strategy.get('reason', '') + (
+            ' The saved controls do not reach this marked material at their declared scale. '
+            'Keep the saved fit and prepare a supported local correction.')
+        guided['strategy'] = strategy
+        record = bind_supported_residual(root, manifest, dict(record, guided=guided), recipe)
+        residual = record['refinement']['residual']
+        fit_source = root / residual['source']['copy']
+        automatic_evaluation = record['refinement']['parent_evaluation']
+        verify_source(automatic_evaluation)
+        original = automatic_evaluation['reference_source']
+        if original['sha256'] != anchor_evaluation['reference_source']['sha256']:
+            anchor_evaluation = qualify(run, root / 'supported-retain-frame',
+                                       source=original['path'])
+            verify_source(anchor_evaluation)
+            retained = anchor_evaluation['endpoint']['path']
     declaration = prepare(
         root / "regional-objective",
         fit_source,
@@ -680,9 +710,12 @@ def bind(root, manifest, record):
 
     path = Path(declaration["manifest"])
     data = json.loads(path.read_text())
+    data['instruction_regions'] = regions
     data["retained_run"] = dict(path=str(run), manifest_sha256=sha256_file(run / "manifest.json"))
     data['automatic_reference_run'] = dict(path=str(seed_run),
         manifest_sha256=sha256_file(seed_run / 'manifest.json'))
+    if support:
+        data['warm_source_support'] = support
     data["numerical_protocol"] = dict(
         version="regional-rk2-v1", integration="rk2",
         minimum_native_timepoints=MINIMUM_NEW_NATIVE_TIMEPOINTS,

@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from diffeoforge.mesh import sha256_file
-from diffeoforge.regional_fit import _components, mask, read_plan
+from diffeoforge.regional_fit import _components, instruction_regions, mask, read_plan
 from diffeoforge.regional_frame import TEMPORAL_COUNTS, TEMPORAL_TOLERANCE
 
 
@@ -191,7 +191,8 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None,
         explicit_fixed_preserved=bool(fixed_preserved),
         fixed_protection=fixed_check,
         previously_good_surface=preserved_surface,
-        marked_regions=plan['focus_regions'],
+        marked_regions=instruction_regions(plan),
+        surface_regions=plan['focus_regions'],
         shape=shape_rows,
         shape_preserved=bool(preserved),
         no_new_intersection_flags=not len(new_flags),

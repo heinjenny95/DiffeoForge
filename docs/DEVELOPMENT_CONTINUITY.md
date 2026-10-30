@@ -1,3 +1,15 @@
+# Development continuity — warm material support and full instruction scope
+
+New preparation detects when a declared local warm basis misses newly selected
+material and preserves that complete field through the supported zero-residual
+route. Incoming coordinates/controls stay aligned; legacy and same-objective
+contracts keep their old path. Quality records retain all instructions, including
+Retain, independently of measured surface scope, enabling valid next-stage reuse.
+88 support/preparation cases and 69 overlapping scope/recovery cases pass (eight
+new overall), lint passes. A new private residual trial passes full numerical
+qualification; anatomy remains pending. See [behavior and limits](PILOT_WARM_MATERIAL_SUPPORT.md).
+Installed runtime remains dev175 pending verified delivery.
+
 # Development continuity — protected regional optimizer coordinates
 
 New frozen regional plans with explicit fixed patches prepare a hash-bound

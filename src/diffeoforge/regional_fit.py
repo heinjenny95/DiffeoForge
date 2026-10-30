@@ -221,6 +221,18 @@ def mask(vertices, regions, *, halo=0.0):
     return selected
 
 
+def instruction_regions(plan):
+    """Full feedback provenance includes fixed/shape instructions, not only fit terms."""
+    if 'instruction_regions' in plan:
+        return plan['instruction_regions']
+    rows = []
+    for row in [*plan.get('focus_regions', []), *plan.get('regions', []),
+                *(dict(r, purpose='fixed') for r in plan.get('fixed_regions', []))]:
+        if row not in rows:
+            rows.append(row)
+    return rows
+
+
 def _save(path, vertices, faces=None):
     import numpy as np
     import vtk

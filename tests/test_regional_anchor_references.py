@@ -61,3 +61,36 @@ def test_automatic_reference_is_staged_and_immutable(tmp_path):
         stream.write('changed')
     with pytest.raises(ValueError, match='Automatic preservation reference changed'):
         read_plan(config)
+
+
+def test_fixed_instruction_stays_in_quality_scope_for_reuse_and_changed_marks_fail(
+    tmp_path, monkeypatch,
+):
+    from copy import deepcopy
+    from types import SimpleNamespace
+
+    from diffeoforge.regional_pilot import _quality_for_regions
+    from diffeoforge.regional_search import capture
+
+    config, _, target, _, faces = setup(tmp_path)
+    plan = read_plan(config)
+    _save(tmp_path/'ready.vtk', target, faces)
+    q = measure(config, tmp_path/'ready.vtk')
+    marks = [*plan['focus_regions'], *plan['fixed_regions']]
+    candidate = SimpleNamespace(candidate_id='local', metrics=dict(
+        attachment_comparison=dict(subjects={'target.vtk': dict(regional_quality=q)})))
+    assert q['marked_regions'] == marks and q['surface_regions'] == plan['focus_regions']
+    assert _quality_for_regions(candidate, 'target.vtk', marks) is q
+    changed = deepcopy(marks)
+    changed[-1]['radius'] *= 1.1
+    assert not _quality_for_regions(candidate, 'target.vtk', changed)
+    from diffeoforge import pilot_recovery
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError('Unchanged problem surfaces should reuse their measured capture')
+
+    monkeypatch.setattr(pilot_recovery, 'capture', unexpected)
+    result = capture(SimpleNamespace(candidates=[candidate]),
+                     dict(candidate_id='local', target='target.vtk'), plan['focus_regions'])
+    expected = max(r['original_to_fit_p95'] for r in q['active_surface'])
+    assert result['original_to_fit_p95'] == expected
