@@ -11,7 +11,8 @@ def viewer(window, origin, parent, candidate, pairs, fit, context):
 
     dialog = CalibrationCandidateViewerDialog(parent.study_directory, candidate, window,
         pairs=tuple(p for p in pairs if p.required and p.original_path.name == context["target"]),
-        subject_fit=fit, read_only=True, preview_cache=origin / "display-cache")
+        subject_fit=fit, read_only=True, compact_review=True,
+        preview_cache=origin / "display-cache")
     dialog.setWindowTitle("Work from selected saved fit")
     dialog.findChild(QLabel, "title").setText("Selected starting fit · " + context["label"])
     dialog._comparison_intro.setText(

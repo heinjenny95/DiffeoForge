@@ -765,7 +765,7 @@ class _CalibrationCandidateViewerDialog(QDialog):
 
         self.decision_panel = QFrame()
         policy = self.decision_panel.sizePolicy()
-        policy.setRetainSizeWhenHidden(True)
+        policy.setRetainSizeWhenHidden(not read_only)
         self.decision_panel.setSizePolicy(policy)
         self.decision_panel.setObjectName("card")
         decision_layout = QVBoxLayout(self.decision_panel)
@@ -864,11 +864,11 @@ class _CalibrationCandidateViewerDialog(QDialog):
         root.addWidget(self.decision_panel)
         # Closing must remain possible while geometry is loading or unavailable.
         root.addWidget(self.close_button, alignment=Qt.AlignmentFlag.AlignRight)
-        if read_only:
+        if read_only and not compact_review:
             close_comparison = QPushButton("Close comparison")
             close_comparison.clicked.connect(self.reject)
             root.addWidget(close_comparison)
-        if compact_review and not read_only:
+        if compact_review:
             title.setText("Inspect fit")
             intro.setText("Orange: original · Blue: reconstruction")
             instructions_disclosure.hide()
