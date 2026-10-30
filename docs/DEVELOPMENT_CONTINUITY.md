@@ -1,3 +1,13 @@
+# Development continuity — dev175 explicit Retain-area repair (source)
+
+New fixed-position areas receive dense material-vertex constraints with a separate
+native weight. Full-patch maximum displacement is checked after fitting and at
+intermediate review, including compatible legacy previews. Existing prepared
+trials/fits remain immutable. 109 source cases and a fresh public native CPU case
+pass; package/installation qualification is pending. dev174 remains installed.
+See [behavior, scientific limits and verification](PILOT_RETAIN_AREAS.md).
+No owner fit was started or altered. No Drive upload, sideagents or NAS work.
+
 # Development continuity — dev174 individual-fit next-form route
 
 A suitable composed regional fit now has a next-animal preparation action and a

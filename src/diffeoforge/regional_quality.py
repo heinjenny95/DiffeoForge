@@ -105,9 +105,12 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None):
     displacement = np.linalg.norm(fv[ids] - expected, axis=1)
     position_limit = plan.get('protection_tolerance') or diagonal*1e-4
     outside = float(np.quantile(displacement, 0.95)) <= position_limit
-    fixed_ids = plan.get('fixed_vertex_ids', [])
-    fixed_positions = {identifier: index for index, identifier in enumerate(ids)}
-    fixed_preserved = all(displacement[fixed_positions[i]] <= diagonal*1e-4 for i in fixed_ids)
+    from diffeoforge.regional_preservation import assess
+
+    fixed_check = assess(fv, np.asarray(original.vertices, float) if retained else sv,
+                         sf, plan.get("fixed_regions", []),
+                         (plan.get("fixed_protection") or {}).get("limit", diagonal * 1e-4))
+    fixed_preserved = fixed_check["passed"]
     preserved_surface = []
     if plan.get('protection_close_distance') and retained:
         from diffeoforge.reference_fit_search import distances_to_surface, surface_samples
@@ -178,6 +181,7 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None):
         unmarked_preservation_basis=('original_surface' if preserved_surface else
                                      'material_positions'),
         explicit_fixed_preserved=bool(fixed_preserved),
+        fixed_protection=fixed_check,
         previously_good_surface=preserved_surface,
         marked_regions=plan['focus_regions'],
         shape=shape_rows,

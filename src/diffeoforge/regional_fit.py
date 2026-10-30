@@ -89,6 +89,26 @@ def read_plan(config):
                 or sha256_file(asset) != row["sha256"]
             ):
                 raise ValueError("Regional fitting geometry changed")
+    fixed = data.get("fixed_protection")
+    if fixed:
+        from diffeoforge.regional_preservation import VERSION as FIXED_VERSION
+
+        ids = data.get("fixed_vertex_ids", [])
+        obj = next((o for o in data["objects"] if o["id"] == "fixed"), None)
+        if (fixed.get("version") != FIXED_VERSION or not obj or obj["kind"] != "Landmark"
+                or len(ids) < 3 or len(set(ids)) != len(ids)
+                or any(type(i) is not int or i < 0 for i in ids)
+                or fixed.get("vertices") != len(ids)
+                or not math.isfinite(fixed.get("limit", float("nan")))
+                or fixed["limit"] <= 0 or obj["noise_std"] > fixed["limit"] / 4
+                or fixed.get("noise_std") != obj["noise_std"]
+                or fixed.get("reference_diagonal", 0) * 1e-4 != fixed["limit"]):
+            raise ValueError("Invalid explicit Retain-area protection declaration")
+        from diffeoforge.mesh import read_vtk_points
+
+        if any(len(read_vtk_points(path.parent / obj[role]["copy"])) != len(ids)
+               for role in ("source", "target")):
+            raise ValueError("Explicit Retain-area point coverage changed")
     return data
 
 
@@ -363,6 +383,14 @@ def prepare(
     ids = np.unique(
         sf[np.searchsorted(np.cumsum(area), (np.arange(1800) + 0.5) * area.sum() / 1800), 0]
     )
+    from diffeoforge.regional_preservation import VERSION as FIXED_VERSION
+    from diffeoforge.regional_preservation import vertex_ids
+
+    fixed_ids = vertex_ids(selection, sf, fixed_regions) if fixed_regions else np.array([], int)
+    for region in fixed_regions:
+        if len(vertex_ids(selection, sf, [region])) < 3:
+            raise ValueError("A Retain area has no surface patch in this starting fit. "
+                             "Choose the saved fit where that part is correct, or revise the area.")
     ids = ids[~mask(selection[ids], [*focus_regions, *inferred], halo=halo)
               | mask(selection[ids], fixed_regions)]
     if protection_close_distance is not None:
@@ -383,6 +411,17 @@ def prepare(
     objects.append(
         dict(id="protect", kind="Landmark", noise_std=protection_noise, source=a, target=b)
     )
+    fixed_protection = None
+    if len(fixed_ids):
+        limit = diagonal * 1e-4
+        fixed_noise = min(protection_noise, limit / 4)
+        objects.append(dict(id="fixed", kind="Landmark", noise_std=fixed_noise,
+            source=asset("fixed-source.vtk", sv[fixed_ids]),
+            target=asset("fixed-target.vtk", selection[fixed_ids])))
+        fixed_protection = dict(version=FIXED_VERSION, vertices=len(fixed_ids), limit=limit,
+            reference_diagonal=diagonal,
+            noise_std=fixed_noise, selection="all marked material vertices and incident faces",
+            reference="selected retained starting fit", anatomical_approval=False)
     guidance = []
     if guide_noise is not None:
         from diffeoforge.reference_fit_search import surface_samples
@@ -446,7 +485,7 @@ def prepare(
         protection_vertex_ids=ids.tolist(),
         protection_close_distance=protection_close_distance,
         protection_tolerance=protection_tolerance,
-        fixed_vertex_ids=ids[mask(selection[ids], fixed_regions)].tolist(),
+        fixed_vertex_ids=fixed_ids.tolist(),
         fixed_regions=list(fixed_regions),
         retained_reference=retained_binding,
         objects=objects,
@@ -455,6 +494,8 @@ def prepare(
         scope="Experimental single-form protected objective; renewed coverage and "
         "a compatible joint scientific protocol are required before an atlas",
     )
+    if fixed_protection:
+        data["fixed_protection"] = fixed_protection
     path = root / "regional-plan.json"
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return dict(version=VERSION, manifest=str(path.resolve()), sha256=sha256_file(path))

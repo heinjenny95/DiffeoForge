@@ -137,6 +137,23 @@ class PilotLiveReviewPanel(QFrame):
             "can remain. Finish fitting to export and check this state, or give it another "
             "10 minutes. This preview is not an approved final result."
         )
+        protection = self.bound.get("fixed_preservation")
+        if protection:
+            warning = ("Retain-area protection could not be verified at this preview. "
+                       "It has not passed the protection check."
+                       if not protection["available"] else
+                       "A marked Retain area moved beyond its allowed tolerance. "
+                       "The saved starting fit is still retained. This attempt has not "
+                       "passed protection; more iterations do not guarantee recovery."
+                       if not protection["passed"] else
+                       "The marked Retain vertices are within their declared movement "
+                       "tolerance in this preview. Inspect the complete shape as well.")
+            self.note.setText(warning + "\n\n" + self.note.text())
+            self.note.setObjectName("status" if protection["passed"] else "statusWarning")
+        else:
+            self.note.setObjectName("status")
+        self.note.style().unpolish(self.note)
+        self.note.style().polish(self.note)
         self.continue_button.setEnabled(True)
         self.finish_button.setEnabled(True)
 

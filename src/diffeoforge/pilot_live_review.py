@@ -185,6 +185,7 @@ def preview_models(bound, *, full_detail=False):
     if points.shape != (len(geometry.vertices), 3) or not np.isfinite(points).all():
         raise ValueError("Review coordinates do not match the original source topology")
     faces = np.asarray(geometry.triangles)
+    bound["fixed_preservation"] = fixed_preservation(bound, points, faces)
     proxy = (
         build_display_proxy(points, faces, budget=len(faces))
         if full_detail
@@ -205,3 +206,54 @@ def preview_models(bound, *, full_detail=False):
     return (
         load_mesh_preview(target) if full_detail else load_pilot_preview(target)
     ), reconstruction
+
+
+def fixed_preservation(bound, points, faces):
+    """Read-only endpoint protection check; never accepts or changes an optimizer state."""
+    from diffeoforge.mesh import read_vtk_points
+    from diffeoforge.regional_fit import read_plan
+    from diffeoforge.regional_preservation import assess
+    from diffeoforge.surface_io import load_surface_mesh
+
+    config = bound["manifest"].get("effective_config", {})
+    plan = read_plan(config)
+    if not plan or not plan.get("fixed_regions"):
+        return None
+    root = Path(config["project"]["parameter_provenance"]["regional_fit"]["manifest"]).parent
+    declared = plan.get("fixed_protection")
+    if declared:
+        obj = next(o for o in plan["objects"] if o["id"] == "fixed")
+        expected = np.asarray(read_vtk_points(root / obj["target"]["copy"]), float)
+        ids = plan["fixed_vertex_ids"]
+        if not ids or max(ids) >= len(points):
+            raise ValueError("Retain-area points do not match this intermediate source")
+        distances = np.linalg.norm(np.asarray(points)[ids] - expected, axis=1)
+        maximum = float(distances.max())
+        return dict(active=True, available=True, checked_vertices=len(ids),
+                    maximum=maximum, limit=declared["limit"],
+                    passed=maximum <= declared["limit"], anatomical_approval=False)
+    # Legacy plans protected a small global sample. When their full retained
+    # material mesh matches, audit the whole marked patch rather than that sample.
+    retained = plan.get("retained_reference")
+    if retained:
+        path = Path(retained["path"])
+        if sha256_file(path) != retained["sha256"]:
+            raise ValueError("Retain-area starting fit changed")
+        geometry = load_surface_mesh(path).geometry
+        reference = np.asarray(geometry.vertices, float)
+        if reference.shape == np.asarray(points).shape and np.array_equal(
+                np.asarray(geometry.triangles), faces):
+            if not bound.get("run"):
+                return dict(active=True, available=False, passed=False, anatomical_approval=False)
+            row = next(r for r in bound["manifest"]["inputs"] if r["role"] == "subject")
+            target = Path(bound["run"]) / row["staged_path"]
+            protected = {r["path"]: r["sha256"] for r in
+                         bound["manifest"]["protected_artifacts"]}
+            if (not target.resolve().is_relative_to(Path(bound["run"]).resolve())
+                    or sha256_file(target) != protected.get(row["staged_path"])):
+                raise ValueError("Retain-area check target changed")
+            target_geometry = load_surface_mesh(target).geometry
+            diagonal = float(np.linalg.norm(np.ptp(target_geometry.vertices, axis=0)))
+            result = assess(points, reference, faces, plan["fixed_regions"], diagonal * 1e-4)
+            return dict(result, available=True, legacy_objective=True)
+    return dict(active=True, available=False, passed=False, anatomical_approval=False)

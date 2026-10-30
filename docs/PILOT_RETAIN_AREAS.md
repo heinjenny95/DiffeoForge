@@ -1,0 +1,49 @@
+# Retain-area protection: dense constraints and early review checks
+
+The owner reported a fitting trade-off where two projections improved while a
+previously correct marked projection disappeared. Inspection showed that an
+explicit Retain area was represented by a few points from the automatic global
+sample and shared the soft outside-protection weight. Even those points could
+move far beyond the declared post-check bound during optimization. Navigation
+qualification did not establish geometric preservation.
+
+dev175 changes newly prepared regional trials with explicit fixed-position areas.
+Every marked retained material vertex and the vertices of incident triangles are
+included, independently of the global sample. A separate native Landmark object
+uses its own declared noise scale, at most one quarter of the unchanged movement
+bound (target diagonal times 1e-4). The global outside-protection term remains.
+Empty or unrepresented Retain patches produce an actionable starting-fit/area
+error instead of receiving a vacuous preservation pass. Assets, vertex coverage,
+reference scale, weight and bounds are hash-bound in the generated plan.
+
+Retain remains relative to the selected saved starting fit. The software does not
+infer that the latest displayed attempt is necessarily the desired protected
+shape, splice two independently fitted fields together or approve anatomy.
+The chosen starting fit is displayed in the working-fit card. To restore a
+projection from an earlier state, that inspected saved fit remains selectable.
+
+The post-check now uses maximum displacement over the whole retained patch,
+including the refined material grid, instead of checking only the old sampled
+ids. Intermediate review also checks the retained vertices and prominently reports
+violations or unavailable protection evidence. Export/check remains accessible;
+a failed protection check is not labelled passed and does not approve an atlas.
+Legacy prepared objectives and completed evidence are not rewritten. Where a
+legacy preview has the matching full retained material mesh, the new reader can
+audit its whole marked patch without rerunning an optimizer.
+
+The native optimizer and its equations are unchanged. This is a change to the
+explicit regional constraint geometry/weight, not an exact hard-constrained
+solver or a proof that every requested combination is feasible. A new result must
+still satisfy the unchanged displacement bound and geometry/integration guards.
+Iteration/time allowances, convergence tolerance and scientific approval gates
+are not relaxed. The first review remains after ten active minutes.
+
+Qualification: 109 unique source cases (eight new dense-retention/UI cases), lint,
+and a new bounded public three-part native CPU trial with one thread. With
+Float32/37-point RK2 and a 60-iteration cap, the intended part's mean vertex error
+fell from 0.2 to 0.002380439 model units. The marked part's maximum movement was
+3.891103e-5 (within its declared bound); the other unchanged part moved at most
+1.666434e-5. The native run returned zero with no numerical-guard violation. This
+is controlled engineering evidence, not prospective anatomy, speed or convergence
+qualification for an owner specimen. Owner trials were not restarted or changed.
+Packaging and installed state are tracked separately.
