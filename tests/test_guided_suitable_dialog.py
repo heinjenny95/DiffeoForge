@@ -345,3 +345,34 @@ def test_actual_compact_viewer_keeps_visual_and_numerical_gates_distinct(
     assert not panel.invoked
     viewer.close()
     panel.app.processEvents()
+
+
+def test_selected_starting_fit_has_own_working_card_and_preparation_action(panel):
+    import os
+
+    from PySide6.QtWidgets import QFrame, QLabel, QPushButton
+
+    proposal = dict(available=True, reason='Start from the selected saved deformation.',
+        title='Improve marked areas and protect the rest', initialization='residual',
+        numerical_extension=False, goal='regional', remaining_checks=5)
+    panel.guidance['working_proposals'] = {
+        panel.candidate.candidate_id: defaultdict(lambda: proposal, detail=proposal)}
+    panel.render()
+    cards = [w for w in panel.window.findChildren(QFrame) if w.property('workingFit')]
+    assert len(cards) == 1
+    assert any(w.text().startswith('Latest attempt · saved for comparison:')
+               for w in panel.window.findChildren(QLabel))
+    buttons = [b for b in cards[0].findChildren(QPushButton)
+               if b.isVisible() and 'prepare 1 trial on 1 specimen' in b.text()]
+    assert len(buttons) == 1 and buttons[0].isEnabled()
+    buttons[0].click()
+    assert panel.invoked[-1][1]['guided_action'][0] == 'adaptive_recover_start'
+    capture = os.environ.get('DF_WORKING_UI_CAPTURE')
+    if capture:
+        from diffeoforge.desktop.appearance import Appearance, themed_style
+        from diffeoforge.desktop.widgets import _STYLE
+
+        panel.window.setStyleSheet(themed_style(_STYLE, Appearance()))
+        panel.window.resize(1050, 780)
+        panel.app.processEvents()
+        assert panel.window.grab().save(capture)

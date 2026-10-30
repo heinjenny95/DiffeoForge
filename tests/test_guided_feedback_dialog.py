@@ -115,9 +115,14 @@ def test_earlier_start_is_visible_and_works_before_rating_latest_attempt(tmp_pat
         choose = next(
             b
             for b in dialog.content.findChildren(QPushButton)
-            if b.text() == "Use as starting fit" and b.isVisible()
+            if b.text() == "Work from this fit…" and b.isVisible()
         )
         queued = []
+        # This test retains the transition/repeated-click guard. The annotation
+        # viewer's settled geometry/save contract is exercised separately.
+        monkeypatch.setattr(dialog, "_open_guided_working_fit", lambda identifier, ref:
+            dialog._start_pilot(adaptive=False,
+                               guided_action=("adaptive_select_start", identifier, ref)))
         monkeypatch.setattr(dialog._thread_pool, "start", queued.append)
         for _ in range(10):
             choose.click()

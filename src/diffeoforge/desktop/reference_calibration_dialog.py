@@ -519,6 +519,7 @@ class _CalibrationCandidateViewerDialog(QDialog):
         alternative_pairs: tuple = (),
         compact_review: bool = False,
         guided_feedback_context: dict | None = None,
+        preview_cache: Path | None = None,
     ) -> None:
         super().__init__(parent)
         if candidate.run_directory is None:
@@ -527,7 +528,7 @@ class _CalibrationCandidateViewerDialog(QDialog):
         self._pairs = (
             pairs if pairs is not None else collect_calibration_qc_pairs(study_directory, candidate)
         )
-        self._preview_cache = study_directory / "display-cache"
+        self._preview_cache = preview_cache or study_directory / "display-cache"
         self.display_scopes: dict[str, str] = {}
         self._fit = dict(subject_fit or {})
         self._pairs = tuple(
@@ -1084,10 +1085,6 @@ class _CalibrationCandidateViewerDialog(QDialog):
         if index is None or not self.canvas.comparison_ready:
             return
         pair = self._pairs[int(index)]
-        if len(self.problem_regions.get(pair.original_path.name, [])) >= 8:
-            self.review_gate.setText(
-                "Eight areas already marked. Clear areas before replacing them.")
-            return
         self.review_gate.setText("Loading original detail for precise area marking…")
         self._region_loader.request_paths(pair.pair_id, (pair.original_path,),
                                           expected=(pair.original_sha256,))
@@ -1103,10 +1100,15 @@ class _CalibrationCandidateViewerDialog(QDialog):
             return
         if not self.canvas.comparison_ready or models[0].sha256 != pair.original_sha256:
             return
-        dialog = RegionFeedbackDialog(models[0], self)
-        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.region:
-            self.problem_regions.setdefault(pair.original_path.name, []).append(dialog.region)
-            self.cleared_region_subjects.discard(pair.original_path.name)
+        name = pair.original_path.name
+        dialog = RegionFeedbackDialog(models[0], self, regions=self.problem_regions.get(name, []))
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.regions is not None:
+            if dialog.regions:
+                self.problem_regions[name] = dialog.regions
+                self.cleared_region_subjects.discard(name)
+            else:
+                self.problem_regions.pop(name, None)
+                self.cleared_region_subjects.add(name)
         self._update_review_progress()
 
     def _clear_regions(self):
@@ -1118,44 +1120,7 @@ class _CalibrationCandidateViewerDialog(QDialog):
         self._update_review_progress()
 
     def _manage_regions(self):
-        from PySide6.QtWidgets import QListWidget
-
-        index = self.mesh_combo.currentData()
-        if index is None:
-            return
-        name = self._pairs[int(index)].original_path.name
-        rows = list(self.problem_regions.get(name, []))
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Marked areas for this specimen")
-        layout = QVBoxLayout(dialog)
-        listing = QListWidget()
-        from diffeoforge.pilot_regions import SYMPTOMS
-
-        def refresh():
-            listing.clear()
-            for i, row in enumerate(rows, 1):
-                listing.addItem(f"{i}. {row.get('purpose', 'problem')} · "
-                                f"{SYMPTOMS[row['symptom']]} · {row.get('shape', 'brush')}")
-        refresh()
-        layout.addWidget(listing)
-        remove = QPushButton("Remove selected area")
-        remove.clicked.connect(lambda: (rows.pop(listing.currentRow()), refresh())
-            if listing.currentRow() >= 0 else None)
-        layout.addWidget(remove)
-        save = QPushButton("Keep changes")
-        save.clicked.connect(dialog.accept)
-        layout.addWidget(save)
-        cancel = QPushButton("Cancel")
-        cancel.clicked.connect(dialog.reject)
-        layout.addWidget(cancel)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            if rows:
-                self.problem_regions[name] = rows
-                self.cleared_region_subjects.discard(name)
-            else:
-                self.problem_regions.pop(name, None)
-                self.cleared_region_subjects.add(name)
-            self._update_review_progress()
+        self._mark_region()
 
     def _feature_conflicts(self) -> list[str]:
         return [
@@ -4540,7 +4505,10 @@ class ReferenceCalibrationDialog(QDialog):
             (root, candidate), prepare,
         )
 
-    def _open_guided_saved_fit(self, reference):
+    def _open_guided_working_fit(self, identifier, reference):
+        self._open_guided_saved_fit(reference, working_for=identifier)
+
+    def _open_guided_saved_fit(self, reference, *, working_for=None):
         if self._view_loading or self._view_closed or self._review_saving or self._worker:
             return
         origin = self.study_directory
@@ -4553,10 +4521,22 @@ class ReferenceCalibrationDialog(QDialog):
                 parent = verify_reference(reference)
                 candidate = next(c for c in parent.candidates
                                  if c.candidate_id == reference["candidate_id"])
+                if working_for is not None:
+                    from diffeoforge.guided_feedback import presentation
+
+                    current = load_reference_calibration_study(origin)
+                    context = presentation(current, working_for)
+                    choice = next(r for r in context["choices"] if r["reference"] == reference)
+                    context.update(reference=reference, label=choice["label"],
+                                   target=reference["target"])
+                    return (parent, collect_calibration_qc_pairs(parent.study_directory, candidate),
+                            normalized_candidate_subject_fit(parent, candidate), candidate, context)
                 return (parent, collect_calibration_qc_pairs(parent.study_directory, candidate),
                         normalized_candidate_subject_fit(parent, candidate), (), None)
 
-        self._viewer_preparation.request_operation(("guided-saved", origin, reference), prepare)
+        self._viewer_preparation.request_operation(
+            ("guided-working", origin, reference, working_for) if working_for is not None else
+            ("guided-saved", origin, reference), prepare)
 
     def _review_early_screen(self) -> None:
         state = self._snapshot.early_screening
@@ -4586,6 +4566,12 @@ class ReferenceCalibrationDialog(QDialog):
     @Slot(object, object)
     def _candidate_prepared(self, key: object, prepared: object) -> None:
         if self._view_closed or self._review_saving:
+            return
+        if key[0] == "guided-working":
+            if key[1] == self.study_directory and not self._worker:
+                from diffeoforge.desktop.guided_working_fit import show
+
+                show(self, key, prepared)
             return
         if key[0] == "guided-inputs":
             if key[1] != self.study_directory or self._worker:
@@ -4645,6 +4631,7 @@ class ReferenceCalibrationDialog(QDialog):
                 candidate,
                 self,
                 subject_fit=fit,
+                read_only=key[0] == "guided-saved",
                 pairs=pairs,
                 alternative_pairs=prepared[3] if len(prepared) >= 4 else (),
                 guided_feedback_context=prepared[4] if len(prepared) >= 5 else None,

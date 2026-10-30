@@ -189,6 +189,20 @@ def render(window, prepared):
 
     # Candidate identity is captured by each card's callbacks, never a shared selector.
     for candidate in snapshot.candidates:
+        feedback = guidance.get("feedback", {}).get(candidate.candidate_id)
+        working = guidance.get("working_proposals", {}).get(candidate.candidate_id)
+        separate_start = bool(working and candidate.status == "completed" and not running)
+        if separate_start:
+            from diffeoforge.desktop.guided_feedback import render_starting_fits
+
+            start_card = QFrame(window.content)
+            start_card.setObjectName("card")
+            start_card.setProperty("workingFit", True)
+            start_layout = QVBoxLayout(start_card)
+            render_starting_fits(window, snapshot, candidate.candidate_id, start_layout, feedback)
+            if not unresolved:
+                _recovery(window, snapshot, candidate, start_layout, guidance)
+            window.content_layout.addWidget(start_card)
         card = QFrame(window.content)
         card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         card.setObjectName("card")
@@ -198,11 +212,11 @@ def render(window, prepared):
         card.setProperty("pilotCandidate", candidate.candidate_id)
         layout = QVBoxLayout(card)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        method_title = QLabel(candidate.label)
+        method_title = QLabel(("Latest attempt · saved for comparison: " if separate_start else "")
+                              + candidate.label)
         method_title.setObjectName("sectionTitle")
         layout.addWidget(method_title)
         decision = snapshot.visual_reviews.get(candidate.candidate_id)
-        feedback = guidance.get("feedback", {}).get(candidate.candidate_id)
         already_inspected = bool(feedback and feedback.get("current_inspected"))
         state = (
             candidate.status.title()
@@ -359,7 +373,8 @@ def render(window, prepared):
                 )
 
                 render_feedback(window, snapshot, candidate.candidate_id, layout, feedback)
-                render_starting_fits(window, snapshot, candidate.candidate_id, layout, feedback)
+                if not separate_start:
+                    render_starting_fits(window, snapshot, candidate.candidate_id, layout, feedback)
             if decision is False and not valid:
                 explanation = QLabel(
                     "This result is technically invalid. Check the failure, input meshes and "
@@ -371,12 +386,12 @@ def render(window, prepared):
                 action(layout, "Use " + candidate.label + " as starting method → improve",
                        "prefer", candidate.candidate_id)
             has_start = bool(feedback and feedback["selected"])
-            if (decision is not True and (decision is False or has_start)
+            if (not separate_start and decision is not True and (decision is False or has_start)
                     and (valid or has_start) and not unresolved
                     and (guidance["preferred"] == method or has_start or info["phase"] == "joint")):
                 _recovery(window, snapshot, candidate, layout, guidance)
             regional = bool(snapshot.attachment_comparison.get("regional_objective"))
-            if decision is True and regional:
+            if decision is True and regional and not separate_start:
                 note = QLabel("This fit is saved as suitable for this specimen. Further "
                               "refinement is optional. The shared atlas setup still needs "
                               "its own check.")
@@ -461,7 +476,10 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
     from diffeoforge.pilot_regions import SYMPTOMS
 
     identifier = candidate.candidate_id
+    working = guidance.get("working_proposals", {}).get(identifier)
     heading = QLabel(
+        "Improve the selected starting fit — the latest attempt stays saved"
+        if working else
         "Optional: what would you like to improve further?"
         if optional else "This configuration has not passed this form. What needs improvement?")
     heading.setWordWrap(True)
@@ -507,7 +525,7 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
             "alignment", "topology", "view"}
         request = ("goal:" + selected if selected else
                    "regional:" + symptoms.currentData() if local else symptoms.currentData())
-        proposed = guidance["proposals"][identifier][request]
+        proposed = (working or guidance["proposals"][identifier])[request]
         state.clear()
         state.update(proposed)
         state["request"] = request
@@ -552,13 +570,14 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
     alternatives.currentIndexChanged.connect(update)
     prepare.clicked.connect(
         lambda: window._start_pilot(
-            adaptive=False, guided_action=("adaptive_recover", identifier, state["request"])
+            adaptive=False, guided_action=("adaptive_recover_start" if working else
+                                          "adaptive_recover", identifier, state["request"])
         )
     )
     update()
     if len(snapshot.candidates) == 1:
         other = QPushButton("Alternatively: check the other method here · prepare 1 trial")
-        other_proposal = guidance["proposals"][identifier]["other_method"]
+        other_proposal = (working or guidance["proposals"][identifier])["other_method"]
         data = guidance.get("feedback", {}).get(identifier)
         other.setEnabled(other_proposal["available"] and not (data and data["needs_direction"]))
         if not other_proposal["available"]:
@@ -572,7 +591,8 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
             other.clicked.connect(lambda: window._open_guided_saved_fit(reference))
         else:
             other.clicked.connect(lambda: window._start_pilot(
-                adaptive=False, guided_action=("adaptive_recover", identifier, "other_method")
+                adaptive=False, guided_action=("adaptive_recover_start" if working else
+                                              "adaptive_recover", identifier, "other_method")
             ))
         other.setStyleSheet("QPushButton { border: 1px solid #789994; "
                            "border-radius: 4px; padding: 8px; }")

@@ -1,3 +1,13 @@
+# Development continuity — dev173 working fit and multiple area instructions
+
+An earlier selected fit now has a real working view and a dedicated preparation
+route that binds its complete saved field. Multiple original-surface points can
+be edited in one session with independent improve/retain instructions. Historical
+fits/reviews remain intact; old failed results remain searchable comparisons.
+See [behavior, verification and limits](PILOT_WORKING_FIT_AND_AREAS.md).
+Source implementation is complete; package/installation verification follows.
+No owner trial has been prepared or started. Drive distribution remains separate.
+
 # Development continuity — dev172 changed-mark capture repair
 
 New/changed problem marks no longer inherit improvement measured on older marks

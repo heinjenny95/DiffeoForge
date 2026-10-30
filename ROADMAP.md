@@ -1,5 +1,10 @@
 # Roadmap
 
+- [x] Make an earlier selected fit a visible working source, bind next preparation
+  to its complete field, and edit multiple independently instructed surface areas
+  in one session. Source dev173; package/installation checks pending.
+  [Behavior and limits](docs/PILOT_WORKING_FIT_AND_AREAS.md).
+
 - [x] Bind regional proposal quality to the exact requested marks, so newly
   marked missing features keep measured capture instead of inheriting an older
   patch's detail recommendation. dev172 verified installed; existing trials and

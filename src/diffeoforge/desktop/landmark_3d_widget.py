@@ -240,6 +240,15 @@ class InteractiveMeshCanvas3D(QWidget):
         self._region_colors = None
         self.update()
 
+    def set_surface_regions(self, regions, selected=None):
+        """Show all feedback patches and highlight the edited one separately."""
+        self._surface_region = ("regions", tuple(
+            (r.get("shape", "sphere"), tuple(r.get("bounds", [])),
+             tuple(r["center"]), float(r["radius"]), r.get("purpose", "problem"))
+            for r in regions), selected)
+        self._region_colors = None
+        self.update()
+
     def _surface_layer(self, vertices, triangles):
         if self._surface_region is None:
             return SurfaceLayer(vertices, triangles)
@@ -247,6 +256,24 @@ class InteractiveMeshCanvas3D(QWidget):
 
         key = (id(vertices), id(triangles), self._surface_region)
         if self._region_colors is None or self._region_colors[0] != key:
+            if self._surface_region[0] == "regions":
+                from diffeoforge.regional_fit import mask as region_mask
+
+                colors = np.tile((160, 208, 192, 255), (len(triangles), 1))
+                rows, selected = self._surface_region[1:]
+                centres = np.asarray(vertices)[triangles].mean(1)
+                order = [i for i in range(len(rows)) if i != selected]
+                if selected is not None and 0 <= selected < len(rows):
+                    order.append(selected)
+                for i in order:
+                    shape, bounds, center, radius, purpose = rows[i]
+                    chosen = region_mask(centres, [dict(
+                        shape=shape, bounds=bounds, center=center, radius=radius)])
+                    colors[chosen] = ((242, 115, 45, 255) if i == selected else
+                                      (58, 119, 193, 255) if purpose != "problem" else
+                                      (220, 164, 64, 255))
+                self._region_colors = key, colors
+                return SurfaceLayer(vertices, triangles, face_colors=colors)
             if self._surface_region[0] == "box":
                 from diffeoforge.regional_fit import mask as region_mask
 

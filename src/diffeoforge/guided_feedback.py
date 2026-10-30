@@ -257,6 +257,9 @@ def region_state(snapshot, identifier, target, *, _seen=None, _search_history=Tr
         raise ValueError("Cyclic marked-area history")
     seen.add(key)
     candidates = []
+    from diffeoforge.guided_working_fit import edits
+
+    candidates.extend(edits(snapshot, identifier, target))
     for event in _local_events(snapshot, identifier):
         edit = event.get("region_edit", {})
         rows = event.get("problem_regions", {}).get(target, [])

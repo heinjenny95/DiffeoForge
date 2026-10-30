@@ -126,11 +126,16 @@ def render_starting_fits(window, snapshot, identifier, layout, data):
         label.setWordWrap(True)
         layout.addWidget(label)
     if selection:
-        caption = QLabel("Starting point: " + selection["label"])
+        caption = QLabel("Working starting fit: " + selection["label"])
         caption.setWordWrap(True)
         caption.setObjectName("guidedStartingFit")
         layout.addWidget(caption)
         if not selection["current"]:
+            work = QPushButton("Work from this starting fit · mark / edit areas…")
+            work.setObjectName("workingStartingFit")
+            _set_action_emphasis(work, True)
+            work.clicked.connect(lambda: window._open_guided_working_fit(identifier, selected))
+            layout.addWidget(work)
             inspect_start = QPushButton("Inspect retained starting fit")
             inspect_start.clicked.connect(lambda: window._open_guided_saved_fit(selected))
             layout.addWidget(inspect_start)
@@ -179,12 +184,10 @@ def render_starting_fits(window, snapshot, identifier, layout, data):
         inspect.clicked.connect(lambda _checked=False, r=choice["reference"]:
                                 window._open_guided_saved_fit(r))
         actions.addWidget(inspect)
-        select = QPushButton("Use as starting fit")
+        select = QPushButton("Work from this fit…")
         select.setProperty("startingFitDirectory", choice["reference"]["directory"])
-        select.setEnabled(choice["reference"] != selected)
         select.clicked.connect(lambda _checked=False, r=choice["reference"]:
-            window._start_pilot(adaptive=False,
-                               guided_action=("adaptive_select_start", identifier, r)))
+            window._open_guided_working_fit(identifier, r))
         actions.addWidget(select)
         body.addLayout(actions)
         rows.addWidget(row)

@@ -217,6 +217,7 @@ def prepare_proposals(snapshot, context):
                 *("regional:" + k for k in SYMPTOMS)]
     with study.calibration_verification_scope():
         context["proposals"] = {}
+        context["working_proposals"] = {}
         context["failed_proposals"] = {}
         for candidate in snapshot.candidates:
             identifier = candidate.candidate_id
@@ -240,6 +241,14 @@ def prepare_proposals(snapshot, context):
             verified = inputs(snapshot, identifier, context)
             context["proposals"][identifier] = {
                 request: propose(snapshot, identifier, request, verified) for request in requests}
+            selected = (context["feedback"].get(identifier) or {}).get("selected")
+            if selected and selected.get("directory") != str(snapshot.study_directory):
+                from diffeoforge import guided_working_fit as working
+
+                parent, working_data = working.inputs(snapshot, identifier, context,
+                                                      verified=verified)
+                context["working_proposals"][identifier] = {
+                    request: working.propose(parent, request, working_data) for request in requests}
     return context
 
 
@@ -341,11 +350,15 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     cases, _last = _context(snapshot)
     feedback = None
     preference = _preference(snapshot)
-    if action in {"recover", "recover_from_retained"}:
+    if action in {"recover", "recover_from_retained", "recover_start"}:
         if action == "recover_from_retained":
             from diffeoforge.guided_failed_parent import trial
 
             proposed = trial(snapshot, identifier, goal, state(snapshot))
+        elif action == "recover_start":
+            from diffeoforge.guided_working_fit import trial
+
+            proposed = trial(snapshot, identifier, goal or "unsure")
         else:
             proposed = trial_proposal(snapshot, identifier, goal or "unsure")
         if not proposed["available"]:
@@ -474,6 +487,10 @@ def transition(snapshot, action, identifier, *, goal=None):
         from diffeoforge.guided_accepted_fit import select
 
         return select(snapshot, identifier, goal)
+    if action == "working_start":
+        from diffeoforge.guided_working_fit import save
+
+        return save(snapshot.study_directory, identifier, goal)
     if action in {"select_start", "feedback"}:
         from diffeoforge.guided_feedback import save_feedback, select
 
@@ -484,7 +501,7 @@ def transition(snapshot, action, identifier, *, goal=None):
         study._append_event(snapshot.study_directory, "guided_method_preference", dict(
             preference=reference, anatomical_approval_created=False, optimizer_started=False))
         return study.load_reference_calibration_study(snapshot.study_directory)
-    if guided.record(snapshot)["phase"] == "joint" and action != "recover":
+    if guided.record(snapshot)["phase"] == "joint" and action not in {"recover", "recover_start"}:
         raise ValueError("Review the joint fit, or refine a failed form before continuing")
     with study.calibration_verification_scope():
         verified = study.load_reference_calibration_study(snapshot.study_directory)
