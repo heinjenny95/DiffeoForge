@@ -1,3 +1,15 @@
+# Development continuity — movable material and actual-source support
+
+New regional focus surfaces exclude fixed-incident triangles. Missing features
+receive a connected free-material proposal rather than borrowing a retained
+neighbour. New residual controls cover that actual movable surface at the same
+spacing and budget; warm bases remain unchanged. Public and private read-only
+geometry checks pass (128 source cases, four new) without changing owner evidence.
+This fixes conflicting
+instructions, not final specimen qualification; isolated testing continues.
+See [behavior and limits](PILOT_MATERIAL_SELECTION.md). Installed runtime remains
+dev175 pending verified delivery.
+
 # Development continuity — batched marked-area QC, source implementation
 
 Independent query groups on the same full surface now share one isolated MeshLab

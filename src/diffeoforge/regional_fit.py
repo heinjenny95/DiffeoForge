@@ -336,6 +336,17 @@ def prepare(
         or (protection_close_distance is None) != (protection_tolerance is None)
     ):
         raise ValueError("Regional scales must be finite and positive")
+    from diffeoforge.regional_material_patch import select
+    from diffeoforge.regional_preservation import VERSION as FIXED_VERSION
+    from diffeoforge.regional_preservation import vertex_ids
+
+    fixed_ids = vertex_ids(selection, sf, fixed_regions) if fixed_regions else np.array([], int)
+    for region in fixed_regions:
+        if len(vertex_ids(selection, sf, [region])) < 3:
+            raise ValueError("A Retain area has no surface patch in this starting fit. "
+                             "Choose the saved fit where that part is correct, or revise the area.")
+    source_selected, proposals = select(selection, sf, tv, tf, focus_regions, fixed_ids,
+                                        infer=guide_noise is None)
     root.mkdir(parents=True)
     objects = []
 
@@ -344,23 +355,8 @@ def prepare(
         _save(path, v, f)
         return dict(copy=path.name, sha256=sha256_file(path), bytes=path.stat().st_size)
 
-    source_centres = selection[sf].mean(1)
     target_centres = tv[tf].mean(1)
-    source_selected = np.zeros(len(sf), bool)
     inferred = []
-    for region in focus_regions:
-        chosen = mask(source_centres, [region])
-        target_chosen = mask(target_centres, [region])
-        if not target_chosen.any():
-            raise ValueError("The marked original area contains no face centres; enlarge it")
-        if not chosen.any() and guide_noise is None:
-            centre = target_centres[target_chosen].mean(0)
-            closest = source_centres[np.argmin(np.linalg.norm(source_centres-centre, axis=1))]
-            extent = np.linalg.norm(np.ptp(tv[np.unique(tf[target_chosen])], axis=0))
-            area = dict(center=closest.tolist(), radius=max(focus_width*2, extent*.75))
-            chosen = mask(source_centres, [area])
-            inferred.append(area)
-        source_selected |= chosen
     _patch(root / "focus-source.vtk", sv, sf, source_selected)
     _patch(root / "focus-target.vtk", tv, tf, mask(target_centres, focus_regions))
 
@@ -383,15 +379,9 @@ def prepare(
     ids = np.unique(
         sf[np.searchsorted(np.cumsum(area), (np.arange(1800) + 0.5) * area.sum() / 1800), 0]
     )
-    from diffeoforge.regional_preservation import VERSION as FIXED_VERSION
-    from diffeoforge.regional_preservation import vertex_ids
-
-    fixed_ids = vertex_ids(selection, sf, fixed_regions) if fixed_regions else np.array([], int)
-    for region in fixed_regions:
-        if len(vertex_ids(selection, sf, [region])) < 3:
-            raise ValueError("A Retain area has no surface patch in this starting fit. "
-                             "Choose the saved fit where that part is correct, or revise the area.")
-    ids = ids[~mask(selection[ids], [*focus_regions, *inferred], halo=halo)
+    movable_ids = np.unique(sf[source_selected])
+    ids = ids[(~mask(selection[ids], focus_regions, halo=halo)
+               & ~np.isin(ids, movable_ids))
               | mask(selection[ids], fixed_regions)]
     if protection_close_distance is not None:
         close = distances_to_surface(selection[ids], tv, tf) <= protection_close_distance
@@ -480,6 +470,10 @@ def prepare(
         regions=regions,
         focus_regions=focus_regions,
         inferred_source_regions=inferred,
+        material_selection=dict(version='nearest-free-geodesic-area-v1',
+            source_faces=np.flatnonzero(source_selected).tolist(), inferred_patches=proposals,
+            no_selected_triangle_touches_fixed_vertex=True,
+            biological_correspondence_claim=False),
         protection_halo=halo,
         protection=protection,
         protection_vertex_ids=ids.tolist(),

@@ -676,6 +676,9 @@ def bind(root, manifest, record):
         ]:
             shutil.copyfile(root / row["copy"], path.parent / row["copy"])
         data["residual"] = residual
+        from diffeoforge.regional_material_support import bind as bind_material_support
+
+        record = bind_material_support(root, manifest, record, data, path.parent)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     declaration["sha256"] = sha256_file(path)
     return dict(record, regional_objective=declaration)

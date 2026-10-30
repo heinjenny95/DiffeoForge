@@ -152,7 +152,7 @@ def test_missing_detail_beyond_source_tip_gets_a_movable_source_patch(tmp_path):
         retained_path=tmp_path / "source.vtk")
     config["project"]["parameter_provenance"]["regional_fit"] = declaration
     plan = read_plan(config)
-    assert len(plan["inferred_source_regions"]) == 1
+    assert len(plan["material_selection"]["inferred_patches"]) == 1
     assert plan["protection_vertex_ids"] and not plan["guidance"]
     quality = measure(config, tmp_path / "source.vtk")
     assert not quality["local_improved"] and np.isfinite(quality["active_surface_p95"])
