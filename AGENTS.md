@@ -13,8 +13,11 @@ raise iteration limits, relax accuracy or deploy an unqualified experimental
 solver. After the cutoff, stabilize the agreed functionality rather than adding
 new features. Existing scientific work and owner-paused side work stay preserved.
 Owner clarification: the pilot should capture important projections and the
-overall shape; small surface differences are acceptable. Offer first review after
-about ten active optimization minutes, preserving the optimizer while waiting.
+overall shape; small surface differences are acceptable. Owner update
+(2026-10-31): remove the automatic ten-minute review pause from new pilot trials.
+Let the native optimizer reach its recorded stop/cap; retain responsive
+cancellation and honest effort reporting. Do not alter existing prepared or
+running contracts or raise their limits to compensate.
 
 After every completed feature, fix, configuration or documentation change:
 

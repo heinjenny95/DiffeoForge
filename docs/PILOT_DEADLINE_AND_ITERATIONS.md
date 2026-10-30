@@ -6,10 +6,12 @@ After the cutoff, stabilize the agreed functionality rather than expanding it.
 Existing computations, accepted results and owner-paused side work remain protected.
 
 This document fixes the implementation priority and acceptance contract. The
-dev165 [intermediate-review implementation](PILOT_INTERMEDIATE_REVIEW.md) now
-provides accepted-state pauses after ten active minutes for newly prepared guarded
-regional trials. Its [package and installation verification](V165_DELIVERY.md)
-has passed; existing prepared studies retain their recorded behavior.
+historical dev165 [intermediate-review implementation](PILOT_INTERMEDIATE_REVIEW.md)
+provided accepted-state pauses after ten active minutes. The owner removed that
+automatic pause on October 31: new attempts run to their native stop/cap while
+preserving cancellation and effort reporting. Existing prepared/running studies
+retain their recorded behavior; no limit or accuracy change compensates for the
+removed pause.
 The owner's acceptance goal is captured
 projections and the right overall shape, with small surface differences allowed.
 
@@ -37,11 +39,10 @@ mesh validity and visual/anatomical assessment distinct. See the
 
 ## Required next pilot behavior
 
-1. Show an early, source-bound intermediate view and elapsed effort instead of
-   hiding all geometry until the full allowance is exhausted. Settled matching
-   display previews remain sufficient for owner review; full detail is optional.
-2. Use a visible finite time/effort allowance. At a native accepted-state boundary,
-   make progress inspectable and offer an explicit further allowance when needed.
+1. Show elapsed effort and the source-bound exported result without requiring
+   periodic manual permission to continue optimization. Settled matching display
+   previews remain sufficient for owner review; full detail is optional.
+2. Keep the finite recorded iteration allowance and native stopping conditions.
    A budget stop stays **provisional**, with its field and termination evidence
    preserved. It must never be relabeled native convergence or final acceptance.
 3. Base continuation advice on comparable objective history **and** observed local

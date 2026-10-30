@@ -66,18 +66,23 @@ def render(config):
 
 
 @pytest.mark.parametrize("warm", [False, True])
-def test_new_regionals_declare_explicit_guard_and_correct_initializer(tmp_path, warm):
+@pytest.mark.parametrize("inherited_review", [False, True])
+def test_new_regionals_declare_guard_without_timed_pause(tmp_path, warm, inherited_review):
     config = config_fixture(tmp_path, warm=warm)
     legacy = render(config)
+    if inherited_review:
+        from diffeoforge.pilot_review_assets import DECLARATION as REVIEW
+
+        config["project"]["parameter_provenance"]["pilot_review"] = dict(REVIEW)
     mark_new_configuration(config)
     validate_schema(config)
     assert config["project"]["parameter_provenance"]["finite_accepted_guard"] == DECLARATION
+    assert "pilot_review" not in config["project"]["parameter_provenance"]
     generated = render(config)
     assert set(generated) == set(legacy) | {
         "finite_accepted_guard.py",
         "regional_guard_runtime.py",
         "guard-policy.json",
-        "pilot_review_runtime.py",
         "cpu_surface_gather.py",
     }
     assert generated["model.xml"] == legacy["model.xml"]
@@ -88,6 +93,7 @@ def test_new_regionals_declare_explicit_guard_and_correct_initializer(tmp_path, 
     )
     assert generated["finite_accepted_guard.py"] == C5_SOURCE
     assert generated["regional_guard_runtime.py"] == RUNTIME_SOURCE
+    assert b"_df_review_install" not in generated["sitecustomize.py"]
     assert b"except BaseException" in generated["sitecustomize.py"]
     assert b"_df_message_compat" in generated["sitecustomize.py"]
     compile(generated["sitecustomize.py"], "sitecustomize.py", "exec")

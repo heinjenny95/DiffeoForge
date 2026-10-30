@@ -1,3 +1,18 @@
+# Development continuity — remove automatic timed pilot pauses (dev177)
+
+At the owner's request, newly prepared guarded local trials no longer add the
+ten-minute review observer, including when their seed carries that declaration.
+They run to the existing native stop/cap. Finite accepted guards, deterministic
+surface indexing, objective/gradient, iteration cap, tolerance, precision,
+integration, cancellation, export and final review remain unchanged.
+
+Historical explicitly declared review runs still render and validate their
+original observer and generation-bound decisions. No prepared/running manifest
+or saved result is rewritten; prepare a new local attempt to use the new policy.
+Focused preparation, historical-review and worker checks pass; packaging and
+idle/backup installation remain pending. Installed dev176 remains current until
+those delivery checks complete. No new anatomical result or speed claim.
+
 # Development continuity — dev176 verified delivery (31 October 2026)
 
 Engineering build `0.0.0.dev176` is installed after a fresh idle check and verified

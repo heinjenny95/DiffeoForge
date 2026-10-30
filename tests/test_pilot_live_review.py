@@ -18,6 +18,8 @@ from diffeoforge.runs import prepare_run
 def prepared(tmp_path):
     config = config_fixture(tmp_path)
     mark_new_configuration(config)
+    # Historical declared runs retain their exact review/decision contract.
+    config["project"]["parameter_provenance"]["pilot_review"] = dict(DECLARATION)
     import yaml
 
     path = tmp_path / "config.yaml"
@@ -94,9 +96,11 @@ def runtime_fixture(tmp_path, monkeypatch, *, action="continue", cached=False):
     return review, state, clock, seen, run
 
 
-def test_only_new_configurations_enable_review_and_native_sources_remain_python38(tmp_path):
+def test_historical_explicit_review_still_renders_and_native_sources_remain_python38(tmp_path):
     config = config_fixture(tmp_path)
     mark_new_configuration(config)
+    assert "pilot_review" not in config["project"]["parameter_provenance"]
+    config["project"]["parameter_provenance"]["pilot_review"] = dict(DECLARATION)
     assert config["project"]["parameter_provenance"]["pilot_review"] == DECLARATION
     new = render(config)
     assert new["pilot_review_runtime.py"] == SOURCE

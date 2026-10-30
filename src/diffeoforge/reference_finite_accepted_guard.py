@@ -51,9 +51,10 @@ def mark_new_configuration(config):
             "New guarded regional runs require explicit recoverable original control points"
         )
     provenance["finite_accepted_guard"] = dict(DECLARATION)
-    from diffeoforge.pilot_review_assets import DECLARATION as REVIEW
-
-    provenance["pilot_review"] = dict(REVIEW)
+    # New attempts run to their native stop/cap without a timed review pause.
+    # A seed can carry the old declaration; never inherit it into a new plan.
+    # Rendering an already prepared historical plan still honors its contract.
+    provenance.pop("pilot_review", None)
     from diffeoforge.reference_surface_gather import DECLARATION as GATHER
 
     provenance["surface_gather"] = dict(GATHER)

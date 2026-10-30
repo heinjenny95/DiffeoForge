@@ -1,5 +1,16 @@
 # Ten-minute review of a new regional pilot fit
 
+## Owner update — 31 October 2026
+
+New pilot attempts no longer declare the automatic ten-minute pause. A new
+candidate clears an inherited review declaration from its seed and runs until
+its ordinary native stop/cap, with unchanged limits, numerical guards, export
+and anatomical review. Cancellation remains available. Existing prepared/running
+contracts, saved review receipts and decisions remain supported unchanged.
+Already prepared attempts retain their recorded behavior; prepare a new local
+attempt to use the current policy. The implementation description below records
+the historical explicit review contract, not the current default.
+
 The owner-defined pilot goal is to capture the important projections and the
 overall shape. A perfect surface match is not required. The first useful review
 should be offered after about ten minutes of active optimization; this is not a
