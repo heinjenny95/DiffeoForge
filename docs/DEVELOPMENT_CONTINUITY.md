@@ -1,4 +1,26 @@
-# Development continuity — current-pilot qualification and guidance cleanup
+# Development continuity — verified cancellation and current-pilot qualification
+
+A real owned native cancellation exposed an observer defect: C5 correctly
+retained its accepted finite state, but classified an expected KeyboardInterrupt
+as a numerical evaluation failure. A separate observer now recognizes only a
+run-bound cancellation command with matching nonce digest, boot and complete
+live process identity and reverified input content. It durably records a terminal
+owner interruption and rethrows; no new evaluation, export, restore or convergence
+claim follows. Unmatched interruptions, genuine errors and existing violations
+retain their failure behavior. The supervisor retains identity evidence while
+cancelling, including the signal/publication race.
+
+45 focused guard/process tests pass (two Linux-only process probes are skipped
+on Windows). A new real native source-worker test confirms complete session exit
+in 2.5 seconds, a separately hash-verified finite accepted checkpoint and no false
+numerical violation. C5 core bytes, native equations and numerical profile remain
+unchanged. Exact frozen-package verification and installation are pending.
+
+Private prospective surface tests distinguish fast first-screen completion from
+projection adequacy. A targeted retained-field correction passes the existing
+full-field spatial, temporal, transition and preservation checks. Anatomy and
+common-cohort suitability remain separate owner decisions; this is not a claim
+that every input or a full fit can be solved in the same elapsed time.
 
 New isolated prospective tests are checking the installed dev177 worker on
 complex surface inputs. Qualification, anatomy, first-screen adequacy and common
@@ -8,7 +30,7 @@ this repository. No owner optimizer is restarted or original fit rewritten.
 The protected-area suggestion still mentioned a ten-minute review after the
 observer had been removed. The suggestion and current-policy method notes now
 describe checking the saved result without a timed pause. This is a wording-only
-runtime change; model/objective, native optimizer, guards, limits and accuracy are
+runtime change; model/objective, native optimizer, limits and accuracy are
 unchanged. Version178 is the delivery target; installed dev177 remains unchanged
 while local tests run. Historical explicit review contracts remain supported.
 

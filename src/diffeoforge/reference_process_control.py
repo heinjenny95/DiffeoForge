@@ -151,7 +151,9 @@ def main():
             signals_sent.append('SIGINT')
             cancelling = time.monotonic()
             write(receipt, {'state': 'cancelling', 'identity': public,
-                            'signals': signals_sent, 'command_received': True})
+                            'signals': signals_sent, 'command_received': True,
+                            'boot_id': boot,
+                            'token_sha256': hashlib.sha256(token.encode()).hexdigest()})
         if cancelling is not None:
             elapsed = time.monotonic() - cancelling
             if elapsed >= 10 and 'SIGTERM' not in signals_sent:
