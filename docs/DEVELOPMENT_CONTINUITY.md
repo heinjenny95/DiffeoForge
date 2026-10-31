@@ -1,4 +1,8 @@
-# Development continuity — verified cancellation and current-pilot qualification
+# Development continuity — dev178 verified delivery and qualification limits
+
+Engineering dev178 is installed and verified. It corrects expected cancellation
+reporting and stale guidance; it does not establish general anatomical fit
+readiness or change the fitting equations.
 
 A real owned native cancellation exposed an observer defect: C5 correctly
 retained its accepted finite state, but classified an expected KeyboardInterrupt
@@ -14,25 +18,38 @@ cancelling, including the signal/publication race.
 on Windows). A new real native source-worker test confirms complete session exit
 in 2.5 seconds, a separately hash-verified finite accepted checkpoint and no false
 numerical violation. C5 core bytes, native equations and numerical profile remain
-unchanged. Exact frozen-package verification and installation are pending.
+unchanged. The real frozen execution-worker test also passes: complete session
+exit in 1.8 seconds, all accepted checkpoint files bound to their sealed receipt,
+and no false numerical violation. The separate harmless escalation test passes
+in 17.7 seconds, preserving an outside process and checkpoint. The exact product
+also passes the historical/new policy views and read-only checkpoint checks.
 
 Private prospective surface tests distinguish fast first-screen completion from
 projection adequacy. A targeted retained-field correction passes the existing
 full-field spatial, temporal, transition and preservation checks. Anatomy and
 common-cohort suitability remain separate owner decisions; this is not a claim
 that every input or a full fit can be solved in the same elapsed time.
+An independent longer control reached native tolerance but failed spatial and
+intersection gates. It remains unqualified. More iterations and numerical
+convergence alone do not establish acceptable projection geometry.
 
-New isolated prospective tests are checking the installed dev177 worker on
+The completed isolated prospective tests used the actual dev177 worker on
 complex surface inputs. Qualification, anatomy, first-screen adequacy and common
 atlas suitability remain distinct; private data and specimen results stay out of
-this repository. No owner optimizer is restarted or original fit rewritten.
+this repository. No owner optimizer was restarted or original fit rewritten.
 
 The protected-area suggestion still mentioned a ten-minute review after the
 observer had been removed. The suggestion and current-policy method notes now
 describe checking the saved result without a timed pause. This is a wording-only
 runtime change; model/objective, native optimizer, limits and accuracy are
-unchanged. Version178 is the delivery target; installed dev177 remains unchanged
-while local tests run. Historical explicit review contracts remain supported.
+unchanged. Engineering dev178 is installed after fresh idle checks and a verified
+recoverable runtime/settings backup. All 3,473 bundle files, six evidence
+companions, license, uninstall registry, desktop/Qt settings and preserved owner
+project inventories verify. Prior dev177 remains recoverable; original scientific
+work and approvals remain unchanged. Historical explicit review contracts remain
+supported. Runtime source is `f5fe23abab8066506f1d77595dec62e47ae8f1aa`;
+this delivery-only note is a later commit and does not require another build.
+No installer upload, release, tag, merge or scientific approval was performed.
 
 # Development continuity — remove automatic timed pilot pauses (dev177)
 
