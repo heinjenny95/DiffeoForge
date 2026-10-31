@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import numpy as np
 
@@ -72,6 +72,28 @@ def movement(left: Path, right: Path, scale: float) -> dict[str, float]:
         p95=float(np.quantile(distances, 0.95)) / scale,
         maximum=float(distances.max()) / scale,
     )
+
+
+def _host_working_directory(command):
+    """WSL owns the numerical cwd; its Windows launcher needs only a short cwd."""
+    if os.name != 'nt' or not command.argv[0].lower().endswith('wsl.exe'):
+        return command.working_directory
+    from diffeoforge.backends.deformetrica_reference import _windows_to_wsl
+
+    expected = _windows_to_wsl(Path(command.working_directory))
+    arguments = list(command.argv)
+    if arguments.count('--cd') != 1:
+        raise ValueError('Fixed-field WSL command must declare its exact numerical directory')
+    index = arguments.index('--cd')
+    if index + 1 >= len(arguments) or arguments[index + 1] != expected:
+        raise ValueError('Fixed-field WSL numerical directory differs from its declaration')
+    # CreateProcess rejects deeply nested current-directory strings even when
+    # Python file I/O and WSL --cd accept them. All native relative paths remain
+    # bound to the unchanged --cd directory, not this Windows launcher root.
+    anchor = PureWindowsPath(command.working_directory).anchor
+    if not anchor or not Path(anchor).is_dir():
+        raise ValueError('Fixed-field Windows launcher has no available drive root')
+    return anchor
 
 
 def shoot(
@@ -175,7 +197,7 @@ def shoot(
         ):
             process = subprocess.Popen(
                 argv,
-                cwd=command.working_directory,
+                cwd=_host_working_directory(command),
                 env=env,
                 stdin=subprocess.PIPE,
                 stdout=out,

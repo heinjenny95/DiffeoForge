@@ -6,6 +6,9 @@ clear A/B/C trial-scope labels. Reuse never constructs an optimizer controller;
 changed or failed evidence is rejected. The elapsed checking clock spans internal
 batches, resumed checking time is separate, and failed gates stay explicit.
 See [saved-fit check recovery](PILOT_CHECK_RECOVERY.md) for the binding and limits.
+An isolated longer field-chain check also exposed the Windows CreateProcess cwd
+limit. The WSL host now uses a short existing drive root after verifying the exact
+unchanged numerical `--cd` directory; native launchers retain their cwd behavior.
 
 Vectorized conforming subdivision preserves the historical connectivity/point
 order exactly. Independent replay and complete fixed-field qualification agree

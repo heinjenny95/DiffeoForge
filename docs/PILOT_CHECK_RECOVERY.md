@@ -32,3 +32,11 @@ source grid, limits, native equations, tolerance and acceptance gates are unchan
 Historical edge-pattern tests and independent saved-grid replay check exact
 connectivity and coordinates. This removes Python bookkeeping; it is not a
 claim of a faster optimizer or generally successful projection geometry.
+
+Deep retained-field chains exposed a separate Windows launcher limit: Python and
+WSL could read the full path, but Windows rejected it as the launcher's current
+directory. Fixed-field WSL checks now launch from the existing Windows drive root
+after verifying the exact declared `--cd` argument. The numerical process retains
+its complete original working directory, inputs, output paths and equations.
+Missing, duplicate or mismatched directory declarations are rejected. Native
+launchers keep their original directory behavior.
