@@ -184,6 +184,7 @@ def shoot(
             )
             if job:
                 job.assign(process)
+            next_progress = started
             while process.poll() is None:
                 if cancelled():
                     process.stdin.close()  # Runtime watcher ends even a Linux process behind WSL.
@@ -191,7 +192,8 @@ def shoot(
                     raise InterruptedError(
                         "Fixed-model qualification cancelled; saved fits retained"
                     )
-                if event_callback:
+                if event_callback and time.monotonic() >= next_progress:
+                    next_progress = time.monotonic() + 1
                     event_callback(
                         dict(
                             event="qualification_progress",
@@ -204,7 +206,10 @@ def shoot(
                             elapsed_seconds=time.monotonic() - started,
                         )
                     )
-                time.sleep(1)
+                try:
+                    process.wait(timeout=.1)
+                except subprocess.TimeoutExpired:
+                    pass
             if process.returncode:
                 raise ValueError(
                     f"Fixed-model Shooting failed ({process.returncode}); "

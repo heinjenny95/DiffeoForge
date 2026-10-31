@@ -20,35 +20,12 @@ def subdivide(vertices, faces, selected, *, maximum_vertices=500_000):
     )
     if len(v) + len(edges) > maximum_vertices:
         raise ValueError("Original-source refinement exceeds the declared vertex limit")
-    lookup = {tuple(edge): i + len(v) for i, edge in enumerate(edges)}
-    output, parents = [], []
-    for index, face in enumerate(f):
-        a, b, c = map(int, face)
-        verts = [a, b, c]
-        mids = [lookup.get(tuple(sorted(edge))) for edge in [(a, b), (b, c), (c, a)]]
-        count = sum(x is not None for x in mids)
-        if count == 0:
-            parts = [verts]
-        elif count == 3:
-            ab, bc, ca = mids
-            parts = [[a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]]
-        else:
-            for rotation in range(3):
-                vv = verts[rotation:] + verts[:rotation]
-                mm = mids[rotation:] + mids[:rotation]
-                if count == 1 and mm[0] is not None:
-                    a, b, c = vv
-                    ab = mm[0]
-                    parts = [[a, ab, c], [ab, b, c]]
-                    break
-                if count == 2 and mm[0] is not None and mm[1] is not None:
-                    a, b, c = vv
-                    ab, bc = mm[:2]
-                    parts = [[b, bc, ab], [a, ab, c], [ab, bc, c]]
-                    break
-        output.extend(parts)
-        parents.extend([index] * len(parts))
-    return np.vstack((v, v[edges].mean(1))), np.asarray(output, np.int64), np.asarray(parents)
+    if not len(edges):
+        return v.copy(), f.copy(), np.arange(len(f), dtype=np.int64)
+    from diffeoforge._conforming_children import children
+
+    output, parents = children(f, edges, len(v))
+    return np.vstack((v, v[edges].mean(1))), output, parents
 
 
 def selection(vertices, faces, regions, width, *, source_vertices=None):

@@ -2249,6 +2249,19 @@ class ReferenceCalibrationStudyRunner:
         integration_tolerances: Mapping[str, float] | None = None,
         candidate_ids: set[str] | None = None,
     ) -> ReferenceCalibrationStudySnapshot:
+        from diffeoforge.mesh_filter_worker import mesh_filter_cancellation
+
+        with mesh_filter_cancellation(lambda: self._cancel_requested):
+            return self._run_current_stage(event_callback=event_callback,
+                integration_tolerances=integration_tolerances, candidate_ids=candidate_ids)
+
+    def _run_current_stage(
+        self,
+        *,
+        event_callback: StudyEventCallback | None = None,
+        integration_tolerances: Mapping[str, float] | None = None,
+        candidate_ids: set[str] | None = None,
+    ) -> ReferenceCalibrationStudySnapshot:
         from diffeoforge.reference_attachment_comparison import pending
         from diffeoforge.reference_attachment_comparison import run as run_comparison
 
@@ -2290,7 +2303,12 @@ class ReferenceCalibrationStudyRunner:
                 continue
             if self._cancel_requested:
                 break
+            from diffeoforge.reference_qualification_resume import verified_run
+
+            checks_run = verified_run(snapshot, candidate)
             request = _launch_request(self.study_directory, manifest, candidate)
+            if checks_run is not None:
+                request = replace(request, destination=checks_run, run_id=checks_run.name)
             from diffeoforge.pilot_iteration_accounting import annotate, offset
 
             iteration_offset = (
@@ -2307,11 +2325,12 @@ class ReferenceCalibrationStudyRunner:
                     "request_id": request.request_id,
                     "run_directory": _relative_path(self.study_directory, request.destination),
                     "iteration_offset": iteration_offset,
+                    "qualification_only": checks_run is not None,
                 },
             )
             if event_callback is not None:
                 event_callback(started)
-            controller = self._controller_factory(request)
+            controller = self._controller_factory(request) if checks_run is None else None
             self._active_controller = controller
 
             def forward(
@@ -2328,9 +2347,18 @@ class ReferenceCalibrationStudyRunner:
                         }
                     )
 
+            native_completed = False
             try:
-                result = controller.run(event_callback=forward)
-                if result.completed:
+                if controller is not None:
+                    result = controller.run(event_callback=forward)
+                    native_completed = result.completed
+                else:
+                    native_completed = True
+                    if event_callback:
+                        event_callback(dict(event='qualification_phase',
+                            candidate_id=candidate.candidate_id,
+                            message='Resuming checks of the saved fit; no optimizer is running.'))
+                if native_completed:
                     metrics = collect_reference_calibration_run_metrics(request.destination)
                     measured = metrics.as_manifest()
                     annotate(measured, iteration_offset)
@@ -2367,7 +2395,15 @@ class ReferenceCalibrationStudyRunner:
                             self.study_directory, manifest, candidate,
                             request.destination, **options
                         ))
-                    measured["pipeline_wall_seconds"] = time.monotonic() - pipeline_started
+                    if self._cancel_requested:
+                        raise InterruptedError(
+                            'Post-fit checks cancelled; saved native fit retained')
+                    if checks_run is not None:
+                        measured['qualification_resumed_without_fitting'] = True
+                        measured['qualification_resume_wall_seconds'] = (
+                            time.monotonic() - pipeline_started)
+                    else:
+                        measured["pipeline_wall_seconds"] = time.monotonic() - pipeline_started
                     terminal = _append_event(
                         self.study_directory,
                         "candidate_completed",
@@ -2401,9 +2437,22 @@ class ReferenceCalibrationStudyRunner:
                     )
                     self._cancel_requested = True
             except Exception as error:
+                cancelled_checks = (native_completed and self._cancel_requested
+                                    and isinstance(error, InterruptedError))
+                interrupted = {}
+                if cancelled_checks:
+                    from diffeoforge.reference_qualification_resume import binding
+
+                    try:
+                        interrupted = dict(phase='qualification', completed_native_fit=binding(
+                            request.destination, candidate.config_path))
+                    except Exception as binding_error:
+                        cancelled_checks = False
+                        error = ValueError('Unable to bind the completed fit after cancellation: '
+                                           + str(binding_error))
                 terminal = _append_event(
                     self.study_directory,
-                    "candidate_failed",
+                    "candidate_interrupted" if cancelled_checks else "candidate_failed",
                     {
                         "stage_id": snapshot.current_stage.stage_id,
                         "candidate_id": candidate.candidate_id,
@@ -2414,6 +2463,7 @@ class ReferenceCalibrationStudyRunner:
                             else None
                         ),
                         "error": str(error),
+                        **interrupted,
                     },
                 )
             finally:

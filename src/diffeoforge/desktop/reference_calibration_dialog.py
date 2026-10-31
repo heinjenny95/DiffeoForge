@@ -3858,14 +3858,18 @@ class ReferenceCalibrationDialog(QDialog):
             self._worker is not None
             and getattr(getattr(self._worker, "runner", None), "_cancel_requested", False)
             and str(event["event"]) in {
-                "qualification_progress", "screen_progress", "candidate_progress",
+                "qualification_progress", "qualification_phase", "screen_progress",
+                "candidate_progress",
                 "candidate_activity", "candidate_phase", "candidate_worker_event",
                 "progress", "activity",
             }
         ):
-            self.status.setText("Cancellation requested — waiting for backend shutdown.")
+            self.status.setText(
+                'Stopping the current surface check; the saved fit is retained.'
+                if str(event['event']).startswith('qualification_') else
+                'Cancellation requested — waiting for backend shutdown.')
             return
-        if event["event"] == "qualification_progress":
+        if event["event"] == "qualification_progress" and "phase" in event:
             if event["phase"] == "integration_cached":
                 self.status.setText(
                     "Verified time-resolution check reused. No computation was started."
@@ -3882,11 +3886,13 @@ class ReferenceCalibrationDialog(QDialog):
                     f"(+{event['iterations']} allowance). Same parameters and tolerance."
                 )
             else:
+                elapsed = float(event.get(
+                    'qualification_elapsed_seconds', event['elapsed_seconds']))
                 self.status.setText(
                     f"Fixed-model Shooting: {event['timepoints']} timepoints · "
                     f"{event['completed_subjects']} / {event['total_subjects']} "
                     "specimens written · "
-                    f"{event['elapsed_seconds'] / 60:.1f} min. Fixed learned state."
+                    f"{elapsed / 60:.1f} min checking. Fixed learned state."
                 )
             self._thread_pool.indicator.label.setText(self.status.text())
             return
@@ -4049,11 +4055,15 @@ class ReferenceCalibrationDialog(QDialog):
                 )
             self._thread_pool.indicator.label.setText(self.status.text())
         elif kind == "qualification_phase":
-            self.status.setText(str(event["message"]))
+            elapsed = event.get('qualification_elapsed_seconds')
+            self.status.setText(str(event['message']) +
+                (f' · {float(elapsed)/60:.1f} min checking.' if elapsed is not None else ''))
             self._thread_pool.indicator.label.setText(self.status.text())
         elif kind == "qualification_progress":
+            elapsed = float(event.get('qualification_elapsed_seconds', event['elapsed_seconds']))
             self.status.setText("Checking the complete fitted field at "
-                f"{event['timepoints']} timepoints · {event['elapsed_seconds'] / 60:.1f} min. "
+                f"{event['timepoints']} timepoints · "
+                f"{elapsed / 60:.1f} min checking. "
                 "No further fitting is running in this phase.")
             self._thread_pool.indicator.label.setText(self.status.text())
         elif kind == "candidate_completed":
@@ -4071,7 +4081,14 @@ class ReferenceCalibrationDialog(QDialog):
                             load_pilot_preview(path, cache_directory=root / "display-cache")
 
             self._preview_prefetch.request_operation(candidate_id, prefetch)
-            self.status.setText(f"{candidate_id} completed; automatic QC metrics were verified.")
+            subjects = ((candidate.metrics or {}).get('attachment_comparison', {})
+                        .get('subjects', {}))
+            rejected = any((r.get('regional_quality') or {}).get(
+                'numerical_selection_suitable') is False for r in subjects.values())
+            self.status.setText(
+                f'{candidate_id}: fit saved, but numerical checks did not pass. '
+                'The retained starting fit stays available.' if rejected else
+                f'{candidate_id}: fit and checks saved. Review the shape before continuing.')
         elif kind == "automatic_stage_selected":
             self._render()
             self.status.setText(

@@ -8,9 +8,25 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 import numpy as np
+
+_CANCELLATION = ContextVar("mesh_filter_cancellation", default=None)
+
+
+@contextmanager
+def mesh_filter_cancellation(cancelled):
+    """Bind cancellation to one operation/thread, including nested surface checks."""
+    if not callable(cancelled):
+        raise TypeError("Mesh cancellation must be callable")
+    token = _CANCELLATION.set(cancelled)
+    try:
+        yield
+    finally:
+        _CANCELLATION.reset(token)
 
 
 def _worker_command():
@@ -22,8 +38,15 @@ def _worker_command():
     return [sys.executable, "-m", "diffeoforge.mesh_filter_worker"]
 
 
-def run_mesh_filter(operation: str, *, timeout: float = 300, **arrays) -> dict:
+def run_mesh_filter(operation: str, *, timeout: float = 300, cancelled=None, **arrays) -> dict:
     """Run one filter in a fresh hidden process; native faults become Python errors."""
+    cancelled = cancelled if cancelled is not None else _CANCELLATION.get()
+
+    def check_cancelled():
+        if cancelled is not None and cancelled():
+            raise InterruptedError("Surface checks cancelled; saved fit retained")
+
+    check_cancelled()
     command = _worker_command()
     with tempfile.TemporaryDirectory(prefix="diffeoforge-mesh-filter-") as temporary:
         root = Path(temporary)
@@ -36,6 +59,7 @@ def run_mesh_filter(operation: str, *, timeout: float = 300, **arrays) -> dict:
 
                 job = WindowsKillOnCloseJob()
             with (root / "error.txt").open("w+", encoding="utf-8") as error:
+                check_cancelled()
                 process = subprocess.Popen(
                     [*command, operation, str(source), str(output)],
                     stdin=subprocess.PIPE,
@@ -48,7 +72,22 @@ def run_mesh_filter(operation: str, *, timeout: float = 300, **arrays) -> dict:
                     job.assign(process)
                 # The child waits before importing native plugins: supervision first.
                 try:
-                    process.communicate("start\n", timeout=timeout)
+                    if cancelled is None:
+                        process.communicate("start\n", timeout=timeout)
+                    else:
+                        deadline = time.monotonic() + timeout
+                        pending = "start\n"
+                        while True:
+                            check_cancelled()
+                            remaining = deadline - time.monotonic()
+                            if remaining <= 0:
+                                raise subprocess.TimeoutExpired(process.args, timeout)
+                            try:
+                                process.communicate(pending, timeout=min(.1, remaining))
+                                break
+                            except subprocess.TimeoutExpired:
+                                pending = None
+                    check_cancelled()
                 except subprocess.TimeoutExpired as exception:
                     raise RuntimeError(
                         "Mesh preparation timed out; the saved pilot is retained"

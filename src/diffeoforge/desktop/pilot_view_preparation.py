@@ -72,11 +72,23 @@ def _guidance(snapshot, manifest):
 
         context = state(snapshot)
         from diffeoforge.reference_guard_failure import for_candidate
+        from diffeoforge.reference_qualification_resume import pending
 
+        context['qualification_pending'] = pending(snapshot)
         context["guard_failures"] = {
             c.candidate_id: failure for c in snapshot.candidates
+            if c.candidate_id not in context['qualification_pending']
             if (failure := for_candidate(c)) is not None
         }
         context["input_topology"] = prepare_for_snapshot(snapshot, manifest)
-        return prepare_proposals(snapshot, context)
+        result = prepare_proposals(snapshot, context)
+        result['qualification_pending'] = context['qualification_pending']
+        declaration = snapshot.attachment_comparison.get('regional_objective')
+        if declaration:
+            from diffeoforge.pilot_region_scope import summary
+            from diffeoforge.regional_fit import read_plan
+
+            result['regional_scope'] = summary(read_plan(dict(project=dict(
+                parameter_provenance=dict(regional_fit=declaration)))))
+        return result
     return None

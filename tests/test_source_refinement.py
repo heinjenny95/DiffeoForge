@@ -143,7 +143,7 @@ def test_incremental_composition_keeps_exact_old_endpoints_and_all_prefix_fields
 
 
 def test_field_cache_rechecks_live_identities_and_is_operation_local(tmp_path, monkeypatch):
-    from diffeoforge import reference_pca
+    from diffeoforge import reference_guarded_field, reference_pca
     from diffeoforge.regional_evaluation import field_inputs
 
     for name in ["manifest.json", "result.json", "output-inventory.json", "engine/model.xml",
@@ -152,11 +152,13 @@ def test_field_cache_rechecks_live_identities_and_is_operation_local(tmp_path, m
         path.parent.mkdir(exist_ok=True)
         path.write_text(name)
     data = SimpleNamespace(control_points_path=tmp_path / "q.txt", momenta_path=tmp_path / "p.txt",
+                           source_hashes={},
                            run_report=SimpleNamespace(manifest=dict(
                                inputs=[dict(role="template", staged_path="template.vtk")])) )
     calls = []
     monkeypatch.setattr(reference_pca, "load_reference_momenta",
                         lambda *a, **kw: calls.append(True) or data)
+    monkeypatch.setattr(reference_guarded_field, 'bind_original_control_points', lambda x: x)
     cache = {}
     assert field_inputs(tmp_path, cache) is field_inputs(tmp_path, cache)
     assert len(calls) == 1

@@ -29,6 +29,7 @@ def render(window, prepared):
     info = record(snapshot)
     guidance = prepared.guidance
     guard_failures = guidance.get("guard_failures", {})
+    checks_pending = guidance.get('qualification_pending', {})
     running = window._worker is not None or window._restoring_search
     regional_accepted = bool(
         snapshot.attachment_comparison.get("regional_objective")
@@ -85,6 +86,11 @@ def render(window, prepared):
     explanation.setObjectName("pilotScope")
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
+    if guidance.get('regional_scope'):
+        scope = QLabel(guidance['regional_scope']['text'])
+        scope.setWordWrap(True)
+        scope.setObjectName('regionalTrialScope')
+        window.content_layout.addWidget(scope)
     next_forms = guidance.get("next_forms", {})
     valid_next = next((row for row in next_forms.values() if row.get("available")), None)
     progress_summary = valid_next or guidance.get("form_progress_summary")
@@ -122,7 +128,7 @@ def render(window, prepared):
         conditions.setWordWrap(True)
         conditions.setObjectName("jointFitConditions")
         window.content_layout.addWidget(conditions)
-    if info.get("goal") and not regional_accepted and not guard_failures:
+    if info.get("goal") and not regional_accepted and not guard_failures and not checks_pending:
         from diffeoforge.pilot_recovery import DESCRIPTIONS
 
         reason = DESCRIPTIONS.get(info["goal"])
@@ -152,6 +158,7 @@ def render(window, prepared):
         c for c in snapshot.candidates if c.status not in {"completed", "failed", "interrupted"}
     ]
     failed = [c for c in snapshot.candidates if c.status in {"failed", "interrupted"}]
+    resume_checks = bool(pending) and all(c.candidate_id in checks_pending for c in pending)
     retry_blocked = any(c.candidate_id in guard_failures for c in pending)
     window.progress.setVisible(running or bool(completed))
     window.progress.setRange(0, len(snapshot.candidates))
@@ -160,6 +167,8 @@ def render(window, prepared):
     window.start_button.setText(
         "Review numerical failure · this test cannot be rerun"
         if retry_blocked
+        else "Resume checks on saved fit · no new fitting"
+        if resume_checks
         else f"Run joint check · {snapshot.plan.pilot_subject_count} specimens"
         if info["phase"] == "joint"
         else f"Compare Current / Varifold · {len(pending)} trials on 1 specimen"
@@ -170,7 +179,9 @@ def render(window, prepared):
     window.start_button.setEnabled(not running and not retry_blocked)
     window.start_button.setToolTip(
         "Inspect the retained fit and numerical failure. The same failed test cannot be rerun."
-        if retry_blocked else ""
+        if retry_blocked else "Reverify the saved native result and finish its surface checks. "
+        "The optimizer will not be started again."
+        if resume_checks else ""
     )
     _set_action_emphasis(window.start_button, bool(pending) and not running and not retry_blocked)
     window.cancel_button.setVisible(running)
@@ -184,6 +195,8 @@ def render(window, prepared):
         if running
         else "Numerical check stopped a trial. Inspect the retained fit and failure details."
         if retry_blocked
+        else "Saved fit retained. Choose Resume checks; no new fitting is needed."
+        if resume_checks
         else "A trial failed. Inspect details, retry, or choose an approved alternative."
         if failed
         else "Suitable fit saved. Use the next-form action below."
@@ -261,7 +274,9 @@ def render(window, prepared):
         decision = snapshot.visual_reviews.get(candidate.candidate_id)
         already_inspected = bool(feedback and feedback.get("current_inspected"))
         state = (
-            candidate.status.title()
+            "Fit saved · checks cancelled"
+            if candidate.candidate_id in checks_pending
+            else candidate.status.title()
             if candidate.status in {"failed", "interrupted"}
             else "Suitable for this form"
             if decision is True
@@ -283,6 +298,9 @@ def render(window, prepared):
                 state += f" ({runtime / 60:.1f} min including review waits)"
         elif runtime is not None:
             state += f" · {runtime / 60:.1f} min"
+        resumed = (candidate.metrics or {}).get('qualification_resume_wall_seconds')
+        if resumed is not None:
+            state += f" · {resumed / 60:.1f} min resumed checks, no new fitting"
         from diffeoforge.guided_progress import iteration_limited
 
         if iteration_limited(candidate):
@@ -296,6 +314,12 @@ def render(window, prepared):
         quality = next((r["regional_quality"] for r in subjects.values()
                         if r.get("regional_quality")), None)
         if quality:
+            if quality.get('qualification_wall_seconds') is not None:
+                state += f" · {quality['qualification_wall_seconds']/60:.1f} min checks"
+                label.setText(state)
+            if quality.get('numerical_selection_suitable') is False:
+                label.setText('Numerical checks did not pass · '+state)
+                label.setObjectName('statusWarning')
             failures = [label for key, label in [("transition_preserved", "transition fit"),
                          ("outside_preserved", "preservation outside the area"),
                          ("shape_preserved", "preservation of marked part shape")]
@@ -341,10 +365,14 @@ def render(window, prepared):
                 note.setWordWrap(True)
                 note.setObjectName("statusWarning")
                 layout.addWidget(note)
-            layout.addWidget(
-                InfoDisclosure("Technical failure", failure["reason"] if failure
-                               else candidate.error or "No usable result")
-            )
+            if candidate.candidate_id in checks_pending:
+                note = QLabel('The native fit finished. Choose Resume checks on saved fit '
+                              'to complete its checks without fitting again.')
+                note.setWordWrap(True)
+                layout.addWidget(note)
+            else:
+                layout.addWidget(InfoDisclosure('Technical failure', failure['reason'] if failure
+                                 else candidate.error or 'No usable result'))
             if not running and candidate.status == "failed":
                 from diffeoforge.desktop.guided_failed_parent import render as failed_actions
 

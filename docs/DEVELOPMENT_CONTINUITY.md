@@ -1,3 +1,23 @@
+# Development continuity — dev179 saved-fit checking and clear trial scope
+
+Runtime target dev179 adds cancellable isolated surface checks, guarded reuse of
+a normally completed native fit after its checks were explicitly cancelled, and
+clear A/B/C trial-scope labels. Reuse never constructs an optimizer controller;
+changed or failed evidence is rejected. The elapsed checking clock spans internal
+batches, resumed checking time is separate, and failed gates stay explicit.
+See [saved-fit check recovery](PILOT_CHECK_RECOVERY.md) for the binding and limits.
+
+Vectorized conforming subdivision preserves the historical connectivity/point
+order exactly. Independent replay and complete fixed-field qualification agree
+with retained reference measurements and endpoint hashes. This reduces bookkeeping
+without changing scientific equations, controls, precision, caps, accuracy or
+acceptance gates. New automatic ten-minute review pauses remain removed; old
+contracts remain intact. Original scientific work and approvals remain preserved.
+Package/install verification is pending; the separately verified installed version
+remains dev178 until the new delivery receipt is complete. No Drive upload is
+requested. Owner-paused agents, archive work and the closed solver experiment
+remain paused/closed.
+
 # Development continuity — dev178 verified delivery and qualification limits
 
 Engineering dev178 is installed and verified. It corrects expected cancellation

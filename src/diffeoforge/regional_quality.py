@@ -1,6 +1,7 @@
 """Regional, transition and preservation checks; no automatic anatomy decision."""
 
 import json
+import time
 from pathlib import Path
 
 import numpy as np
@@ -211,12 +212,36 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None,
 def evaluate_and_measure(
     root, manifest, candidate, run, *, cancelled=lambda: False, event_callback=None
 ):
+    from diffeoforge.mesh_filter_worker import mesh_filter_cancellation
+
+    started = time.monotonic()
+
+    def progress(event):
+        if event_callback:
+            event_callback(dict(event, qualification_elapsed_seconds=time.monotonic()-started))
+
+    with mesh_filter_cancellation(cancelled):
+        return _evaluate_and_measure(
+            root, manifest, candidate, run, cancelled=cancelled,
+            event_callback=progress if event_callback else None
+        )
+
+
+def _evaluate_and_measure(
+    root, manifest, candidate, run, *, cancelled, event_callback
+):
     from diffeoforge.config import load_config
     from diffeoforge.regional_evaluation import evaluate
 
     record = manifest["attachment_comparison"]
     if not record.get("regional_objective"):
         return None
+    started = time.monotonic()
+    if cancelled():
+        raise InterruptedError('Surface checks cancelled; saved fit retained')
+    if event_callback:
+        event_callback(dict(event='qualification_phase', message=
+            'Fit complete. Checking the saved field and original surface; no new fitting.'))
     from uuid import uuid4
 
     destination = (
@@ -377,6 +402,7 @@ def evaluate_and_measure(
     quality["numerical_selection_suitable"] &= quality["temporal_grid_stable"]
     quality["numerical_selection_suitable"] &= quality["spatial_resolution_sufficient"]
     quality["evaluation"] = receipt
+    quality['qualification_wall_seconds'] = time.monotonic()-started
     path = destination / "quality.json"
     path.write_text(json.dumps(quality, indent=2) + "\n")
     return quality

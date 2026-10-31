@@ -103,11 +103,14 @@ def proposal(snapshot, identifier, data, info, symptom):
     if parent.plan.pilot_subject_count != 1:
         available = False
         blocked = 'Choose a compatible saved single-form fit before a local correction.'
-    index = problem.index(active)+1
-    return dict(goal='regional', title=f'Improve marked area {index}; retain the rest',
-        reason=f'Work on area {index} of {len(problem)}, which has the largest measured remaining '
+    from diffeoforge.pilot_region_scope import label
+
+    area = label(marked.index(active))
+    return dict(goal='regional', title=f'Improve marked area {area}; retain the rest',
+        reason=f'Work on area {area}, which has the largest measured remaining '
         'surface mismatch. Keep the complete starting fit and the Retain areas. '
-        'Use a broad capture range with separate local movement; all your marks remain saved. '
+        'This trial improves one marked area; the other instructions remain saved. '
+        'Use a broad capture range with separate local movement. '
         + ('An earlier identical test is retained; this is a distinct weight contrast. '
            if changed else '') +
         'After fitting, check all important projections in the saved result. '
