@@ -9,9 +9,19 @@ integration, cancellation, export and final review remain unchanged.
 Historical explicitly declared review runs still render and validate their
 original observer and generation-bound decisions. No prepared/running manifest
 or saved result is rewritten; prepare a new local attempt to use the new policy.
-Focused preparation, historical-review and worker checks pass; packaging and
-idle/backup installation remain pending. Installed dev176 remains current until
-those delivery checks complete. No new anatomical result or speed claim.
+33 focused preparation, historical-review/Qt and execution-worker tests pass;
+lint passes. The actual frozen package passes four cold/warm/inherited-policy
+render checks with unchanged native XML, six historical and six intermediate
+Windows views, read-only historical evidence replay and a controlled harmless
+WSL cancellation test (17.5 s, outside process/checkpoint preserved).
+
+Engineering build dev177 is installed after fresh idle checks and a verified
+runtime/settings backup. All 3,473 bundle files, six evidence companions,
+license, uninstall registry, desktop/Qt settings and preserved owner project
+inventories verify. Prior dev176 remains recoverable. Runtime source is
+`40c10d8fb177ab10be8354e1bcb69b8ebaf7b958`; this final delivery note is a later
+documentation-only commit. No private fit was recomputed, scientific result
+approved or installer uploaded. No new anatomical result or speed claim.
 
 # Development continuity — dev176 verified delivery (31 October 2026)
 
