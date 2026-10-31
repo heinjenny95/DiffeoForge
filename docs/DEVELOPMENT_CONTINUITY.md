@@ -1,6 +1,7 @@
 # Development continuity — dev179 saved-fit checking and clear trial scope
 
-Runtime target dev179 adds cancellable isolated surface checks, guarded reuse of
+Engineering dev179 is installed and verified. It adds cancellable isolated surface checks,
+guarded reuse of
 a normally completed native fit after its checks were explicitly cancelled, and
 clear A/B/C trial-scope labels. Reuse never constructs an optimizer controller;
 changed or failed evidence is rejected. The elapsed checking clock spans internal
@@ -16,10 +17,24 @@ with retained reference measurements and endpoint hashes. This reduces bookkeepi
 without changing scientific equations, controls, precision, caps, accuracy or
 acceptance gates. New automatic ten-minute review pauses remain removed; old
 contracts remain intact. Original scientific work and approvals remain preserved.
-Package/install verification is pending; the separately verified installed version
-remains dev178 until the new delivery receipt is complete. No Drive upload is
-requested. Owner-paused agents, archive work and the closed solver experiment
-remain paused/closed.
+57 focused workflow/qualification tests pass, alongside five Windows host-directory
+cases and the final Qt presentation cases. The exact frozen program passes the
+historical and new policy views, mixed-mark scope, cancelled-check recovery view,
+large-font/light/dark layouts and deep-path contract. Its isolated surface worker
+cancels promptly; a new owned native run stops in under two seconds with all
+accepted checkpoint artifacts independently bound and no false numerical violation.
+The separate deliberately resistant process test also passes without affecting an
+outside process. These observed engineering timings are not universal latency or
+fit-quality guarantees.
+
+Installation followed a fresh idle check and a verified recoverable runtime/settings
+backup. All 3,473 bundle files, six companions, license, registry, desktop/Qt settings
+and preserved project inventories verify. Prior dev178 remains recoverable.
+Runtime source is `e15641722e15a24a79e34c4888eba7cfed92eebd`; this delivery-only
+note is a later commit and needs no identical rebuild. No installer was uploaded
+to Drive. Owner-paused agents, archive work and the closed solver experiment remain
+paused/closed. Numerical qualification still does not approve anatomy or a common
+cohort protocol.
 
 # Development continuity — dev178 verified delivery and qualification limits
 
