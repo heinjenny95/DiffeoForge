@@ -666,6 +666,13 @@ def bind(root, manifest, record):
         automatic_evaluation = qualify(seed_run, root / 'automatic-seed-qualification',
                                        source=original['path'] if original else None)
     verify_source(automatic_evaluation)
+    from diffeoforge.regional_material_frame import align
+
+    (record, recipe, residual, fit_source, automatic_evaluation,
+     anchor_evaluation, material_response) = align(
+        root, manifest, record, recipe, residual, fit_source, automatic_evaluation,
+        anchor_evaluation, run)
+    retained = anchor_evaluation['endpoint']['path']
     from diffeoforge.regional_warm_support import assess as assess_warm_support
 
     support = assess_warm_support(
@@ -733,6 +740,8 @@ def bind(root, manifest, record):
         manifest_sha256=sha256_file(seed_run / 'manifest.json'))
     if support:
         data['warm_source_support'] = support
+    if material_response:
+        data['material_frame_response'] = material_response
     data["numerical_protocol"] = dict(
         version="regional-rk2-v1", integration="rk2",
         minimum_native_timepoints=MINIMUM_NEW_NATIVE_TIMEPOINTS,

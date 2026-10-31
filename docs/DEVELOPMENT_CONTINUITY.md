@@ -1,3 +1,23 @@
+# Development continuity — dev180 shared material for the next local correction
+
+Runtime target dev180 fixes preparation after a saved fit's spatial qualification
+refined its material grid. The complete learned field becomes a fixed prefix for
+the existing explicit zero-residual contract when its old incoming mesh cannot
+share the qualified comparison grid. Existing residual comparisons are evaluated
+on that same bound original material. The connectivity guard remains strict;
+there is no interpolation, truncation, coefficient replacement or optimizer restore.
+Matching warm frames keep their existing behavior. See
+[shared material preparation](PILOT_SHARED_MATERIAL_FRAME.md).
+
+42 focused frame/warm/refinement cases pass. An isolated replay reproduces the
+old failure and prepares the correction with matching material after the fix,
+without owner journal writes or optimizer execution. A real fixed-zero-field check
+preserves all starting coordinates and connectivity exactly. Existing fields,
+accuracy, caps, paused work and the removed automatic timed-review policy remain
+unchanged. Package verification and installation are pending; dev179 remains the
+separately verified installed version until delivery acceptance. No Drive upload
+is requested.
+
 # Development continuity — dev179 saved-fit checking and clear trial scope
 
 Engineering dev179 is installed and verified. It adds cancellable isolated surface checks,

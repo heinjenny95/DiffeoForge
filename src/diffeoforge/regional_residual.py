@@ -37,7 +37,7 @@ def retained_evaluation(record, run, target):
     return None
 
 
-def bind(root, manifest, record, recipe):
+def bind(root, manifest, record, recipe, *, source_grid=None):
     """Preserve the parent deformation and fit only a new residual field."""
     import numpy as np
 
@@ -99,11 +99,18 @@ def bind(root, manifest, record, recipe):
             raise ValueError("Residual starting surface changed")
     from diffeoforge.regional_frame import compatible, qualify, verify_source
 
-    if not compatible(evaluation):
-        original = (evaluation or {}).get("reference_source")
+    if source_grid and sha256_file(Path(source_grid['path'])) != source_grid['sha256']:
+        raise ValueError('Requested original material grid changed')
+    if (not compatible(evaluation) or (source_grid
+            and evaluation.get('reference_source', {}).get('sha256') != source_grid['sha256'])):
+        original = source_grid or (evaluation or {}).get("reference_source")
         evaluation = qualify(run, root / "retained-frame-qualification",
                              source=original["path"] if original else None)
     verify_source(evaluation)
+    if source_grid and Path(evaluation['source_run']).resolve() != run.resolve():
+        raise ValueError('Requested material frame belongs to a different retained field')
+    if source_grid and evaluation['reference_source']['sha256'] != source_grid['sha256']:
+        raise ValueError('Residual source did not use the requested original material grid')
     path = Path(evaluation["endpoint"]["path"])
     source = load_surface_mesh(path)
     copied = root / "residual-source.vtk"
