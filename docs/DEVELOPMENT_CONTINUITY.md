@@ -1,6 +1,6 @@
 # Development continuity — dev180 shared material for the next local correction
 
-Runtime target dev180 fixes preparation after a saved fit's spatial qualification
+Installed dev180 fixes preparation after a saved fit's spatial qualification
 refined its material grid. The complete learned field becomes a fixed prefix for
 the existing explicit zero-residual contract when its old incoming mesh cannot
 share the qualified comparison grid. Existing residual comparisons are evaluated
@@ -14,9 +14,17 @@ old failure and prepares the correction with matching material after the fix,
 without owner journal writes or optimizer execution. A real fixed-zero-field check
 preserves all starting coordinates and connectivity exactly. Existing fields,
 accuracy, caps, paused work and the removed automatic timed-review policy remain
-unchanged. Package verification and installation are pending; dev179 remains the
-separately verified installed version until delivery acceptance. No Drive upload
-is requested.
+unchanged.
+
+The exact frozen program also passes the isolated production preparation and
+native zero-field preservation checks. All 3,473 bundle files, six companions,
+license and registry verify after installation. A fresh complete backup and idle
+checks precede installation; the current project, desktop/Qt settings and all
+protected original receipts remain unchanged. Prior dev179 is recoverable.
+Runtime source is `89079630bab0eddd2aeb9db994fb551e0a87f69a`; this delivery-only
+note is a later commit and needs no identical rebuild. No optimizer was launched
+for this fix, and a future correction still needs its normal checks and visual
+review. No installer was uploaded to Drive.
 
 # Development continuity — dev179 saved-fit checking and clear trial scope
 
