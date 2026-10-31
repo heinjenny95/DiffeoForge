@@ -33,7 +33,8 @@ protection. Explicit Retain keeps its independently inspected reference. Its
 native noise is at most the unchanged displacement bound divided by 16; the
 post-fit bound remains diagonal times 1e-4. New trials in this policy use at
 least 145 native RK2 points. Native L-BFGS, Float precision, finite/line-search
-guards, iteration headroom and the ten-active-minute review remain unchanged.
+guards and iteration headroom remain unchanged. New attempts run to their native
+stop/cap without timed review pauses, following the owner's October 31 update.
 Temporal/spatial refinement, intersections and all preservation gates still run
 on the composed field before numerical qualification.
 

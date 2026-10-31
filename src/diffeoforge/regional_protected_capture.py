@@ -110,7 +110,7 @@ def proposal(snapshot, identifier, data, info, symptom):
         'Use a broad capture range with separate local movement; all your marks remain saved. '
         + ('An earlier identical test is retained; this is a distinct weight contrast. '
            if changed else '') +
-        'Review after about 10 active minutes, then check all important projections. '
+        'After fitting, check all important projections in the saved result. '
         'This test does not approve the other areas or the final anatomy.',
         target=reference['target'], method=reference['method'], values=values,
         anchor=reference, initialization_reference=seed, from_base=False,

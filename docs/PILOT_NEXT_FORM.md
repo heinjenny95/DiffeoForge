@@ -28,8 +28,9 @@ reviewed standard protocol can change the common-model coverage count while
 preserving earlier shape decisions. A failed source verification shows its input
 issue and keeps inspection available instead of silently choosing a fresh fit.
 
-The next-form/common-model screen retains the existing 120-iteration allowance
-and ten-active-minute review mechanism. Neither iteration limits nor numerical
+The next-form/common-model screen retains the existing 120-iteration allowance.
+New attempts have no timed review pause, following the owner's October 31 update;
+historical prepared contracts remain supported. Neither iteration limits nor numerical
 accuracy are weakened. This repair does not establish that one standard protocol
 will reproduce every individually optimized local fit or guarantee a runtime.
 

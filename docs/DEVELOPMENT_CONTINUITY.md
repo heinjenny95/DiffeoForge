@@ -1,3 +1,17 @@
+# Development continuity — current-pilot qualification and guidance cleanup
+
+New isolated prospective tests are checking the installed dev177 worker on
+complex surface inputs. Qualification, anatomy, first-screen adequacy and common
+atlas suitability remain distinct; private data and specimen results stay out of
+this repository. No owner optimizer is restarted or original fit rewritten.
+
+The protected-area suggestion still mentioned a ten-minute review after the
+observer had been removed. The suggestion and current-policy method notes now
+describe checking the saved result without a timed pause. This is a wording-only
+runtime change; model/objective, native optimizer, guards, limits and accuracy are
+unchanged. Version178 is the delivery target; installed dev177 remains unchanged
+while local tests run. Historical explicit review contracts remain supported.
+
 # Development continuity — remove automatic timed pilot pauses (dev177)
 
 At the owner's request, newly prepared guarded local trials no longer add the
