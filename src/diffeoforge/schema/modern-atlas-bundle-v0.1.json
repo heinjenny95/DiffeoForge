@@ -27,11 +27,12 @@
       "additionalProperties": false,
       "required": ["id", "diffeoforge", "pytorch", "numpy", "device", "dtype"],
       "properties": {
-        "id": {"enum": ["diffeoforge_modern_dense", "diffeoforge_modern_blockwise"]},
+        "id": {"enum": ["diffeoforge_modern_dense", "diffeoforge_modern_blockwise", "diffeoforge_modern_blockwise_recompute"]},
+        "implementation_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
         "diffeoforge": {"type": "string", "minLength": 1},
         "pytorch": {"type": "string", "minLength": 1},
         "numpy": {"type": "string", "minLength": 1},
-        "device": {"const": "cpu"},
+        "device": {"enum": ["cpu", "cuda"]},
         "dtype": {"const": "float64"},
         "pairwise_evaluation": {"$ref": "#/$defs/pairwiseEvaluation"}
       },
@@ -46,7 +47,9 @@
             }
           },
           "then": {
-            "properties": {"id": {"const": "diffeoforge_modern_blockwise"}}
+            "properties": {
+              "id": {"enum": ["diffeoforge_modern_blockwise", "diffeoforge_modern_blockwise_recompute"]}
+            }
           }
         },
         {
@@ -60,6 +63,20 @@
           },
           "then": {
             "properties": {"id": {"const": "diffeoforge_modern_dense"}}
+          }
+        },
+        {
+          "if": {
+            "required": ["pairwise_evaluation"],
+            "properties": {
+              "pairwise_evaluation": {
+                "required": ["autograd_strategy"],
+                "properties": {"autograd_strategy": {"const": "recompute"}}
+              }
+            }
+          },
+          "then": {
+            "properties": {"id": {"const": "diffeoforge_modern_blockwise_recompute"}}
           }
         }
       ]
@@ -99,11 +116,12 @@
             "max_cycles": {"type": "integer", "minimum": 0},
             "block_order": {
               "type": "array",
-              "minItems": 3,
+              "minItems": 1,
               "maxItems": 3,
               "uniqueItems": true,
               "items": {"enum": ["momenta", "template", "control_points"]}
             },
+            "momenta_updates_per_cycle": {"type": "integer", "minimum": 1, "maximum": 100},
             "momenta_step_size": {"type": "number", "exclusiveMinimum": 0},
             "template_step_size": {"type": "number", "exclusiveMinimum": 0},
             "control_points_step_size": {"type": "number", "exclusiveMinimum": 0},
@@ -111,10 +129,24 @@
             "armijo_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
             "gradient_tolerance": {"type": "number", "minimum": 0},
             "minimum_step_size": {"type": "number", "exclusiveMinimum": 0},
-            "max_line_search_iterations": {"type": "integer", "minimum": 1}
+            "max_line_search_iterations": {"type": "integer", "minimum": 1},
+            "step_initialization": {"enum": ["fixed", "previous_accepted"]},
+            "direction_update": {"enum": ["steepest", "lbfgs"]},
+            "lbfgs_history_size": {"type": "integer", "minimum": 1, "maximum": 100},
+            "lbfgs_curvature_tolerance": {"type": "number", "minimum": 0},
+            "lbfgs_initial_step_size": {"type": "number", "exclusiveMinimum": 0},
+            "line_search_condition": {"enum": ["armijo", "strong_wolfe"]},
+            "strong_wolfe_curvature_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+            "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0},
+            "relative_objective_tolerance": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+            "subject_batch_size": {"type": ["integer", "null"], "minimum": 1},
+            "subject_batch_workers": {"type": "integer", "minimum": 1, "maximum": 64},
+            "shared_step_scaling": {"enum": ["none", "inverse_subject_count"]},
+            "template_gradient": {"enum": ["euclidean", "sobolev"]},
+            "sobolev_kernel_width_ratio": {"type": "number", "exclusiveMinimum": 0}
           }
         },
-        "termination_reason": {"enum": ["gradient_tolerance", "max_cycles", "line_search_failed"]},
+        "termination_reason": {"enum": ["gradient_tolerance", "relative_objective_tolerance", "max_cycles", "line_search_failed"]},
         "converged": {"type": "boolean"},
         "failed_block": {"enum": ["momenta", "template", "control_points", null]},
         "cycles_completed": {"type": "integer", "minimum": 0},
@@ -291,7 +323,8 @@
           "properties": {
             "mode": {"const": "dense"},
             "query_tile_size": {"type": "null"},
-            "source_tile_size": {"type": "null"}
+            "source_tile_size": {"type": "null"},
+            "autograd_strategy": {"const": "standard"}
           }
         },
         {
@@ -301,7 +334,8 @@
           "properties": {
             "mode": {"const": "blockwise"},
             "query_tile_size": {"type": "integer", "minimum": 1},
-            "source_tile_size": {"type": "integer", "minimum": 1}
+            "source_tile_size": {"type": "integer", "minimum": 1},
+            "autograd_strategy": {"enum": ["standard", "recompute"]}
           }
         }
       ]

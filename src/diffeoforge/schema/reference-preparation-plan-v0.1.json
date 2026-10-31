@@ -21,6 +21,84 @@
     "command_preview",
     "scientific_boundary"
   ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "input_count": {
+            "properties": {
+              "subjects": {
+                "const": 1
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "effective_config": {
+            "required": [
+              "project",
+              "optimization"
+            ],
+            "properties": {
+              "project": {
+                "required": [
+                  "parameter_provenance"
+                ],
+                "properties": {
+                  "parameter_provenance": {
+                    "required": [
+                      "regional_fit",
+                      "finite_accepted_guard"
+                    ],
+                    "properties": {
+                      "finite_accepted_guard": {
+                        "properties": {
+                          "version": {
+                            "const": "new-regional-c5-v1"
+                          },
+                          "scope": {
+                            "const": "new_single_specimen_probe"
+                          },
+                          "recovery": {
+                            "const": "none"
+                          }
+                        },
+                        "required": [
+                          "version",
+                          "scope",
+                          "recovery"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "optimization": {
+                "required": [
+                  "method",
+                  "freeze_template",
+                  "freeze_control_points"
+                ],
+                "properties": {
+                  "method": {
+                    "const": "lbfgs"
+                  },
+                  "freeze_template": {
+                    "const": true
+                  },
+                  "freeze_control_points": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "schema_version": { "const": "0.1" },
     "status": { "const": "read_only_plan_not_prepared" },
@@ -51,7 +129,7 @@
       "required": ["id", "contract_version", "engine_constants"],
       "properties": {
         "id": { "const": "deformetrica_reference" },
-        "contract_version": { "const": "0.1" },
+        "contract_version": { "enum": ["0.1", "0.2", "0.3", "0.4", "0.5"] },
         "engine_constants": {
           "type": "object",
           "additionalProperties": false,
@@ -76,13 +154,37 @@
       }
     },
     "directories": {
-      "const": [
-        "config",
-        "engine",
-        "input/template",
-        "input/subjects",
-        "logs",
-        "output"
+      "oneOf": [
+        {
+          "const": [
+            "config",
+            "engine",
+            "input/template",
+            "input/subjects",
+            "logs",
+            "output"
+          ]
+        },
+        {
+          "const": [
+            "config",
+            "engine",
+            "input/template",
+            "input/subjects",
+            "logs",
+            "output",
+            "input/control-points"
+          ]
+        },
+        {
+          "const": [
+            "config", "engine", "input/template", "input/subjects", "logs", "output",
+            "input/momenta", "input/control-points"
+          ]
+        },
+        { "const": ["config", "engine", "input/template", "input/subjects", "logs", "output", "input/regional"] },
+        { "const": ["config", "engine", "input/template", "input/subjects", "logs", "output", "input/regional", "input/control-points"] },
+        { "const": ["config", "engine", "input/template", "input/subjects", "logs", "output", "input/regional", "input/momenta", "input/control-points"] }
       ]
     },
     "input_count": {
@@ -91,12 +193,12 @@
       "required": ["templates", "subjects"],
       "properties": {
         "templates": { "const": 1 },
-        "subjects": { "type": "integer", "minimum": 2 }
+        "subjects": { "type": "integer", "minimum": 1 }
       }
     },
     "inputs": {
       "type": "array",
-      "minItems": 3,
+      "minItems": 2,
       "items": { "$ref": "#/$defs/input" }
     },
     "effective_config": {

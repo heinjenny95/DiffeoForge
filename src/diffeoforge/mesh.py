@@ -6,8 +6,10 @@ import hashlib
 import math
 import re
 import struct
+import threading
+from collections import OrderedDict
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from numbers import Integral, Real
 from pathlib import Path
 
@@ -32,6 +34,8 @@ _CONNECTIVITY_RE = re.compile(
     rb"\r?\nCONNECTIVITY\s+(vtktypeint32|vtktypeint64|int|long)[ \t]*\r?\n",
     re.IGNORECASE,
 )
+_METADATA_CACHE: OrderedDict[str, MeshMetadata] = OrderedDict()
+_METADATA_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -198,6 +202,36 @@ def _read_vtk51_offsets(
 
 
 def inspect_vtk(path: Path | str) -> MeshMetadata:
+    """Reuse bounded scalar metadata after a fresh streaming content hash.
+
+    Repeated project/pilot preparation never retains a mesh cohort or reparses
+    unchanged coordinates merely to rediscover counts and bounds. Fresh hashes
+    remain mandatory; stat/mtime alone never establish scientific identity.
+    """
+    source = Path(path).resolve()
+    try:
+        before = source.stat()
+        digest = sha256_file(source)
+        with _METADATA_LOCK:
+            cached = _METADATA_CACHE.get(digest)
+            if cached is not None:
+                _METADATA_CACHE.move_to_end(digest)
+        if cached is None:
+            cached = _inspect_vtk_uncached(source)
+        after = source.stat()
+        if (cached.sha256 != digest or cached.bytes != after.st_size
+                or (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns)):
+            raise ConfigurationError(f"VTK mesh changed during inspection: {source}")
+        with _METADATA_LOCK:
+            _METADATA_CACHE[digest] = cached
+            while len(_METADATA_CACHE) > 256:
+                _METADATA_CACHE.popitem(last=False)
+        return replace(cached, path=str(source))
+    except OSError as error:
+        raise ConfigurationError(f"Could not read VTK mesh {source}: {error}") from error
+
+
+def _inspect_vtk_uncached(path: Path | str) -> MeshMetadata:
     """Validate and inventory one legacy VTK triangular PolyData mesh.
 
     Legacy binary VTK coordinates are big-endian by specification. Reading the
@@ -478,7 +512,13 @@ def write_vtk_polydata(
     *,
     title: str = "DiffeoForge surface",
 ) -> Path:
-    """Write deterministic, exclusive ASCII legacy VTK triangular PolyData."""
+    """Write deterministic, exclusive ASCII legacy VTK triangular PolyData.
+
+    Validation and output are deliberately streamed over the supplied sequences.
+    The former implementation materialized normalized copies of every vertex,
+    triangle, and output line at once, which multiplied peak memory for legitimate
+    high-resolution cohorts during landmark-GPA preparation.
+    """
 
     destination = Path(path).resolve()
     if not isinstance(title, str) or not title.strip() or "\n" in title or "\r" in title:
@@ -487,56 +527,52 @@ def write_vtk_polydata(
         title.encode("ascii")
     except UnicodeEncodeError as error:
         raise ValueError("title must contain only ASCII characters") from error
-    try:
-        normalized_vertices = tuple(
-            tuple(float(coordinate) for coordinate in vertex) for vertex in vertices
-        )
-    except (TypeError, ValueError) as error:
-        raise TypeError("vertices must be a sequence of numeric rows") from error
-    if not normalized_vertices or any(len(vertex) != 3 for vertex in normalized_vertices):
+    if len(vertices) == 0 or any(len(vertex) != 3 for vertex in vertices):
         raise ValueError("vertices must have shape (n, 3)")
-    if not all(math.isfinite(value) for vertex in normalized_vertices for value in vertex):
-        raise ValueError("vertices must contain only finite values")
-
-    normalized_triangles: list[tuple[int, int, int]] = []
+    try:
+        for vertex in vertices:
+            if not all(math.isfinite(float(value)) for value in vertex):
+                raise ValueError("vertices must contain only finite values")
+    except (TypeError, ValueError) as error:
+        if isinstance(error, ValueError) and "finite" in str(error):
+            raise
+        raise TypeError("vertices must be a sequence of numeric rows") from error
+    if len(triangles) == 0:
+        raise ValueError("triangles must contain at least one face")
+    maximum_index = len(vertices) - 1
     try:
         for triangle in triangles:
             if len(triangle) != 3:
                 raise ValueError("triangles must have shape (n, 3)")
             if any(
-                isinstance(index, bool) or not isinstance(index, Integral) for index in triangle
+                isinstance(index, bool) or not isinstance(index, Integral)
+                for index in triangle
             ):
                 raise TypeError("triangle indices must be integers")
-            normalized_triangles.append(tuple(int(index) for index in triangle))
+            if min(triangle) < 0 or max(triangle) > maximum_index:
+                raise ValueError("triangles contain an out-of-range vertex index")
+            if len(set(triangle)) != 3:
+                raise ValueError("triangles contain a repeated vertex index")
     except TypeError as error:
         if "triangle indices" in str(error):
             raise
         raise TypeError("triangles must be a sequence of integer rows") from error
-    if not normalized_triangles:
-        raise ValueError("triangles must contain at least one face")
-    maximum_index = len(normalized_vertices) - 1
-    for triangle in normalized_triangles:
-        if min(triangle) < 0 or max(triangle) > maximum_index:
-            raise ValueError("triangles contain an out-of-range vertex index")
-        if len(set(triangle)) != 3:
-            raise ValueError("triangles contain a repeated vertex index")
 
     def coordinate(value: float) -> str:
         return format(0.0 if value == 0.0 else value, ".17g")
 
-    lines = [
-        "# vtk DataFile Version 3.0",
-        title.strip(),
-        "ASCII",
-        "DATASET POLYDATA",
-        f"POINTS {len(normalized_vertices)} double",
-        *(" ".join(coordinate(value) for value in vertex) for vertex in normalized_vertices),
-        f"POLYGONS {len(normalized_triangles)} {len(normalized_triangles) * 4}",
-        *(f"3 {a} {b} {c}" for a, b, c in normalized_triangles),
-    ]
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("x", encoding="ascii", newline="\n") as handle:
-        handle.write("\n".join(lines) + "\n")
+        handle.write("# vtk DataFile Version 3.0\n")
+        handle.write(f"{title.strip()}\n")
+        handle.write("ASCII\nDATASET POLYDATA\n")
+        handle.write(f"POINTS {len(vertices)} double\n")
+        for vertex in vertices:
+            handle.write(" ".join(coordinate(float(value)) for value in vertex))
+            handle.write("\n")
+        handle.write(f"POLYGONS {len(triangles)} {len(triangles) * 4}\n")
+        for a, b, c in triangles:
+            handle.write(f"3 {int(a)} {int(b)} {int(c)}\n")
     return destination
 
 

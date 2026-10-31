@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "diffeoforge"
-version = "0.0.0.dev0"
+version = "0.0.0.dev180"
 description = "Reproducible diffeomorphic atlas workflows for 3D surface meshes"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -37,9 +37,18 @@ dependencies = [
 [project.optional-dependencies]
 analysis = [
   "numpy>=2,<3",
+  "reportlab>=4.2,<5",
+  "svglib>=1.5,<2",
 ]
 desktop = [
-  "PySide6-Essentials>=6.8,<7",
+  "numpy>=2,<3",
+  "PySide6>=6.8,<7",
+  "matplotlib>=3.10,<4",
+  "vtk>=9.4,<10",
+  "imageio>=2.37,<3",
+  "imageio-ffmpeg>=0.6,<1",
+  "reportlab>=4.2,<5",
+  "svglib>=1.5,<2",
 ]
 dev = [
   "build>=1.2,<2",

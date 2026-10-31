@@ -95,9 +95,20 @@ The same application layer exposes a read-only `modern-plan` service before
 compute. It inspects the resolved cohort and configuration, applies a versioned
 exact all-pairs operation model, records the largest logical pair separately
 from the largest configured dense matrix or blockwise execution tile, records
-known tensor payloads and host observations, and publishes strict JSON plus
-self-contained HTML. It deliberately does not cross the backend boundary into
-runtime or peak-memory prediction.
+conservative dense-equivalent payload arithmetic and host observations, and
+publishes strict JSON plus self-contained HTML. It deliberately does not cross
+the backend boundary into runtime or peak-memory prediction.
+
+Desktop intake separates source geometry, display geometry, and computation
+geometry. Exact asynchronous preflight records full source evidence with compact
+topology bookkeeping and observable per-mesh progress. Numerical GPA reuses that
+metadata, while the interactive review retains bounded deterministic face subsets.
+After approval, project preparation streams the cohort mesh-by-mesh through the
+full-resolution similarity transform and canonical writer. Display proxies never
+cross the engine boundary; no analysis mesh is silently decimated. The client still
+needs memory for its largest individual parsed mesh. The complete boundary and
+remaining server-side preprocessing work are documented in
+`docs/HIGH_RESOLUTION_INPUTS.md`.
 
 `modern-run` now accepts a synchronous read-only progress observer. The
 application service emits versioned workflow-stage events and translates the
@@ -134,8 +145,8 @@ desktop step 2. It parses the exact bytes captured by the completed review,
 extracts the configured container engine and image, and runs the existing
 read-only doctor service outside the GUI thread. A second hash check discards
 the report if the configuration changes during observation. Passing this check
-does not prepare or launch Deformetrica and does not weaken the separate open
-gate for reference-process supervision. See
+does not itself prepare or launch Deformetrica; it unlocks a separately reviewed
+and independently revalidated execution action. See
 [the desktop reference-readiness contract](REFERENCE_DESKTOP_READINESS.md).
 
 A separate Qt-independent reference prelaunch seam now binds that matching
@@ -143,8 +154,8 @@ review/readiness pair to a versioned request containing the exact config hash,
 container engine/image, normalized run ID, and resolved absolute destination.
 The request is round-trip schema validated and repeatably rechecks bytes,
 launcher settings, output resolution, and destination nonexistence. It performs
-no preparation or execution and remains only an input contract for a future
-contained supervisor. See
+no preparation or execution itself and is the immutable input contract for the
+contained execution supervisor. See
 [the desktop reference-prelaunch contract](REFERENCE_PRELAUNCH.md).
 
 Reference worker transport now has a separate versioned event vocabulary and
@@ -152,7 +163,8 @@ parent-side ledger because its phase-dependent stop states cannot reuse the
 Modern worker's nonpublishing cancellation claim. The ledger distinguishes no
 destination, an immutable prepared destination, and a terminal interrupted run,
 while rejecting sequence, phase, terminal, and evidence contradictions. This is
-still a non-executing protocol seam; see
+also carries strictly increasing Deformetrica iteration observations only during
+the execute phase; see
 [the reference worker protocol](REFERENCE_WORKER_PROTOCOL.md).
 
 A deliberately nonnumerical reference worker harness now exercises that request
@@ -161,14 +173,40 @@ the exact request in the child and terminates with `stopped_before_prepare`;
 tests prove the project tree remains byte-identical. It is not the production
 worker and creates no descendant process, run directory, or engine artifact.
 
-A dedicated Qt-independent parent controller now launches only that harness. It
+A dedicated historical Qt-independent parent controller launches only that harness. It
 assigns the child to a Windows kill-on-close Job before sending the request,
 enforces a finite timeout and bounded stdout/stderr, requires the exact
 three-event harness lifecycle and matching exit code, and repeats the complete
 request/destination verification after child success. This closes the
-nonnumerical supervision seam but does not prepare a run, start the reference
-engine, or enable GUI computation. See
+nonnumerical supervision seam and remains separate from engine execution. See
 [the reference harness controller](REFERENCE_HARNESS_CONTROLLER.md).
+
+A separate production source worker now uses the same strict request and event
+vocabulary to run the complete shared preflight, immutable preparation,
+Deformetrica adapter, finalization, and result-verification sequence. Raw engine
+stdout is redirected to the durable run log and worker stderr so protocol stdout
+contains JSON events only. Parsed objective rows add observed iteration,
+objective components, elapsed time, and a rolling-median ETA explicitly bounded
+to the configured iteration cap rather than convergence.
+
+Its parent controller assigns the execution worker to a Windows kill-on-close
+Job before request delivery, bounds protocol lines and diagnostics, validates
+the reviewed maximum iteration against every progress event, reconciles terminal
+outcome with process exit, and independently verifies the resulting filesystem
+and `result.json` hash. Desktop step 3 exposes this controller through a Qt task,
+supports phase-dependent cancellation, and defers window close until the outcome
+is reconciled. A completed reference run then enters a separately verified,
+source-bound momenta-PCA bundle and the shared Results & PCA view. Terminal
+interrupted/failed reference runs can be discovered read-only from the desktop;
+the complete source evidence is reverified before the GUI binds a new immutable
+checkpoint successor. The v0.4
+freeze contract adds a dedicated execution sibling with nonmutating queued-cancel
+and hard-parent-death gates; fresh clean-runner evidence remains pending. The
+path does not yet recover an abandoned nonterminal run. Reference PC
+deformation endpoints use a separate hash-bound Deformetrica Shooting design
+and supervised CLI result; verified default-location results are exposed in the
+shared native mesh viewer, while a dedicated desktop launch action remains open. See
+[supervised desktop Deformetrica execution](DESKTOP_REFERENCE_EXECUTION.md).
 
 The Windows one-directory build freezes that same harness as a third sibling
 entry point. Freeze-evidence schema v0.2 required the GUI, Modern worker, and
@@ -323,8 +361,13 @@ binds the source SHA-256 before and after loading, freezes vertices, triangles,
 bounds, and sorted unique edges, and computes deterministic aspect-preserving
 XY/XZ/YZ projections without rereading the file. A QPainter widget receives
 only this model and draws at most the disclosed display-edge budget. This is a
-native inspection seam, not a second QC service or an interactive 3D/landmark
-system. See [the template-preview contract](TEMPLATE_PREVIEW.md).
+native inspection seam, not a second QC service. See
+[the template-preview contract](TEMPLATE_PREVIEW.md). A separate native Qt
+landmark canvas consumes the same immutable geometry, applies interactive 3D
+camera transforms, and resolves a click against the frontmost full-resolution
+triangle by barycentric interpolation. The editor stores only surface
+coordinates and hash-bound resumable draft state; project setup remains the
+sole boundary that applies those coordinates as Procrustes preprocessing.
 
 Desktop step 4 consumes no alternate scientific model. A Qt-independent result
 reviewer first invokes the complete outer Modern verifier, binds the unchanged
@@ -383,6 +426,16 @@ the first consumer; no event contains a percentage, elapsed-time fraction,
 ETA, runtime forecast, or comparative result. Tests require callback presence
 to leave all published evidence byte-identical.
 
+Optimizer scaling studies use a distinct progress v0.2 transport. Their fresh
+measurement child sends only committed `AtlasOptimizationRecord` values and
+measured optimizer elapsed nanoseconds through the existing one-way process
+pipe. The parent reconstructs the immutable record, adds repeat and exact
+decision-cap context, and emits it without persisting it into the study ledger.
+The CLI can therefore show an observed decision-rate ETA to the declared cap;
+it remains explicitly separate from convergence and fitted scaling forecasts.
+Observer transport time is included in measured wall time and declared in the
+raw report warnings.
+
 The next multi-tile study is governed by
 [ADR 0004](decisions/0004-prospective-multi-tile-matrix.md). It uses one hashed
 base config plus explicit benchmark-only effective tile plans, not a bag of
@@ -395,18 +448,24 @@ explicit version dispatch; the existing v0.1 single-tile study artifacts and
 service retain their exact meaning.
 
 Below the application layer, the engine now contains an explicit blockwise
-Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ
-difference tensor; Current and Varifold inner products accumulate tiles
-without full face-by-face kernel/orientation matrices. This path is
-non-approximate but changes floating reduction order. An explicit public
+Gaussian primitive family. Ordinary Gaussian evaluation uses a centered matrix
+identity and does not materialize rank-3 XYZ differences; query and source tile
+sizes bound the rank-2 pairwise matrices. A custom analytical backward saves
+only coordinates and reconstructs the kernel when differentiation needs it,
+rather than retaining every construction matrix across the cohort. Current and
+Varifold inner products
+accumulate tiles without full face-by-face kernel/orientation matrices. This
+path is non-approximate but changes floating reduction order. An explicit public
 workflow setting now carries the plan through the complete optimizer,
 reconstructions, PCA endpoints, nested bundle, outer run provenance, and
 verifier cross-checks. Workload v0.2 accounts for exact logical pairs and the
 configured execution tile, and benchmark v0.3 measures that same plan; a
 v0.4 benchmark can measure one separately recorded effective blockwise tile
 shape. A prospective multi-size scaling study remains open. The tile shape
-bounds a single pairwise allocation; standard autograd may still retain
-multiple tile graphs, so reduced peak RAM remains a measurement gate.
+bounds matrix dimensions, but standard autograd may still retain multiple tile
+graphs, so reduced peak RAM remains a measurement gate. Versioned XYZ-payload
+fields are retained as conservative dense-equivalent arithmetic, not allocation
+claims.
 
 The low-level primitives and direct `GaussianTilePlan` expose a `recompute`
 strategy that places deterministic tile calculations behind non-reentrant
@@ -419,18 +478,48 @@ processes, but a prospective representative study still has to establish the
 tradeoff;
 saved-tensor counts are not peak-RAM claims.
 
-This vertical path is not yet the common production backend shown above. Its
-child-process transport and source GUI supervision now exist, but it does not
-implement the reference lifecycle's checkpoint/resume operations, parent-death
-crash recovery, or reference-engine supervision.
-An optimized kernel or GPU path must reproduce the dense baseline before it can
-replace this correctness implementation.
+This vertical path remains experimental rather than a common production default.
+Its child-process transport, source GUI supervision, complete-cycle checkpoints,
+exact-state recovery, and fail-closed CUDA/float64 execution now exist. The passing
+236-subject Euclidean and Sobolev gates qualify one declared cohort and protocol;
+they do not establish a general anatomy-independent preset, cross-hardware GPU
+parity, or biological validity.
+
+The transport-neutral remote-atlas contract now has a private, authenticated HTTP(S)
+service. A client verifies and archives one exact request, streams it with a declared
+SHA-256 identity, follows reconnectable progress, requests cooperative cancellation,
+and downloads a result that is reverified against the local request. The server safely
+extracts and reverifies uploads, keeps a bounded persistent queue and append-only event
+log, defaults to one worker, and requires TLS for every non-loopback bind. Queued jobs
+survive restart; formerly running jobs become `interrupted` instead of being silently
+re-executed. Terminal data require explicit authenticated deletion.
+
+This v0.1 layer is intentionally a single-operator private service. Per-job process
+isolation, automatic checkpoint recovery, per-user authorization, governed automatic
+retention, resumable content-addressed transfer, provider deployment, cost governance,
+and managed desktop deployment remain separate production layers.
+
+A Qt-independent desktop remote controller now adds a persistent local session around
+this protocol. It packages before network access, stores no bearer token, records the
+client-known idempotent job ID and event cursor, and can reconnect and finish a strictly
+request-bound download after client interruption. Visible GUI controls and session
+selection now bind the exact server URL, token file, optional CA file, explicit
+raw-mesh/specimen-name upload authorization, and existing-session directory. Closing
+the window detaches monitoring without implicitly cancelling the server job. A completed
+download is independently verified before entering the shared Results & PCA review.
+Terminal server-copy deletion is a distinct confirmation-gated Qt task; success is
+recorded in the persistent session without deleting the local request or result.
 
 ## Security and privacy boundary
 
-The application is local-first. A run does not upload meshes, metadata, logs,
-or telemetry unless a future feature obtains explicit user consent. Paths and
-specimen identifiers must be reviewed before public diagnostic bundles are
+The application is local-first. Ordinary runs do not upload meshes, metadata,
+logs, or telemetry. Creating a portable remote request still performs no network
+operation and explicitly records that automatic upload is unauthorized. Only the
+separate `modern-remote-submit` command or the affirmatively authorized private-server
+desktop route performs an authenticated transfer to the exact operator-supplied endpoint.
+The package contains raw meshes and specimen filenames, so its destination, account,
+retention, and transfer mechanism must be reviewed before that explicit transfer. Paths
+and specimen identifiers must also be reviewed before public diagnostic bundles are
 created.
 
 ## Open questions

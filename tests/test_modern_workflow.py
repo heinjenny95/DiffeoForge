@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import csv
 import json
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -185,6 +186,74 @@ def test_config_v02_requires_explicit_pairwise_record() -> None:
         workflow.validate_modern_workflow_config(invalid)
 
 
+def test_config_v04_requires_declared_step_strategy_and_versions_file_momenta() -> None:
+    current = _configuration()
+    current["schema_version"] = "0.4"
+    with pytest.raises(ConfigurationError, match="step_initialization"):
+        workflow.validate_modern_workflow_config(current)
+
+    current["optimization"]["step_initialization"] = "previous_accepted"
+    current["initialization"]["momenta"] = {
+        "method": "file",
+        "path": "momenta.csv",
+    }
+    workflow.validate_modern_workflow_config(current)
+
+    current["schema_version"] = "0.3"
+    with pytest.raises(ConfigurationError, match="momenta"):
+        workflow.validate_modern_workflow_config(current)
+
+
+def test_config_v07_requires_explicit_template_gradient_provenance() -> None:
+    current = _configuration()
+    current["schema_version"] = "0.7"
+    current["optimization"].update(
+        {
+            "step_initialization": "previous_accepted",
+            "shared_step_scaling": "inverse_subject_count",
+        }
+    )
+
+    with pytest.raises(ConfigurationError, match="template_gradient"):
+        workflow.validate_modern_workflow_config(current)
+
+    current["optimization"].update(
+        {
+            "template_gradient": "sobolev",
+            "sobolev_kernel_width_ratio": 1.0,
+        }
+    )
+    workflow.validate_modern_workflow_config(current)
+
+
+def test_config_v08_requires_explicit_mesh_scaling_provenance() -> None:
+    current = _configuration()
+    current["schema_version"] = "0.8"
+    current["optimization"].update(
+        {
+            "step_initialization": "previous_accepted",
+            "shared_step_scaling": "inverse_subject_count",
+            "template_gradient": "euclidean",
+            "sobolev_kernel_width_ratio": 1.0,
+        }
+    )
+
+    with pytest.raises(ConfigurationError, match="scaling_mode"):
+        workflow.validate_modern_workflow_config(current)
+
+    current["preprocessing"]["procrustes"].update(
+        {
+            "scaling_mode": "pams_surface_area_weighted_rms",
+            "target_size": 1.0,
+        }
+    )
+    workflow.validate_modern_workflow_config(current)
+
+    current["preprocessing"]["procrustes"]["scale_to_unit_centroid_size"] = False
+    with pytest.raises(ConfigurationError, match="scale_to_unit_centroid_size"):
+        workflow.validate_modern_workflow_config(current)
+
+
 def test_legacy_dense_manifest_without_pairwise_record_remains_verifiable() -> None:
     legacy = _configuration()
     del legacy["runtime"]["pairwise_evaluation"]
@@ -217,6 +286,81 @@ def test_schema_rejects_incoherent_pairwise_execution_before_work(
         workflow.validate_modern_workflow_config(invalid)
 
 
+def test_lbfgs_accepts_multiblock_configuration_and_requires_wolfe_coherence() -> None:
+    invalid = _configuration()
+    invalid["optimization"].update(
+        {
+            "direction_update": "lbfgs",
+            "lbfgs_history_size": 5,
+            "lbfgs_curvature_tolerance": 1e-12,
+            "lbfgs_initial_step_size": 1.0,
+        }
+    )
+    workflow.validate_modern_workflow_config(invalid)
+
+    invalid["optimization"]["direction_update"] = "steepest"
+    invalid["optimization"]["line_search_condition"] = "strong_wolfe"
+    with pytest.raises(ConfigurationError, match="requires.*direction_update=lbfgs"):
+        workflow.validate_modern_workflow_config(invalid)
+
+    invalid["optimization"]["direction_update"] = "lbfgs"
+    invalid["optimization"]["strong_wolfe_maximum_step_size"] = 0.5
+    with pytest.raises(ConfigurationError, match="maximum_step_size"):
+        workflow.validate_modern_workflow_config(invalid)
+
+    invalid = _configuration()
+    invalid["optimization"]["block_order"] = ["template"]
+    invalid["optimization"]["momenta_updates_per_cycle"] = 2
+    with pytest.raises(ConfigurationError, match="momenta_updates_per_cycle"):
+        workflow.validate_modern_workflow_config(invalid)
+
+    invalid = _configuration()
+    invalid["optimization"]["subject_batch_workers"] = 2
+    with pytest.raises(ConfigurationError, match="subject_batch_size"):
+        workflow.validate_modern_workflow_config(invalid)
+
+    invalid = _configuration()
+    invalid["optimization"]["subject_batch_size"] = 1
+    invalid["optimization"]["subject_batch_workers"] = 65
+    with pytest.raises(ConfigurationError, match="subject_batch_workers"):
+        workflow.validate_modern_workflow_config(invalid)
+
+    invalid = _configuration()
+    invalid["runtime"]["device"] = "cuda"
+    invalid["optimization"]["subject_batch_size"] = 1
+    invalid["optimization"]["subject_batch_workers"] = 2
+    with pytest.raises(ConfigurationError, match="device=cuda.*subject_batch_workers=1"):
+        workflow.validate_modern_workflow_config(invalid)
+
+
+def test_cuda_request_never_silently_falls_back_to_cpu(monkeypatch) -> None:
+    runtime = _configuration()["runtime"]
+    runtime["device"] = "cuda"
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    with pytest.raises(ConfigurationError, match="will not silently fall back"):
+        workflow.resolve_modern_torch_device(runtime)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("checkpoint_interval_cycles", 0),
+        ("checkpoint_interval_cycles", 1.5),
+        ("checkpoint_retention", "automatic"),
+    ],
+)
+def test_checkpoint_policy_rejects_implicit_or_invalid_values(
+    name: str,
+    value: object,
+) -> None:
+    invalid = _configuration()
+    invalid["optimization"][name] = value
+
+    with pytest.raises(ConfigurationError, match=name):
+        workflow.validate_modern_workflow_config(invalid)
+
+
 def test_farthest_template_initialization_is_repeatable_and_explicit() -> None:
     vertices = np.array(read_vtk_polydata(MESH_DIRECTORY / "template.vtk").vertices)
 
@@ -227,6 +371,428 @@ def test_farthest_template_initialization_is_repeatable_and_explicit() -> None:
     assert len(first) == len(set(first)) == 9
     with pytest.raises(ValueError, match="exceeds"):
         workflow.farthest_template_vertex_indices(vertices, vertices.shape[0] + 1)
+
+
+def test_generated_checkpoint_policy_retains_only_the_latest_recovery_point(
+    tmp_path: Path,
+) -> None:
+    config_path = workflow.initialize_modern_workflow(
+        MESH_DIRECTORY,
+        units="unitless",
+        config_path=tmp_path / "bounded-checkpoints.yaml",
+        template=MESH_DIRECTORY / "template.vtk",
+        subject_pattern="subject-*.vtk",
+        attachment_kernel_width=0.45,
+        deformation_kernel_width=0.6,
+        noise_variance=0.01,
+        max_cycles=6,
+        threads=1,
+    )
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert config["schema_version"] == "0.8"
+    assert config["preprocessing"]["procrustes"]["scaling_mode"] == (
+        "pams_surface_area_weighted_rms"
+    )
+    assert config["preprocessing"]["procrustes"]["target_size"] == 1.0
+    config["optimization"]["block_order"] = ["momenta"]
+    config["optimization"]["gradient_tolerance"] = 0.0
+    config_path.write_text(
+        yaml.safe_dump(config, sort_keys=False),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    run = workflow.run_modern_workflow(
+        config_path,
+        destination=tmp_path / "bounded-checkpoints-run",
+        created_at=FIXED_TIME,
+    )
+    manifest = workflow.verify_modern_workflow(run)
+    bundle = workflow.verify_modern_atlas_bundle(run / manifest["result_bundle"]["path"])
+    completed_cycles = bundle["optimizer"]["cycles_completed"]
+
+    assert completed_cycles == 6
+    assert manifest["optimizer_checkpoint_policy"] == {
+        "interval_cycles": 5,
+        "retention": "latest",
+    }
+    assert [record["cycle"] for record in manifest["optimizer_checkpoints"]] == [6]
+    assert [path.name for path in (run / "checkpoints").iterdir()] == ["cycle-000006"]
+
+
+def test_external_control_points_and_momenta_only_are_verified(tmp_path: Path) -> None:
+    control_path = tmp_path / "reference-control-points.txt"
+    vertices = read_vtk_polydata(MESH_DIRECTORY / "template.vtk").vertices
+    control_path.write_text(
+        "".join(" ".join(format(value, ".17g") for value in row) + "\n" for row in vertices[:9]),
+        encoding="utf-8",
+    )
+    config_value = _configuration(output=str(tmp_path / "unused"))
+    config_value["schema_version"] = "0.3"
+    config_value["initialization"]["control_points"] = {
+        "method": "file",
+        "count": 9,
+        "path": control_path.name,
+    }
+    config_value["optimization"]["block_order"] = ["momenta"]
+    config_value["runtime"]["pairwise_evaluation"] = {
+        "mode": "blockwise",
+        "query_tile_size": 32,
+        "source_tile_size": 32,
+        "autograd_strategy": "recompute",
+    }
+    config = tmp_path / "fixed-reference.yaml"
+    config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
+
+    progress = []
+    run = workflow.run_modern_workflow(
+        config,
+        destination=tmp_path / "fixed-reference-run",
+        created_at=FIXED_TIME,
+        progress_callback=progress.append,
+    )
+    manifest = workflow.verify_modern_workflow(run)
+
+    assert manifest["engine"]["id"] == "diffeoforge_modern_blockwise_recompute"
+    assert manifest["initialization"]["control_points"] == {
+        "method": "file",
+        "count": 9,
+        "source_sha256": sha256_file(control_path),
+        "copied_path": "input/initialization/control-points.txt",
+    }
+    effective = json.loads((run / "config" / "effective-config.json").read_text())
+    assert effective["optimization"]["block_order"] == ["momenta"]
+    optimizer_progress = [event.optimizer for event in progress if event.optimizer is not None]
+    assert [item.completed_decisions for item in optimizer_progress] == [0, 1]
+    assert {item.maximum_decisions for item in optimizer_progress} == {1}
+    assert [record["cycle"] for record in manifest["optimizer_checkpoints"]] == [1]
+    checkpoint_path = run / manifest["optimizer_checkpoints"][0]["path"]
+    checkpoint = workflow.verify_modern_cycle_checkpoint(
+        checkpoint_path,
+        workflow_root=run,
+    )
+    assert checkpoint["record"]["objective"] == pytest.approx(
+        workflow.verify_modern_atlas_bundle(run / manifest["result_bundle"]["path"])[
+            "optimizer"
+        ]["final_objective"]
+    )
+
+    first_bundle = run / manifest["result_bundle"]["path"]
+    first_bundle_manifest = json.loads(
+        (first_bundle / "bundle-manifest.json").read_text(encoding="utf-8")
+    )
+    initial_momenta = first_bundle / first_bundle_manifest["parameters"]["momenta_path"]
+    continuation_value = copy.deepcopy(config_value)
+    continuation_value["schema_version"] = "0.4"
+    continuation_value["initialization"]["momenta"] = {
+        "method": "file",
+        "path": str(initial_momenta),
+    }
+    continuation_value["optimization"]["max_cycles"] = 1
+    continuation_value["optimization"]["gradient_tolerance"] = 1e100
+    continuation_value["optimization"]["step_initialization"] = "previous_accepted"
+    continuation_config = tmp_path / "continuation.yaml"
+    continuation_config.write_text(
+        yaml.safe_dump(continuation_value, sort_keys=False), encoding="utf-8"
+    )
+
+    continuation = workflow.run_modern_workflow(
+        continuation_config,
+        destination=tmp_path / "continuation-run",
+        created_at=FIXED_TIME,
+    )
+    continuation_manifest = workflow.verify_modern_workflow(continuation)
+    observed_initialization = continuation_manifest["initialization"]["momenta"]
+    assert observed_initialization == {
+        "method": "file",
+        "source_sha256": sha256_file(initial_momenta),
+        "copied_path": "input/initialization/momenta.csv",
+        "subjects": 5,
+        "control_points": 9,
+        "dimensions": 3,
+    }
+    continuation_bundle = continuation / continuation_manifest["result_bundle"]["path"]
+    continuation_bundle_manifest = json.loads(
+        (continuation_bundle / "bundle-manifest.json").read_text(encoding="utf-8")
+    )
+    assert continuation_bundle_manifest["optimizer"]["settings"][
+        "step_initialization"
+    ] == "previous_accepted"
+    assert continuation_bundle_manifest["optimizer"]["final_objective"] == pytest.approx(
+        first_bundle_manifest["optimizer"]["final_objective"], rel=1e-12, abs=1e-12
+    )
+
+
+def test_lbfgs_momenta_workflow_is_explicit_repeatable_and_verified(tmp_path: Path) -> None:
+    config_value = _configuration(output=str(tmp_path / "unused"))
+    config_value["optimization"].update(
+        {
+            "max_cycles": 4,
+            "block_order": ["momenta"],
+            "direction_update": "lbfgs",
+            "lbfgs_history_size": 3,
+            "lbfgs_curvature_tolerance": 1e-12,
+            "lbfgs_initial_step_size": 1.0,
+            "step_initialization": "previous_accepted",
+            "relative_objective_tolerance": 0.5,
+        }
+    )
+    config = tmp_path / "lbfgs.yaml"
+    config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
+
+    first = workflow.run_modern_workflow(
+        config,
+        destination=tmp_path / "lbfgs-first",
+        created_at=FIXED_TIME,
+    )
+    second = workflow.run_modern_workflow(
+        config,
+        destination=tmp_path / "lbfgs-second",
+        created_at=FIXED_TIME,
+    )
+    first_manifest = workflow.verify_modern_workflow(first)
+    second_manifest = workflow.verify_modern_workflow(second)
+    first_bundle = workflow.verify_modern_atlas_bundle(
+        first / first_manifest["result_bundle"]["path"]
+    )
+    second_bundle = workflow.verify_modern_atlas_bundle(
+        second / second_manifest["result_bundle"]["path"]
+    )
+
+    assert first_bundle["optimizer"]["settings"]["direction_update"] == "lbfgs"
+    assert first_bundle["optimizer"]["settings"]["lbfgs_history_size"] == 3
+    assert first_bundle["optimizer"]["settings"]["lbfgs_initial_step_size"] == 1.0
+    assert first_bundle["optimizer"]["settings"]["relative_objective_tolerance"] == 0.5
+    assert first_bundle["optimizer"]["termination_reason"] == "relative_objective_tolerance"
+    assert first_bundle["optimizer"]["converged"] is True
+    assert first_bundle["optimizer"]["final_objective"] == second_bundle["optimizer"][
+        "final_objective"
+    ]
+    assert first_bundle["optimizer"]["final_regularity"] == second_bundle["optimizer"][
+        "final_regularity"
+    ]
+
+
+def test_multiblock_lbfgs_workflow_writes_exact_v03_checkpoint(tmp_path: Path) -> None:
+    config_value = _configuration(output=str(tmp_path / "unused"))
+    config_value["optimization"].update(
+        {
+            "max_cycles": 3,
+            "momenta_updates_per_cycle": 2,
+            "direction_update": "lbfgs",
+            "lbfgs_history_size": 3,
+            "lbfgs_curvature_tolerance": 1e-12,
+            "lbfgs_initial_step_size": 1.0,
+            "step_initialization": "previous_accepted",
+            "gradient_tolerance": 0.0,
+            "checkpoint_interval_cycles": 1,
+            "checkpoint_retention": "latest",
+        }
+    )
+    config = tmp_path / "multiblock-lbfgs.yaml"
+    config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
+
+    progress = []
+    run = workflow.run_modern_workflow(
+        config,
+        destination=tmp_path / "multiblock-lbfgs-run",
+        created_at=FIXED_TIME,
+        progress_callback=progress.append,
+    )
+    manifest = workflow.verify_modern_workflow(run)
+    bundle = workflow.verify_modern_atlas_bundle(
+        run / manifest["result_bundle"]["path"]
+    )
+    checkpoint_path = run / manifest["optimizer_checkpoints"][0]["path"]
+    checkpoint = workflow.verify_modern_cycle_checkpoint(
+        checkpoint_path,
+        workflow_root=run,
+    )
+    resume_state = workflow.load_modern_checkpoint_resume_state(checkpoint_path)
+
+    assert bundle["optimizer"]["settings"]["block_order"] == [
+        "momenta",
+        "template",
+        "control_points",
+    ]
+    assert bundle["optimizer"]["settings"]["direction_update"] == "lbfgs"
+    assert bundle["optimizer"]["settings"]["momenta_updates_per_cycle"] == 2
+    assert checkpoint["checkpoint_version"] == "0.3"
+    assert checkpoint["binding"]["engine_implementation"] == "1.8"
+    assert checkpoint["binding"]["momenta_updates_per_cycle"] == 2
+    assert checkpoint["binding"]["subject_batch_size"] is None
+    assert checkpoint["binding"]["subject_batch_workers"] == 1
+    assert set(resume_state.lbfgs_histories) == {
+        "momenta",
+        "template",
+        "control_points",
+    }
+    assert all(resume_state.lbfgs_histories.values())
+    bundle_root = run / manifest["result_bundle"]["path"]
+    with (bundle_root / bundle["optimizer"]["history_path"]).open(
+        encoding="utf-8", newline=""
+    ) as handle:
+        history = list(csv.DictReader(handle))
+    assert [record["block"] for record in history[1:]] == [
+        "momenta",
+        "momenta",
+        "template",
+        "control_points",
+    ] * 3
+    optimizer_progress = [event.optimizer for event in progress if event.optimizer is not None]
+    assert [item.completed_decisions for item in optimizer_progress] == list(range(13))
+    assert {item.maximum_decisions for item in optimizer_progress} == {12}
+
+
+def test_subject_batched_workflow_is_explicit_and_numerically_matches_full_cohort(
+    tmp_path: Path,
+) -> None:
+    full_value = _configuration(output=str(tmp_path / "unused-full"))
+    full_config = tmp_path / "full.yaml"
+    full_config.write_text(yaml.safe_dump(full_value, sort_keys=False), encoding="utf-8")
+    serial_batched_value = copy.deepcopy(full_value)
+    serial_batched_value["optimization"]["subject_batch_size"] = 2
+    serial_batched_config = tmp_path / "serial-batched.yaml"
+    serial_batched_config.write_text(
+        yaml.safe_dump(serial_batched_value, sort_keys=False),
+        encoding="utf-8",
+    )
+    batched_value = copy.deepcopy(serial_batched_value)
+    batched_value["optimization"]["subject_batch_workers"] = 2
+    batched_config = tmp_path / "batched.yaml"
+    batched_config.write_text(
+        yaml.safe_dump(batched_value, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    full_run = workflow.run_modern_workflow(
+        full_config,
+        destination=tmp_path / "full-run",
+        created_at=FIXED_TIME,
+    )
+    serial_batched_run = workflow.run_modern_workflow(
+        serial_batched_config,
+        destination=tmp_path / "serial-batched-run",
+        created_at=FIXED_TIME,
+    )
+    batched_run = workflow.run_modern_workflow(
+        batched_config,
+        destination=tmp_path / "batched-run",
+        created_at=FIXED_TIME,
+    )
+    full_manifest = workflow.verify_modern_workflow(full_run)
+    serial_batched_manifest = workflow.verify_modern_workflow(serial_batched_run)
+    batched_manifest = workflow.verify_modern_workflow(batched_run)
+    full_bundle = workflow.verify_modern_atlas_bundle(
+        full_run / full_manifest["result_bundle"]["path"]
+    )
+    serial_batched_bundle = workflow.verify_modern_atlas_bundle(
+        serial_batched_run / serial_batched_manifest["result_bundle"]["path"]
+    )
+    batched_bundle = workflow.verify_modern_atlas_bundle(
+        batched_run / batched_manifest["result_bundle"]["path"]
+    )
+
+    assert batched_bundle["optimizer"]["settings"]["subject_batch_size"] == 2
+    assert batched_bundle["optimizer"]["settings"]["subject_batch_workers"] == 2
+    assert serial_batched_bundle["optimizer"]["settings"]["subject_batch_workers"] == 1
+    assert full_bundle["optimizer"]["settings"]["subject_batch_size"] is None
+    assert full_bundle["optimizer"]["settings"]["subject_batch_workers"] == 1
+    assert batched_bundle["optimizer"]["settings"]["shared_step_scaling"] == "none"
+    for field in ("final_objective", "final_attachment", "final_regularity"):
+        assert batched_bundle["optimizer"][field] == serial_batched_bundle["optimizer"][field]
+        assert serial_batched_bundle["optimizer"][field] == pytest.approx(
+            full_bundle["optimizer"][field],
+            rel=1e-12,
+            abs=1e-12,
+        )
+    assert sha256_file(
+        batched_run
+        / batched_manifest["result_bundle"]["path"]
+        / batched_bundle["optimizer"]["history_path"]
+    ) == sha256_file(
+        serial_batched_run
+        / serial_batched_manifest["result_bundle"]["path"]
+        / serial_batched_bundle["optimizer"]["history_path"]
+    )
+
+
+def test_strong_wolfe_workflow_records_and_verifies_line_search(tmp_path: Path) -> None:
+    config_value = _configuration(output=str(tmp_path / "unused"))
+    config_value["optimization"].update(
+        {
+            "max_cycles": 3,
+            "block_order": ["momenta"],
+            "direction_update": "lbfgs",
+            "lbfgs_history_size": 3,
+            "lbfgs_curvature_tolerance": 1e-12,
+            "lbfgs_initial_step_size": 1.0,
+            "line_search_condition": "strong_wolfe",
+            "strong_wolfe_curvature_constant": 0.9,
+            "strong_wolfe_maximum_step_size": 10.0,
+            "step_initialization": "previous_accepted",
+        }
+    )
+    config = tmp_path / "strong-wolfe.yaml"
+    config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
+
+    destination = workflow.run_modern_workflow(
+        config,
+        destination=tmp_path / "strong-wolfe-run",
+        created_at=FIXED_TIME,
+    )
+    manifest = workflow.verify_modern_workflow(destination)
+    bundle = workflow.verify_modern_atlas_bundle(destination / manifest["result_bundle"]["path"])
+
+    settings = bundle["optimizer"]["settings"]
+    assert settings["line_search_condition"] == "strong_wolfe"
+    assert settings["strong_wolfe_curvature_constant"] == 0.9
+    assert settings["strong_wolfe_maximum_step_size"] == 10.0
+    history_path = (
+        destination
+        / manifest["result_bundle"]["path"]
+        / bundle["optimizer"]["history_path"]
+    )
+    with history_path.open("r", encoding="utf-8", newline="") as handle:
+        objectives = [float(record["objective"]) for record in csv.DictReader(handle)]
+    assert all(later >= earlier for earlier, later in pairwise(objectives))
+
+
+def test_strong_wolfe_failure_stops_before_bundle_publication(tmp_path: Path) -> None:
+    config_value = _configuration(output=str(tmp_path / "unused"))
+    config_value["optimization"].update(
+        {
+            "max_cycles": 1,
+            "block_order": ["momenta"],
+            "direction_update": "lbfgs",
+            "line_search_condition": "strong_wolfe",
+            "strong_wolfe_curvature_constant": 0.5,
+            "strong_wolfe_maximum_step_size": 10.0,
+        }
+    )
+    config = tmp_path / "strong-wolfe-failure.yaml"
+    config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(workflow.ModernWorkflowError, match="line search could not accept"):
+        workflow.run_modern_workflow(
+            config,
+            destination=tmp_path / "strong-wolfe-failure-run",
+            created_at=FIXED_TIME,
+        )
+    assert not (tmp_path / "strong-wolfe-failure-run").exists()
+
+
+def test_momenta_initialization_rejects_changed_subject_order(tmp_path: Path) -> None:
+    labels = ("subject-a.vtk", "subject-b.vtk")
+    path = tmp_path / "momenta.csv"
+    rows = [["subject_label", "control_point", "x", "y", "z"]]
+    for label in reversed(labels):
+        rows.extend([[label, str(index), "0", "0", "0"] for index in range(2)])
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        csv.writer(handle, lineterminator="\n").writerows(rows)
+
+    with pytest.raises(ConfigurationError, match="subject order"):
+        workflow._read_momenta_rows(path, labels, 2)
 
 
 def test_five_subject_workflow_is_verified_and_byte_repeatable(tmp_path: Path) -> None:
@@ -355,6 +921,9 @@ def test_blockwise_full_workflow_and_artifacts_match_dense_with_distinct_provena
     blockwise_manifest = workflow.verify_modern_workflow(blockwise_run)
 
     assert dense_manifest["engine"]["id"] == "diffeoforge_modern_dense"
+    assert dense_manifest["engine"]["implementation_version"] == (
+        workflow.ENGINE_IMPLEMENTATION_VERSION
+    )
     assert dense_manifest["engine"]["pairwise_evaluation"]["mode"] == "dense"
     assert blockwise_manifest["engine"]["id"] == "diffeoforge_modern_blockwise"
     assert blockwise_manifest["engine"]["pairwise_evaluation"] == {
@@ -368,6 +937,9 @@ def test_blockwise_full_workflow_and_artifacts_match_dense_with_distinct_provena
     dense_bundle_manifest = workflow.verify_modern_atlas_bundle(dense_bundle)
     blockwise_bundle_manifest = workflow.verify_modern_atlas_bundle(blockwise_bundle)
     assert dense_bundle_manifest["engine"]["pairwise_evaluation"]["mode"] == "dense"
+    assert dense_bundle_manifest["engine"]["implementation_version"] == (
+        dense_manifest["engine"]["implementation_version"]
+    )
     assert blockwise_bundle_manifest["engine"]["pairwise_evaluation"] == {
         "mode": "blockwise",
         "query_tile_size": 64,

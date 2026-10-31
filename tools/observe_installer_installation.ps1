@@ -206,7 +206,10 @@ try {
         throw "Expected current-user uninstall registration was not created."
     }
     $registration = Get-ItemProperty -LiteralPath $registryPath
-    if ($registration.DisplayName -ne "DiffeoForge 0.0.0.dev0 (Windows CPU x86-64)" -or
+    if (-not $preflight.expected_registration.display_name -or
+        -not $preflight.expected_registration.display_version -or
+        $registration.DisplayName -cne $preflight.expected_registration.display_name -or
+        $registration.DisplayVersion -cne $preflight.expected_registration.display_version -or
         -not $registration.UninstallString) {
         throw "Current-user uninstall registration differs."
     }

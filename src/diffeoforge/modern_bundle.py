@@ -24,11 +24,7 @@ import torch
 from diffeoforge import __version__
 from diffeoforge.analysis.optimizer_visualization import write_optimizer_convergence_svg
 from diffeoforge.analysis.pca import PCAResult, momenta_pca
-from diffeoforge.analysis.pca_visualization import (
-    write_pca_score_pair_svg,
-    write_pca_scores_svg,
-    write_pca_scree_svg,
-)
+from diffeoforge.analysis.pca_artifacts import write_pca_artifacts
 from diffeoforge.config import ConfigurationError
 from diffeoforge.engine import (
     AtlasOptimizationResult,
@@ -36,6 +32,7 @@ from diffeoforge.engine import (
     flow_points,
     shoot,
 )
+from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import inspect_vtk, sha256_file, write_vtk_polydata
 from diffeoforge.mesh_quality import MeshQualitySettings
 from diffeoforge.mesh_quality_report import (
@@ -47,7 +44,8 @@ BUNDLE_VERSION = "0.1"
 MANIFEST_NAME = "bundle-manifest.json"
 MANIFEST_SIDECAR_NAME = "bundle-manifest.sha256"
 SCIENTIFIC_BOUNDARY = (
-    "Experimental exact pairwise float64 CPU result bundle. It is not evidence of scientific "
+    "Experimental exact pairwise float64 result bundle on the declared execution device. "
+    "It is not evidence of scientific "
     "validation, Deformetrica optimizer equivalence, topology preservation, GPU parity, "
     "or production readiness for 300 specimens. Momenta PCA is one explicitly declared "
     "feature space and is not automatically appropriate for every biological question."
@@ -241,90 +239,7 @@ def _artifact(root: Path, path: Path) -> dict[str, object]:
 
 
 def _pca_files(root: Path, pca: PCAResult) -> dict[str, object]:
-    analysis = root / "analysis"
-    summary_path = analysis / "pca-summary.json"
-    scores_path = analysis / "pca-scores.csv"
-    loadings_path = analysis / "pca-loadings.csv"
-    mean_path = analysis / "pca-mean.csv"
-    scree_path = analysis / "pca-scree.svg"
-    scores_plot_path = analysis / "pca-scores.svg"
-    pc2_pc3_plot_path = analysis / "pca-scores-pc2-pc3.svg"
-    component_labels = [f"PC{index + 1}" for index in range(pca.number_of_components)]
-    _write_json_exclusive(
-        summary_path,
-        {
-            "feature_space": pca.feature_space,
-            "sample_labels": list(pca.sample_labels),
-            "feature_labels": list(pca.feature_labels),
-            "number_of_components": pca.number_of_components,
-            "numerical_rank": pca.numerical_rank,
-            "total_variance": pca.total_variance,
-            "singular_values": pca.singular_values.tolist(),
-            "explained_variance": pca.explained_variance.tolist(),
-            "explained_variance_ratio": pca.explained_variance_ratio.tolist(),
-            "tied_component_groups": [list(group) for group in pca.tied_component_groups],
-            "zero_variance_components": list(pca.zero_variance_components),
-            "sign_convention": pca.sign_convention,
-        },
-    )
-    _write_csv_exclusive(
-        scores_path,
-        [["subject_label", *component_labels]]
-        + [
-            [_csv_label(label), *(_float(value) for value in scores)]
-            for label, scores in zip(pca.sample_labels, pca.scores, strict=True)
-        ],
-    )
-    _write_csv_exclusive(
-        loadings_path,
-        [["feature_label", *component_labels]]
-        + [
-            [_csv_label(label), *(_float(value) for value in pca.components[:, index])]
-            for index, label in enumerate(pca.feature_labels)
-        ],
-    )
-    _write_csv_exclusive(
-        mean_path,
-        [["feature_label", "mean"]]
-        + [
-            [_csv_label(label), _float(value)]
-            for label, value in zip(pca.feature_labels, pca.mean, strict=True)
-        ],
-    )
-    write_pca_scree_svg(scree_path, pca)
-    write_pca_scores_svg(scores_plot_path, pca)
-    if pca.number_of_components >= 3:
-        write_pca_score_pair_svg(
-            pc2_pc3_plot_path,
-            pca,
-            x_component=2,
-            y_component=3,
-        )
-        pc2_pc3_path: str | None = pc2_pc3_plot_path.relative_to(root).as_posix()
-        pc2_pc3_axes: list[str] | None = ["PC2", "PC3"]
-        pc2_pc3_unavailable_reason: str | None = None
-    else:
-        pc2_pc3_path = None
-        pc2_pc3_axes = None
-        pc2_pc3_unavailable_reason = (
-            "PC3 is not mathematically available because the retained PCA has "
-            f"{pca.number_of_components} component"
-            f"{'s' if pca.number_of_components != 1 else ''}."
-        )
-    return {
-        "summary_path": summary_path.relative_to(root).as_posix(),
-        "scores_path": scores_path.relative_to(root).as_posix(),
-        "loadings_path": loadings_path.relative_to(root).as_posix(),
-        "mean_path": mean_path.relative_to(root).as_posix(),
-        "plots": {
-            "scree_path": scree_path.relative_to(root).as_posix(),
-            "scores_path": scores_plot_path.relative_to(root).as_posix(),
-            "score_axes": ["PC1"] if pca.number_of_components == 1 else ["PC1", "PC2"],
-            "scores_pc2_pc3_path": pc2_pc3_path,
-            "scores_pc2_pc3_axes": pc2_pc3_axes,
-            "scores_pc2_pc3_unavailable_reason": pc2_pc3_unavailable_reason,
-        },
-    }
+    return write_pca_artifacts(root, pca)
 
 
 def _deformed_template_endpoint(
@@ -462,6 +377,7 @@ def write_modern_atlas_bundle(
     subject_labels: tuple[str, ...] | list[str],
     model_settings: ModernAtlasModelSettings,
     *,
+    execution_device: Literal["cpu", "cuda"] = "cpu",
     pairwise_evaluation: PairwiseEvaluationPlan | None = None,
     pca_components: int | None = None,
     pca_deformation_standard_deviations: float = 2.0,
@@ -481,6 +397,8 @@ def write_modern_atlas_bundle(
         raise ValueError("template_triangles must have shape (triangles, 3)")
     if not isinstance(model_settings, ModernAtlasModelSettings):
         raise TypeError("model_settings must be ModernAtlasModelSettings")
+    if execution_device not in {"cpu", "cuda"}:
+        raise ValueError("execution_device must be cpu or cuda")
     resolved_pairwise_evaluation = (
         PairwiseEvaluationPlan() if pairwise_evaluation is None else pairwise_evaluation
     )
@@ -679,10 +597,11 @@ def write_modern_atlas_bundle(
             "created_at": timestamp.strip(),
             "engine": {
                 "id": resolved_pairwise_evaluation.engine_id,
+                "implementation_version": ENGINE_IMPLEMENTATION_VERSION,
                 "diffeoforge": __version__,
                 "pytorch": torch.__version__,
                 "numpy": np.__version__,
-                "device": "cpu",
+                "device": execution_device,
                 "dtype": "float64",
                 "pairwise_evaluation": resolved_pairwise_evaluation.as_manifest(),
             },

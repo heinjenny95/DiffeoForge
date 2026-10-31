@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge Deformetrica momenta PCA bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "bundle_version",
+    "created_at",
+    "source_run",
+    "inputs",
+    "pca",
+    "artifacts",
+    "scientific_boundary",
+    "immutability_contract"
+  ],
+  "properties": {
+    "bundle_version": {"const": "0.1"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "source_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "backend_id",
+        "backend_contract_version",
+        "manifest_sha256",
+        "result_sha256",
+        "output_inventory_sha256"
+      ],
+      "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "backend_id": {"const": "deformetrica_reference"},
+        "backend_contract_version": {"type": "string", "minLength": 1},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "result_sha256": {"$ref": "#/$defs/sha256"},
+        "output_inventory_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "momenta",
+        "control_points",
+        "subjects",
+        "control_point_count",
+        "dimension",
+        "subject_labels",
+        "subject_identity_source",
+        "feature_order"
+      ],
+      "properties": {
+        "momenta": {"$ref": "#/$defs/sourceArtifact"},
+        "control_points": {"$ref": "#/$defs/sourceArtifact"},
+        "subjects": {"type": "integer", "minimum": 2},
+        "control_point_count": {"type": "integer", "minimum": 1},
+        "dimension": {"const": 3},
+        "subject_labels": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "subject_identity_source": {
+          "const": "run manifest subject inputs in stored Deformetrica XML order"
+        },
+        "feature_order": {
+          "const": "subject outer; control point middle; Cartesian x, y, z inner"
+        }
+      }
+    },
+    "pca": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "feature_space",
+        "components",
+        "numerical_rank",
+        "total_variance",
+        "summary_path",
+        "scores_path",
+        "loadings_path",
+        "mean_path",
+        "plots"
+      ],
+      "properties": {
+        "method": {"const": "centered linear PCA by deterministic float64 SVD"},
+        "feature_space": {"const": "subject_initial_momenta_cartesian"},
+        "components": {"type": "integer", "minimum": 1},
+        "numerical_rank": {"type": "integer", "minimum": 1},
+        "total_variance": {"type": "number", "exclusiveMinimum": 0},
+        "summary_path": {"type": "string", "minLength": 1},
+        "scores_path": {"type": "string", "minLength": 1},
+        "loadings_path": {"type": "string", "minLength": 1},
+        "mean_path": {"type": "string", "minLength": 1},
+        "plots": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scree_path",
+            "scores_path",
+            "score_axes",
+            "scores_pc2_pc3_path",
+            "scores_pc2_pc3_axes",
+            "scores_pc2_pc3_unavailable_reason"
+          ],
+          "properties": {
+            "scree_path": {"type": "string", "minLength": 1},
+            "scores_path": {"type": "string", "minLength": 1},
+            "score_axes": {
+              "oneOf": [{"const": ["PC1"]}, {"const": ["PC1", "PC2"]}]
+            },
+            "scores_pc2_pc3_path": {
+              "type": ["string", "null"],
+              "minLength": 1
+            },
+            "scores_pc2_pc3_axes": {
+              "oneOf": [{"const": ["PC2", "PC3"]}, {"type": "null"}]
+            },
+            "scores_pc2_pc3_unavailable_reason": {
+              "type": ["string", "null"],
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 8,
+      "items": {"$ref": "#/$defs/artifact"}
+    },
+    "scientific_boundary": {"type": "string", "minLength": 1},
+    "immutability_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publication", "verification", "source_binding"],
+      "properties": {
+        "publication": {"const": "atomic no-replace directory publication"},
+        "verification": {"const": "schema, complete artifact inventory, hashes, and recomputed PCA tables"},
+        "source_binding": {"const": "copied raw Deformetrica parameters plus source run hashes"}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "sourceArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_path", "copied_path", "bytes", "sha256"],
+      "properties": {
+        "source_path": {"type": "string", "minLength": 1},
+        "copied_path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

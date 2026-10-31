@@ -1,0 +1,95 @@
+{
+  "analysis_performed": false,
+  "completed_at": "2026-07-22T16:47:40.639+00:00",
+  "conditions": [
+    {
+      "artifacts": {
+        "benchmark.html": "72a2a16f5a1cd102ba46b44653d51d894e90ab39284c6643161a6c294dff5e0c",
+        "benchmark.json": "a84e8f5c3f4752ec55f49c78a85b1869b3a8e1db3b1d7833db6323e2b0542965",
+        "samples.csv": "447523f43edae93a473288dba1f76819487d0d13a12830e4657e05ce8ca8c8b6"
+      },
+      "condition_id": "condition-001-subjects-00005-standard",
+      "pair_id": "subjects-00005",
+      "report_directory": "conditions/condition-001-subjects-00005-standard",
+      "sequence": 1,
+      "subject_count": 5,
+      "tile_autograd_strategy": "standard"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "cd583651fac65269af8d5ef2e6208ac61674ca69c5cefd39973d0b492863ed1a",
+        "benchmark.json": "634eccdd05359c8aad3977b6cf16ff159bca43abdae19c2e16dadd6137d6cf47",
+        "samples.csv": "4a0a3e2eccc4da9c5b83d1c4c3c568955112770b92df071a69f84fa15fb32557"
+      },
+      "condition_id": "condition-002-subjects-00005-recompute",
+      "pair_id": "subjects-00005",
+      "report_directory": "conditions/condition-002-subjects-00005-recompute",
+      "sequence": 2,
+      "subject_count": 5,
+      "tile_autograd_strategy": "recompute"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "f4e0bfa0fe38c2e19ccafac3be0321b8886fe2dc6965ecdf49f31689b905c8e8",
+        "benchmark.json": "4e03be34c206d1d61ad713000e3d020d0e1b125b955ea8d20198ce4076c1e8eb",
+        "samples.csv": "318dc4e752f1234f0bb4bec2a50b8e135f20eead47baabf6832e49a82edf1999"
+      },
+      "condition_id": "condition-003-subjects-00003-standard",
+      "pair_id": "subjects-00003",
+      "report_directory": "conditions/condition-003-subjects-00003-standard",
+      "sequence": 3,
+      "subject_count": 3,
+      "tile_autograd_strategy": "standard"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "ff682712714fb02845457b50f7b29a779e76c5b2e74576ce46d8e0eeb5974dcf",
+        "benchmark.json": "9ac3cd6a4c4602d36d052e6a6f485bc6c2f0dd39b9e8eef224b28e0807055ed3",
+        "samples.csv": "453d14ef3a8982c6faa55e0e7e593d009c89e92d923cf325b09dfb0926c8d91c"
+      },
+      "condition_id": "condition-004-subjects-00003-recompute",
+      "pair_id": "subjects-00003",
+      "report_directory": "conditions/condition-004-subjects-00003-recompute",
+      "sequence": 4,
+      "subject_count": 3,
+      "tile_autograd_strategy": "recompute"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "b5788527c86246376d5873bf62da9fb7bf755a8c449ee8616a6b04eda28738bc",
+        "benchmark.json": "740bed452129660313cf03abc2ff17dd04a3afca4a5a289fcadb2dbcd2cbe06b",
+        "samples.csv": "e12bdd50d743c28846a5e604850a5c134c9623946d7d3b105e61a3f7cd6cc807"
+      },
+      "condition_id": "condition-005-subjects-00001-standard",
+      "pair_id": "subjects-00001",
+      "report_directory": "conditions/condition-005-subjects-00001-standard",
+      "sequence": 5,
+      "subject_count": 1,
+      "tile_autograd_strategy": "standard"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "67fcb14ba04174c38c0585d225f4baa665ff065343470951d0aaf52b3feb7a14",
+        "benchmark.json": "3d863d161f50724693a318ece9b60da37a75ddb7a64deb73b47c1ac1bd661023",
+        "samples.csv": "23506c230e8b523d07b56824a5bde8e5f9625892287a10286aa42fa413ace833"
+      },
+      "condition_id": "condition-006-subjects-00001-recompute",
+      "pair_id": "subjects-00001",
+      "report_directory": "conditions/condition-006-subjects-00001-recompute",
+      "sequence": 6,
+      "subject_count": 1,
+      "tile_autograd_strategy": "recompute"
+    }
+  ],
+  "design": {
+    "path": "design/study-design.json",
+    "sha256": "625dfa7f1c8aea1927a82b7d72b317486ebe183a1310ef7f953bd79c30167282"
+  },
+  "scientific_boundary": "This run preserves separate raw objective/gradient benchmark reports in a frozen paired order. It performs no automatic comparison, winner selection, speedup or significance calculation, safe-preset selection, peak-memory inference, full-workflow measurement, scaling extrapolation, or 300-subject feasibility test.",
+  "source_config": {
+    "path": "source-config.yaml",
+    "sha256": "80484b95e4ed113752372df7e8597e9049c7e16133f3d8fd8b35ceb8e8b3472a"
+  },
+  "status": "complete",
+  "study_run_version": "0.1"
+}

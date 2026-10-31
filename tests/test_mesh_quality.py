@@ -7,6 +7,7 @@ import pytest
 from diffeoforge.mesh_quality import (
     MeshQualityError,
     MeshQualitySettings,
+    assess_normalized_triangle_mesh,
     assess_triangle_mesh,
     compare_triangle_meshes,
     enforce_deformation_quality,
@@ -41,6 +42,21 @@ def test_closed_tetrahedron_has_exact_topology_and_quality() -> None:
     assert result.minimum_angle_degrees.minimum == pytest.approx(45.0)
     assert result.edge_ratio is not None
     assert result.edge_ratio.maximum == pytest.approx(math.sqrt(2.0))
+
+
+def test_trusted_normalized_geometry_path_preserves_exact_quality_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = assess_triangle_mesh(TETRA_VERTICES, TETRA_FACES)
+
+    def fail_if_geometry_is_copied(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("normalized geometry must not be copied and revalidated")
+
+    monkeypatch.setattr(
+        "diffeoforge.mesh_quality._normalized_geometry", fail_if_geometry_is_copied
+    )
+
+    assert assess_normalized_triangle_mesh(TETRA_VERTICES, TETRA_FACES) == expected
 
 
 def test_open_disconnected_mesh_records_boundary_components_and_isolated_vertex() -> None:
