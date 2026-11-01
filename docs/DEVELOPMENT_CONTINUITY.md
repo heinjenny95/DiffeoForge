@@ -1,3 +1,29 @@
+# Development continuity — dev182 delivered and verified
+
+Engineering dev182 is installed and fully verified. It keeps the shared protocol
+and prior shape decisions stable, reuses existing matching results for review,
+and continues matching capped ordinary fields with the unchanged 120-step
+allowance. New optimizer history and cumulative effort are explicit. An eligible
+complete local field still has its separate ordinary-objective check; composed
+residuals remain ineligible. Model revision requires an explicit choice.
+
+All 47 focused workflow, evidence, effort, joint and Qt cases pass. The exact
+Windows program also passes the write-denying saved-state preparation and
+light/dark production-control checks. The prepared warm successor retains the
+entire shared protocol and review ledger, matching physics and same-form field;
+preparation launches no optimizer. Existing unreviewed common evidence is reused.
+Two isolated bounded native successors improve surface measurements, but neither
+those measurements nor this workflow repair establishes anatomical or joint-model
+suitability. The difficult common fit still needs anatomical improvement.
+
+A fresh complete SHA-verified project/runtime/settings backup and idle checks
+precede installation. All 3,473 program files, six companions, license and
+uninstall registry verify. The complete project and desktop/Qt state remain
+unchanged, and prior dev181 is recoverable. Runtime source is
+`be025c9cab8ba7b2359d1ab45e1169b13ebf1f63`; this delivery-only note is a later
+commit and does not require rebuilding identical runtime code. No owner fit was
+rerun or approved, no PCA was changed, and no installer was uploaded to Drive.
+
 # Development continuity — dev182 retained common-model progress
 
 The pilot now reuses verified matching ordinary fields instead of returning to
