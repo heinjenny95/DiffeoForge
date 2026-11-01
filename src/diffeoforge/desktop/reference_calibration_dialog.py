@@ -1755,6 +1755,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.close_button = close
         self.next_step_button = QPushButton()
         self._guided_footer_action = None
+        self._guided_review_target = None
         self.next_step_button.clicked.connect(self._perform_final_next_step)
         self.next_step_button.hide()
         _set_action_emphasis(self.next_step_button, True)
@@ -1923,6 +1924,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.next_step_button.hide()
         self.final_check_summary.hide()
         self._guided_footer_action = None
+        self._guided_review_target = None
         self.status.show()
         self._assessment = None
         self._snapshot = prepared.snapshot
@@ -3554,6 +3556,18 @@ class ReferenceCalibrationDialog(QDialog):
     @Slot()
     def _open_next_review(self) -> None:
         if self._view_loading or self._snapshot is None:
+            return
+        target = getattr(self, "_guided_review_target", None)
+        if target:
+            if target["root"] != self.study_directory:
+                return
+            if target["kind"] == "common":
+                self._open_common_saved_fit(target["reference"])
+            else:
+                candidate = next((c for c in self._snapshot.candidates
+                    if c.candidate_id == target["candidate_id"] and c.status == "completed"), None)
+                if candidate is not None:
+                    self._open_candidate(candidate)
             return
         completed = tuple(
             candidate for candidate in self._snapshot.candidates if candidate.status == "completed"

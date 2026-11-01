@@ -1,3 +1,27 @@
+# Development continuity — dev183 capacity and exact review target
+
+New high/extreme adaptive comparisons use a template-bound grid matched to the
+declared movement kernel. Fresh movement hypotheses test matching control
+spacing and stronger contrasts, within the existing 2,000-point resource guard.
+Retained fields, coverage and joint preparation keep their chosen basis. This
+does not increase iteration caps, change accuracy or approve anatomy. See
+[capacity and effort](PILOT_CONTROL_CAPACITY.md).
+
+The fixed review action explicitly identifies its specimen, test and scope;
+pending common-model evidence takes priority over earlier-fit editing. Other
+method inspection captures its own saved reference. Optional optimization cannot
+bypass a newer unchanged/worse common result through an older starting point.
+Prospective successors count verified saved-field ancestry separately from the
+restarted native counter, preserving historical records and prepared offsets.
+
+Focused capacity/resource, legacy effort, common progress and Qt dispatch checks
+pass. Isolated native comparisons on original surfaces show that increased
+capacity can improve shape while narrow critical features can remain wrong;
+whole-surface distance alone does not qualify a common atlas. Private native
+results, exact Windows-package checks, installation and anatomical review are
+tracked separately. Installed dev182 remains the last verified runtime until
+the dev183 delivery receipt confirms otherwise. No installer upload is requested.
+
 # Development continuity — dev182 delivered and verified
 
 Engineering dev182 is installed and fully verified. It keeps the shared protocol

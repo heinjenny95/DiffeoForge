@@ -277,7 +277,25 @@ def _batch(
     _, spacing = control_grid(template.metadata.bounds)
     center = dict(values)
     refinement = (strategy or {}).get("baseline") if phase == "refine" else None
-    if not refinement and not (strategy or {}).get("control_basis"):
+    capacity = (strategy or {}).get("control_capacity_request")
+    if (not capacity and strategy is not None and phase == "screen"
+            and not refinement and not strategy.get("control_basis")
+            and config["project"]["parameter_provenance"]["recommendation"].get(
+                "expected_shape_disparity") in {"high", "extreme"}):
+        from diffeoforge.pilot_control_capacity import describe
+
+        capacity = describe(template.metadata.bounds, center["deformation_kernel_width"])
+    if capacity:
+        from diffeoforge.pilot_control_capacity import describe
+
+        expected = describe(template.metadata.bounds, center["deformation_kernel_width"])
+        if capacity != expected or not capacity["available"]:
+            raise ValueError("This movement scale needs more than the bounded 2,000-control "
+                             "pilot capacity. Choose a broader movement candidate; "
+                             "existing fits remain saved and no optimizer was started.")
+        center["initial_control_point_spacing"] = capacity["spacing"]
+        iterations = ITERATIONS
+    elif not refinement and not (strategy or {}).get("control_basis"):
         center["initial_control_point_spacing"] = spacing
     selected = (
         source.plan.selected_pilot_subjects
@@ -364,6 +382,7 @@ def _batch(
                 k: config["optimization"][k] for k in ("freeze_template", "freeze_control_points")
             },
             scope="All original pilot targets" if phase == "joint" else "One original target only",
+            **({"control_capacity": capacity} if capacity else {}),
             **({"joint_initialization": dict(version="accepted-singletons-v1",
                 references=joint_references(approved))}
                if phase == "joint" and strategy is not None else {}),
@@ -602,7 +621,7 @@ def _next_action(directory, action, candidate_id=None, *, goal=None):
     return result
 
 
-def adjusted_values(values, goal, *, conservative=False, step=0):
+def adjusted_values(values, goal, *, conservative=False, step=0, disparity=None):
     values = dict(values)
     parameter, factor = {
         "detail": ("attachment_kernel_width", 0.5),
@@ -615,7 +634,9 @@ def adjusted_values(values, goal, *, conservative=False, step=0):
     if conservative and goal != "density":
         # SAME needs a larger contrast, not a sequence tending back to no change.
         # The first test stays gentle; successive tests are meaningfully separated.
-        factor = (.9 * (.7 ** step)) if factor < 1 else (1.1 / (.7 ** step))
+        lower, upper = ({"extreme": (.5, 2.), "high": (.7, 1.5)}.get(disparity, (.9, 1.1))
+                        if goal in {"motion", "local_motion"} else (.9, 1.1))
+        factor = (lower * (.7 ** step)) if factor < 1 else (upper / (.7 ** step))
     values[parameter] *= factor
     return values
 

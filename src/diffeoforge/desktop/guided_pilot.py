@@ -28,6 +28,10 @@ def render(window, prepared):
     window.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
     info = record(snapshot)
     guidance = prepared.guidance
+    from diffeoforge.desktop.pilot_review_target import choose as review_target
+
+    review = review_target(snapshot, guidance, info)
+    window._guided_review_target = review
     guard_failures = guidance.get("guard_failures", {})
     checks_pending = guidance.get('qualification_pending', {})
     running = window._worker is not None or window._restoring_search
@@ -86,6 +90,11 @@ def render(window, prepared):
     explanation.setObjectName("pilotScope")
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
+    if review:
+        target_note = QLabel(review["label"] + "\n" + review["explanation"])
+        target_note.setObjectName("pilotReviewTarget")
+        target_note.setWordWrap(True)
+        window.content_layout.addWidget(target_note)
     if guidance.get('regional_scope'):
         scope = QLabel(guidance['regional_scope']['text'])
         scope.setWordWrap(True)
@@ -145,14 +154,13 @@ def render(window, prepared):
         why.setWordWrap(True)
         window.content_layout.addWidget(why)
     completed = [c for c in snapshot.candidates if c.status == "completed"]
-    window.review_next_button.setText("Review finished fit" if len(completed) == 1
-                                      else "Review next completed fit")
-    window.review_next_button.setVisible(bool(completed) and not running)
-    window.review_next_button.setEnabled(bool(completed) and not running)
+    window.review_next_button.setText(review["label"] if review else "Review result")
+    window.review_next_button.setVisible(bool(review) and not running)
+    window.review_next_button.setEnabled(bool(review) and not running)
     window.review_next_button.setToolTip(
-        "Open the completed result and choose Suitable fit or Needs improvement.")
+        review["explanation"] if review else "No completed result is ready for review.")
     _set_action_emphasis(window.review_next_button,
-                        any(c.candidate_id not in snapshot.visual_reviews for c in completed))
+                        bool(review and review["pending"]))
     pending = [c for c in snapshot.candidates if c.status != "completed"]
     unresolved = [
         c for c in snapshot.candidates if c.status not in {"completed", "failed", "interrupted"}
@@ -217,6 +225,9 @@ def render(window, prepared):
     if not running and not unresolved:
         for identifier, following in next_forms.items():
             if following.get("available"):
+                if ((following.get("common_reuse") or {}).get("mode") == "review"
+                        and review and review["kind"] == "common"):
+                    continue  # The fixed review button already names this exact saved result.
                 window.next_step_button.setText(following["label"])
                 window.next_step_button.setVisible(True)
                 window.next_step_button.setEnabled(True)
@@ -261,7 +272,13 @@ def render(window, prepared):
             render_starting_fits(window, snapshot, candidate.candidate_id, start_layout, feedback)
             if not unresolved:
                 _recovery(window, snapshot, candidate, start_layout, guidance)
-            window.content_layout.addWidget(start_card)
+            if review and review["pending"] and review["kind"] == "common":
+                for button in start_card.findChildren(QPushButton):
+                    _set_action_emphasis(button, False)
+                window.content_layout.addWidget(InfoDisclosure(
+                    "Earlier starting fit and optional repair tools", start_card))
+            else:
+                window.content_layout.addWidget(start_card)
         card = QFrame(window.content)
         card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         card.setObjectName("card")
@@ -416,7 +433,7 @@ def render(window, prepared):
             inspect.setAccessibleName(inspect.text())
             inspect.setProperty("pilotCandidate", candidate.candidate_id)
             inspect.clicked.connect(lambda _checked=False, c=candidate: window._open_candidate(c))
-            _set_action_emphasis(inspect, decision is None and not already_inspected)
+            _set_action_emphasis(inspect, False)
             layout.addWidget(inspect)
             subjects = (
                 (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
@@ -705,7 +722,8 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
                 if other_proposal.get("anchor") else None
             other.setEnabled(bool(reference))
             other.setVisible(bool(reference))
-            other.clicked.connect(lambda: window._open_guided_saved_fit(reference))
+            other.clicked.connect(
+                lambda _checked=False, ref=reference: window._open_guided_saved_fit(ref))
         else:
             other.clicked.connect(lambda: window._start_pilot(
                 adaptive=False, guided_action=("adaptive_recover_start" if working else

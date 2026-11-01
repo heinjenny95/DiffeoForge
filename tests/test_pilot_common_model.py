@@ -9,6 +9,7 @@ from diffeoforge import guided_feedback as feedback
 from diffeoforge import guided_strategy as strategy
 from diffeoforge import pilot_common_model as common
 from diffeoforge import pilot_form_progress as progress
+from diffeoforge import reference_calibration_study as study
 from diffeoforge import reference_guided_pilot as guided
 from diffeoforge.config import load_config
 from diffeoforge.mesh import sha256_file
@@ -98,3 +99,62 @@ def test_common_review_button_opens_existing_result_without_preparing(tmp_path, 
     assert calls == [('review', ref), ('review', ref)]
     root.close()
     app.processEvents()
+
+
+def test_optional_optimization_cannot_bypass_common_no_improvement_from_older_fit(
+    tmp_path, monkeypatch
+):
+    from diffeoforge import guided_working_fit as working
+
+    _, current = selected_local_after_common_failure(tmp_path, monkeypatch)
+    child = guided.next_action(current.study_directory, 'adaptive_common_continue',
+                               'guided-varifold')
+    completed = run_batch(child, monkeypatch, capped=True)
+    target = guided.record(completed)['target']
+    completed = feedback.save_feedback(completed.study_directory, 'guided-varifold', dict(
+        comparison=feedback.reference(current, 'guided-varifold'), outcome='same',
+        inspected_subjects=[target], display_scopes={target: 'original_proxy'},
+        note='No useful improvement', comparison_displayed=False))
+    context = strategy.state(completed)
+    parent, data = working.inputs(completed, 'guided-varifold', context)
+    assert parent.study_directory == current.study_directory
+    proposed = working.propose(parent, 'goal:optimize', data)
+    assert not proposed['available'] and 'did not improve' in proposed['blocked_reason']
+    folders = set(completed.study_directory.parent.iterdir())
+    with pytest.raises(ValueError, match='did not improve'):
+        guided.next_action(completed.study_directory, 'adaptive_recover_start',
+                           'guided-varifold', goal='goal:optimize')
+    assert set(completed.study_directory.parent.iterdir()) == folders
+
+
+def test_optional_common_optimization_keeps_allowance_accounts_effort_and_requires_feedback(
+    tmp_path, monkeypatch
+):
+    from diffeoforge import pilot_iteration_accounting as effort
+
+    _, current = selected_local_after_common_failure(tmp_path, monkeypatch)
+    current = feedback.select(current.study_directory, 'guided-varifold',
+                              feedback.reference(current, 'guided-varifold'))
+    child = guided.next_action(current.study_directory, 'adaptive_recover',
+                               'guided-varifold', goal='goal:optimize')
+    marker = guided.record(child)['strategy']['optimization']
+    assert marker['version'] == common.EFFORT_VERSION
+    assert marker['common_model'] is True and marker['initial_iterations'] == 120
+    assert marker['iterations'] == child.attachment_comparison['iterations'] == 120
+    assert common.physics(load_config(child.candidates[0].config_path)) == common.physics(
+        load_config(current.candidates[0].config_path))
+    completed = run_batch(child, monkeypatch, capped=True)
+    assert effort.total(completed.candidates[0].metrics) == 240
+    manifest = study._verify_manifest(completed.study_directory)
+    assert effort.source(manifest, 'guided-varifold') == (
+        current.study_directory, 'guided-varifold')
+    # Historical optional optimizations had no cumulative marker. Reading an old
+    # contract must not retroactively reinterpret its recorded native counter.
+    import copy
+    legacy = copy.deepcopy(manifest)
+    legacy['attachment_comparison']['guided']['strategy']['optimization'].pop('version')
+    assert effort.source(legacy, 'guided-varifold') is None
+    from test_pilot_region_feedback import reject
+
+    inspected = reject(completed, 'guided-varifold')
+    assert strategy.state(inspected)['common_recovery']['mode'] == 'feedback'

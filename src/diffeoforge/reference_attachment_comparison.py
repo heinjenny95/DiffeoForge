@@ -142,8 +142,10 @@ def prepare_controls(root, manifest, record):
 
     template = load_surface_mesh(root / manifest["inputs"]["template"]["copy"])
     from diffeoforge.guided_density import copy_basis
+    from diffeoforge.pilot_control_capacity import prepare as prepare_capacity
 
-    chosen = copy_basis(root, record)
+    chosen = (prepare_capacity(root, manifest, record) if record.get("control_capacity")
+              else copy_basis(root, record))
     if chosen is None:
         controls, spacing = control_grid(template.metadata.bounds)
         path = root / "method-controls.txt"
@@ -171,6 +173,9 @@ def verify(root, manifest):
     from diffeoforge import reference_calibration_study as study
 
     record = manifest["attachment_comparison"]
+    from diffeoforge.pilot_control_capacity import verify as verify_capacity
+
+    verify_capacity(root, manifest, record)
     from diffeoforge.guided_refinement import verify as verify_refinement
 
     verify_refinement(root, manifest, record)

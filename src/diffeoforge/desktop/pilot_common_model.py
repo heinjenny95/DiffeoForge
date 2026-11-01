@@ -23,6 +23,10 @@ def recovery(window, layout, identifier, choice):
         "Your suitable individual fits and previous common approvals remain saved."))
     reason.setWordWrap(True)
     layout.addWidget(reason)
+    target = getattr(window, "_guided_review_target", None)
+    if (choice["mode"] == "review" and target and target["kind"] == "common"
+            and target["reference"] == choice["reference"]):
+        return  # Use the single, permanently visible action with the exact result name.
     if choice["available"]:
         button = QPushButton(choice["label"])
         button.setObjectName("primary")

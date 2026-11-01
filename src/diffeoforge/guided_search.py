@@ -51,6 +51,22 @@ def inputs(snapshot, identifier, context, *, regions_override=None, allow_contin
 
     response_cases, response_evidence = history(context['cases'], anchor, marked)
     current_reference = _reference(snapshot, identifier, target) if inspected else None
+    from diffeoforge.config import load_config
+    from diffeoforge.surface_io import load_surface_mesh
+
+    config = load_config(current.config_path)
+    disparity = config["project"]["parameter_provenance"]["recommendation"].get(
+        "expected_shape_disparity", "moderate")
+    capacity_context = None
+    if disparity in {"high", "extreme"}:
+        manifest = study._verify_manifest(snapshot.study_directory)
+        template = load_surface_mesh(study._safe_study_path(
+            snapshot.study_directory, manifest["inputs"]["template"]["copy"]))
+        capacity_context = dict(bounds=template.metadata.bounds, disparity=disparity)
+    from diffeoforge.pilot_common_model import optimization_context
+
+    common_optimization = optimization_context(
+        snapshot, context, (anchor, baseline, current_reference))
     capture_reference = anchor or current_reference
     regional_capture = None
     if (marked and capture_reference
@@ -68,6 +84,8 @@ def inputs(snapshot, identifier, context, *, regions_override=None, allow_contin
                 severe=severe_regression(snapshot, identifier), references=references,
                 context=context, response_cases=response_cases, response_evidence=response_evidence,
                 regional_capture=regional_capture,
+                common_optimization=common_optimization,
+                capacity_context=capacity_context,
                 spatial_diagonal=study._verify_manifest(snapshot.study_directory)['template_diagonal'])
     from diffeoforge.regional_continuation import prepare_preview
 
@@ -126,8 +144,11 @@ def propose(snapshot, identifier, request, data):
         # remains the old field. This does not promote or approve the new anatomy.
         seed, seed_parent, numerical = data["current_reference"], snapshot, data["current"]
     extended = any(r.get("goal") == "optimize" and r.get("reference") == seed for r in cases)
+    common_effort = data.get("common_optimization", {}).get(
+        (seed["directory"], seed["candidate_id"]))
+    repetition_reason = (common_effort or {}).get("blocked_reason", "")
     can_optimize = seed_parent.plan.pilot_subject_count == 1 and iteration_limited(numerical) \
-        and not extended
+        and not extended and not repetition_reason
     reason = ""
     if not explicit and can_optimize and symptom != "distortion":
         goal = "optimize"
@@ -150,11 +171,24 @@ def propose(snapshot, identifier, request, data):
         seed, seed_parent = reference, parent
     available, blocked = True, ""
     step = 0
+    capacity_context = data.get("capacity_context")
+    early_density = (capacity_context and not marked
+        and not seed_parent.attachment_comparison.get("regional_objective")
+        and symptom in {"detail", "unsure", "missing"}
+        and base_values["initial_control_point_spacing"]
+        > 1.1 * base_values["deformation_kernel_width"]
+        and not any(r.get("family", r.get("goal")) == "density" for r in local))
+    if not explicit and early_density:
+        goal = "density"
+        reason = ("High shape disparity and a control spacing wider than the movement "
+                  "kernel: compare additional controls before spending more iterations. ")
+    capacity = None
     if goal == "optimize":
         values, method = seed["values"], seed["method"]
         available = can_optimize
-        blocked = ("This saved field has already had a longer optimization test. Choose "
-                   "a different adjustment; parameter tests can continue."
+        blocked = repetition_reason or (
+                   "This saved field already had a longer optimization test. "
+                   "Choose a different adjustment; parameter tests can continue."
                    if extended else "Longer optimization requires an inspected single-form "
                    "fit with an explicit iteration-limit stop.")
         if can_optimize:
@@ -197,7 +231,16 @@ def propose(snapshot, identifier, request, data):
         # Increase contrast after SAME, rather than approaching the unchanged baseline.
         # Worsening tests retain the earlier field; the automatic family chooser moves on.
         for step in range(9):
-            values = guided.adjusted_values(base_values, goal, conservative=True, step=step)
+            values = guided.adjusted_values(base_values, goal, conservative=True, step=step,
+                disparity=capacity_context["disparity"] if capacity_context else None)
+            if capacity_context and goal in {"motion", "local_motion"}:
+                from diffeoforge.pilot_control_capacity import bounded_movement
+
+                requested_width = values["deformation_kernel_width"]
+                capacity = bounded_movement(capacity_context["bounds"], requested_width,
+                                            base_values["deformation_kernel_width"])
+                values["deformation_kernel_width"] = capacity["kernel_width"]
+                values["initial_control_point_spacing"] = capacity["spacing"]
             if not any(r["values"] == values and r.get("reference") == reference
                        for r in relevant):
                 break
@@ -207,6 +250,20 @@ def propose(snapshot, identifier, request, data):
                        "starting fit. Choose another adjustment or a different saved starting fit.")
         if step:
             reason += "Earlier tests at smaller contrasts did not resolve this area. "
+        if capacity:
+            if capacity["kernel_width"] != requested_width:
+                reason += ("The finer proposed movement scale exceeds the point limit. "
+                           "Compare the nearest wider movement candidate within that limit, "
+                           "with its own matching control spacing. ")
+            if not capacity["available"]:
+                available = False
+                blocked = (f"This movement scale requires {capacity['count']:,} control points, "
+                           f"above the {capacity['maximum_controls']:,}-point pilot limit. "
+                           "Choose a broader movement scale or inspect the saved alternatives; "
+                           "no under-resolved substitute or additional fit is prepared.")
+            reason += (f"Test its matching control spacing too: {capacity['count']:,} points "
+                       f"at spacing {capacity['spacing']:.5g}. This is a new ordinary basis; "
+                       "earlier fits and their approvals stay saved. ")
     title, description = DESCRIPTIONS[goal]
     measured_rows = [r for r in local if r.get('response')]
     if measured_rows:
@@ -249,7 +306,12 @@ def propose(snapshot, identifier, request, data):
                   "learned" if goal in {"optimize", "detail", "weight", "smooth"}
                   and seed_parent.plan.pilot_subject_count == 1 else "fresh",
                   optimization_iterations=numerical.metrics["maximum_iterations"] * 2
-                  if goal == "optimize" and can_optimize else None)
+                  if goal == "optimize" and can_optimize and not common_effort else
+                  common_effort["additional_iterations"]
+                  if goal == "optimize" and can_optimize else None,
+                  common_optimization=bool(common_effort) if goal == "optimize" else False)
+    if capacity:
+        result["control_capacity_request"] = capacity
     if not available and not explicit:
         for alternative in ("detail", "weight", "local_motion", "density", "motion", "smooth"):
             if alternative == goal:

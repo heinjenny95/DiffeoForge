@@ -353,12 +353,24 @@ def verify_strategy(info, record, manifest, study_root=None):
         parent = verify_reference(optimization["reference"])
         candidate = next(c for c in parent.candidates
                          if c.candidate_id == optimization["reference"]["candidate_id"])
+        from diffeoforge.pilot_common_model import EFFORT_VERSION
+        from diffeoforge.pilot_iteration_accounting import branch_total
+        from diffeoforge.reference_attachment_comparison import ITERATIONS
+
+        allowance = candidate.metrics["maximum_iterations"] * 2
+        if "version" in optimization:
+            if (optimization["version"] != EFFORT_VERSION
+                    or type(optimization.get("common_model")) is not bool
+                    or optimization.get("initial_iterations") != branch_total(parent, candidate)):
+                return False
+            if optimization["common_model"]:
+                allowance = ITERATIONS
         if (info["phase"] != "refine" or info["goal"] != "optimize"
                 or parent.plan.pilot_subject_count != 1 or not iteration_limited(candidate)
                 or set(record["methods"].values()) != {optimization["reference"]["method"]}
                 or record.get("refinement", {}).get("initialization") != "learned"
                 or optimization["reference"] != strategy.get("baseline")
-                or record["iterations"] != candidate.metrics["maximum_iterations"] * 2
+                or record["iterations"] != allowance
                 or optimization["iterations"] != record["iterations"]
                 or manifest["plan"]["baseline_effective_values"]
                 != optimization["reference"]["values"]):
@@ -403,6 +415,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     strategy.pop("regional_recipe", None)
     strategy.pop("failure_parent_recovery", None)
     strategy.pop("common_model_step", None)
+    strategy.pop("control_capacity_request", None)
     strategy["previous"] = dict(directory=str(snapshot.study_directory),
         manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))
     history = [*info["history"], dict(**strategy["previous"], outcome="adaptive_" + action)]
@@ -449,12 +462,21 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
             strategy["regional_recipe"] = proposed["regional_recipe"]
         strategy["anchor"] = comparison
         strategy["control_basis"] = strategy["baseline"]
+        if proposed.get("control_capacity_request"):
+            strategy["control_capacity_request"] = proposed["control_capacity_request"]
         strategy["search_family"] = (info.get("strategy") or {}).get(
             "search_family", info.get("goal")) if proposed["numerical_extension"] else (
                 proposed["goal"])
         if proposed["numerical_extension"]:
-            strategy["optimization"] = dict(reference=strategy["baseline"],
-                iterations=proposed["optimization_iterations"])
+            from diffeoforge.pilot_common_model import EFFORT_VERSION
+            from diffeoforge.pilot_iteration_accounting import branch_total
+
+            seed_candidate = next(c for c in baseline_snapshot.candidates
+                                  if c.candidate_id == baseline_id)
+            strategy["optimization"] = dict(version=EFFORT_VERSION,
+                reference=strategy["baseline"], iterations=proposed["optimization_iterations"],
+                initial_iterations=branch_total(baseline_snapshot, seed_candidate),
+                common_model=proposed.get("common_optimization", False))
         strategy["difficult_targets"] = list(dict.fromkeys(
             [target, *strategy.get("difficult_targets", [])]))
         strategy["hypothesis_count"] = strategy.get("hypothesis_count", 0) + 1

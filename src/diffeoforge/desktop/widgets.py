@@ -4720,9 +4720,10 @@ class DiffeoForgeWindow(QMainWindow):
         )
         guidance_layout.addLayout(guidance_form)
         guidance_hint = QLabel(
-            "DiffeoForge measures the mesh-sampling limit and turns these three "
+            "DiffeoForge measures mesh sampling and turns these three "
             "independent choices into pilot candidates. High or extreme expected "
-            "disparity widens the tested range without changing local/global reach."
+            "disparity tests control capacity early and widens movement-scale contrasts. "
+            "It does not prescribe local or broad movement; compare the resulting fits."
         )
         guidance_hint.setObjectName("hint")
         guidance_hint.setWordWrap(True)

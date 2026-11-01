@@ -2,7 +2,7 @@
 
 ## Open owner follow-up — 1 November 2026
 
-- [ ] Make the current pilot review target unambiguous: one primary review action
+- [x] Make the current pilot review target unambiguous: one primary review action
   naming the specimen, attempt and scope (individual / common model / joint).
   Clearly distinguish the result awaiting review from the working starting fit.
   Consolidate competing Inspect / Review finished / Review saved common-model
@@ -11,7 +11,16 @@
   concrete next step. First-use acceptance: the researcher can identify the
   required fit and proceed without chat guidance, including when an earlier
   starting fit is selected. Preserve saved fits, approvals and scientific gates.
-  Backlog only at the owner's request; not implemented by this documentation.
+  Implemented and tested in the source optimization follow-up; runtime delivery
+  and independent first-use acceptance are tracked separately.
+  [Behavior and limits](docs/PILOT_CONTROL_CAPACITY.md).
+
+- [x] Connect high/extreme disparity to early control-capacity testing and wider
+  movement contrasts, pair new movement candidates with matching control spacing,
+  retain selected grids through common coverage/joint checks, and close optional
+  older-start no-improvement/accounting bypasses. No cap/accuracy/solver change;
+  existing fits and contracts preserved. Difficult-feature anatomical acceptance
+  remains separate from the implementation and native engineering comparisons.
 
 - [x] Repair explicit Retain areas with dense separate native constraints and
   whole-patch/early-review displacement checks. dev175 verified installed; source,

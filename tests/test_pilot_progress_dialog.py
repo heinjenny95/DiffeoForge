@@ -24,7 +24,8 @@ def test_finished_fit_review_stays_visible_after_scrolling_and_opens_current_res
     panel.app.processEvents()
     button = panel.window.review_next_button
     assert button.isVisible() and button.isEnabled()
-    assert button.text() == 'Review finished fit'
+    assert 'individual result' in button.text()
+    assert 'Test 5' in button.text() and 'specimen.vtk' in button.text()
     assert not scroll.isAncestorOf(button)
     assert panel.window.rect().contains(button.geometry())
     button.click()
@@ -83,3 +84,57 @@ def test_next_form_input_failure_keeps_approval_and_explains_the_blocker(panel):
     assert any('original-basis input changed' in label.text()
                for label in panel.window.content.findChildren(QLabel))
     assert not panel.invoked
+
+
+def test_saved_common_review_names_and_opens_its_exact_reference_not_selected_start(panel):
+    from PySide6.QtWidgets import QLabel, QPushButton
+
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    ref = dict(directory='saved-common-result', candidate_id='guided-varifold',
+               target='next-form.vtk')
+    choice = dict(mode='review', available=True, reference=ref, target='next-form.vtk',
+                  test_number=7, label='Review saved common-model fit · next-form.vtk')
+    panel.guidance['common_recovery'] = choice
+    panel.guidance['working_proposals'] = {
+        panel.candidate.candidate_id: panel.guidance['proposals'][panel.candidate.candidate_id]}
+    panel.window._snapshot = panel.snapshot
+    opened = []
+    panel.window._open_common_saved_fit = opened.append
+    panel.window.review_next_button.clicked.connect(
+        lambda: ReferenceCalibrationDialog._open_next_review(panel.window))
+    panel.render()
+    button = panel.window.review_next_button
+    assert button.isVisible() and 'common-model result' in button.text()
+    assert 'Test 7' in button.text() and 'next-form.vtk' in button.text()
+    assert panel.window.findChild(QLabel, 'pilotReviewTarget').text().startswith(button.text())
+    primary = [b for b in panel.window.findChildren(QPushButton)
+               if b.isVisible() and b.objectName() == 'primary']
+    assert primary == [button]
+    button.click()
+    assert opened == [ref] and not panel.inspected and not panel.invoked
+
+
+def test_approved_current_fit_reuses_next_saved_review_with_one_fixed_action(panel):
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    identifier = panel.candidate.candidate_id
+    panel.snapshot.visual_reviews[identifier] = True
+    ref = dict(directory='next-saved-result', candidate_id=identifier, target='other.vtk')
+    choice = dict(mode='review', available=True, reference=ref, target='other.vtk',
+                  test_number=9, label='Review saved common-model fit · other.vtk')
+    panel.guidance['next_forms'] = {identifier: dict(
+        available=True, shapes=6, checked=3, total=6, action='form_model_check',
+        label=choice['label'], common_reuse=choice)}
+    panel.window._snapshot = panel.snapshot
+    opened = []
+    panel.window._open_common_saved_fit = opened.append
+    panel.window.review_next_button.clicked.connect(
+        lambda: ReferenceCalibrationDialog._open_next_review(panel.window))
+    panel.render()
+    assert panel.window.next_step_button.isHidden()
+    assert 'Test 9' in panel.window.review_next_button.text()
+    assert 'other.vtk' in panel.window.review_next_button.text()
+    panel.window.review_next_button.click()
+    assert opened == [ref] and not panel.inspected and not panel.invoked
+    assert panel.snapshot.visual_reviews[identifier] is True

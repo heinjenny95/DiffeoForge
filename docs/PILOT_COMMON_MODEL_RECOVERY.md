@@ -21,8 +21,18 @@ and settings. This is a warm field continuation with fresh optimizer history;
 cumulative effort and the restarted native counter are reported separately.
 There is no claim of an uninterrupted optimizer trajectory.
 
+New high/extreme trials also check [control capacity](PILOT_CONTROL_CAPACITY.md)
+early and pair a fresh movement candidate with its declared spacing. Historical
+bases stay unchanged. The optional older-start optimization route observes the
+same no-improvement guard and allowance as the primary common-model route. New
+versioned effort records can include verified legacy warm-seed ancestry without
+rewriting an older native counter or a previously prepared offset contract.
+
 Further continuations require feedback. An explicit non-improvement or a native
 stop other than the cap blocks unchanged repetition and points to model revision.
+The fixed review action names the exact specimen, test and model scope, including
+an already-existing common result. It does not follow the working starting-fit
+selector. Earlier inspection/editing remains available as secondary history.
 Optional individual repairs stay separate from common-model checks. A different
 animal never receives another animal's momenta or approval. Only explicitly
 approved, compatible ordinary fields can initialize the joint check. That joint

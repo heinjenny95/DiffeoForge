@@ -260,7 +260,7 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False, common_
             strategy = dict(info.get("strategy") or {})
             for key in ("baseline", "anchor", "regional_recipe", "regional_continuation",
                         "optimization", "failure_parent_recovery", "shared_model_check",
-                        "search_family", "common_model_step"):
+                        "search_family", "common_model_step", "control_capacity_request"):
                 strategy.pop(key, None)
             previous = dict(directory=str(snapshot.study_directory),
                 manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))

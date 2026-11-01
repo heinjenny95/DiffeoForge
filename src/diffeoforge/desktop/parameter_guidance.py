@@ -125,7 +125,10 @@ DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         sections=(
             (
                 "High or extreme disparity",
-                "Widens the pilot search and stops deformation energy alone from being "
+                "Tests a kernel-spaced control basis early and uses wider movement-scale "
+                "contrasts. The actual control count is shown before execution; a finer "
+                "movement test also needs a compatible control spacing. This stops "
+                "deformation energy alone from being "
                 "treated as evidence against a candidate. Residual underfit, invalid "
                 "faces, and implausible correspondence still count against it.",
             ),

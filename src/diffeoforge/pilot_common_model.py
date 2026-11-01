@@ -7,7 +7,38 @@ from diffeoforge import reference_guided_pilot as guided
 from diffeoforge.config import load_config
 from diffeoforge.mesh import sha256_file
 
-VERSION = "common-model-warm-step-v1"
+LEGACY_VERSION = "common-model-warm-step-v1"
+VERSION = "common-model-warm-step-v2"
+EFFORT_VERSION = "guided-warm-effort-v1"
+
+
+def optimization_context(snapshot, context, references):
+    """Bind optional recovery to the same common-model stop as the primary route.
+
+    Opening an older starting fit must not erase a newer no-improvement decision.
+    This read-only result is computed with the other verified proposal inputs.
+    """
+    from diffeoforge.pilot_form_progress import compatible, marker
+    from diffeoforge.reference_attachment_comparison import ITERATIONS
+
+    choice = context.get("common_recovery")
+    if not choice:
+        return {}
+    value = marker(snapshot)
+    if not value or value["stage"] != "model":
+        return {}
+    result = {}
+    for ref in references:
+        if not ref or ref["target"] != choice["target"]:
+            continue
+        row = dict(ref)
+        row["filename"] = row.pop("target")
+        if compatible(row, value["protocol"]):
+            result[(ref["directory"], ref["candidate_id"])] = dict(
+                additional_iterations=ITERATIONS,
+                blocked_reason=choice.get("reason", "")
+                if choice["mode"] in {"stalled", "feedback", "review", "approved"} else "")
+    return result
 
 
 def approvals(snapshot, context, value):
@@ -74,12 +105,17 @@ def preview(snapshot, context, target, *, value=None):
                     "missing common-model check; no repeat is needed.")
     if not inspected:
         return dict(mode="review", available=True, target=target, reference=ref,
+                    test_number=guided.record(parent)["screen_trials_spent"],
                     label="Review saved common-model fit · " + target,
                     reason="This matching result already exists. Review it before another fit.")
     feedback = [event for event in study._load_events(parent.study_directory)
                 if event["event"] == "guided_fit_feedback"
                 and event["current"]["candidate_id"] == candidate.candidate_id]
-    step = (guided.record(parent).get("strategy") or {}).get("common_model_step")
+    strategy = guided.record(parent).get("strategy") or {}
+    optimization = strategy.get("optimization") or {}
+    step = strategy.get("common_model_step") or (
+        optimization if optimization.get("version") == EFFORT_VERSION
+        and optimization.get("common_model") is True else None)
     if step and not feedback:
         return dict(mode="feedback", available=False, target=target, reference=ref,
                     label="Compare with the previous common-model fit · " + target,
@@ -92,13 +128,19 @@ def preview(snapshot, context, target, *, value=None):
                     reason="This shared-model result stopped or did not improve. Keep your "
                     "suitable local fit; revise the shared model explicitly rather than "
                     "repeating the same fit or returning to a local-repair loop.")
-    from diffeoforge.pilot_iteration_accounting import total
+    from diffeoforge.pilot_iteration_accounting import branch_total, total
 
-    previous = total(candidate.metrics)
+    recorded = total(candidate.metrics)
+    previous = branch_total(parent, candidate)
     return dict(mode="continue", available=True, target=target, reference=ref,
                 additional_iterations=ITERATIONS, previous_iterations=previous,
+                previous_recorded_iterations=recorded,
                 label=f"Continue common-model fit from {label} · +{ITERATIONS} · {target}",
-                reason=f"Keep the saved field and common settings. Up to {ITERATIONS} new "
+                reason=(f"Saved-field branch: {previous} iterations; the last native counter "
+                        f"is {candidate.metrics['final_iteration']} and the older branch "
+                        f"summary recorded {recorded}. Historical counters remain unchanged. "
+                        if previous != recorded else "")
+                + f"Keep the saved field and common settings. Up to {ITERATIONS} new "
                 f"iterations ({previous} already recorded); optimizer history restarts. "
                 "Earlier suitable fits and common approvals remain saved.")
 
@@ -133,7 +175,7 @@ def verify(info, record, manifest, root):
     from diffeoforge.guided_feedback import verify_reference
     from diffeoforge.guided_progress import iteration_limited
     from diffeoforge.pilot_form_progress import compatible
-    from diffeoforge.pilot_iteration_accounting import total
+    from diffeoforge.pilot_iteration_accounting import branch_total, total
     from diffeoforge.reference_attachment_comparison import ITERATIONS
 
     marker = info["strategy"]["common_model_step"]
@@ -143,10 +185,13 @@ def verify(info, record, manifest, root):
     row = dict(ref)
     row["filename"] = row.pop("target")
     config = load_config(study._safe_study_path(root, manifest["source_config"]["copy"]))
-    if (marker["version"] != VERSION or marker["approval_transferred"] is not False
+    previous = (total(candidate.metrics) if marker["version"] == LEGACY_VERSION
+                else branch_total(parent, candidate))
+    if (marker["version"] not in {LEGACY_VERSION, VERSION}
+            or marker["approval_transferred"] is not False
             or marker["protocol"] != info["strategy"]["form_progress"]["protocol"]
             or not compatible(row, marker["protocol"]) or not iteration_limited(candidate)
-            or marker["previous_iterations"] != total(candidate.metrics)
+            or marker["previous_iterations"] != previous
             or marker["additional_iterations"] != ITERATIONS or record["iterations"] != ITERATIONS
             or config["optimization"]["max_iterations"] != ITERATIONS
             or info["goal"] != "common_continue" or info["phase"] != "refine"
