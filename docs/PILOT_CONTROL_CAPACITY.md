@@ -54,6 +54,12 @@ Existing ordinary form-model checks and continuations retain their shared scope.
 While a saved common result awaits review, returning to an accepted individual
 fit remains available as a secondary action rather than a competing primary one.
 
+The pilot's plain content participates in the existing theme rules. Headings,
+specimen names and review-target explanations stay readable when switching
+between light and dark themes, including a dialog owned by the main window.
+The regression check samples the rendered background and verifies text contrast;
+button geometry and successful dispatch alone do not qualify visual readability.
+
 Verification covers prospective actual grids, bounded movement selection,
 unchanged numerical settings, chosen-basis transfer through coverage/joint
 preparation, common-model non-improvement through the older-fit route, versioned
