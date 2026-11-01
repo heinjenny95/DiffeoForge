@@ -1,4 +1,17 @@
-# Development continuity — dev184 packaging the qualified local fixes
+# Development continuity — dev184 delivered and verified
+
+dev184 is installed from runtime commit
+`03c2da478b8e6c314a9787da2dfa0a30e5f2befd` after exact frozen-program checks,
+complete backup and fresh idle guards. Both qualified local material/assessment
+fixes are included. Every installed bundle file and companion verifies; current
+project files, good fits/reviews and desktop/Qt state are unchanged. Prior dev183
+is recoverable. No private fit was started for installation or adopted from the
+separate diagnostics. New protected-correction preparation uses the fix while
+historical plans retain their contracts. Shared-model/PCA and anatomical approval
+remain separate. No installer upload was requested. See
+[delivery evidence and limits](V184_DELIVERY.md).
+
+# Earlier packaging stage — completed by the verified delivery above
 
 dev184 packages the qualified partial-material and two-direction assessment
 fixes below. Existing fitted fields, approvals and prepared contracts stay
