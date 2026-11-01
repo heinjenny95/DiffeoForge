@@ -1,3 +1,16 @@
+# Development continuity — local material qualification pending
+
+New isolated feature-correction preparation checks expose the partial-brush
+material boundary: a nonempty source sliver suppresses the existing missing-source
+fallback. A separate deterministic connected-material contrast excludes all
+Retain-incident triangles and leaves the existing sufficient-source case intact.
+It has not changed installed policy or established a successful native fit.
+The first native dispatch was blocked before optimizer launch by the existing
+disk-reserve gate; storage, native fitting and anatomical qualification remain
+pending. See [material qualification](PILOT_LOCAL_MATERIAL_QUALIFICATION.md).
+Owner fits, approvals, old prepared contracts, installed dev183 and paused side
+work remain preserved. No iteration/accuracy guard is relaxed.
+
 # Development continuity — dev183 delivered and verified
 
 dev183 is installed and exactly verified after complete backup and fresh idle
