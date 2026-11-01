@@ -1,3 +1,12 @@
+# Development continuity — dev184 packaging the qualified local fixes
+
+dev184 packages the qualified partial-material and two-direction assessment
+fixes below. Existing fitted fields, approvals and prepared contracts stay
+unchanged. Native correction evidence is already complete; application freezing,
+exact-package qualification, verified backup and idle installation are separate
+delivery gates. Installed dev183 remains current until the dev184 installation
+receipt verifies the replacement. No installer upload is requested.
+
 # Development continuity — partial material and two-direction local assessment
 
 New protected-capture preparation expands an insufficient nonempty source brush
