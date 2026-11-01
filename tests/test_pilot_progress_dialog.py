@@ -138,3 +138,13 @@ def test_approved_current_fit_reuses_next_saved_review_with_one_fixed_action(pan
     panel.window.review_next_button.click()
     assert opened == [ref] and not panel.inspected and not panel.invoked
     assert panel.snapshot.visual_reviews[identifier] is True
+
+
+def test_local_repair_keeps_individual_scope_when_common_model_is_stalled(panel):
+    panel.guidance['common_recovery'] = dict(
+        mode='stalled', available=False, target='specimen.vtk',
+        reference=dict(directory='older-common', candidate_id='guided-varifold',
+                       target='specimen.vtk'), reason='The common field did not improve.')
+    panel.render()
+    assert 'individual result' in panel.window.review_next_button.text()
+    assert 'common-model result' not in panel.window.review_next_button.text()

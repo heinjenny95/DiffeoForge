@@ -19,9 +19,13 @@ def choose(snapshot, guidance, info):
     if candidate is None:
         return None
     pending = candidate.candidate_id not in snapshot.visual_reviews
+    strategy = info.get("strategy") or {}
+    optimization = strategy.get("optimization") or {}
+    common_current = (not snapshot.attachment_comparison.get("regional_objective")
+        and (info.get("goal") in {"shared_check", "common_continue"}
+             or optimization.get("common_model") is True))
     scope = ("joint" if info["phase"] == "joint" else "common-model"
-             if guidance.get("common_recovery") or info.get("goal") == "shared_check"
-             else "individual")
+             if common_current else "individual")
     name = info["target"] or f"{snapshot.plan.pilot_subject_count} forms"
     method = " · " + candidate.label if len(completed) > 1 else ""
     return dict(root=snapshot.study_directory, kind="current", candidate_id=candidate.candidate_id,

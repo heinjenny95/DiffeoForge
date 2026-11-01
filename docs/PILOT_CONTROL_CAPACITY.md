@@ -47,7 +47,9 @@ starting fit. Pending common-result review has one primary action; earlier
 starting-fit editing and comparisons remain secondary. A reviewed result can
 still be reopened explicitly. Suitable-fit next-step preparation preserves the
 existing approvals and does not start fitting. A stale view cannot dispatch a
-review to another study.
+review to another study. A separate local repair retains its individual scope
+even while the shared model is stalled; shared-model context alone does not
+relabel that repair as common-model evidence.
 
 Verification covers prospective actual grids, bounded movement selection,
 unchanged numerical settings, chosen-basis transfer through coverage/joint
