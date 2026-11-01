@@ -1,6 +1,6 @@
 """Review and continuation stay outside the long scrolling history."""
 
-
+import pytest
 from test_guided_suitable_dialog import panel as panel
 
 
@@ -148,3 +148,35 @@ def test_local_repair_keeps_individual_scope_when_common_model_is_stalled(panel)
     panel.render()
     assert 'individual result' in panel.window.review_next_button.text()
     assert 'common-model result' not in panel.window.review_next_button.text()
+
+
+@pytest.mark.parametrize('goal', ['shared_check', 'form_model_check', 'common_continue'])
+def test_existing_ordinary_common_routes_keep_their_review_scope(panel, goal):
+    from diffeoforge.desktop.pilot_review_target import choose
+
+    panel.snapshot.attachment_comparison.pop('regional_objective')
+    panel.guidance['common_recovery'] = dict(mode='stalled', available=False)
+    result = choose(panel.snapshot, panel.guidance, dict(
+        phase='validate', goal=goal, target='specimen.vtk', screen_trials_spent=23))
+    assert 'common-model result' in result['label']
+    assert 'Test 23' in result['label'] and 'specimen.vtk' in result['label']
+
+
+def test_pending_common_review_keeps_accepted_return_visible_as_secondary(panel):
+    from PySide6.QtWidgets import QPushButton
+
+    ref = dict(directory='accepted-study', candidate_id='guided-varifold')
+    panel.guidance['accepted_fits'] = {panel.candidate.candidate_id: dict(
+        reference=ref, label='Test 3', target='specimen.vtk', selected=False)}
+    panel.guidance['common_recovery'] = dict(mode='review', available=True,
+        target='specimen.vtk', test_number=23, reference=dict(
+            directory='pending-common', candidate_id='guided-varifold', target='specimen.vtk'))
+    panel.render()
+    buttons = panel.window.findChildren(QPushButton)
+    assert [b for b in buttons if b.isVisible() and b.objectName() == 'primary'] == [
+        panel.window.review_next_button]
+    restore = next(b for b in buttons if b.property('acceptedFitRecovery'))
+    assert restore.isVisible() and restore.isEnabled()
+    restore.click()
+    assert panel.invoked == [((), dict(adaptive=False, guided_action=(
+        'adaptive_restore_accepted', panel.candidate.candidate_id, ref)))]

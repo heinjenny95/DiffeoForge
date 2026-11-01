@@ -50,6 +50,9 @@ existing approvals and does not start fitting. A stale view cannot dispatch a
 review to another study. A separate local repair retains its individual scope
 even while the shared model is stalled; shared-model context alone does not
 relabel that repair as common-model evidence.
+Existing ordinary form-model checks and continuations retain their shared scope.
+While a saved common result awaits review, returning to an accepted individual
+fit remains available as a secondary action rather than a competing primary one.
 
 Verification covers prospective actual grids, bounded movement selection,
 unchanged numerical settings, chosen-basis transfer through coverage/joint

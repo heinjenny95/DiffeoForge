@@ -24,7 +24,9 @@ def render(window, identifier, layout, data):
         restore = QPushButton("Return to accepted single-form fit · no computation")
         restore.setProperty("acceptedFitRecovery", True)
         restore.setAccessibleName(restore.text())
-        _set_action_emphasis(restore, True)
+        target = getattr(window, "_guided_review_target", None)
+        _set_action_emphasis(restore, not (
+            target and target["pending"] and target["kind"] == "common"))
         restore.clicked.connect(lambda: window._start_pilot(
             adaptive=False, guided_action=("adaptive_restore_accepted", identifier,
                                            data["reference"])))

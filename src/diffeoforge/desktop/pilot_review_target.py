@@ -22,7 +22,7 @@ def choose(snapshot, guidance, info):
     strategy = info.get("strategy") or {}
     optimization = strategy.get("optimization") or {}
     common_current = (not snapshot.attachment_comparison.get("regional_objective")
-        and (info.get("goal") in {"shared_check", "common_continue"}
+        and (info.get("goal") in {"shared_check", "form_model_check", "common_continue"}
              or optimization.get("common_model") is True))
     scope = ("joint" if info["phase"] == "joint" else "common-model"
              if common_current else "individual")
