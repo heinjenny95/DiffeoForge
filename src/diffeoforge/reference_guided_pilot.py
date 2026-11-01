@@ -211,8 +211,17 @@ def _batch(
     cohort_method = config["optimization"]["method"]
     iterations = (max(ITERATIONS, previous.attachment_comparison["iterations"])
                   if strategy is not None and previous else ITERATIONS)
-    if goal in {"shared_check", "next_form", "form_model_check"}:
+    if goal in {"shared_check", "next_form", "form_model_check", "common_continue"}:
         iterations = ITERATIONS
+    common_step = (strategy or {}).get("common_model_step")
+    if common_step:
+        from diffeoforge.guided_feedback import verify_reference
+
+        parent = verify_reference(common_step["reference"])
+        retained = next(c for c in parent.candidates
+                        if c.candidate_id == common_step["reference"]["candidate_id"])
+        config = copy.deepcopy(load_config(retained.config_path))
+        iterations = common_step["additional_iterations"]
     optimization = (strategy or {}).get("optimization")
     if optimization:
         from diffeoforge.guided_feedback import verify_reference

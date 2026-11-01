@@ -121,7 +121,7 @@ def uses_starting_progress(snapshot, identifier):
     return bool(marker(snapshot) or accepted.attachment_comparison.get("regional_objective"))
 
 
-def proposal(snapshot, identifier, context, *, model=False, starting_fit=False):
+def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, revise=False):
     info = guided.record(snapshot)
     if snapshot.plan.pilot_subject_count != 1 or info["phase"] == "joint":
         raise ValueError("Review an individual form before continuing to another")
@@ -135,12 +135,13 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False):
     value = deepcopy(saved) if saved else dict(version=VERSION, reviews=[], origin_review=row,
                          protocol=_protocol(accepted, accepted_id),
                          stage="forms", common_approval_created=False)
-    if (saved and not accepted.attachment_comparison.get("regional_objective")
-            and not compatible(row, value["protocol"])):
-        # As in ordinary pilot confirmation, explicitly choosing a new standard
-        # fit chooses its shared starting settings. Old shapes stay saved; only
-        # matching-model approvals can count towards the new joint check.
-        value.update(origin_review=row, protocol=_protocol(accepted, accepted_id))
+    # A different individual result never silently replaces the shared protocol.
+    # Explicit model revision is separate from recording that shape's suitability.
+    if revise:
+        if (not saved or accepted.attachment_comparison.get("regional_objective")
+                or compatible(row, value["protocol"])):
+            raise ValueError("Choose an approved ordinary fit with different shared settings")
+        value.update(origin_review=row, protocol=_protocol(accepted, accepted_id), stage="model")
     value["reviews"] = list({r["filename"]: r for r in [*value["reviews"], row]}.values())
     if model:
         value["stage"] = "model"
@@ -168,13 +169,23 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False):
         # All shapes were explicitly saved; the next opt-in action checks the
         # common protocol. It never relabels regional approval as atlas coverage.
         return proposal(snapshot, identifier, context, model=True, starting_fit=starting_fit)
-    return dict(available=True, target=target, marker=value, common=common,
+    result = dict(available=True, target=target, marker=value, common=common,
                 shapes=len(shapes), checked=len(common), total=len(order), joint=joint,
                 action="form_model_check" if value["stage"] == "model" else "next_form",
                 label="Prepare joint check" if joint else
                       "Prepare common-model check · " + target if value["stage"] == "model"
                       and target else "Use suitable fit → next pilot form · " + target
                       if target else "Save suitable fit → finish individual reviews")
+    if value["stage"] == "model" and target:
+        from diffeoforge.pilot_common_model import preview
+
+        choice = preview(snapshot, context, target, value=value)
+        result["common_reuse"] = choice
+        result["label"] = choice["label"]
+        result["available"] = choice["available"]
+        if not result["available"]:
+            result["reason"] = choice["reason"]
+    return result
 
 
 def preview(snapshot, identifier, context, *, starting_fit=False):
@@ -218,14 +229,29 @@ def verify(info, record, manifest, root):
         raise ValueError("Next-form check must retain its declared shared starting protocol")
 
 
-def transition(snapshot, identifier, *, model=False, starting_fit=False):
+def transition(snapshot, identifier, *, model=False, starting_fit=False, common_target=None,
+               revise=False):
     from diffeoforge.guided_strategy import state
 
     with study.calibration_verification_scope():
         snapshot = study.load_reference_calibration_study(snapshot.study_directory)
         info = guided.record(snapshot)
-        proposed = proposal(snapshot, identifier, state(snapshot), model=model,
-                            starting_fit=starting_fit)
+        context = state(snapshot)
+        if common_target is None:
+            proposed = proposal(snapshot, identifier, context, model=model,
+                                starting_fit=starting_fit, revise=revise)
+        else:
+            from diffeoforge.pilot_common_model import approvals
+
+            value = marker(snapshot)
+            if not value or value["stage"] != "model" or common_target not in info["pilot_order"]:
+                raise ValueError("Choose a missing check in the current common model")
+            verify_marker(value, info["origin"], info["pilot_order"])
+            common = approvals(snapshot, context, value)
+            if common_target in {r["filename"] for r in common}:
+                raise ValueError("This form already has common-model approval; no repeat needed")
+            proposed = dict(target=common_target, marker=value, common=common, joint=False,
+                            action="form_model_check")
         value = proposed["marker"]
         if proposed["target"] is None and not proposed["joint"]:
             plan = None
@@ -234,7 +260,7 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False):
             strategy = dict(info.get("strategy") or {})
             for key in ("baseline", "anchor", "regional_recipe", "regional_continuation",
                         "optimization", "failure_parent_recovery", "shared_model_check",
-                        "search_family"):
+                        "search_family", "common_model_step"):
                 strategy.pop(key, None)
             previous = dict(directory=str(snapshot.study_directory),
                 manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))
@@ -248,6 +274,10 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False):
                          dict(previous, outcome="adaptive_" + proposed["action"])],
                 spent=info["screen_trials_spent"], strategy=strategy,
                 goal=None if proposed["joint"] else proposed["action"], feedback=None)
+            if value["stage"] == "model" and proposed["target"]:
+                from diffeoforge.pilot_common_model import apply_plan
+
+                plan = apply_plan(snapshot, proposed, plan, context)
     if plan is None:
         study._append_event(snapshot.study_directory, "guided_form_reviews_saved", dict(
             form_progress=value, anatomical_approval_created=False, optimizer_started=False))

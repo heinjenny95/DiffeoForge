@@ -23,10 +23,14 @@ def selected_local_after_common_failure(tmp_path, monkeypatch):
         current = guided.next_action(
             current.study_directory, "adaptive_next_form", "guided-varifold"
         )
-    current = guided.next_action(
-        current.study_directory, "adaptive_form_model_check", "guided-varifold"
-    )
-    current = reject(run_batch(current, monkeypatch), "guided-varifold")
+    # Reproduce an already-prepared historical common-model contract.
+    from diffeoforge import pilot_common_model
+    with monkeypatch.context() as setup:
+        setup.setattr(pilot_common_model, '_saved', lambda *a: [])
+        current = guided.next_action(
+            current.study_directory, "adaptive_form_model_check", "guided-varifold"
+        )
+    current = reject(run_batch(current, monkeypatch, capped=True), "guided-varifold")
     selected = feedback.select(
         current.study_directory, "guided-varifold", feedback.reference(local, "guided-varifold")
     )
@@ -49,20 +53,20 @@ def test_selected_local_keeps_current_ledger_and_prepares_only_common_check(tmp_
     )
     child = guided.next_action(current.study_directory, "adaptive_confirm_start", "guided-varifold")
     info = guided.record(child)
-    assert info["target"] == proposed["target"] and info["goal"] == "form_model_check"
+    assert info["target"] == proposed["target"] and info["goal"] == "common_continue"
     assert progress.marker(child)["protocol"] == old["protocol"]
     assert progress.marker(child)["reviews"] == old["reviews"]
     assert not child.attachment_comparison.get("regional_objective")
-    assert not child.attachment_comparison.get("refinement")
+    assert child.attachment_comparison["refinement"]["initialization"] == "learned"
     assert not info["feedback"] and not child.visual_reviews
     assert (
-        not {"baseline", "anchor", "regional_recipe", "regional_continuation"}
+        not {"regional_recipe", "regional_continuation"}
         & info["strategy"].keys()
     )
     assert child.candidates[0].attempts == 0 and child.attachment_comparison["iterations"] == 120
     assert (
         "initial_momenta"
-        not in load_config(child.candidates[0].config_path)["model"]["deformation"]
+        in load_config(child.candidates[0].config_path)["model"]["deformation"]
     )
     assert all(sha256_file(p) == digest for p, digest in before.items())
     assert (

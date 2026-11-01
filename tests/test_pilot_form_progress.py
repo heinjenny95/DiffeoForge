@@ -92,8 +92,13 @@ def test_individual_reviews_do_not_claim_joint_coverage(tmp_path, monkeypatch):
     assert next_check['action'] == 'form_model_check'
     assert next_check['checked'] < next_check['total']
     assert next_check['target'] == guided.record(local)['target']
-    common = guided.next_action(current.study_directory, 'adaptive_form_model_check',
-                                'guided-varifold')
+    # Historical contract prepared before saved-common reuse existed. The new
+    # anti-repeat behavior itself is covered by test_pilot_common_model.py.
+    from diffeoforge import pilot_common_model
+    with monkeypatch.context() as setup:
+        setup.setattr(pilot_common_model, '_saved', lambda *a: [])
+        common = guided.next_action(current.study_directory, 'adaptive_form_model_check',
+                                    'guided-varifold')
     assert not common.attachment_comparison.get('regional_objective')
     assert not common.attachment_comparison.get('refinement')
     assert not common.visual_reviews and common.candidates[0].attempts == 0

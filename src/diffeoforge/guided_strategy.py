@@ -214,11 +214,27 @@ def _read_state(snapshot):
                                 for c in snapshot.candidates
                                 if snapshot.visual_reviews.get(c.candidate_id) is True}
     if (info.get("strategy") or {}).get("form_progress"):
+        from diffeoforge.pilot_common_model import approvals
+        from diffeoforge.pilot_common_model import preview as common_preview
         from diffeoforge.pilot_form_progress import marker
 
         progress = marker(snapshot)
+        result["checked"] = len(approvals(snapshot, result, progress))
         result["form_progress_summary"] = dict(
             shapes=len(progress["reviews"]), checked=result["checked"], total=result["total"])
+        result["common_recovery"] = common_preview(snapshot, result, info["target"])
+        from diffeoforge.pilot_form_progress import compatible, proposal
+
+        result["common_revision"] = {}
+        if (snapshot.plan.pilot_subject_count == 1 and info["phase"] != "joint"
+                and not snapshot.attachment_comparison.get("regional_objective")):
+            for candidate in snapshot.candidates:
+                if (snapshot.visual_reviews.get(candidate.candidate_id) is True
+                        and not compatible(
+                            guided._approved_record(snapshot, candidate.candidate_id),
+                            progress["protocol"])):
+                    result["common_revision"][candidate.candidate_id] = proposal(
+                        snapshot, candidate.candidate_id, result, model=True, revise=True)
     from diffeoforge.pilot_form_progress import preview as starting_preview
     from diffeoforge.pilot_form_progress import uses_starting_progress
 
@@ -368,6 +384,10 @@ def verify_strategy(info, record, manifest, study_root=None):
         from diffeoforge.pilot_form_progress import verify
 
         verify(info, record, manifest, study_root)
+    if strategy.get("common_model_step"):
+        from diffeoforge.pilot_common_model import verify
+
+        verify(info, record, manifest, study_root)
     return True
 
 
@@ -382,6 +402,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     strategy.pop("regional_continuation", None)
     strategy.pop("regional_recipe", None)
     strategy.pop("failure_parent_recovery", None)
+    strategy.pop("common_model_step", None)
     strategy["previous"] = dict(directory=str(snapshot.study_directory),
         manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))
     history = [*info["history"], dict(**strategy["previous"], outcome="adaptive_" + action)]
@@ -522,6 +543,13 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
 
 def transition(snapshot, action, identifier, *, goal=None):
     """Called under the existing transition lock; never dispatch an optimizer."""
+    if action in {"common_continue", "adopt_common_model"}:
+        from diffeoforge.pilot_form_progress import transition as common_transition
+
+        return common_transition(snapshot, identifier,
+            common_target=goal or guided.record(snapshot)["target"]
+                if action == "common_continue" else None,
+            revise=action == "adopt_common_model", model=True)
     if action in {"next_form", "form_model_check"}:
         from diffeoforge.pilot_form_progress import transition as next_form
 

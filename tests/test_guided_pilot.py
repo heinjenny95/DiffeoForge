@@ -37,7 +37,8 @@ def origin(tmp_path):
     return study.create_reference_calibration_study(config_path, tmp_path / "pilot")
 
 
-def run_batch(snapshot, monkeypatch, *, controller=_CompletedController, refinement_guard=None):
+def run_batch(snapshot, monkeypatch, *, controller=_CompletedController, refinement_guard=None,
+              capped=False):
     _stub_learned_seed(monkeypatch)
     # This controller emits receipt-only outputs, not inventory-bound geometry.
     # Regional evidence has dedicated real-geometry and response tests.
@@ -48,9 +49,11 @@ def run_batch(snapshot, monkeypatch, *, controller=_CompletedController, refinem
     def metric(run):
         atlas = run / "atlas.vtk"
         atlas.write_text("synthetic receipt")
-        return replace(
-            _metrics(atlas), subject_reconstruction_count=snapshot.plan.pilot_subject_count
-        )
+        values = dict(subject_reconstruction_count=snapshot.plan.pilot_subject_count)
+        if capped:
+            values.update(converged=False, optimizer_stop_signal="maximum_iterations",
+                          final_iteration=120, maximum_iterations=120)
+        return replace(_metrics(atlas), **values)
 
     def measured(root, manifest, candidate, run):
         names = [r["filename"] for r in manifest["inputs"]["subjects"]]

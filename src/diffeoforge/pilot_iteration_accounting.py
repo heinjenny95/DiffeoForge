@@ -9,6 +9,12 @@ def total(metrics):
 
 
 def source(manifest, candidate_id):
+    first_ids = {c["candidate_id"] for c in manifest["plan"]["stages"][0]["candidates"]}
+    common = ((manifest.get("attachment_comparison", {}).get("guided", {}).get(
+        "strategy") or {}).get("common_model_step"))
+    if common and candidate_id in first_ids:
+        ref = common["reference"]
+        return Path(ref["directory"]), ref["candidate_id"]
     extension = manifest.get("search_extension_source", {})
     proposal = extension.get("proposal", {})
     context = proposal.get("continuation_context")
@@ -16,7 +22,6 @@ def source(manifest, candidate_id):
             and candidate_id in {c["candidate_id"] for c in proposal["candidates"]}):
         return Path(extension["study_directory"]), context["candidate_id"]
     search = manifest.get("fit_search", {})
-    first_ids = {c["candidate_id"] for c in manifest["plan"]["stages"][0]["candidates"]}
     if (candidate_id in first_ids and (search.get("progressive") or {}).get("phase") == "continue"
             and search.get("warm_seed")):
         seed = search["warm_seed"]

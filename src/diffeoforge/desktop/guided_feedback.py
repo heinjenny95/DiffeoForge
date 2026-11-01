@@ -161,8 +161,9 @@ def render_starting_fits(window, snapshot, identifier, layout, data):
             use.setEnabled(not blocked)
             use.setToolTip(blocked or "")
             _set_action_emphasis(use, not blocked)
-            use.clicked.connect(lambda: window._start_pilot(
-                adaptive=False, guided_action=("adaptive_confirm_start", identifier, None)))
+            from diffeoforge.desktop.pilot_common_model import dispatch
+
+            use.clicked.connect(lambda: dispatch(window, following, identifier, starting=True))
             layout.addWidget(use)
     same_method = [r for r in data["choices"] if not r["current"] and
                    r["reference"]["method"] ==

@@ -2840,7 +2840,10 @@ class ReferenceCalibrationDialog(QDialog):
         if guided_action is not None:
             root, action, identifier = guided_action
             if root == self.study_directory:
-                self._start_pilot(adaptive=False, guided_action=(action, identifier, None))
+                if action == "common_review":
+                    self._open_common_saved_fit(identifier)
+                else:
+                    self._start_pilot(adaptive=False, guided_action=(action, identifier, None))
             return
         step = getattr(self, "_final_next_step", None)
         if step is None:
@@ -4533,6 +4536,31 @@ class ReferenceCalibrationDialog(QDialog):
     def _open_guided_working_fit(self, identifier, reference):
         self._open_guided_saved_fit(reference, working_for=identifier)
 
+    def _open_common_saved_fit(self, reference):
+        if self._view_loading or self._view_closed or self._review_saving or self._worker:
+            return
+        origin = self.study_directory
+
+        def prepare():
+            from diffeoforge.guided_feedback import reference as saved_reference
+            from diffeoforge.pilot_common_model import preview
+            from diffeoforge.reference_calibration_study import calibration_verification_scope
+
+            with calibration_verification_scope():
+                current = load_reference_calibration_study(origin)
+                choice = preview(current, {}, reference["target"])
+                if not choice or choice["mode"] != "review" or choice["reference"] != reference:
+                    raise ValueError("Reopen the current missing common-model check")
+                parent = load_reference_calibration_study(Path(reference["directory"]))
+                if saved_reference(parent, reference["candidate_id"]) != reference:
+                    raise ValueError("Saved common-model result changed")
+                candidate = next(c for c in parent.candidates
+                                 if c.candidate_id == reference["candidate_id"])
+                return (parent, collect_calibration_qc_pairs(parent.study_directory, candidate),
+                        normalized_candidate_subject_fit(parent, candidate))
+
+        self._viewer_preparation.request_operation(("guided-common", origin, reference), prepare)
+
     def _open_guided_saved_fit(self, reference, *, working_for=None):
         if self._view_loading or self._view_closed or self._review_saving or self._worker:
             return
@@ -4629,7 +4657,7 @@ class ReferenceCalibrationDialog(QDialog):
                 dialog.deleteLater()
             return
         screen_parent = None
-        if key[0] == "guided-saved":
+        if key[0] in {"guided-saved", "guided-common"}:
             if key[1] != self.study_directory or self._worker:
                 return
             reviewed_snapshot, pairs, fit = prepared[:3]
@@ -4673,6 +4701,12 @@ class ReferenceCalibrationDialog(QDialog):
                     "Orange: original · Blue: saved reconstruction. Close this comparison "
                     "and choose Work from this starting fit to edit its areas or prepare "
                     "another test. This view does not change the saved fit or its review.")
+            elif key[0] == "guided-common":
+                dialog.setWindowTitle("Saved common-model fit — review without refitting")
+                dialog.findChild(QLabel, "title").setText("Review saved common-model fit")
+                dialog._comparison_intro.setText(
+                    "This matching result is already computed. Review its shape here; "
+                    "no new fitting is required. Your suitable individual reference stays saved.")
             dialog.anatomical_notes.setText(
                 reviewed_snapshot.visual_review_notes.get(candidate.candidate_id, "")
             )

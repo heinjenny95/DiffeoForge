@@ -1,3 +1,27 @@
+# Development continuity — dev182 retained common-model progress
+
+The pilot now reuses verified matching ordinary fields instead of returning to
+cold common checks after individual repair. Existing unreviewed common results
+open for review; capped inspected fields can take another unchanged 120-step
+allowance with honest cumulative effort and fresh optimizer history. Further
+continuation requires feedback; non-improvement blocks unchanged repetition.
+The common protocol and its coverage count stay stable until explicit revision.
+Earlier suitable individual fields and approvals remain saved. See
+[common-model recovery](PILOT_COMMON_MODEL_RECOVERY.md).
+
+Forty-six focused workflow, evidence, iteration, joint and Qt cases pass, including
+complete joint-review navigation. A write-denying replay of the actual saved
+pilot preserves all shape decisions and shared approvals while preparing a
+same-form warm successor; existing unreviewed shared evidence is reused. Two
+isolated real native successors retain all settings and finish their bounded
+allowance, with measured surface-distance improvements. These measurements do
+not approve anatomy or prove a shared joint model. Owner studies remain unchanged.
+
+Source implementation is ready for exact Windows-package qualification and idle,
+backed-up installation. Those delivery states must be verified separately. No
+native accuracy, cap, equations, old contract, PCA or paused side work is changed.
+No installer upload to Drive is requested.
+
 # Development continuity — dev181 progress from an earlier suitable local fit
 
 The earlier-fit continuation button now uses the individual/common progress

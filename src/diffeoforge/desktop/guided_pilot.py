@@ -60,7 +60,7 @@ def render(window, prepared):
         "Check the next pilot form"
         if info.get("goal") == "next_form"
         else "Check the common model"
-        if info.get("goal") == "form_model_check"
+        if info.get("goal") in {"form_model_check", "common_continue"}
         else "Check the suitable fit with the atlas model"
         if info.get("goal") == "shared_check"
         else "Joint pilot check"
@@ -225,6 +225,10 @@ def render(window, prepared):
                     "Earlier fits remain unchanged. Run starts only when you choose it.")
                 window._guided_footer_action = (snapshot.study_directory,
                     "adaptive_" + following["action"], identifier)
+                reuse = following.get("common_reuse") or {}
+                if reuse.get("mode") == "review":
+                    window._guided_footer_action = (snapshot.study_directory,
+                        "common_review", reuse["reference"])
                 _set_action_emphasis(window.next_step_button, True)
                 break
 
@@ -381,6 +385,11 @@ def render(window, prepared):
             from diffeoforge.desktop.guided_accepted_fit import render as accepted_fit
 
             following = next_forms.get(candidate.candidate_id)
+            revision = guidance.get("common_revision", {}).get(candidate.candidate_id)
+            if revision:
+                from diffeoforge.desktop.pilot_common_model import revision as render_revision
+
+                render_revision(window, layout, candidate.candidate_id, revision)
             if following and not following.get("available"):
                 reason = QLabel("Next form could not be prepared: " + following["reason"])
                 reason.setWordWrap(True)
@@ -563,8 +572,22 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
     from diffeoforge.pilot_regions import SYMPTOMS
 
     identifier = candidate.candidate_id
+    common = guidance.get("common_recovery")
+    if common and not optional:
+        from diffeoforge.desktop.pilot_common_model import recovery
+
+        recovery(window, layout, identifier, common)
+        panel = QWidget()
+        inner = QVBoxLayout(panel)
+        _recovery(window, snapshot, candidate, inner, guidance, optional=True)
+        layout.addWidget(InfoDisclosure(
+            "Optional: change settings or repair this individual fit", panel))
+        return
     working = guidance.get("working_proposals", {}).get(identifier)
     heading = QLabel(
+        "Shared settings stay unchanged until you explicitly adopt a suitable ordinary fit. "
+        "An individual protected repair remains separate from the common-model checks."
+        if common else
         "Improve the selected starting fit — the latest attempt stays saved"
         if working else
         "Optional: what would you like to improve further?"
@@ -608,7 +631,7 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
 
     def update(*_):
         selected = alternatives.currentData()
-        local = any(regions.values()) and symptoms.currentData() not in {
+        local = not common and any(regions.values()) and symptoms.currentData() not in {
             "alignment", "topology", "view"}
         request = ("goal:" + selected if selected else
                    "regional:" + symptoms.currentData() if local else symptoms.currentData())
@@ -662,6 +685,14 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
         )
     )
     update()
+    if common:
+        local = QPushButton("Prepare optional protected individual repair · "
+                            "not a common-model check")
+        local.setEnabled(bool(any(regions.values())))
+        local.clicked.connect(lambda: window._start_pilot(adaptive=False,
+            guided_action=("adaptive_recover_start" if working else "adaptive_recover",
+                           identifier, "regional:" + symptoms.currentData())))
+        layout.addWidget(local)
     if len(snapshot.candidates) == 1:
         other = QPushButton("Alternatively: check the other method here · prepare 1 trial")
         other_proposal = (working or guidance["proposals"][identifier])["other_method"]
