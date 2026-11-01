@@ -398,8 +398,7 @@ def render(window, prepared):
             accepted_fit(window, candidate.candidate_id, layout,
                          guidance.get("accepted_fits", {}).get(candidate.candidate_id)
                          if decision is not True else None)
-            if (decision is True and snapshot.attachment_comparison.get("regional_objective")
-                    and candidate.candidate_id not in next_forms):
+            if decision is True and snapshot.attachment_comparison.get("regional_objective"):
                 check = guidance.get("shared_model_checks", {}).get(candidate.candidate_id)
                 if check and check["available"]:
                     next_check = action(layout,

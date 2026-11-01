@@ -17,6 +17,24 @@ from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_pca import read_deformetrica_momenta
 
 
+def test_shared_field_check_stays_visible_with_next_form_progress(panel):
+    from PySide6.QtWidgets import QPushButton
+
+    identifier = 'guided-varifold'
+    panel.snapshot.visual_reviews[identifier] = True
+    panel.guidance['next_forms'] = {identifier: dict(available=True, target='next.vtk',
+        label='Prepare next common-model check', action='form_model_check',
+        shapes=1, checked=0, total=1)}
+    panel.guidance['shared_model_checks'] = {identifier: dict(available=True)}
+    panel.render()
+    button = next(b for b in panel.window.findChildren(QPushButton)
+                  if b.text() == 'Use suitable fit → prepare atlas-model check')
+    assert button.isVisible() and button.isEnabled()
+    button.click()
+    assert panel.invoked[-1][1]['guided_action'] == (
+        'adaptive_shared_check', identifier, None)
+
+
 @pytest.mark.parametrize("timepoints,identifier", [(10, "guided-varifold"), (37, "guided-current")])
 def test_shared_check_prepares_saved_field_without_transferring_approval(
         tmp_path, monkeypatch, timepoints, identifier):

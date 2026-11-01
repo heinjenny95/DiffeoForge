@@ -6,10 +6,12 @@ open for review; capped inspected fields can take another unchanged 120-step
 allowance with honest cumulative effort and fresh optimizer history. Further
 continuation requires feedback; non-improvement blocks unchanged repetition.
 The common protocol and its coverage count stay stable until explicit revision.
-Earlier suitable individual fields and approvals remain saved. See
+Earlier suitable individual fields and approvals remain saved. The existing
+ordinary-objective test from an eligible complete local field stays visible even
+when next-form progress is present. Composed residuals remain ineligible. See
 [common-model recovery](PILOT_COMMON_MODEL_RECOVERY.md).
 
-Forty-six focused workflow, evidence, iteration, joint and Qt cases pass, including
+Forty-seven focused workflow, evidence, iteration, joint and Qt cases pass, including
 complete joint-review navigation. A write-denying replay of the actual saved
 pilot preserves all shape decisions and shared approvals while preparing a
 same-form warm successor; existing unreviewed shared evidence is reused. Two
