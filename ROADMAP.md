@@ -11,8 +11,8 @@
   concrete next step. First-use acceptance: the researcher can identify the
   required fit and proceed without chat guidance, including when an earlier
   starting fit is selected. Preserve saved fits, approvals and scientific gates.
-  Implemented and tested in the source optimization follow-up; runtime delivery
-  and independent first-use acceptance are tracked separately.
+  dev183 verified installed after exact-package, actual-state and contrast checks;
+  independent owner first-use acceptance remains separate.
   [Behavior and limits](docs/PILOT_CONTROL_CAPACITY.md).
 
 - [x] Connect high/extreme disparity to early control-capacity testing and wider

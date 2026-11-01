@@ -1,3 +1,18 @@
+# Development continuity — dev183 delivered and verified
+
+dev183 is installed and exactly verified after complete backup and fresh idle
+guards. The current project, desktop/Qt state and prior dev182 remain preserved.
+Runtime source is `1005ebd4f495ac302144128ab8dcf66ba42a9098`; the later delivery
+documentation commit does not require rebuilding identical runtime code.
+
+The exact Windows program passes current saved-state review dispatch, readable
+light/dark headings, kernel-matched capacity and separate pending-review fixture
+checks. All program files, six companions, license and registration verify.
+Higher capacity improves isolated native surface measurements, but difficult
+features, independent anatomical review and final joint qualification remain open.
+No owner fit/PCA was replaced, and no installer was uploaded to Drive. See
+[delivery and limits](V183_DELIVERY.md).
+
 # Development continuity — dev183 capacity and exact review target
 
 New high/extreme adaptive comparisons use a template-bound grid matched to the
