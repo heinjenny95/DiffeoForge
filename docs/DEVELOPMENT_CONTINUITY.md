@@ -8,10 +8,21 @@ rejected; local approval never supplies common-model coverage or momenta for a
 different form. Rejected-joint and evidence guards remain active. See
 [next-form behavior](PILOT_NEXT_FORM.md).
 
-Source and isolated production navigation checks are in progress. dev180 remains
-the separately verified installed version pending package acceptance, fresh
-backup and an idle closed application. No owner fit is started or changed, and
-no Drive upload is requested.
+dev181 is installed and verified. All 24 focused controller, evidence and Qt
+cases pass. The exact frozen program reproduces the old route failure and
+prepares the correct next form through the repaired route without optimizer
+execution or owner history writes. The complete existing review ledger and
+common protocol remain identical. Light/dark controls and dispatch verify with
+the production appearance controller.
+
+Installation followed fresh idle checks and a complete SHA-verified backup of
+the current project, runtime and settings. All 3,473 bundle files, six companions,
+license and registry verify; the current project and desktop/Qt state remain
+unchanged. Prior dev180 is recoverable. Runtime source is
+`b4c350be179decbdc9f68e50f3e60ca66ddb3b11`; this delivery-only note is a later
+commit and needs no identical rebuild. Preparing/running and reviewing the next
+common-model trial remains the user's action. No new fit or anatomical approval
+was created, and no installer was uploaded to Drive.
 
 # Development continuity — dev180 shared material for the next local correction
 
