@@ -1,4 +1,26 @@
-# Development continuity — local material qualification pending
+# Development continuity — partial material and two-direction local assessment
+
+New protected-capture preparation expands an insufficient nonempty source brush
+through connected free material, retaining default/guide behavior and excluding
+Retain-incident faces. Legacy plans and reviews are not rewritten. The source
+selection exactly replays the separately qualified native contrast. Local
+improvement now uses the worse surface-distance direction across deterministic
+repeats; retracting an unsupported projection can improve that measure while
+leaving a small forward-distance trade-off visible. All preservation, accuracy
+and approval gates remain independent.
+
+Focused material/preparation and direction/resolution/guard suites pass. Two
+isolated bounded native correction tests complete at their recorded cap and pass
+complete-field temporal/spatial and preservation checks; detailed private results
+and limitations remain in the project-local delivery. They do not approve a
+common model or PCA. The storage gate was resolved through owner-authorized,
+fully verified selected inactive-build archiving, without resuming the paused
+dataset batch. Installed dev183 remains unchanged; these fixes are source-only
+pending a separately qualified application build. No solver, iteration-cap or
+accuracy relaxation, old fit mutation or new scientific approval is involved.
+See [material qualification](PILOT_LOCAL_MATERIAL_QUALIFICATION.md).
+
+# Earlier preparation stage — local material qualification pending
 
 New isolated feature-correction preparation checks expose the partial-brush
 material boundary: a nonempty source sliver suppresses the existing missing-source

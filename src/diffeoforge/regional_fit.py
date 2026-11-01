@@ -381,7 +381,7 @@ def prepare(
             raise ValueError("A Retain area has no surface patch in this starting fit. "
                              "Choose the saved fit where that part is correct, or revise the area.")
     source_selected, proposals = select(selection, sf, tv, tf, focus_regions, fixed_ids,
-                                        infer=guide_noise is None)
+                                        infer=guide_noise is None, extend_partial=capture_profile)
     capture_measurement = None
     if capture_profile:
         from diffeoforge.regional_protected_capture import patch_capture_width
@@ -518,7 +518,8 @@ def prepare(
         regions=regions,
         focus_regions=focus_regions,
         inferred_source_regions=inferred,
-        material_selection=dict(version='nearest-free-geodesic-area-v1',
+        material_selection=dict(version=('nearest-free-geodesic-area-v2' if capture_profile
+                                         else 'nearest-free-geodesic-area-v1'),
             source_faces=np.flatnonzero(source_selected).tolist(), inferred_patches=proposals,
             no_selected_triangle_touches_fixed_vertex=True,
             biological_correspondence_claim=False),

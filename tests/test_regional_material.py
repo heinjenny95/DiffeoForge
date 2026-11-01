@@ -47,6 +47,68 @@ def test_direct_source_selection_excludes_entire_fixed_incident_triangles():
         select(source, faces, source[8:], tf, regions, [8], infer=False)
 
 
+def test_protected_capture_grows_partial_brush_without_changing_default_or_guides():
+    source, faces, target, tf, regions = geometry()
+    source[8:] += [.2, 0., 0.]
+    original = source.copy()
+    legacy, old = select(source, faces, target, tf, regions, np.arange(8))
+    assert 0 < legacy.sum() < 12 and not old
+    chosen, proposals = select(source, faces, target, tf, regions, np.arange(8),
+                               extend_partial=True)
+    assert not chosen[:12].any() and chosen[12:].all()
+    assert proposals[0]['partial_brush_extended']
+    assert proposals[0]['initial_brush_area'] < proposals[0]['target_patch_area']
+    assert proposals[0]['source_patch_area'] == pytest.approx(proposals[0]['target_patch_area'])
+    repeated, evidence = select(source, faces, target, tf, regions, np.arange(8),
+                                extend_partial=True)
+    assert np.array_equal(chosen, repeated) and proposals == evidence
+    guided, proof = select(source, faces, target, tf, regions, np.arange(8),
+                           infer=False, extend_partial=True)
+    assert np.array_equal(guided, legacy) and not proof
+    assert np.array_equal(source, original)
+
+
+def test_partial_growth_cannot_jump_to_another_free_component_or_consume_retain():
+    source, faces, target, tf, regions = geometry()
+    source[8:] += [.2, 0., 0.]
+    larger = (target - [.4, 0., 0.])*1.3 + [.4, 0., 0.]
+    with pytest.raises(ValueError, match='nearest free source patch is too small'):
+        select(source, faces, larger, tf, regions, extend_partial=True)
+    # An explicit Retain overlap keeps the existing brush scope: no inferred
+    # replacement patch can quietly acquire fixed material or another component.
+    legacy, _ = select(source, faces, target, tf, regions, [8])
+    chosen, proof = select(source, faces, target, tf, regions, [8], extend_partial=True)
+    assert np.array_equal(chosen, legacy) and not proof
+    assert not np.isin(faces[chosen], [8]).any()
+
+
+def test_only_new_protected_capture_preparation_extends_partial_material(tmp_path):
+    from diffeoforge.regional_fit import _save, prepare, read_plan
+
+    source, faces, target, tf, regions = geometry()
+    source[8:] += [.2, 0., 0.]
+    _save(tmp_path/'source.vtk', source, faces)
+    _save(tmp_path/'target.vtk', target, tf)
+    fixed = [dict(center=[-1., 0., 0.], radius=.3, purpose='fixed')]
+
+    def stage(name, capture_profile):
+        declaration = prepare(tmp_path/name, tmp_path/'source.vtk', tmp_path/'target.vtk',
+            regions, fixed_regions=fixed, retained_path=tmp_path/'source.vtk',
+            focus_width=.1, focus_noise=.02, protection_noise=.01,
+            capture_profile=capture_profile)
+        config = dict(project=dict(parameter_provenance=dict(regional_fit=declaration)))
+        return read_plan(config)
+
+    old = stage('legacy', False)
+    old_bytes = (tmp_path/'legacy/regional-plan.json').read_bytes()
+    current = stage('capture', True)
+    assert len(old['material_selection']['source_faces']) < 12
+    assert len(current['material_selection']['source_faces']) == 12
+    assert current['material_selection']['inferred_patches'][0]['partial_brush_extended']
+    assert not np.isin(faces[current['material_selection']['source_faces']], current['fixed_vertex_ids']).any()
+    assert (tmp_path/'legacy/regional-plan.json').read_bytes() == old_bytes
+
+
 def test_actual_material_coverage_retains_old_controls_same_spacing_and_fails_at_budget():
     old = np.array([[0., 0., 0.], [1., 1., 1.]])
     material = np.array([[3.01, 2.02, 1.03], [3.11, 2.22, 1.33]])

@@ -11,6 +11,22 @@ from diffeoforge.regional_fit import _components, instruction_regions, mask, rea
 from diffeoforge.regional_frame import TEMPORAL_COUNTS, TEMPORAL_TOLERANCE
 
 
+def _local_improved(current, before):
+    """Require improvement in the worse surface-distance direction across seeds.
+
+    An unsupported fitted projection is measured fit-to-original; its removal
+    can leave a small original-to-fit trade-off. Neither direction alone should
+    decide whether the local surface measurements improved.
+    """
+    if before is None:
+        return False
+
+    def symmetric_mean(row):
+        return max(row['original_to_fit_mean'], row['fit_to_original_mean'])
+
+    return max(map(symmetric_mean, current)) < min(map(symmetric_mean, before))*.95
+
+
 def _distances(target, target_faces, fitted, fitted_faces, areas):
     from diffeoforge.reference_fit_search import grouped_surface_distances, surface_samples
 
@@ -171,11 +187,7 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None,
     before_flags = run_mesh_filter("intersections", vertices=sv, faces=sf)["faces"]
     after_flags = run_mesh_filter("intersections", vertices=fv, faces=ff)["faces"]
     new_flags = np.setdiff1d(after_flags, before_flags)
-    local_improved = (
-        before is not None
-        and max(r["original_to_fit_mean"] for r in current)
-        < min(r["original_to_fit_mean"] for r in before) * 0.95
-    )
+    local_improved = _local_improved(current, before)
     return dict(
         version="regional-quality-v1",
         active_surface=current,
@@ -200,6 +212,7 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None,
         preexisting_intersection_flags=before_flags.tolist(),
         new_intersection_flags=new_flags.tolist(),
         local_improved=bool(local_improved),
+        local_improvement_basis='worst_direction_mean_across_seeds',
         requires_visual_review=True,
         anatomical_approval=False,
         numerical_selection_suitable=bool(

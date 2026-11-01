@@ -31,6 +31,11 @@ error and reconstruct only the report from the immutable per-folder manifests
 and verified completion receipts. Do not repeat transfers or removals to recreate
 a missing summary. Final archive/restoration checks must still pass independently.
 
+When aggregating completion records held as dictionaries, read their numeric
+mapping values explicitly. A reporting error after verified per-folder completion
+must preserve the original error and reconcile only metadata; it must not cause
+another copy or removal of already completed build data.
+
 Synthetic guard checks cover same-size byte corruption, an unexpected destination
 file, an out-of-scope source, protected-root overlap, long Windows paths and
 hardlinked files. Actual archive receipts separately bind every copied file and

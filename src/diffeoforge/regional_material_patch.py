@@ -5,12 +5,15 @@ import heapq
 import numpy as np
 
 
-def select(vertices, faces, target_vertices, target_faces, regions, fixed_ids=(), *, infer=True):
+def select(vertices, faces, target_vertices, target_faces, regions, fixed_ids=(), *,
+           infer=True, extend_partial=False):
     """Exclude every fixed-incident face, including in absent-feature fallbacks.
 
     An absent feature gets one connected free patch, grown by edge distance until
     it covers the marked target area. A coordinate brush around the nearest face
     can otherwise consume a nearby retained tooth and unrelated surface parts.
+    New protected-capture plans can also grow an insufficient nonempty brush.
+    Explicit Retain overlap and legacy/default selection keep their old scope.
     """
     from diffeoforge.regional_fit import mask
 
@@ -33,7 +36,16 @@ def select(vertices, faces, target_vertices, target_faces, regions, fixed_ids=()
             raise ValueError('Shape-preservation guides overlap a Retain area. '
                              'Separate the areas or use local shape matching.')
         chosen = brush & ~blocked
-        if not chosen.any():
+        initial_area = float(areas[chosen].sum())
+        target_area = None
+        partial = False
+        if extend_partial and infer and chosen.any() and not (brush & blocked).any():
+            target_triangles = tv[tf[target_selected]]
+            target_area = float(np.linalg.norm(np.cross(
+                target_triangles[:, 1]-target_triangles[:, 0],
+                target_triangles[:, 2]-target_triangles[:, 0]), axis=1).sum()*.5)
+            partial = initial_area + target_area*1e-12 < target_area
+        if not chosen.any() or partial:
             if not infer:
                 raise ValueError('The marked source has no movable surface outside Retain areas. '
                                  'Review the areas or use local shape matching.')
@@ -41,12 +53,16 @@ def select(vertices, faces, target_vertices, target_faces, regions, fixed_ids=()
             if not len(free):
                 raise ValueError('No movable source surface remains outside Retain areas. '
                                  'Review the problem and Retain areas.')
-            target_triangles = tv[tf[target_selected]]
-            target_area = float(np.linalg.norm(np.cross(
-                target_triangles[:, 1]-target_triangles[:, 0],
-                target_triangles[:, 2]-target_triangles[:, 0]), axis=1).sum()*.5)
-            centre = target_centres[target_selected].mean(0)
-            start = int(free[np.argmin(np.linalg.norm(centres[free]-centre, axis=1))])
+            if target_area is None:
+                target_triangles = tv[tf[target_selected]]
+                target_area = float(np.linalg.norm(np.cross(
+                    target_triangles[:, 1]-target_triangles[:, 0],
+                    target_triangles[:, 2]-target_triangles[:, 0]), axis=1).sum()*.5)
+            if partial:
+                seeds = np.flatnonzero(chosen).tolist()
+            else:
+                centre = target_centres[target_selected].mean(0)
+                seeds = [int(free[np.argmin(np.linalg.norm(centres[free]-centre, axis=1))])]
             if adjacency is None:
                 adjacency = [[] for _ in f]
                 edges = {}
@@ -58,16 +74,20 @@ def select(vertices, faces, target_vertices, target_faces, regions, fixed_ids=()
                             adjacency[i].append(other)
                             adjacency[other].append(int(i))
                         edges.setdefault(key, []).append(int(i))
-            queue, lengths, area = [(0., start)], {start: 0.}, 0.
+            queue = [(0., i) for i in seeds]
+            heapq.heapify(queue)
+            lengths, visited, area = dict.fromkeys(seeds, 0.), set(), initial_area
             while queue and area < target_area:
                 distance, i = heapq.heappop(queue)
-                if chosen[i] or distance != lengths[i]:
+                if i in visited or distance != lengths[i]:
                     continue
-                chosen[i] = True
-                area += float(areas[i])
+                visited.add(i)
+                if not chosen[i]:
+                    chosen[i] = True
+                    area += float(areas[i])
                 for other in adjacency[i]:
                     length = distance+float(np.linalg.norm(centres[other]-centres[i]))
-                    if not chosen[other] and length < lengths.get(other, np.inf):
+                    if other not in visited and length < lengths.get(other, np.inf):
                         lengths[other] = length
                         heapq.heappush(queue, (length, other))
             if area+target_area*1e-12 < target_area:
@@ -77,6 +97,9 @@ def select(vertices, faces, target_vertices, target_faces, regions, fixed_ids=()
             proposals.append(dict(region=index, source_faces=np.flatnonzero(chosen).tolist(),
                 source_patch_area=area, target_patch_area=target_area,
                 biological_correspondence_claim=False))
+            if partial:
+                proposals[-1].update(partial_brush_extended=True,
+                    initial_brush_area=initial_area, method='partial-brush-geodesic-area-v1')
         selected |= chosen
     assert not blocked[selected].any()
     return selected, proposals
