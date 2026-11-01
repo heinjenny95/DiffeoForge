@@ -148,12 +148,16 @@ def render_starting_fits(window, snapshot, identifier, layout, data):
             layout.addWidget(inspect_start)
         if selection["approved"] and not selection["current"]:
             blocked = data.get("joint_blocked")
+            following = data.get("starting_form_progress")
+            if following and not following["available"]:
+                blocked = following["reason"]
             if blocked:
                 note = QLabel(blocked)
                 note.setWordWrap(True)
                 note.setObjectName("jointRepeatBlocked")
                 layout.addWidget(note)
-            use = QPushButton("Use reviewed starting fit → check remaining forms")
+            use = QPushButton(following["label"] if following and following["available"]
+                              else "Use reviewed starting fit → check remaining forms")
             use.setEnabled(not blocked)
             use.setToolTip(blocked or "")
             _set_action_emphasis(use, not blocked)

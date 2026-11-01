@@ -1,3 +1,18 @@
+# Development continuity — dev181 progress from an earlier suitable local fit
+
+The earlier-fit continuation button now uses the individual/common progress
+route when a saved regional fit or existing review ledger requires it. It keeps
+the latest ledger and shared protocol, verifies the selected source's approval
+and same-form binding, and names the next target. A rejected latest attempt stays
+rejected; local approval never supplies common-model coverage or momenta for a
+different form. Rejected-joint and evidence guards remain active. See
+[next-form behavior](PILOT_NEXT_FORM.md).
+
+Source and isolated production navigation checks are in progress. dev180 remains
+the separately verified installed version pending package acceptance, fresh
+backup and an idle closed application. No owner fit is started or changed, and
+no Drive upload is requested.
+
 # Development continuity — dev180 shared material for the next local correction
 
 Installed dev180 fixes preparation after a saved fit's spatial qualification

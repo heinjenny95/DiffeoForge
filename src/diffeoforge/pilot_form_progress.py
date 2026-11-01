@@ -105,23 +105,42 @@ def verify_marker(value, origin, pilot_order):
         raise ValueError("Invalid retained numerical protocol")
 
 
-def proposal(snapshot, identifier, context, *, model=False):
-    row = guided._approved_record(snapshot, identifier)
+def _reviewed_source(snapshot, identifier, starting_fit):
+    if not starting_fit:
+        return snapshot, identifier
+    from diffeoforge.guided_feedback import _same_source, selection
+
+    reference = selection(snapshot, identifier)
+    if not reference:
+        raise ValueError("Choose an inspected starting fit first")
+    return _same_source(snapshot, reference), reference["candidate_id"]
+
+
+def uses_starting_progress(snapshot, identifier):
+    accepted, _ = _reviewed_source(snapshot, identifier, True)
+    return bool(marker(snapshot) or accepted.attachment_comparison.get("regional_objective"))
+
+
+def proposal(snapshot, identifier, context, *, model=False, starting_fit=False):
     info = guided.record(snapshot)
     if snapshot.plan.pilot_subject_count != 1 or info["phase"] == "joint":
         raise ValueError("Review an individual form before continuing to another")
+    accepted, accepted_id = _reviewed_source(snapshot, identifier, starting_fit)
+    if accepted.plan.pilot_subject_count != 1 or guided.record(accepted)["phase"] == "joint":
+        raise ValueError("Choose a reviewed individual starting fit")
+    row = guided._approved_record(accepted, accepted_id)
     saved = marker(snapshot)
     if saved:
         verify_marker(saved, info["origin"], info["pilot_order"])
     value = deepcopy(saved) if saved else dict(version=VERSION, reviews=[], origin_review=row,
-                         protocol=_protocol(snapshot, identifier),
+                         protocol=_protocol(accepted, accepted_id),
                          stage="forms", common_approval_created=False)
-    if (saved and not snapshot.attachment_comparison.get("regional_objective")
+    if (saved and not accepted.attachment_comparison.get("regional_objective")
             and not compatible(row, value["protocol"])):
         # As in ordinary pilot confirmation, explicitly choosing a new standard
         # fit chooses its shared starting settings. Old shapes stay saved; only
         # matching-model approvals can count towards the new joint check.
-        value.update(origin_review=row, protocol=_protocol(snapshot, identifier))
+        value.update(origin_review=row, protocol=_protocol(accepted, accepted_id))
     value["reviews"] = list({r["filename"]: r for r in [*value["reviews"], row]}.values())
     if model:
         value["stage"] = "model"
@@ -136,11 +155,19 @@ def proposal(snapshot, identifier, context, *, model=False):
     ordered = [*order[pos + 1:], *order[:pos + 1]]
     target = next((name for name in ordered if name not in covered), None)
     joint = len(common) == len(order)
+    if joint and starting_fit:
+        from diffeoforge.guided_accepted_fit import rejected_joint
+        from diffeoforge.guided_joint_initialization import references
+
+        blocked = rejected_joint(snapshot, value["protocol"]["reference"],
+                                 proposed_references=references(common))
+        if blocked:
+            raise ValueError(blocked)
     recorded = bool(saved and any(r == row for r in saved["reviews"]))
     if target is None and not joint and recorded and value["stage"] == "forms":
         # All shapes were explicitly saved; the next opt-in action checks the
         # common protocol. It never relabels regional approval as atlas coverage.
-        return proposal(snapshot, identifier, context, model=True)
+        return proposal(snapshot, identifier, context, model=True, starting_fit=starting_fit)
     return dict(available=True, target=target, marker=value, common=common,
                 shapes=len(shapes), checked=len(common), total=len(order), joint=joint,
                 action="form_model_check" if value["stage"] == "model" else "next_form",
@@ -150,9 +177,9 @@ def proposal(snapshot, identifier, context, *, model=False):
                       if target else "Save suitable fit → finish individual reviews")
 
 
-def preview(snapshot, identifier, context):
+def preview(snapshot, identifier, context, *, starting_fit=False):
     try:
-        return proposal(snapshot, identifier, context)
+        return proposal(snapshot, identifier, context, starting_fit=starting_fit)
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         return dict(available=False, reason=str(error))
 
@@ -191,13 +218,14 @@ def verify(info, record, manifest, root):
         raise ValueError("Next-form check must retain its declared shared starting protocol")
 
 
-def transition(snapshot, identifier, *, model=False):
+def transition(snapshot, identifier, *, model=False, starting_fit=False):
     from diffeoforge.guided_strategy import state
 
     with study.calibration_verification_scope():
         snapshot = study.load_reference_calibration_study(snapshot.study_directory)
         info = guided.record(snapshot)
-        proposed = proposal(snapshot, identifier, state(snapshot), model=model)
+        proposed = proposal(snapshot, identifier, state(snapshot), model=model,
+                            starting_fit=starting_fit)
         value = proposed["marker"]
         if proposed["target"] is None and not proposed["joint"]:
             plan = None

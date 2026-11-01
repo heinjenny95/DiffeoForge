@@ -219,6 +219,14 @@ def _read_state(snapshot):
         progress = marker(snapshot)
         result["form_progress_summary"] = dict(
             shapes=len(progress["reviews"]), checked=result["checked"], total=result["total"])
+    from diffeoforge.pilot_form_progress import preview as starting_preview
+    from diffeoforge.pilot_form_progress import uses_starting_progress
+
+    for identifier, data in result["feedback"].items():
+        if data and any(r["approved"] and not r["current"] and r["reference"] == data["selected"]
+               for r in data["choices"]) and uses_starting_progress(snapshot, identifier):
+            data["starting_form_progress"] = starting_preview(
+                snapshot, identifier, result, starting_fit=True)
     return result
 
 
@@ -518,6 +526,12 @@ def transition(snapshot, action, identifier, *, goal=None):
         from diffeoforge.pilot_form_progress import transition as next_form
 
         return next_form(snapshot, identifier, model=action == "form_model_check")
+    if action == "confirm_start":
+        from diffeoforge.pilot_form_progress import transition as next_form
+        from diffeoforge.pilot_form_progress import uses_starting_progress
+
+        if uses_starting_progress(snapshot, identifier):
+            return next_form(snapshot, identifier, starting_fit=True)
     if action == "restore_accepted":
         from diffeoforge.guided_accepted_fit import select
 

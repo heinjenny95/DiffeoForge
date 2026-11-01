@@ -16,7 +16,23 @@ def dialog_for(snapshot, monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
+    # local_fit's synthetic classification has no regional geometry plan. This
+    # navigation fixture supplies no area-scope display; real plan parsing and
+    # A/B/C labels are exercised by the regional-scope tests and package replay.
+    from diffeoforge import regional_fit
     from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    read_plan = regional_fit.read_plan
+    monkeypatch.setattr(
+        regional_fit,
+        "read_plan",
+        lambda config: (
+            {}
+            if (regional_fit.declaration(config) or {}).get("version")
+            == "synthetic-regional-classification"
+            else read_plan(config)
+        ),
+    )
 
     app = QApplication.instance() or QApplication([])
     dialog = ReferenceCalibrationDialog(snapshot.study_directory)

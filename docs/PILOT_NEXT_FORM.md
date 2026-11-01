@@ -29,6 +29,17 @@ preserving earlier shape decisions. A failed source verification shows its input
 issue and keeps inspection available instead of silently choosing a fresh fit.
 
 The next-form/common-model screen retains the existing 120-iteration allowance.
+
+dev181 also applies this route when an earlier suitable fit is selected after a
+later trial was rejected. The saved source must still match the inspected cohort,
+original form and approval binding. Navigation retains the current individual
+review ledger and common protocol rather than returning to the older study's
+progress. A selected regional field remains an individual result; it cannot
+supply common-model coverage or seed another form. The button names the next
+form or common-model check. Ordinary earlier-fit confirmation without this ledger
+keeps its existing route. Unapproved sources, changed evidence and an identical
+previously rejected joint setup remain blocked. Preparation starts no optimizer.
+
 New attempts have no timed review pause, following the owner's October 31 update;
 historical prepared contracts remain supported. Neither iteration limits nor numerical
 accuracy are weakened. This repair does not establish that one standard protocol
