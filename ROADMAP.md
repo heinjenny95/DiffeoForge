@@ -1,5 +1,18 @@
 # Roadmap
 
+## Open owner follow-up — 1 November 2026
+
+- [ ] Make the current pilot review target unambiguous: one primary review action
+  naming the specimen, attempt and scope (individual / common model / joint).
+  Clearly distinguish the result awaiting review from the working starting fit.
+  Consolidate competing Inspect / Review finished / Review saved common-model
+  actions when they open the same result; keep starting-fit editing and older
+  comparisons as secondary history actions. After saving a decision, name the
+  concrete next step. First-use acceptance: the researcher can identify the
+  required fit and proceed without chat guidance, including when an earlier
+  starting fit is selected. Preserve saved fits, approvals and scientific gates.
+  Backlog only at the owner's request; not implemented by this documentation.
+
 - [x] Repair explicit Retain areas with dense separate native constraints and
   whole-patch/early-review displacement checks. dev175 verified installed; source,
   public native CPU/GPU and exact-package checks pass. Existing fits retained.
