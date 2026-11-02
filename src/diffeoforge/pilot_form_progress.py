@@ -19,6 +19,25 @@ def marker(snapshot):
     return deepcopy(result) if result else None
 
 
+def retain_review_for_trial(snapshot, identifier, strategy):
+    """Carry an approved last individual form into a separately prepared trial.
+
+    A review can be complete before Next has serialized it in the form ledger.
+    Retain that decision before leaving for a contrast; existing individual
+    references and the shared protocol keep their recorded meaning.
+    """
+    saved = strategy.get("form_progress")
+    if (not saved or snapshot.plan.pilot_subject_count != 1
+            or snapshot.visual_reviews.get(identifier) is not True):
+        return strategy
+    row = guided._approved_record(snapshot, identifier)
+    if any(r["filename"] == row["filename"] for r in saved["reviews"]):
+        return strategy
+    result = dict(strategy, form_progress=deepcopy(saved))
+    result["form_progress"]["reviews"].append(row)
+    return result
+
+
 def _protocol(snapshot, identifier):
     from diffeoforge.guided_feedback import reference, verify_reference
 
@@ -151,7 +170,7 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
         or accepted_strategy.get("common_basis_step")
         or (accepted_strategy.get("optimization") or {}).get("common_model"))
     # Common-model review must not erase the accepted individual comparison target.
-    if not (saved and common_result and any(
+    if not (saved and (common_result or revise) and any(
             r["filename"] == row["filename"] for r in value["reviews"])):
         value["reviews"] = list({r["filename"]: r for r in [*value["reviews"], row]}.values())
     if model:

@@ -254,9 +254,10 @@ def render(window, prepared):
                 break
 
     if not running and not unresolved:
-        from diffeoforge.desktop.pilot_common_model import pin_recovery
+        from diffeoforge.desktop.pilot_common_model import pin_recovery, pin_revision
 
         pin_recovery(window, snapshot, guidance.get("common_recovery"))
+        pin_revision(window, snapshot, guidance)
 
     def action(layout, label, kind, identifier, *, goal=None, available=True):
         button = QPushButton(label, window.content)
@@ -422,7 +423,9 @@ def render(window, prepared):
                 from diffeoforge.desktop.pilot_common_model import revision as render_revision
 
                 render_revision(window, layout, candidate.candidate_id, revision)
-            if following and not following.get("available"):
+            if (following and not following.get("available")
+                    and not (revision and (following.get("common_reuse") or {}).get("mode")
+                             == "adopt")):
                 reason = QLabel("Next form could not be prepared: " + following["reason"])
                 reason.setWordWrap(True)
                 reason.setObjectName("statusWarning")

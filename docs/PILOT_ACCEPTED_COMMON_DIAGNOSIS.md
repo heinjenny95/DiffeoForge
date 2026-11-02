@@ -70,6 +70,17 @@ result can still save relative feedback independently. This avoids reopening the
 same first review merely because a comparison was saved without a fit decision;
 Better never silently becomes suitability.
 
+Before preparing a different-setting trial after an approved individual result,
+the successor retains any still-unrecorded individual review. An explicit shared
+model revision then changes the common protocol while keeping those original
+individual comparison references. Neither the latest contrast nor model adoption
+silently replaces a previously accepted individual shape.
+
+A reviewed, suitable common candidate exposes its explicit model-adoption action
+in the fixed footer. This normal next step is not presented as a failure to
+prepare the next form. Adoption prepares a separate check; native fitting still
+requires Run, and other results do not inherit approval.
+
 A worse contrast does not silently become the next starting field: the next
 contrast uses its preceding candidate on the same grid. Reopening a result always
 targets the latest reviewed candidate, separately from this numerical seed.

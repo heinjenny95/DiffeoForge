@@ -23,6 +23,31 @@ def pin_recovery(window, snapshot, choice):
     _set_action_emphasis(window.next_step_button, True)
 
 
+def pin_revision(window, snapshot, guidance):
+    """Keep explicit adoption of a reviewed common candidate in the fixed footer."""
+    if window._guided_footer_action or len(snapshot.candidates) != 1:
+        return
+    identifier = snapshot.candidates[0].candidate_id
+    if (snapshot.visual_reviews.get(identifier) is not True
+            or not guidance.get("common_revision", {}).get(identifier)):
+        return
+    from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
+
+    window.next_step_button.setText("Use approved common settings → check next form")
+    window.next_step_button.setVisible(True)
+    window.next_step_button.setEnabled(True)
+    window.next_step_button.setToolTip(
+        "Explicitly adopt this reviewed candidate as the common model and prepare its next "
+        "check. Your good individual fits and earlier decisions stay saved. Fitting starts "
+        "only with Run.")
+    window.status.setText(
+        "Suitable fit saved. Use these approved settings as the common model, then check "
+        "the next form.")
+    window._guided_footer_action = (
+        snapshot.study_directory, "adaptive_adopt_common_model", identifier)
+    _set_action_emphasis(window.next_step_button, True)
+
+
 def dispatch(window, following, identifier, *, starting=False):
     reuse = (following or {}).get("common_reuse") or {}
     if reuse.get("mode") in {"review", "feedback"}:
@@ -107,8 +132,10 @@ def revision(window, layout, identifier, proposed):
         "successor and does not start fitting.")
     note.setWordWrap(True)
     body.addWidget(note)
-    button = QPushButton("Use these approved settings as the new common model")
-    button.clicked.connect(lambda: window._start_pilot(adaptive=False,
-        guided_action=("adaptive_adopt_common_model", identifier, None)))
-    body.addWidget(button)
+    pinned = getattr(window, "_guided_footer_action", None)
+    if not pinned or pinned[1:] != ("adaptive_adopt_common_model", identifier):
+        button = QPushButton("Use these approved settings as the new common model")
+        button.clicked.connect(lambda: window._start_pilot(adaptive=False,
+            guided_action=("adaptive_adopt_common_model", identifier, None)))
+        body.addWidget(button)
     layout.addWidget(InfoDisclosure("Revise the common model explicitly…", panel))

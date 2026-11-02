@@ -1,5 +1,21 @@
 # Development continuity — dev187 installed and verified
 
+## Source follow-up — retain individual reviews across shared-model revisions
+
+An approved last individual result is retained in the successor's review ledger
+before a separate setting contrast. Explicit model adoption preserves the original
+individual comparison references. A suitable common candidate exposes its
+adoption action in the fixed footer; this expected next step is not rendered as
+a failure to prepare the next form. Native fitting still requires Run.
+
+Verification passes 33 distinct workflow, legacy-contract, comparison and actual
+Qt navigation checks across the focused and regression runs, plus Ruff and
+whitespace checks. The explicit revision journey reaches joint review and final
+completion while keeping the original individual references. Independent native
+fit-quality qualification remains ongoing; these software checks do not establish
+that one common model fits a private cohort. No new installer or model profile is
+delivered by this source follow-up. Installed dev187 remains current.
+
 dev187 runtime `e34056e2a765ec7fb62bd32112c08736b0a24b52` is installed after complete backup,
 exact Windows-product checks and fresh idle guards. Every installed byte and
 companion verifies; good fits/reviews, project and desktop/Qt state are unchanged.

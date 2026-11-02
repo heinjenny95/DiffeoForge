@@ -426,6 +426,9 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     approved = list(info["approved"])
     guided.verify_approvals(approved)
     strategy = dict(info.get("strategy") or {})
+    from diffeoforge.pilot_form_progress import retain_review_for_trial
+
+    strategy = retain_review_for_trial(snapshot, identifier, strategy)
     strategy.pop("optimization", None)
     strategy.pop("regional_continuation", None)
     strategy.pop("regional_recipe", None)

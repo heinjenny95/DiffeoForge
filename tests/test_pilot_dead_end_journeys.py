@@ -125,6 +125,7 @@ def test_new_individual_ledger_reaches_joint_and_final_completion_without_new_fi
     tmp_path, monkeypatch
 ):
     import shutil
+    from copy import deepcopy
 
     from test_reference_adaptive_calibration import seed_stub
 
@@ -133,17 +134,39 @@ def test_new_individual_ledger_reaches_joint_and_final_completion_without_new_fi
 
     _, local = local_fit(tmp_path, monkeypatch)
     current = guided.next_action(local.study_directory, "adaptive_next_form", "guided-varifold")
+    revised = False
+    individual_reviews = None
     for _ in range(12):
         if not current.visual_reviews:
             current = approve(run_batch(current, monkeypatch), "guided-varifold")
         proposed = strategy.state(current)["next_forms"]["guided-varifold"]
+        if not proposed["available"]:
+            # This fixture retains a rejected original common fit. Repeating its
+            # disabled Next action cannot make it suitable. Follow the explicit
+            # different-setting/review/adoption route instead.
+            assert proposed["common_reuse"]["mode"] == "stalled" and not revised
+            individual_reviews = deepcopy(proposed["marker"]["reviews"])
+            changed = guided.next_action(current.study_directory, "adaptive_recover",
+                                         "guided-varifold", goal="goal:weight")
+            changed = approve(run_batch(changed, monkeypatch), "guided-varifold")
+            assert strategy.state(changed)["common_revision"]["guided-varifold"]
+            current = guided.next_action(changed.study_directory, "adaptive_adopt_common_model",
+                                         "guided-varifold")
+            from diffeoforge.pilot_form_progress import marker
+
+            assert marker(current)["reviews"] == individual_reviews
+            revised = True
+            continue
         current = guided.next_action(
             current.study_directory, "adaptive_" + proposed["action"], "guided-varifold"
         )
+        if revised:
+            assert marker(current)["reviews"] == individual_reviews
         if guided.record(current)["phase"] == "joint":
             break
     else:
         pytest.fail("Individual/common checks did not reach joint within the finite fixture path")
+    assert revised
     joint = approve(run_batch(current, monkeypatch), "guided-varifold")
     fourth = guided.next_action(joint.study_directory, "finish_joint", "guided-varifold")
     assert fourth.current_stage.order == 4
