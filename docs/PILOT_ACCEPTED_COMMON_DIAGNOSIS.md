@@ -47,6 +47,22 @@ and one stronger attachment-weight contrast are offered for that capacity family
 The existing conservative contrast factor and 120-step native cap remain fixed.
 These are experiments, not a guaranteed causal diagnosis or fit-quality promise.
 
+The common-result opener must pass the same comparison context as the ordinary
+viewer. Rejection alone does not mean that a trial improved the fit. Before a
+new unchanged continuation, the researcher must explicitly record Better against
+the exact saved comparison; About the same, Worse, Unsure or missing feedback
+cannot authorize another unchanged round. A global improvement also cannot
+override stagnant important marked losses. Both sampling repeats must establish
+at least 5% progress beyond the numerical distance floor in every still-lost
+marked direction. This is an experiment-selection guard, not an anatomy threshold.
+
+New common-candidate v2 and ordinary common-step v3 contracts bind the feedback
+event hash and its exact field reference. Historical candidate v1 and common-step
+v1/v2 contracts retain their recorded meaning and effort accounting. Feedback-only
+saves do not grant suitability, adopt parameters, create a numerical child or
+erase earlier reviews. The next candidate preparation is available in the fixed
+action area; contrasts are labelled as setting tests rather than extra iterations.
+
 A worse contrast does not silently become the next starting field: the next
 contrast uses its preceding candidate on the same grid. Reopening a result always
 targets the latest reviewed candidate, separately from this numerical seed.

@@ -8,7 +8,8 @@ from diffeoforge.config import load_config
 from diffeoforge.mesh import sha256_file
 
 LEGACY_VERSION = "common-model-warm-step-v1"
-VERSION = "common-model-warm-step-v2"
+PREVIOUS_VERSION = "common-model-warm-step-v2"
+VERSION = "common-model-warm-step-v3"
 EFFORT_VERSION = "guided-warm-effort-v1"
 
 
@@ -152,7 +153,8 @@ def preview(snapshot, context, target, *, value=None):
         optimization if optimization.get("version") == EFFORT_VERSION
         and optimization.get("common_model") is True else None)
     if step and not feedback and not diagnosis:
-        return dict(mode="feedback", available=False, target=target, reference=ref,
+        return dict(mode="feedback", available=True, target=target, reference=ref,
+                    review_reference=ref,
                     label="Compare with the previous common-model fit · " + target,
                     reason="Tell us whether this continuation improved the shape before "
                     "another continuation. Your earlier suitable individual fit stays saved.")
@@ -177,6 +179,13 @@ def preview(snapshot, context, target, *, value=None):
                     reason="This shared-model result stopped or did not improve. Keep your "
                     "suitable local fit; revise the shared model explicitly rather than "
                     "repeating the same fit or returning to a local-repair loop.")
+    if not feedback or feedback[-1]['outcome'] != 'better' or not feedback[-1].get('event_hash'):
+        return dict(mode="feedback", available=True, target=target, reference=ref,
+                    review_reference=ref, diagnosis=diagnosis,
+                    label="Compare this common fit · tell us what changed · " + target,
+                    reason="Unchanged continuation needs your explicit Better feedback. "
+                           "Choose Better, About the same or Worse in the saved comparison. "
+                           "No extra iterations are prepared without that decision.")
     from diffeoforge.pilot_iteration_accounting import branch_total, total
 
     recorded = total(candidate.metrics)
@@ -185,6 +194,8 @@ def preview(snapshot, context, target, *, value=None):
                 diagnosis=diagnosis,
                 additional_iterations=ITERATIONS, previous_iterations=previous,
                 previous_recorded_iterations=recorded,
+                human_feedback=dict(reference=ref, event_hash=feedback[-1]['event_hash'],
+                                    outcome=feedback[-1]['outcome']),
                 label=f"Continue common-model fit from {label} · +{ITERATIONS} · {target}",
                 reason=(f"Saved-field branch: {previous} iterations; the last native counter "
                         f"is {candidate.metrics['final_iteration']} and the older branch "
@@ -266,6 +277,7 @@ def apply_plan(snapshot, proposed, plan, context):
                      protocol=deepcopy(proposed["marker"]["protocol"]),
                      additional_iterations=choice["additional_iterations"],
                      previous_iterations=choice["previous_iterations"],
+                     human_feedback=deepcopy(choice['human_feedback']),
                      approval_transferred=False))
     plan.update(phase="refine", goal="common_continue")
     return plan
@@ -369,7 +381,15 @@ def verify(info, record, manifest, root):
     config = load_config(study._safe_study_path(root, manifest["source_config"]["copy"]))
     previous = (total(candidate.metrics) if marker["version"] == LEGACY_VERSION
                 else branch_total(parent, candidate))
-    if (marker["version"] not in {LEGACY_VERSION, VERSION}
+    if marker['version'] == VERSION:
+        human = marker.get('human_feedback') or {}
+        event = next((e for e in study._load_events(parent.study_directory)
+            if e.get('event_hash') == human.get('event_hash')
+            and e['event'] == 'guided_fit_feedback'), None)
+        if (not event or human.get('reference') != ref or event['current'] != ref
+                or human.get('outcome') != 'better' or event['outcome'] != 'better'):
+            raise ValueError('A common continuation needs its bound explicit Better feedback')
+    if (marker["version"] not in {LEGACY_VERSION, PREVIOUS_VERSION, VERSION}
             or marker["approval_transferred"] is not False
             or marker["protocol"] != info["strategy"]["form_progress"]["protocol"]
             or not compatible(row, marker["protocol"]) or not iteration_limited(candidate)

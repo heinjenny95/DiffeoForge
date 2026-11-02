@@ -4557,6 +4557,8 @@ class ReferenceCalibrationDialog(QDialog):
         origin = self.study_directory
 
         def prepare():
+            from diffeoforge.desktop.guided_feedback import prepare_context
+            from diffeoforge.desktop.saved_fit_comparison import alternatives
             from diffeoforge.guided_feedback import reference as saved_reference
             from diffeoforge.pilot_common_model import preview
             from diffeoforge.reference_calibration_study import calibration_verification_scope
@@ -4575,7 +4577,9 @@ class ReferenceCalibrationDialog(QDialog):
                 candidate = next(c for c in parent.candidates
                                  if c.candidate_id == reference["candidate_id"])
                 return (parent, collect_calibration_qc_pairs(parent.study_directory, candidate),
-                        normalized_candidate_subject_fit(parent, candidate))
+                        normalized_candidate_subject_fit(parent, candidate),
+                        alternatives(parent, candidate.candidate_id),
+                        prepare_context(parent, candidate.candidate_id))
 
         self._viewer_preparation.request_operation(("guided-common", origin, reference), prepare)
 

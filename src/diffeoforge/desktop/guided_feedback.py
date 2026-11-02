@@ -140,7 +140,8 @@ def render_starting_fits(window, snapshot, identifier, layout, data):
         if not selection["current"]:
             work = QPushButton("Work from this starting fit · mark / edit areas…")
             work.setObjectName("workingStartingFit")
-            _set_action_emphasis(work, True)
+            target = getattr(window, "_guided_review_target", None)
+            _set_action_emphasis(work, not (target and target["kind"] == "common"))
             work.clicked.connect(lambda: window._open_guided_working_fit(identifier, selected))
             layout.addWidget(work)
             inspect_start = QPushButton("Inspect retained starting fit")

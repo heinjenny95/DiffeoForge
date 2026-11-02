@@ -235,7 +235,7 @@ def render(window, prepared):
     if not running and not unresolved:
         for identifier, following in next_forms.items():
             if following.get("available"):
-                if ((following.get("common_reuse") or {}).get("mode") == "review"
+                if ((following.get("common_reuse") or {}).get("mode") in {"review", "feedback"}
                         and review and review["kind"] == "common"):
                     continue  # The fixed review button already names this exact saved result.
                 window.next_step_button.setText(following["label"])
@@ -247,11 +247,16 @@ def render(window, prepared):
                 window._guided_footer_action = (snapshot.study_directory,
                     "adaptive_" + following["action"], identifier)
                 reuse = following.get("common_reuse") or {}
-                if reuse.get("mode") == "review":
+                if reuse.get("mode") in {"review", "feedback"}:
                     window._guided_footer_action = (snapshot.study_directory,
                         "common_review", reuse["reference"])
                 _set_action_emphasis(window.next_step_button, True)
                 break
+
+    if not running and not unresolved:
+        from diffeoforge.desktop.pilot_common_model import pin_recovery
+
+        pin_recovery(window, snapshot, guidance.get("common_recovery"))
 
     def action(layout, label, kind, identifier, *, goal=None, available=True):
         button = QPushButton(label, window.content)

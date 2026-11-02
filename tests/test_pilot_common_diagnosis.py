@@ -100,6 +100,26 @@ def test_previously_accepted_tooth_and_extra_reverse_spike_veto_global_improveme
     assert diagnosis.recommend(diagnosis.assess(current), capped=True)['kind'] == 'capacity'
 
 
+def test_global_improvement_cannot_hide_a_plateau_in_a_marked_missing_feature():
+    before, current = evidence(.4), evidence(.2)
+    def patch(forward):
+        return [dict(region={'source': 'same-original', 'purpose': 'details'}, repeats=[
+            dict(original_to_fit_p95=forward, fit_to_original_p95=.01)] * 2)]
+    for row in (before, current):
+        row['marked_accepted'] = patch(.01)
+        row['marked_current'] = patch(.4)
+    measured = diagnosis.assess(current, before)
+    assert measured['trend'] == 'improving' and measured['marked_progress'] is False
+    assert diagnosis.recommend(measured, capped=True)['kind'] != 'iterations'
+    from diffeoforge.pilot_common_candidate import decide
+
+    assert decide(measured, capped=True, counts={}, outcome='better') != 'iterations'
+    current['marked_current'] = patch(.3)
+    measured = diagnosis.assess(current, before)
+    assert measured['marked_progress'] is True
+    assert decide(measured, capped=True, counts={}, outcome='better') == 'iterations'
+
+
 def test_real_triangle_surfaces_find_a_small_missing_projection_in_both_directions():
     from diffeoforge.mesh import TriangleMesh
     from diffeoforge.reference_attachment_comparison import compare_geometry

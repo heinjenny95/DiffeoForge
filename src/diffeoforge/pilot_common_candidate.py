@@ -2,7 +2,8 @@
 from copy import deepcopy
 from pathlib import Path
 
-VERSION = "common-candidate-refinement-v1"
+LEGACY_VERSION = "common-candidate-refinement-v1"
+VERSION = "common-candidate-refinement-v2"
 KINDS = {"iterations", "detail", "weight"}
 
 
@@ -11,7 +12,8 @@ def decide(diagnosis, *, capped, counts, outcome=None):
     if diagnosis and diagnosis.get("warnings"):
         return None
     if (diagnosis and diagnosis["gap"] and diagnosis["trend"] == "improving"
-            and capped and outcome not in {"same", "worse"}
+            and diagnosis.get('marked_progress') is not False
+            and capped and outcome == "better"
             and counts.get("iterations", 0) < 2):
         return "iterations"
     return next((kind for kind in ("detail", "weight") if not counts.get(kind)), None)
@@ -97,6 +99,12 @@ def preview(snapshot, tested, target, value):
         if event["event"] == "guided_fit_feedback"
         and event["current"]["candidate_id"] == candidate.candidate_id]
     outcome = feedback[-1]["outcome"] if feedback else None
+    if not feedback or not feedback[-1].get("event_hash"):
+        return dict(base, mode="feedback", available=True, diagnosis=measured,
+            label="Compare this common fit · tell us what changed · " + target,
+            reason="Needs improvement does not say whether this attempt helped. Compare "
+                   "it with its saved starting fit and choose Better, About the same or "
+                   "Worse before another test is prepared. No extra iterations are proposed.")
     counts = {kind: sum(m["kind"] == kind for _, m in trials) for kind in KINDS}
     kind = decide(measured, capped=iteration_limited(candidate), counts=counts, outcome=outcome)
     if kind is None:
@@ -127,14 +135,18 @@ def preview(snapshot, tested, target, value):
     return dict(base, mode="candidate_refine", available=True, diagnosis=measured, kind=kind,
         reference=seed, values=values, candidate_controls=count, additional_iterations=120,
         previous_iterations=branch_total(parent, retained), counts=counts,
-        label=f"{title} · {count} CP · up to +120 · {target}", reason=reason)
+        human_feedback=dict(reference=ref, event_hash=feedback[-1]["event_hash"], outcome=outcome),
+        label=f"{title} · {count} CP · " + (
+            "up to +120 · " if kind == "iterations" else "1 setting test · ") + target,
+        reason=reason)
 
 
 def apply(plan, choice):
     marker = dict(version=VERSION, kind=choice["kind"], reference=choice["reference"],
         capacity_origin=choice["candidate_origin"], protocol=deepcopy(plan["strategy"][
             "form_progress"]["protocol"]), additional_iterations=120,
-        previous_iterations=choice["previous_iterations"], approval_transferred=False)
+        previous_iterations=choice["previous_iterations"], approval_transferred=False,
+        human_feedback=deepcopy(choice["human_feedback"]))
     plan["strategy"].update(common_candidate_step=marker, baseline=choice["reference"],
                             anchor=choice["reference"], control_basis=choice["reference"])
     plan.update(target=choice["target"], phase="refine", goal="common_candidate",
@@ -174,7 +186,20 @@ def verify(info, record, manifest, root):
     seed_field = load_field(seed_run)
     declared = (guided.record(origin).get("strategy") or {})
     capacity = declared.get("common_capacity_request") or declared.get("common_diagnosis_test")
-    if (marker["version"] != VERSION or kind not in KINDS or not capacity
+    if marker["version"] == VERSION:
+        human = marker.get("human_feedback") or {}
+        if not isinstance(human.get("reference"), dict) or not human.get("event_hash"):
+            raise ValueError("A common-candidate step needs its bound human comparison")
+        reviewed = verify_reference(human["reference"])
+        event = next((e for e in study._load_events(reviewed.study_directory)
+            if e.get("event_hash") == human.get("event_hash")
+            and e["event"] == "guided_fit_feedback"), None)
+        if (not event or event["current"] != human["reference"]
+                or human["reference"] not in refs or event["outcome"] != human.get("outcome")
+                or kind == "iterations" and human["outcome"] != "better"):
+            raise ValueError("A common-candidate step needs its bound human comparison; "
+                             "unchanged iterations require explicit Better feedback")
+    if (marker["version"] not in {LEGACY_VERSION, VERSION} or kind not in KINDS or not capacity
             or marker["reference"] not in refs or marker["approval_transferred"] is not False
             or counts[kind] >= (2 if kind == "iterations" else 1)
             or kind == "iterations" and not iteration_limited(candidate)

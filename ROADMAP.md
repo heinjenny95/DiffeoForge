@@ -2,12 +2,14 @@
 
 ## Open owner follow-up — 1 November 2026
 
-- [ ] Promote preparation of an unsuitable common candidate into the fixed
-  next-step area. The dev187 route is available in the content section, but the
-  actual-state dialog check finds it below the initial viewport. Keep earlier
-  individual-fit restoration secondary and verify discoverability at normal
-  window sizes. This is an open usability follow-up, separate from the qualified
-  candidate transition and complete joint-qualification journey.
+- [x] Source fix: promote preparation of an unsuitable common candidate into the
+  fixed next-step area, keeping earlier individual-fit restoration secondary.
+  The actual common-view entry point now carries the relative-feedback context;
+  Better / About the same / Worse are available there. Unchanged continuation
+  requires bound Better feedback and measured progress at unresolved important
+  marked areas. Public modal/dispatch/accounting journeys and read-only actual
+  saved-state previews pass. Runtime delivery remains pending the owner's
+  separate local fitting qualification; installed dev187 is unchanged.
 
 - [x] Let a reviewed but unsuitable shared-capacity candidate continue without
   falsely approving or prematurely adopting it. Retain its controls/momenta and

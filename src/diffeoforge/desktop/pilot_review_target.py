@@ -11,10 +11,11 @@ def choose(snapshot, guidance, info):
         attempt = f" · Test {number}" if number is not None else ""
         scope = ("control-point comparison" if common.get("comparison_kind") == "capacity"
                  else "common-model result")
-        pending = common.get("mode") == "review"
+        pending = common.get("mode") in {"review", "feedback"}
         return dict(root=snapshot.study_directory, kind="common",
             reference=common.get("review_reference") or common["reference"],
-            pending=pending, label=("Review " if pending else "Reopen ")
+            pending=pending, label=("Compare and give feedback · "
+            if common.get("mode") == "feedback" else "Review " if pending else "Reopen ")
             + scope + attempt + " · " + common["target"],
             explanation="Review this saved common-model result. Earlier starting fits below "
                         "are separate repair or comparison options; this action starts no fitting.")

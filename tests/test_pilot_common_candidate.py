@@ -10,6 +10,9 @@ from diffeoforge import pilot_common_candidate as candidate
 def test_candidate_policy_uses_finite_iterations_or_surface_contrasts_without_approval():
     measured = dict(gap=True, trend='improving', warnings=[])
     assert candidate.decide(measured, capped=True, counts={}, outcome='better') == 'iterations'
+    assert candidate.decide(measured, capped=True, counts={}) == 'detail'
+    assert candidate.decide(measured, capped=True, counts={}, outcome='same') == 'detail'
+    assert candidate.decide(measured, capped=True, counts={}, outcome='unsure') == 'detail'
     assert candidate.decide(measured, capped=True, counts={}, outcome='worse') == 'detail'
     assert candidate.decide(measured, capped=True, counts={'iterations': 2}) == 'detail'
     measured['trend'] = 'worse'
@@ -41,7 +44,18 @@ def test_shared_field_transfer_allows_only_explicit_objective_contrasts(tmp_path
     assert original == before
 
 
-def rejected_capacity(tmp_path, monkeypatch):
+def compared(snapshot, outcome):
+    from diffeoforge import guided_feedback
+    from diffeoforge import reference_guided_pilot as guided
+
+    info = guided.record(snapshot)
+    return guided_feedback.save_feedback(snapshot.study_directory, 'guided-varifold', dict(
+        comparison=info['strategy']['baseline'], outcome=outcome,
+        inspected_subjects=[info['target']], display_scopes={info['target']: 'original_proxy'},
+        comparison_displayed=False, note='Explicit public-fixture comparison'))
+
+
+def rejected_capacity(tmp_path, monkeypatch, *, outcome='better'):
     from test_guided_pilot import run_batch
     from test_pilot_common_diagnosis import evidence
     from test_pilot_region_feedback import reject
@@ -63,6 +77,8 @@ def rejected_capacity(tmp_path, monkeypatch):
     root = guided.next_action(current.study_directory, 'adaptive_common_continue',
                               'guided-varifold')
     root = reject(run_batch(root, monkeypatch, capped=True), 'guided-varifold')
+    if outcome is not None:
+        root = compared(root, outcome)
     return local, root, trend
 
 
@@ -88,9 +104,16 @@ def check_review_route(snapshot, choice, monkeypatch):
         _viewer_preparation=SimpleNamespace(request_operation=lambda key, fn: prepared.append(fn)))
     monkeypatch.setattr(dialog_module, 'collect_calibration_qc_pairs', lambda *args: ())
     monkeypatch.setattr(dialog_module, 'normalized_candidate_subject_fit', lambda *args: ())
+    from diffeoforge import guided_feedback
+    from diffeoforge.desktop import guided_feedback as feedback_ui
+    from diffeoforge.desktop import saved_fit_comparison
+
+    monkeypatch.setattr(feedback_ui, 'prepare_context', guided_feedback.presentation)
+    monkeypatch.setattr(saved_fit_comparison, 'alternatives', lambda *args: ())
     open_result = dialog_module.ReferenceCalibrationDialog._open_common_saved_fit
     open_result(window, target['reference'])
     loaded = prepared.pop()()
+    assert len(loaded) == 5 and loaded[4]['comparison']
     assert str(loaded[0].study_directory) == target['reference']['directory']
     bad = dict(target['reference'], field_sha256='changed')
     open_result(window, bad)
@@ -181,6 +204,8 @@ def test_rejected_candidate_keeps_its_field_and_approvals_through_contrast_and_a
     assert set(child.study_directory.parent.iterdir()) == folders
     completed = reject(run_batch(child, monkeypatch, capped=True), 'guided-varifold')
     assert completed.candidates[0].metrics['iteration_accounting']['total_iterations'] == 360
+    assert guided_strategy.state(completed)['common_recovery']['mode'] == 'feedback'
+    completed = compared(completed, 'worse')
     next_choice = guided_strategy.state(completed)['common_recovery']
     assert next_choice['kind'] == 'weight'
     assert next_choice['reference'] == choice['reference']  # Roll back a worse contrast.
@@ -220,6 +245,26 @@ def test_candidate_iteration_accounting_and_exhaustion_do_not_reset_on_navigatio
                                    'guided-varifold')
         assert child.attachment_comparison['iterations'] == 120
         current = reject(run_batch(child, monkeypatch, capped=True), 'guided-varifold')
+        assert guided_strategy.state(current)['common_recovery']['mode'] == 'feedback'
+        current = compared(current, 'better')
         assert current.candidates[0].metrics['iteration_accounting']['total_iterations'] == (
             240 + expected * 120)
     assert guided_strategy.state(current)['common_recovery']['kind'] == 'detail'
+
+
+def test_candidate_requires_comparison_and_same_vetoes_further_unchanged_iterations(
+        tmp_path, monkeypatch):
+    from diffeoforge import guided_strategy
+    from diffeoforge import reference_guided_pilot as guided
+
+    _, current, trend = rejected_capacity(tmp_path, monkeypatch, outcome=None)
+    trend['value'] = 'improving'  # A geometric trend must not substitute for a human opinion.
+    folders = set(current.study_directory.parent.iterdir())
+    choice = guided_strategy.state(current)['common_recovery']
+    assert choice['mode'] == 'feedback' and choice['review_reference']
+    with pytest.raises(ValueError, match='Better|About the same|Worse'):
+        guided.next_action(current.study_directory, 'adaptive_common_continue', 'guided-varifold')
+    assert set(current.study_directory.parent.iterdir()) == folders
+    current = compared(current, 'same')
+    choice = guided_strategy.state(current)['common_recovery']
+    assert choice['kind'] != 'iterations' and not current.visual_reviews['guided-varifold']

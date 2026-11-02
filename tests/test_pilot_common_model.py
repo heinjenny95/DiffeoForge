@@ -15,6 +15,16 @@ from diffeoforge.config import load_config
 from diffeoforge.mesh import sha256_file
 
 
+def test_first_common_continuation_requires_explicit_relative_feedback(tmp_path, monkeypatch):
+    _, current = selected_local_after_common_failure(tmp_path, monkeypatch, outcome=None)
+    choice = strategy.state(current)['common_recovery']
+    assert choice['mode'] == 'feedback' and choice['available'] and choice['review_reference']
+    folders = set(current.study_directory.parent.iterdir())
+    with pytest.raises(ValueError, match='explicit Better'):
+        guided.next_action(current.study_directory, 'adaptive_common_continue', 'guided-varifold')
+    assert set(current.study_directory.parent.iterdir()) == folders
+
+
 def test_saved_common_field_continues_without_cold_restart_and_reaches_joint(tmp_path, monkeypatch):
     local, current = selected_local_after_common_failure(tmp_path, monkeypatch)
     ledger = progress.marker(current)

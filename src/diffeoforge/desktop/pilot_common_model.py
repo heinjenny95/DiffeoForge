@@ -4,9 +4,28 @@ from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 
 
+def pin_recovery(window, snapshot, choice):
+    """Keep the candidate's next preparation outside scrolling repair/history tools."""
+    if (not choice or choice.get("mode") != "candidate_refine"
+            or not choice.get("available") or window._guided_footer_action
+            or len(snapshot.candidates) != 1):
+        return
+    from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
+
+    identifier = snapshot.candidates[0].candidate_id
+    window.next_step_button.setText(choice["label"])
+    window.next_step_button.setVisible(True)
+    window.next_step_button.setEnabled(True)
+    window.next_step_button.setToolTip("Prepare this separate common-setting test. "
+        "Existing fits and approvals stay saved; fitting starts only with Run.")
+    window._guided_footer_action = (
+        snapshot.study_directory, "adaptive_common_continue", identifier)
+    _set_action_emphasis(window.next_step_button, True)
+
+
 def dispatch(window, following, identifier, *, starting=False):
     reuse = (following or {}).get("common_reuse") or {}
-    if reuse.get("mode") == "review":
+    if reuse.get("mode") in {"review", "feedback"}:
         window._open_common_saved_fit(reuse["reference"])
     else:
         window._start_pilot(adaptive=False, guided_action=(
@@ -34,6 +53,13 @@ def recovery(window, layout, identifier, choice):
         layout.addWidget(note)
     diagnosis = choice.get("diagnosis")
     if diagnosis:
+        if diagnosis.get('marked_progress') is False:
+            note = QLabel(
+                "The important marked area did not improve reliably. Improvement elsewhere "
+                "is not enough to propose more iterations with unchanged settings.")
+            note.setObjectName("commonMarkedPlateau")
+            note.setWordWrap(True)
+            layout.addWidget(note)
         summary = QLabel(
             "Compared with your accepted individual fit: "
             + ("local surface differences remain. " if diagnosis["gap"] else
@@ -56,14 +82,18 @@ def recovery(window, layout, identifier, choice):
         inspect.clicked.connect(lambda: window._open_guided_saved_fit(diagnosis["accepted"]))
         layout.addWidget(inspect)
     target = getattr(window, "_guided_review_target", None)
-    if (choice["mode"] == "review" and target and target["kind"] == "common"
+    if (choice["mode"] in {"review", "feedback"} and target and target["kind"] == "common"
             and target["reference"] == choice["reference"]):
         return  # Use the single, permanently visible action with the exact result name.
+    pinned = getattr(window, "_guided_footer_action", None)
+    if (choice["mode"] == "candidate_refine" and pinned
+            and pinned[1:] == ("adaptive_common_continue", identifier)):
+        return
     if choice["available"]:
         button = QPushButton(choice["label"])
         button.setObjectName("primary")
         button.clicked.connect(lambda: window._open_common_saved_fit(choice["reference"])
-            if choice["mode"] == "review" else window._start_pilot(adaptive=False,
+            if choice["mode"] in {"review", "feedback"} else window._start_pilot(adaptive=False,
                 guided_action=("adaptive_common_continue", identifier, choice["target"])))
         layout.addWidget(button)
 

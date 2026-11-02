@@ -16,7 +16,12 @@ def branch_total(snapshot, candidate, *, _seen=None):
     Other historical continuation protocols retain their existing accounting.
     """
     from diffeoforge.guided_feedback import verify_reference
-    from diffeoforge.pilot_common_model import EFFORT_VERSION, LEGACY_VERSION, VERSION
+    from diffeoforge.pilot_common_model import (
+        EFFORT_VERSION,
+        LEGACY_VERSION,
+        PREVIOUS_VERSION,
+        VERSION,
+    )
     from diffeoforge.reference_guided_pilot import record
 
     metrics = candidate.metrics or {}
@@ -39,7 +44,8 @@ def branch_total(snapshot, candidate, *, _seen=None):
             or strategy.get("common_candidate_step") or capacity)
     if not step:
         return count
-    if strategy.get("common_model_step") and step.get("version") not in {LEGACY_VERSION, VERSION}:
+    if strategy.get("common_model_step") and step.get("version") not in {
+            LEGACY_VERSION, PREVIOUS_VERSION, VERSION}:
         raise ValueError("Unknown common-model effort version")
     if strategy.get("optimization") and step.get("version") not in {None, EFFORT_VERSION}:
         raise ValueError("Unknown saved-field effort version")

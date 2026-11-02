@@ -158,11 +158,23 @@ def assess(measured, previous=None):
                 if len(x) == len(y) == 2 and min(y) > max(x) * 1.15 + floor:
                     regressed = True
         trend = "worse" if regressed else "improving" if improved else "plateau"
+    marked_progress = None
+    critical_marks = [r for r in lost if r['region'].startswith('mark:')]
+    if previous and critical_marks:
+        progress = []
+        for loss in critical_marks:
+            _, index, key = loss['region'].split(':', 2)
+            now = measured['marked_current'][int(index)]['repeats']
+            before = previous['marked_current'][int(index)]['repeats']
+            progress.append(max(r[key] for r in now) + floor
+                            < min(r[key] for r in before) * .95)
+        marked_progress = all(progress)
     tail = measured.get("objective_tail", [])
     numerical_progress = (len(tail) >= 3 and all(
         y >= x for x, y in zip(tail[:-1], tail[1:], strict=True))
                           and tail[-1] - tail[0] > max(abs(tail[0]), 1.) * 1e-6)
     return dict(local_losses=lost, gap=bool(lost or whole_gap), trend=trend,
+                marked_progress=marked_progress,
                 accepted_local=measured["accepted_local"], numerical_progress=numerical_progress,
                 accepted_controls=measured["accepted_controls"],
                 current_controls=measured["current_controls"],
@@ -203,7 +215,8 @@ def recommend(diagnosis, *, capped, iteration_tests=0, density_tested=False, vet
     improving = diagnosis["trend"] == "improving" or (
         diagnosis["trend"] == "unknown" and diagnosis["numerical_progress"]
         and not diagnosis["accepted_local"])
-    if capped and improving and iteration_tests < 2 and not veto and not diagnosis["warnings"]:
+    if (capped and improving and diagnosis.get('marked_progress') is not False
+            and iteration_tests < 2 and not veto and not diagnosis["warnings"]):
         return dict(kind="iterations", reason="The common field is still improving toward "
             "the accepted shape without a measured whole-shape regression. Test up to 120 "
             "additional steps with the same basis.")

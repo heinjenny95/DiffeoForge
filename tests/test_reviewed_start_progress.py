@@ -14,7 +14,7 @@ from diffeoforge.config import load_config
 from diffeoforge.mesh import sha256_file
 
 
-def selected_local_after_common_failure(tmp_path, monkeypatch):
+def selected_local_after_common_failure(tmp_path, monkeypatch, *, outcome='better'):
     _, local = local_fit(tmp_path, monkeypatch)
     current = guided.next_action(local.study_directory, "adaptive_next_form", "guided-varifold")
     total = len(guided.record(local)["pilot_order"])
@@ -34,6 +34,15 @@ def selected_local_after_common_failure(tmp_path, monkeypatch):
     selected = feedback.select(
         current.study_directory, "guided-varifold", feedback.reference(local, "guided-varifold")
     )
+    if outcome is not None:
+        # A warm continuation is a distinct explicit human choice in this fixture.
+        selected = feedback.save_feedback(selected.study_directory, 'guided-varifold', dict(
+            comparison=feedback.reference(local, 'guided-varifold'), outcome=outcome,
+            inspected_subjects=[guided.record(selected)['target']],
+            display_scopes={guided.record(selected)['target']: 'original_proxy'},
+            comparison_displayed=False, note='Explicit public-fixture shape comparison'))
+        selected = feedback.select(selected.study_directory, 'guided-varifold',
+                                   feedback.reference(local, 'guided-varifold'))
     return local, selected
 
 
