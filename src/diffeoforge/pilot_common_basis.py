@@ -17,17 +17,49 @@ def _physics(config):
     return result
 
 
+def field_physics(config):
+    """Attachment/noise contrasts change the objective, not an unchanged ambient field."""
+    result = _physics(config)
+    result["model"].pop("noise_std", None)
+    for key in ("kernel_width", "noise_std"):
+        result["model"]["attachment"].pop(key, None)
+    return result
+
+
+def nested_source(basis, *, seen=None):
+    from diffeoforge.guided_feedback import verify_reference
+
+    seen = set() if seen is None else seen
+    if basis.study_directory in seen:
+        raise ValueError("Cyclic common-basis provenance")
+    seen.add(basis.study_directory)
+    record = basis.attachment_comparison
+    if record.get("regional_objective"):
+        return {}
+    nested = record.get("refinement") or {}
+    if nested.get("initialization") == "nested":
+        return nested
+    strategy = guided.record(basis).get("strategy") or {}
+    capacity = strategy.get("common_capacity_request")
+    if capacity:
+        previous = verify_reference(capacity["protocol"]["reference"])
+        return dict(initialization="nested", source_controls=previous.attachment_comparison[
+            "controls"])
+    step = strategy.get("common_candidate_step")
+    ref = step["capacity_origin"] if step else nested.get("reference")
+    if ref and nested.get("initialization") == "learned":
+        parent = verify_reference(ref)
+        if record["controls"]["sha256"] == parent.attachment_comparison["controls"]["sha256"]:
+            return nested_source(parent, seen=seen)
+    return {}
+
+
 def preview(snapshot, target, protocol):
     from diffeoforge.guided_feedback import reference, verify_reference
     from diffeoforge.pilot_iteration_accounting import branch_total
 
     basis = verify_reference(protocol["reference"])
-    nested = basis.attachment_comparison.get("refinement") or {}
-    capacity = (guided.record(basis).get("strategy") or {}).get("common_capacity_request")
-    if capacity and nested.get("initialization") != "nested":
-        previous = verify_reference(capacity["protocol"]["reference"])
-        nested = dict(initialization="nested",
-                      source_controls=previous.attachment_comparison["controls"])
+    nested = nested_source(basis)
     if nested.get("initialization") != "nested":
         return None
     info = guided.record(snapshot)
@@ -40,7 +72,7 @@ def preview(snapshot, target, protocol):
                    "No duplicate is needed.")
     basis_candidate = next(c for c in basis.candidates
                            if c.candidate_id == protocol["reference"]["candidate_id"])
-    expected = _physics(load_config(basis_candidate.config_path))
+    expected = field_physics(load_config(basis_candidate.config_path))
     found, seen = [], set()
     for entry in [*info["history"], None]:
         parent = snapshot
@@ -65,7 +97,7 @@ def preview(snapshot, target, protocol):
             except ValueError:
                 continue
             if (ref["method"] == protocol["reference"]["method"]
-                    and _physics(load_config(candidate.config_path)) == expected):
+                    and field_physics(load_config(candidate.config_path)) == expected):
                 found.append((ref, parent, candidate))
     if not found:
         return None
@@ -124,6 +156,7 @@ def verify(info, record, manifest, root):
             or record.get("refinement", {}).get("initialization") != "nested"
             or record["refinement"]["reference"] != ref
             or record["controls"]["sha256"] != basis.attachment_comparison["controls"]["sha256"]
+            or manifest["plan"]["baseline_effective_values"] != protocol["reference"]["values"]
             or value["reviews"] != list(reviews.values()) or protocol != value["protocol"]
             or not approved_basis
             or (revised and not first_common

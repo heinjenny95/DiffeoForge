@@ -37,6 +37,25 @@ capacity experiment per accepted target/protocol is reused rather than duplicate
 Human non-improvement feedback remains a veto. Old starting-fit selectors cannot
 bypass the common recommendation through optional unchanged optimization.
 
+A reviewed capacity candidate that is better but still unsuitable remains a
+candidate. It does not require a false suitability review or premature protocol
+adoption to continue. The primary common action retains its exact control grid
+and momenta and prepares a separate, bounded experiment. Repeat-confirmed local
+regression vetoes unchanged iteration advice even when global distances improve.
+At most two improving capped continuations, one finer attachment-width contrast
+and one stronger attachment-weight contrast are offered for that capacity family.
+The existing conservative contrast factor and 120-step native cap remain fixed.
+These are experiments, not a guaranteed causal diagnosis or fit-quality promise.
+
+A worse contrast does not silently become the next starting field: the next
+contrast uses its preceding candidate on the same grid. Reopening a result always
+targets the latest reviewed candidate, separately from this numerical seed.
+Pending, failed and exhausted families do not produce duplicate attempts or
+automatic recovery. Existing Run and cancellation controls remain in charge.
+The dedicated common-candidate action also prevents an older-fit selector from
+bypassing the finite experiment budget. Cumulative effort includes the retained
+field's ancestry while local native counters keep their original meaning.
+
 Original individual comparison references survive later common approvals. The
 chosen common protocol and earlier decisions remain saved during an experiment.
 A successful capacity candidate needs visual approval and explicit model
@@ -44,6 +63,12 @@ adoption. That revision does not transfer approvals to changed results. Other
 specimens can retain their own inspected fields on the same explicitly adopted
 nested basis, with zero added momenta and new review, rather than restarting cold.
 Separate fields are never spliced and another animal's momenta are never reused.
+An adopted candidate's attachment-only contrasts do not invalidate an unchanged
+ambient deformation field. Provenance follows ordinary same-grid refinements back
+to the nested basis; another form keeps its own field and zero added momenta,
+then tests the explicitly adopted attachment settings. Deformation kernels,
+integration, precision and other fitting physics still must match. No earlier
+suitability decision is transferred to this newly computed common result.
 
 Before the first common phase, the largest accepted transferable direct nested
 basis with unchanged fitting physics is preferred as the seed. If that basis
@@ -61,7 +86,9 @@ accuracy relaxation is introduced.
 Qualification includes public triangular surfaces with a narrow missed feature,
 reverse-direction protrusion signals, marked-area preservation, sampling
 uncertainty, mixed regression vetoes, source/approval/cache tampering, bounded
-experiment selection and complete preparation/review/adoption/transfer journeys.
+experiment selection, reviewed-but-unsuitable candidate refinement, exact reopen
+dispatch, duplicate/contract mutation rejection and complete preparation/review/
+adoption/other-form transfer journeys.
 Read-only private saved-field checks and exact-package delivery are recorded
 separately. Newly proposed private native experiments still need execution and
 independent anatomical review; diagnostic success is not a fit-quality guarantee.

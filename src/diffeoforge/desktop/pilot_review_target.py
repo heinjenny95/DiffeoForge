@@ -6,13 +6,16 @@ def choose(snapshot, guidance, info):
                   if row.get("available")
                   and (row.get("common_reuse") or {}).get("mode") == "review"), None)
     common = reuse or guidance.get("common_recovery")
-    if common and common.get("mode") == "review":
+    if common and (common.get("mode") == "review" or common.get("review_reference")):
         number = common.get("test_number")
         attempt = f" · Test {number}" if number is not None else ""
         scope = ("control-point comparison" if common.get("comparison_kind") == "capacity"
                  else "common-model result")
-        return dict(root=snapshot.study_directory, kind="common", reference=common["reference"],
-            pending=True, label="Review " + scope + attempt + " · " + common["target"],
+        pending = common.get("mode") == "review"
+        return dict(root=snapshot.study_directory, kind="common",
+            reference=common.get("review_reference") or common["reference"],
+            pending=pending, label=("Review " if pending else "Reopen ")
+            + scope + attempt + " · " + common["target"],
             explanation="Review this saved common-model result. Earlier starting fits below "
                         "are separate repair or comparison options; this action starts no fitting.")
     completed = [c for c in snapshot.candidates if c.status == "completed"]
@@ -25,6 +28,8 @@ def choose(snapshot, guidance, info):
     optimization = strategy.get("optimization") or {}
     common_current = (not snapshot.attachment_comparison.get("regional_objective")
         and (info.get("goal") in {"shared_check", "form_model_check", "common_continue"}
+             or any(strategy.get(k) for k in ("common_capacity_request",
+                                              "common_candidate_step", "common_basis_step"))
              or optimization.get("common_model") is True))
     scope = ("joint" if info["phase"] == "joint" else "common-model"
              if common_current else "individual")

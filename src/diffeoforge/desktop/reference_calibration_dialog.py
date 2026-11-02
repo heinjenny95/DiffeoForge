@@ -4564,7 +4564,10 @@ class ReferenceCalibrationDialog(QDialog):
             with calibration_verification_scope():
                 current = load_reference_calibration_study(origin)
                 choice = preview(current, {}, reference["target"])
-                if not choice or choice["mode"] != "review" or choice["reference"] != reference:
+                destination = ((choice or {}).get("review_reference")
+                               or (choice or {}).get("reference"))
+                if (not choice or destination != reference or choice["mode"] != "review"
+                        and not choice.get("review_reference")):
                     raise ValueError("Reopen the current missing common-model check")
                 parent = load_reference_calibration_study(Path(reference["directory"]))
                 if saved_reference(parent, reference["candidate_id"]) != reference:

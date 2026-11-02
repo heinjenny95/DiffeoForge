@@ -188,7 +188,7 @@ def test_capacity_preparation_preserves_field_protocol_reviews_and_requires_expl
     assert choice['mode'] == 'review' and choice['comparison_kind'] == 'capacity'
     accepted_child = approve(completed)
     state = guided_strategy.state(accepted_child)
-    assert state['common_recovery']['mode'] == 'stalled'
+    assert state['common_recovery']['mode'] == 'adopt'
     assert pilot_form_progress.marker(accepted_child) == ledger
     assert state['common_revision']['guided-varifold']['checked'] == 1
     from diffeoforge.pilot_common_start import prepare

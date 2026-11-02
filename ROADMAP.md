@@ -2,6 +2,13 @@
 
 ## Open owner follow-up — 1 November 2026
 
+- [x] Let a reviewed but unsuitable shared-capacity candidate continue without
+  falsely approving or prematurely adopting it. Retain its controls/momenta and
+  all original fits/reviews; use finite, measured iteration or attachment
+  contrasts, explicit Run/adoption and exact latest-result reopening. Preserve
+  another form's own eligible field after adoption. Source qualification and
+  runtime delivery remain distinct. [Policy](docs/PILOT_ACCEPTED_COMMON_DIAGNOSIS.md).
+
 - [x] Make the current pilot review target unambiguous: one primary review action
   naming the specimen, attempt and scope (individual / common model / joint).
   Clearly distinguish the result awaiting review from the working starting fit.

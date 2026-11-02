@@ -31,6 +31,18 @@ def optimization_context(snapshot, context, references):
     for ref in references:
         if not ref or ref["target"] != choice["target"]:
             continue
+        candidate_origin = choice.get("candidate_origin")
+        if candidate_origin:
+            from diffeoforge.guided_feedback import verify_reference
+
+            parent = verify_reference(ref)
+            step = (guided.record(parent).get("strategy") or {}).get("common_candidate_step")
+            if ref == candidate_origin or step and step["capacity_origin"] == candidate_origin:
+                result[(ref["directory"], ref["candidate_id"])] = dict(
+                    additional_iterations=ITERATIONS,
+                    blocked_reason="Use the bounded common-candidate action to retain its "
+                                   "field, comparison, experiment budget and saved approvals.")
+                continue
         row = dict(ref)
         row["filename"] = row.pop("target")
         if compatible(row, value["protocol"]):
@@ -38,7 +50,8 @@ def optimization_context(snapshot, context, references):
                 additional_iterations=ITERATIONS,
                 blocked_reason=choice.get("reason", "")
                 if choice["mode"] in {"stalled", "feedback", "review", "approved",
-                                      "capacity", "fresh_capacity", "prepared"} else "")
+                                      "capacity", "fresh_capacity", "prepared", "adopt",
+                                      "candidate_refine"} else "")
     return result
 
 
@@ -100,11 +113,11 @@ def preview(snapshot, context, target, *, value=None):
     shortfall = capacity["target_count"] > capacity["current_controls"]
     if shortfall:
         target = max(capacity["demand"], key=capacity["demand"].get)
+    tests = _diagnostic_tests(snapshot, target, value)
+    if tests and tests[-1][1]["kind"] == "capacity":
+        return _capacity_status(tests[-1][0], target, snapshot=snapshot, value=value)
     saved = _saved(snapshot, target, value["protocol"])
     if not saved:
-        tests = _diagnostic_tests(snapshot, target, value)
-        if tests:
-            return _capacity_status(tests[-1][0], target)
         if shortfall:
             return capacity_choice(value, target)
         from diffeoforge.pilot_common_basis import preview as basis_preview
@@ -130,10 +143,6 @@ def preview(snapshot, context, target, *, value=None):
 
     earlier = [r for r in saved[:-1] if r[3]]
     diagnosis = diagnose(snapshot, value, ref, earlier[-1][2] if earlier else None)
-    tests = _diagnostic_tests(snapshot, target, value)
-    # An already prepared capacity experiment must be inspected rather than duplicated.
-    if tests and tests[-1][1]["kind"] == "capacity":
-        return _capacity_status(tests[-1][0], target, diagnosis)
     feedback = [event for event in study._load_events(parent.study_directory)
                 if event["event"] == "guided_fit_feedback"
                 and event["current"]["candidate_id"] == candidate.candidate_id]
@@ -189,9 +198,13 @@ def preview(snapshot, context, target, *, value=None):
                 "Earlier suitable fits and common approvals remain saved.")
 
 
-def _capacity_status(tested, target, diagnosis=None):
+def _capacity_status(tested, target, diagnosis=None, *, snapshot=None, value=None):
     from diffeoforge.guided_feedback import reference
 
+    if snapshot is not None and value is not None:
+        from diffeoforge.pilot_common_candidate import preview
+
+        return preview(snapshot, tested, target, value)
     other = tested.candidates[0]
     if other.status != "completed":
         return dict(mode="prepared", available=False, target=target, diagnosis=diagnosis,
@@ -224,6 +237,10 @@ def apply_plan(snapshot, proposed, plan, context):
         from diffeoforge.pilot_common_basis import apply
 
         return apply(plan, choice, proposed["marker"]["protocol"])
+    if choice["mode"] == "candidate_refine":
+        from diffeoforge.pilot_common_candidate import apply
+
+        return apply(plan, choice)
     if choice["mode"] not in {"continue", "capacity", "fresh_capacity"}:
         raise ValueError(choice["reason"])
     if choice.get("capacity_request"):

@@ -1,4 +1,25 @@
-# Development continuity — dev186 installed and verified
+# Active follow-up — rejected common-capacity candidate recovery
+
+Source adds a bounded pre-adoption route for a better but still unsuitable
+capacity candidate. The same grid and saved momenta seed separate measured
+iteration or attachment contrasts; good individual fits, earlier common approvals
+and the active protocol remain saved. Review/reopen destinations are explicit,
+and protocol adoption still requires the owner's suitability decision.
+Other forms can retain their own eligible fields after this explicit adoption.
+Native accuracy/caps and prepared/running contracts remain unchanged.
+See [policy and qualification](PILOT_ACCEPTED_COMMON_DIAGNOSIS.md).
+
+dev187 source qualification passes 42 unique policy, geometry and workflow
+checks across the focused and regression runs, including the fresh unreviewed
+candidate path, rejected-result reopening, finite contrasts and explicit
+adoption/other-form transfer. Ruff and whitespace checks pass. Actual saved-state
+read-only preview checks preserve all owner project files and start no optimizer.
+Exact frozen-program qualification and installation remain separate gates.
+
+Installed dev186 remains current until a separately verified delivery receipt
+records a tested replacement. No owner fit is recomputed or approved by this fix.
+
+# Previous delivery — dev186 installed and verified
 
 dev186 is installed from runtime commit `e9560e1cef4ec93af017be37a205371ef4a6ecf8` after complete backup, exact frozen-program qualification and fresh Windows/backend idle guards.
 All installed files and evidence companions verify. Saved good fits, individual/common reviews, the current project and desktop/Qt settings match the backup.

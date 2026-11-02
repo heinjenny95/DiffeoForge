@@ -147,6 +147,7 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
     common_result = (accepted_info.get("goal") in {"form_model_check", "common_continue"}
         or accepted_strategy.get("common_diagnosis_test")
         or accepted_strategy.get("common_capacity_request")
+        or accepted_strategy.get("common_candidate_step")
         or accepted_strategy.get("common_basis_step")
         or (accepted_strategy.get("optimization") or {}).get("common_model"))
     # Common-model review must not erase the accepted individual comparison target.
@@ -239,7 +240,8 @@ def verify(info, record, manifest, root):
 
     value = info["strategy"]["form_progress"]
     verify_marker(value, info["origin"], info["pilot_order"])
-    if info["strategy"].get("common_capacity_request"):
+    if (info["strategy"].get("common_capacity_request")
+            or info["strategy"].get("common_candidate_step")):
         return  # Independently bound demand/basis/allowance verification follows.
     if info.get("goal") not in {"next_form", "form_model_check"}:
         return
@@ -295,7 +297,8 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False, common_
             for key in ("baseline", "anchor", "regional_recipe", "regional_continuation",
                         "optimization", "failure_parent_recovery", "shared_model_check",
                         "search_family", "common_model_step", "control_capacity_request",
-                        "common_diagnosis_test", "common_basis_step", "common_capacity_request"):
+                        "common_diagnosis_test", "common_basis_step", "common_capacity_request",
+                        "common_candidate_step"):
                 strategy.pop(key, None)
             previous = dict(directory=str(snapshot.study_directory),
                 manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))

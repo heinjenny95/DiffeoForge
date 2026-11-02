@@ -223,6 +223,15 @@ def _batch(
         config = copy.deepcopy(load_config(retained.config_path))
         iterations = common_step["additional_iterations"]
     diagnostic = (strategy or {}).get("common_diagnosis_test")
+    candidate_step = (strategy or {}).get("common_candidate_step")
+    if candidate_step:
+        from diffeoforge.guided_feedback import verify_reference
+
+        ref = candidate_step["reference"]
+        parent = verify_reference(ref)
+        retained = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
+        config = copy.deepcopy(load_config(retained.config_path))
+        iterations = ITERATIONS
     transfer = (strategy or {}).get("common_basis_step")
     capacity_request = (strategy or {}).get("common_capacity_request")
     if capacity_request:

@@ -112,9 +112,11 @@ def verify(root, manifest, record):
     old = arrays["source_controls"]
     points = np.loadtxt(study._safe_study_path(root, record["controls"]["copy"]), ndmin=2)
     values, previous = manifest["plan"]["baseline_effective_values"], request["reference"]["values"]
+    transfer = (record.get("guided", {}).get("strategy") or {}).get("common_basis_step")
+    shared_values = transfer["protocol"]["reference"]["values"] if transfer else previous
     if (record["guided"].get("goal") != "density"
             or set(record["methods"].values()) != {request["reference"]["method"]}
-            or any(values[k] != previous[k] for k in previous
+            or any(values[k] != shared_values[k] for k in shared_values
                    if k != "initial_control_point_spacing")
             or values["initial_control_point_spacing"]
             != previous["initial_control_point_spacing"] * .8
