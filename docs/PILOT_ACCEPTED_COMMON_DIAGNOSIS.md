@@ -1,5 +1,13 @@
 # Common-model experiments against accepted individual shapes
 
+The original project's template/control update choices are retained separately
+from a frozen singleton used as initialization. A capacity, continuation or
+surface-setting contrast must not overwrite those future joint settings with
+its own frozen flags. A newly prepared joint confirmation therefore follows the
+original explicit choices, including an intentional freeze. Individual checks
+remain frozen. Existing prepared/running contracts are not rewritten, and this
+configuration fix alone is not evidence of anatomical fit or convergence.
+
 The guided common path compares a completed, inspected ordinary field with the
 explicitly accepted individual shape of the same specimen. Input, template,
 cohort, inventory, review and reconstruction identities remain bound. Regional

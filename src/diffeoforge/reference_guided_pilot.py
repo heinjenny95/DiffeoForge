@@ -208,6 +208,12 @@ def _batch(
 
     manifest = study._verify_manifest(source.study_directory)
     config = copy.deepcopy(load_config(source.study_directory / manifest["source_config"]["copy"]))
+    # Saved singleton fields are frozen for initialization. Their optimizer
+    # settings must not replace the source project's eventual joint update choices.
+    confirmation_freeze_settings = {
+        key: config["optimization"][key]
+        for key in ("freeze_template", "freeze_control_points")
+    }
     cohort_method = config["optimization"]["method"]
     iterations = (max(ITERATIONS, previous.attachment_comparison["iterations"])
                   if strategy is not None and previous else ITERATIONS)
@@ -414,9 +420,7 @@ def _batch(
             repeats=2,
             region_grid=4,
             shrink_warning_fraction=0.1,
-            confirmation_freeze_settings={
-                k: config["optimization"][k] for k in ("freeze_template", "freeze_control_points")
-            },
+            confirmation_freeze_settings=confirmation_freeze_settings,
             scope="All original pilot targets" if phase == "joint" else "One original target only",
             **({"control_capacity": capacity} if capacity else {}),
             **({"joint_initialization": dict(version="accepted-singletons-v1",

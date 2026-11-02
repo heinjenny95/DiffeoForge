@@ -1,5 +1,18 @@
 # Development continuity — dev187 installed and verified
 
+## Source follow-up — retain the project's joint update settings
+
+Preparing a contrast from a frozen saved singleton previously copied its freeze
+flags into the eventual joint confirmation settings. New preparations retain
+the original source project's explicit template/control update choices before
+loading the starting field. Singleton checks remain frozen, and existing studies,
+fields and reviews are unchanged. Native fit qualification and delivery remain
+separate from this configuration correction; installed dev187 is unchanged.
+The regression was reproduced before the fix. Twelve focused checks pass,
+including all four explicit freeze combinations, capacity adoption, a complete
+retained-field-to-joint journey and field/model binding negatives. Ruff and
+whitespace checks also pass. This does not establish private anatomical success.
+
 ## Source follow-up — initialize shared-basis checks from complete direct fields
 
 Direct fields learned under a regional objective may seed a separate ordinary

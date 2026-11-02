@@ -178,6 +178,18 @@ def test_capacity_preparation_preserves_field_protocol_reviews_and_requires_expl
     assert next(iter(blocked.values()))['blocked_reason']
     child = guided.next_action(current.study_directory, 'adaptive_common_continue',
                                'guided-varifold')
+    # A singleton's frozen learned field is initialization, not a request to
+    # freeze the eventual joint atlas. Retain the original project's choices.
+    source, _ = guided._origin(current.study_directory)
+    from diffeoforge import reference_calibration_study as study
+
+    source_manifest = study._verify_manifest(source.study_directory)
+    source_config = load_config(
+        source.study_directory / source_manifest['source_config']['copy'])
+    confirmation_flags = {k: source_config['optimization'][k]
+                          for k in ('freeze_template', 'freeze_control_points')}
+    assert confirmation_flags == dict(freeze_template=False, freeze_control_points=False)
+    assert child.attachment_comparison['confirmation_freeze_settings'] == confirmation_flags
     assert child.candidates[0].attempts == 0 and not child.visual_reviews
     assert pilot_form_progress.marker(child) == ledger
     assert guided.record(child)['approved'] == guided.record(current)['approved']
@@ -230,6 +242,11 @@ def test_capacity_preparation_preserves_field_protocol_reviews_and_requires_expl
     assert revised.attachment_comparison['refinement']['initialization'] == 'nested'
     assert revised.attachment_comparison['controls']['sha256'] == (
         accepted_child.attachment_comparison['controls']['sha256'])
+    assert revised.attachment_comparison['confirmation_freeze_settings'] == confirmation_flags
+    # The individual shared-model check still freezes its own template and
+    # controls; only the saved future joint settings retain the source intent.
+    assert all(load_config(revised.candidates[0].config_path)['optimization'][k]
+               for k in confirmation_flags)
     assert guided.record(revised)['strategy']['common_basis_step']['approval_transferred'] is False
     assert guided.record(revised)['strategy']['common_basis_step']['reference']['target'] == (
         guided.record(revised)['target'])

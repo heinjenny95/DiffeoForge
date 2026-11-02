@@ -54,6 +54,10 @@ def test_saved_common_field_continues_without_cold_restart_and_reaches_joint(tmp
     joint = guided.next_action(accepted.study_directory, 'adaptive_next_form', 'guided-varifold')
     assert guided.record(joint)['phase'] == 'joint'
     assert joint.attachment_comparison['joint_initialization']['references']
+    flags = dict(freeze_template=False, freeze_control_points=False)
+    assert joint.attachment_comparison['confirmation_freeze_settings'] == flags
+    joint_config = load_config(joint.candidates[0].config_path)
+    assert {k: joint_config['optimization'][k] for k in flags} == flags
     assert not joint.visual_reviews and all(sha256_file(p) == h for p, h in pins.items())
     reviewed_joint = approve(run_batch(joint, monkeypatch))
     assert not strategy.state(reviewed_joint)['common_revision']
