@@ -18,6 +18,11 @@ fit-quality qualification remains ongoing; these software checks do not establis
 that one common model fits a private cohort. No new installer or model profile is
 delivered by this source follow-up. Installed dev187 remains current.
 
+An additional exhausted-family journey verifies the honest stopping path after
+unsuccessful surface contrasts: duplicate continuation is rejected, original
+approvals remain saved, and result review plus earlier-fit inspection remain
+available without starting another optimizer or resetting the bounded family.
+
 dev187 runtime `e34056e2a765ec7fb62bd32112c08736b0a24b52` is installed after complete backup,
 exact Windows-product checks and fresh idle guards. Every installed byte and
 companion verifies; good fits/reviews, project and desktop/Qt state are unchanged.

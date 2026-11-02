@@ -89,6 +89,9 @@ contrast uses its preceding candidate on the same grid. Reopening a result alway
 targets the latest reviewed candidate, separately from this numerical seed.
 Pending, failed and exhausted families do not produce duplicate attempts or
 automatic recovery. Existing Run and cancellation controls remain in charge.
+The exhausted-family Qt journey also checks that the exact result can still be
+reviewed and the visible saved-fit selector can open an earlier inspected field.
+This inspection starts no fit, resets no experiment budget and grants no approval.
 The dedicated common-candidate action also prevents an older-fit selector from
 bypassing the finite experiment budget. Cumulative effort includes the retained
 field's ancestry while local native counters keep their original meaning.
