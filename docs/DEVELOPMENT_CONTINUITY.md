@@ -7,6 +7,8 @@ before a separate setting contrast. Explicit model adoption preserves the origin
 individual comparison references. A suitable common candidate exposes its
 adoption action in the fixed footer; this expected next step is not rendered as
 a failure to prepare the next form. Native fitting still requires Run.
+The approved-candidate heading and instructions now agree with that next action,
+instead of continuing to request improvement of the already approved fit.
 
 Verification passes 33 distinct workflow, legacy-contract, comparison and actual
 Qt navigation checks across the focused and regression runs, plus Ruff and

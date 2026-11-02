@@ -60,8 +60,15 @@ def render(window, prepared):
         control.hide()
     window._visually_reviewed_candidates = set(snapshot.visual_reviews)
     window._visually_approved_candidates = {k for k, v in snapshot.visual_reviews.items() if v}
+    approved_common_revision = bool(
+        not running and len(snapshot.candidates) == 1
+        and snapshot.visual_reviews.get(snapshot.candidates[0].candidate_id) is True
+        and guidance.get("common_revision", {}).get(snapshot.candidates[0].candidate_id)
+    )
     title = QLabel(
-        "Check the next pilot form"
+        "Use the approved common settings"
+        if approved_common_revision
+        else "Check the next pilot form"
         if info.get("goal") == "next_form"
         else "Check the common model"
         if info.get("goal") in {"form_model_check", "common_continue"}
@@ -147,7 +154,8 @@ def render(window, prepared):
         conditions.setWordWrap(True)
         conditions.setObjectName("jointFitConditions")
         window.content_layout.addWidget(conditions)
-    if info.get("goal") and not regional_accepted and not guard_failures and not checks_pending:
+    if (info.get("goal") and not regional_accepted and not approved_common_revision
+            and not guard_failures and not checks_pending):
         from diffeoforge.pilot_recovery import DESCRIPTIONS
 
         reason = DESCRIPTIONS.get(info["goal"])

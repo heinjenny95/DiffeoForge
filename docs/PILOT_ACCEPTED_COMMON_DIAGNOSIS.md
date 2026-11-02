@@ -80,6 +80,9 @@ A reviewed, suitable common candidate exposes its explicit model-adoption action
 in the fixed footer. This normal next step is not presented as a failure to
 prepare the next form. Adoption prepares a separate check; native fitting still
 requires Run, and other results do not inherit approval.
+The page heading also names adoption, and the earlier experiment's instruction
+to improve the fit is hidden after suitability is saved. Reopening the reviewed
+fit remains optional; it does not replace the explicit next action.
 
 A worse contrast does not silently become the next starting field: the next
 contrast uses its preceding candidate on the same grid. Reopening a result always

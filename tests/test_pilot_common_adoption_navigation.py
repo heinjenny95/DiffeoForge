@@ -25,6 +25,11 @@ def test_approved_candidate_pins_adoption_and_preserves_individual_reviews(tmp_p
         assert dialog.next_step_button.text() == "Use approved common settings → check next form"
         assert dialog._guided_footer_action == (
             approved.study_directory, "adaptive_adopt_common_model", "guided-varifold")
+        labels = dialog.content.findChildren(QLabel)
+        assert any(label.text() == "Use the approved common settings" for label in labels)
+        assert not any(label.text() == "Improve the fit" for label in labels)
+        assert not any(label.text().startswith("Test additional control points.")
+                       for label in labels)
         assert not any(label.text().startswith("Next form could not be prepared:")
                        for label in dialog.content.findChildren(QLabel))
         calls = []
@@ -44,12 +49,16 @@ def test_approved_candidate_pins_adoption_and_preserves_individual_reviews(tmp_p
 
 
 def test_rejected_candidate_cannot_offer_model_adoption(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QLabel
+
     _, rejected, _ = rejected_capacity(tmp_path, monkeypatch)
     app, dialog = dialog_for(rejected, monkeypatch)
     try:
         assert rejected.visual_reviews["guided-varifold"] is False
         action = dialog._guided_footer_action
         assert not action or action[1] != "adaptive_adopt_common_model"
+        assert not any(label.text() == "Use the approved common settings"
+                       for label in dialog.content.findChildren(QLabel))
     finally:
         dialog.close()
         app.processEvents()
