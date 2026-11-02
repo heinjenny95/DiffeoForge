@@ -1,5 +1,22 @@
 # Development continuity — dev187 installed and verified
 
+## Source follow-up — initialize shared-basis checks from complete direct fields
+
+Direct fields learned under a regional objective may seed a separate ordinary
+common-basis test when the exact original controls form the adopted basis prefix.
+Eligible original approved individual fields take priority over later unapproved
+fields. New contracts allow an optimizer-method change as fresh initialization,
+preserving numerical tolerance, deformation/integration/runtime and original
+input bindings. Added momenta are zero; reviews and the old fields remain saved.
+Residuals alone stay excluded, and legacy contracts retain their earlier checks.
+
+Qualification: nine focused field-eligibility, control-tamper, preparation/adoption,
+review-preservation and objective/accuracy-contrast checks pass, alongside Ruff and
+whitespace checks. A separate prototype journey and independent native retained-
+field checks precede this source change. This does not deliver a new shared model,
+enable composed-field projection or prove all-form native fit quality. Installed
+dev187 remains unchanged while local scientific qualification continues.
+
 ## Source follow-up — retain individual reviews across shared-model revisions
 
 An approved last individual result is retained in the successor's review ledger

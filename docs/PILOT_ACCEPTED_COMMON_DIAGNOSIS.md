@@ -132,3 +132,20 @@ adoption/other-form transfer journeys.
 Read-only private saved-field checks and exact-package delivery are recorded
 separately. Newly proposed private native experiments still need execution and
 independent anatomical review; diagnostic success is not a fit-quality guarantee.
+
+A complete direct field learned with a regional loss can initialize a new shared-
+basis check. Its original controls must exactly occupy the beginning of the
+explicitly adopted larger basis, with zero momenta on added controls. The original
+approved individual reference is preferred over a later unapproved field when
+eligible. The original source/target, frozen controls/template, deformation kernel,
+integration, precision and runtime remain bound. A different optimizer method is
+allowed only as a new initialization test with fresh history; numerical tolerance
+is not relaxed. The action names its 120-step budget as a separate basis test.
+
+The new direct-field contract is initialization only and transfers no approval or
+regional objective. A residual after a preserved prefix remains ineligible as a
+standalone ordinary field. Legacy nested-basis contracts keep their original full-
+physics verification. Native shape-transfer qualification and a public complete
+prepare/review/adopt/other-form journey are separate checks; neither establishes
+that one shared protocol fits every form. Composed-field projection and new model
+profiles remain outside this production change.
