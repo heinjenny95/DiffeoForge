@@ -23,6 +23,29 @@ def recovery(window, layout, identifier, choice):
         "Your suitable individual fits and previous common approvals remain saved."))
     reason.setWordWrap(True)
     layout.addWidget(reason)
+    diagnosis = choice.get("diagnosis")
+    if diagnosis:
+        summary = QLabel(
+            "Compared with your accepted individual fit: "
+            + ("local surface differences remain. " if diagnosis["gap"] else
+               "no reliable surface loss was found in these samples. ")
+            + "Both surface directions and saved marked areas are checked. "
+            "Your accepted fit and its approval remain saved.")
+        summary.setObjectName("commonAcceptedComparison")
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+        technical = QLabel(
+            f"Common ↔ accepted agreement P95: {diagnosis['agreement_p95']:.5g}. "
+            f"Saved common-field trend: {diagnosis['trend']}. "
+            f"Common controls: {diagnosis['current_controls']}. "
+            "Sampled distance agreement is separate from anatomical approval.")
+        technical.setWordWrap(True)
+        layout.addWidget(InfoDisclosure("Measurements behind this suggestion", technical))
+        number = diagnosis.get("accepted_test_number")
+        name = f" · Test {number}" if number is not None else ""
+        inspect = QPushButton("Inspect accepted individual fit" + name + "…")
+        inspect.clicked.connect(lambda: window._open_guided_saved_fit(diagnosis["accepted"]))
+        layout.addWidget(inspect)
     target = getattr(window, "_guided_review_target", None)
     if (choice["mode"] == "review" and target and target["kind"] == "common"
             and target["reference"] == choice["reference"]):

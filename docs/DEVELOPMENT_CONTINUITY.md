@@ -1,4 +1,20 @@
-# Development continuity — dev184 delivered and verified
+# Development continuity — dev185 accepted-reference common diagnosis
+
+The common path now compares bound accepted individual geometry, original
+surfaces, both distance directions, local tails and accepted marks. Previous
+matching common fields provide the trend for bounded 120-step continuation or a
+separate nested control-capacity contrast. Original shape references and common
+approvals remain saved. Candidate adoption is explicit; another form can retain
+its own field on the adopted nested basis without transferring approval.
+The first common phase prefers a larger eligible accepted basis and prioritizes
+recorded demand. An active protocol is not reselected. See
+[comparison policy and qualification](PILOT_ACCEPTED_COMMON_DIAGNOSIS.md).
+
+Installed dev184 remains current until a separately qualified dev185 delivery
+receipt verifies installation. No running owner test is interrupted, old private
+experiment restarted, accuracy relaxed or diagnostic result auto-adopted.
+
+# Earlier delivery — dev184 delivered and verified
 
 dev184 is installed from runtime commit
 `03c2da478b8e6c314a9787da2dfa0a30e5f2befd` after exact frozen-program checks,

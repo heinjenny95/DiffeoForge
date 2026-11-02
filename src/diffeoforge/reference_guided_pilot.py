@@ -222,6 +222,24 @@ def _batch(
                         if c.candidate_id == common_step["reference"]["candidate_id"])
         config = copy.deepcopy(load_config(retained.config_path))
         iterations = common_step["additional_iterations"]
+    diagnostic = (strategy or {}).get("common_diagnosis_test")
+    transfer = (strategy or {}).get("common_basis_step")
+    if transfer:
+        from diffeoforge.guided_feedback import verify_reference
+
+        parent = verify_reference(transfer["reference"])
+        retained = next(c for c in parent.candidates
+                        if c.candidate_id == transfer["reference"]["candidate_id"])
+        config = copy.deepcopy(load_config(retained.config_path))
+        iterations = ITERATIONS
+    if diagnostic:
+        from diffeoforge.guided_feedback import verify_reference
+
+        parent = verify_reference(diagnostic["seed"])
+        retained = next(c for c in parent.candidates
+                        if c.candidate_id == diagnostic["seed"]["candidate_id"])
+        config = copy.deepcopy(load_config(retained.config_path))
+        iterations = ITERATIONS
     optimization = (strategy or {}).get("optimization")
     if optimization:
         from diffeoforge.guided_feedback import verify_reference

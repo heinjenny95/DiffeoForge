@@ -142,9 +142,24 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
                 or compatible(row, value["protocol"])):
             raise ValueError("Choose an approved ordinary fit with different shared settings")
         value.update(origin_review=row, protocol=_protocol(accepted, accepted_id), stage="model")
-    value["reviews"] = list({r["filename"]: r for r in [*value["reviews"], row]}.values())
+    accepted_info = guided.record(accepted)
+    accepted_strategy = accepted_info.get("strategy") or {}
+    common_result = (accepted_info.get("goal") in {"form_model_check", "common_continue"}
+        or accepted_strategy.get("common_diagnosis_test")
+        or accepted_strategy.get("common_basis_step")
+        or (accepted_strategy.get("optimization") or {}).get("common_model"))
+    # Common-model review must not erase the accepted individual comparison target.
+    if not (saved and common_result and any(
+            r["filename"] == row["filename"] for r in value["reviews"])):
+        value["reviews"] = list({r["filename"]: r for r in [*value["reviews"], row]}.values())
     if model:
         value["stage"] = "model"
+    start = None
+    if (value["stage"] == "model" and saved and saved["stage"] == "forms"
+            and len(value["reviews"]) == len(info["pilot_order"])):
+        from diffeoforge.pilot_common_start import prepare
+
+        value, start = prepare(snapshot, value)
     candidates = [*info["approved"], *(r["approval"] for r in context["cases"]
                                       if r.get("approval")), row]
     common = list({r["filename"]: r for r in candidates
@@ -155,6 +170,9 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
     pos = order.index(info["target"])
     ordered = [*order[pos + 1:], *order[:pos + 1]]
     target = next((name for name in ordered if name not in covered), None)
+    if start and target:
+        target = max((name for name in ordered if name not in covered),
+                     key=lambda name: start["demand"].get(name, 0))
     joint = len(common) == len(order)
     if joint and starting_fit:
         from diffeoforge.guided_accepted_fit import rejected_joint
@@ -176,6 +194,8 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
                       "Prepare common-model check · " + target if value["stage"] == "model"
                       and target else "Use suitable fit → next pilot form · " + target
                       if target else "Save suitable fit → finish individual reviews")
+    if start:
+        result["common_start"] = start
     if value["stage"] == "model" and target:
         from diffeoforge.pilot_common_model import preview
 
@@ -260,7 +280,8 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False, common_
             strategy = dict(info.get("strategy") or {})
             for key in ("baseline", "anchor", "regional_recipe", "regional_continuation",
                         "optimization", "failure_parent_recovery", "shared_model_check",
-                        "search_family", "common_model_step", "control_capacity_request"):
+                        "search_family", "common_model_step", "control_capacity_request",
+                        "common_diagnosis_test", "common_basis_step"):
                 strategy.pop(key, None)
             previous = dict(directory=str(snapshot.study_directory),
                 manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))

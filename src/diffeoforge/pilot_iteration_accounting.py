@@ -31,7 +31,9 @@ def branch_total(snapshot, candidate, *, _seen=None):
     if candidate.candidate_id not in (snapshot.attachment_comparison or {}).get("methods", {}):
         return count
     strategy = (record(snapshot) or {}).get("strategy") or {}
-    step = strategy.get("common_model_step") or strategy.get("optimization")
+    diagnostic = strategy.get("common_diagnosis_test")
+    step = (strategy.get("common_model_step") or strategy.get("optimization") or diagnostic
+            or strategy.get("common_basis_step"))
     if not step:
         return count
     if strategy.get("common_model_step") and step.get("version") not in {LEGACY_VERSION, VERSION}:
@@ -41,7 +43,7 @@ def branch_total(snapshot, candidate, *, _seen=None):
     local = metrics.get("final_iteration")
     if type(local) is not int or local < 0:
         raise ValueError("The saved field has no recorded local native iteration count")
-    ref = step["reference"]
+    ref = step["seed"] if step is diagnostic else step["reference"]
     parent = verify_reference(ref)
     source_candidate = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
     return branch_total(parent, source_candidate, _seen=seen) + local
@@ -49,6 +51,16 @@ def branch_total(snapshot, candidate, *, _seen=None):
 
 def source(manifest, candidate_id):
     first_ids = {c["candidate_id"] for c in manifest["plan"]["stages"][0]["candidates"]}
+    diagnostic = ((manifest.get("attachment_comparison", {}).get("guided", {}).get(
+        "strategy") or {}).get("common_diagnosis_test"))
+    if diagnostic and candidate_id in first_ids:
+        ref = diagnostic["seed"]
+        return Path(ref["directory"]), ref["candidate_id"]
+    transfer = ((manifest.get("attachment_comparison", {}).get("guided", {}).get(
+        "strategy") or {}).get("common_basis_step"))
+    if transfer and candidate_id in first_ids:
+        ref = transfer["reference"]
+        return Path(ref["directory"]), ref["candidate_id"]
     common = ((manifest.get("attachment_comparison", {}).get("guided", {}).get(
         "strategy") or {}).get("common_model_step"))
     if common and candidate_id in first_ids:

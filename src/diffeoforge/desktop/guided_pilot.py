@@ -111,6 +111,14 @@ def render(window, prepared):
             "a common atlas needs separate matching-model checks and joint review.")
         progress_note.setWordWrap(True)
         window.content_layout.addWidget(progress_note)
+        if progress_summary.get("common_start"):
+            start = progress_summary["common_start"]
+            note = QLabel(f"Common-model starting basis: {start['controls']} controls. "
+                          "Missing checks with higher recorded control demand are tried first. "
+                          "Accepted individual "
+                          "fits and previous decisions remain saved.")
+            note.setWordWrap(True)
+            window.content_layout.addWidget(note)
     if info.get("goal") == "shared_check":
         note = QLabel("Your suitable local fit remains saved. This separate check starts "
                       "from its saved field, template, control points and time grid and uses "

@@ -45,6 +45,11 @@ def run_batch(snapshot, monkeypatch, *, controller=_CompletedController, refinem
     from diffeoforge import guided_response
 
     monkeypatch.setattr(guided_response, 'history', lambda cases, reference, regions: (cases, []))
+    from diffeoforge import pilot_common_diagnosis
+
+    # This receipt-only controller has no run manifest or reconstruction. Real
+    # bound geometry and accepted/common surface comparisons have dedicated tests.
+    monkeypatch.setattr(pilot_common_diagnosis, '_geometry', lambda *args: None)
 
     def metric(run):
         atlas = run / "atlas.vtk"

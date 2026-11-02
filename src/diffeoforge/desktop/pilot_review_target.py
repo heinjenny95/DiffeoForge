@@ -9,8 +9,10 @@ def choose(snapshot, guidance, info):
     if common and common.get("mode") == "review":
         number = common.get("test_number")
         attempt = f" · Test {number}" if number is not None else ""
+        scope = ("control-point comparison" if common.get("comparison_kind") == "capacity"
+                 else "common-model result")
         return dict(root=snapshot.study_directory, kind="common", reference=common["reference"],
-            pending=True, label="Review common-model result" + attempt + " · " + common["target"],
+            pending=True, label="Review " + scope + attempt + " · " + common["target"],
             explanation="Review this saved common-model result. Earlier starting fits below "
                         "are separate repair or comparison options; this action starts no fitting.")
     completed = [c for c in snapshot.candidates if c.status == "completed"]
