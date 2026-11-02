@@ -1,4 +1,13 @@
-# Development continuity — dev186 complete accepted-field common capacity
+# Development continuity — dev186 installed and verified
+
+dev186 is installed from runtime commit `e9560e1cef4ec93af017be37a205371ef4a6ecf8` after complete backup, exact frozen-program qualification and fresh Windows/backend idle guards.
+All installed files and evidence companions verify. Saved good fits, individual/common reviews, the current project and desktop/Qt settings match the backup.
+The prior runtime is recoverable; no owner computation was interrupted, private fit started or diagnostic candidate auto-adopted.
+Complete accepted-field CP demand now informs the shared candidate, including local additions; the existing step allowance and numerical settings remain fixed.
+Shared atlas/PCA and anatomical decisions remain separate. No installer upload was requested.
+See [delivery evidence and limits](V186_DELIVERY.md).
+
+# Earlier implementation stage — dev186 complete accepted-field common capacity
 
 Accepted complete-field control demand now sets a floor for a separate shared
 capacity candidate, including preserved prefixes and local additions. The
