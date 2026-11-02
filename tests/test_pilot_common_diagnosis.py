@@ -72,7 +72,7 @@ def test_first_comparison_uses_actual_objective_progress_and_local_capacity_evid
     assert diagnosis.recommend(diagnosis.assess(current), capped=True)['kind'] == 'capacity'
 
 
-def test_common_start_ranks_eligible_ordinary_capacity_without_copying_local_residuals():
+def test_common_start_ranks_a_transferable_seed_separately_from_complete_demand():
     from diffeoforge.pilot_common_start import rank
 
     small = dict(controls=200, eligible_basis=True)
@@ -139,6 +139,13 @@ def test_capacity_preparation_preserves_field_protocol_reviews_and_requires_expl
     ledger = pilot_form_progress.marker(current)
     pins = {p: sha256_file(p) for p in local.study_directory.rglob('*') if p.is_file()}
     accepted = guided_feedback.reference(local, 'guided-varifold')
+    from diffeoforge import pilot_common_capacity
+
+    # Exercise a whole-field demand well above the old 50% increment. The
+    # classification-only fixture has no composed native field of its own.
+    monkeypatch.setattr(pilot_common_capacity, 'demand', lambda v: {
+        r['filename']: 480 if r['filename'] == accepted['target'] else 120
+        for r in v['reviews']})
     def measured(snapshot, value, ref, previous=None):
         return dict(version=diagnosis.VERSION, accepted=accepted, current=ref,
                     previous=previous, **diagnosis.assess(evidence(local=True)))
@@ -212,6 +219,7 @@ def test_capacity_preparation_preserves_field_protocol_reviews_and_requires_expl
 
     fixture_state = deepcopy(guided.record(accepted_child)['strategy'])
     for key in ('common_model_step', 'common_diagnosis_test', 'common_basis_step',
+                'common_capacity_request',
                 'baseline', 'anchor', 'optimization'):
         fixture_state.pop(key, None)
     fixture_state['form_progress'] = dict(hypothetical, stage='forms')

@@ -82,12 +82,14 @@ def _compare(accepted_ref, current_ref):
             "subjects", {}).get(accepted_ref["target"])
         evidence.append(saved if saved and saved.get("repeats") else compare_geometry(
             original.geometry, pair[0], original_key=first[1]["sha256"]))
+    from diffeoforge.pilot_common_capacity import count
+
     result = dict(accepted=evidence[0], current=evidence[1],
         agreement=compare_geometry(first[0], second[0]),
         original_sha256=first[1]["sha256"], template_sha256=first[2],
         objective_tail=[r.log_likelihood for r in second[3].convergence[-6:]],
         accepted_local=bool(accepted.attachment_comparison.get("regional_objective")),
-        accepted_controls=accepted.attachment_comparison["controls"]["count"],
+        accepted_controls=count(accepted_ref),
         current_controls=current.attachment_comparison["controls"]["count"])
     regions = accepted.problem_regions.get(accepted_ref["candidate_id"], {}).get(
         accepted_ref["target"], [])

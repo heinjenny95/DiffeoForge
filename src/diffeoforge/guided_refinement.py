@@ -122,7 +122,7 @@ def bind(root, manifest, record):
         from diffeoforge.guided_density import write
 
         return dict(record, **write(root, request, controls, original, inputs.momenta, source,
-                                    inputs.momenta_path))
+                                    inputs.momenta_path, record=record))
     point_path, momentum_path = root / "refinement-controls.txt", root / "refinement-momenta.txt"
     study._copy_bound(source, point_path, controls["sha256"])
     digest = sha256_file(inputs.momenta_path)

@@ -408,6 +408,10 @@ def verify_strategy(info, record, manifest, study_root=None):
         from diffeoforge.pilot_common_basis import verify
 
         verify(info, record, manifest, study_root)
+    if strategy.get("common_capacity_request"):
+        from diffeoforge.pilot_common_capacity import verify
+
+        verify(info, record, manifest, study_root)
     return True
 
 
@@ -425,6 +429,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     strategy.pop("common_model_step", None)
     strategy.pop("common_diagnosis_test", None)
     strategy.pop("common_basis_step", None)
+    strategy.pop("common_capacity_request", None)
     strategy.pop("control_capacity_request", None)
     strategy["previous"] = dict(directory=str(snapshot.study_directory),
         manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))

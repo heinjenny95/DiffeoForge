@@ -1,4 +1,20 @@
-# Development continuity — dev185 accepted-reference common diagnosis
+# Development continuity — dev186 complete accepted-field common capacity
+
+Accepted complete-field control demand now sets a floor for a separate shared
+capacity candidate, including preserved prefixes and local additions. The
+highest-demand form is tested first. A saved common field is exactly embedded
+with zero new momenta; a missing one starts on the enlarged basis. Other forms
+use the same explicitly adopted grid while retaining their own eligible fields.
+The 120-step allowance, 2,000-control guard, physics and accuracy stay fixed.
+Good individual fits and earlier common approvals keep their bound provenance.
+See [comparison and capacity policy](PILOT_ACCEPTED_COMMON_DIAGNOSIS.md).
+
+The earlier dev185 build was superseded before installer execution after owner
+clarification that local additions must count toward shared capacity. Installed
+dev184 remains current until exact dev186 delivery and installation are verified.
+No owner computation or saved result was interrupted or changed.
+
+# Earlier source — dev185 accepted-reference common diagnosis
 
 The common path now compares bound accepted individual geometry, original
 surfaces, both distance directions, local tails and accepted marks. Previous

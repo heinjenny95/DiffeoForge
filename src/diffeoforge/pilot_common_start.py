@@ -12,14 +12,16 @@ def prepare(snapshot, value):
     from diffeoforge.config import load_config
     from diffeoforge.guided_feedback import verify_reference
     from diffeoforge.pilot_common_basis import _physics
-    from diffeoforge.pilot_form_progress import _protocol
+    from diffeoforge.pilot_form_progress import _protocol, configure
 
     result = deepcopy(value)
     protocol = value["protocol"]
     base = verify_reference(protocol["reference"])
     base_candidate = next(c for c in base.candidates
                           if c.candidate_id == protocol["reference"]["candidate_id"])
-    physics = _physics(load_config(base_candidate.config_path))
+    config = load_config(base_candidate.config_path)
+    configure(config, value, config["optimization"]["method"])
+    physics = _physics(config)
     controls = base.attachment_comparison["controls"]
     profiles = []
     for row in value["reviews"]:
@@ -29,6 +31,11 @@ def prepare(snapshot, value):
         candidate = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
         record = parent.attachment_comparison
         nested = record.get("refinement") or {}
+        capacity = (record.get("guided", {}).get("strategy") or {}).get("common_capacity_request")
+        if capacity and nested.get("initialization") != "nested":
+            previous = verify_reference(capacity["protocol"]["reference"])
+            nested = dict(initialization="nested",
+                          source_controls=previous.attachment_comparison["controls"])
         eligible = (not record.get("regional_objective")
             and nested.get("initialization") == "nested"
             and nested["source_controls"]["sha256"] == controls["sha256"]
@@ -42,9 +49,12 @@ def prepare(snapshot, value):
         result.update(origin_review=chosen["row"],
                       protocol=_protocol(chosen["parent"], chosen["row"]["candidate_id"]))
     selected_count = chosen["controls"] if chosen else controls["count"]
-    return result, dict(controls=selected_count,
+    from diffeoforge.pilot_common_capacity import demand
+
+    counts = demand(value)
+    return result, dict(controls=selected_count, required_controls=max(counts.values()),
         reference=result["protocol"]["reference"],
-        demand={p["row"]["filename"]: p["controls"] for p in profiles},
-        reason="Start from the largest accepted transferable nested basis with unchanged "
-               "fitting physics. Local residual counts prioritize difficult forms; they "
-               "cannot be copied into an ordinary shared model.")
+        demand=counts,
+        reason="The shared basis must meet the largest accepted complete-field control "
+               "demand, including local additions. A separate capacity candidate is prepared "
+               "first if necessary; no smaller common basis is assumed sufficient.")

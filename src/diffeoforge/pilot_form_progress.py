@@ -146,6 +146,7 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
     accepted_strategy = accepted_info.get("strategy") or {}
     common_result = (accepted_info.get("goal") in {"form_model_check", "common_continue"}
         or accepted_strategy.get("common_diagnosis_test")
+        or accepted_strategy.get("common_capacity_request")
         or accepted_strategy.get("common_basis_step")
         or (accepted_strategy.get("optimization") or {}).get("common_model"))
     # Common-model review must not erase the accepted individual comparison target.
@@ -174,6 +175,13 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
         target = max((name for name in ordered if name not in covered),
                      key=lambda name: start["demand"].get(name, 0))
     joint = len(common) == len(order)
+    if value["stage"] == "model":
+        from diffeoforge.pilot_common_capacity import describe
+
+        capacity = describe(value)
+        if capacity["target_count"] > capacity["current_controls"]:
+            target = max(capacity["demand"], key=capacity["demand"].get)
+            joint = False  # Existing approvals remain valid on their recorded smaller basis.
     if joint and starting_fit:
         from diffeoforge.guided_accepted_fit import rejected_joint
         from diffeoforge.guided_joint_initialization import references
@@ -231,6 +239,8 @@ def verify(info, record, manifest, root):
 
     value = info["strategy"]["form_progress"]
     verify_marker(value, info["origin"], info["pilot_order"])
+    if info["strategy"].get("common_capacity_request"):
+        return  # Independently bound demand/basis/allowance verification follows.
     if info.get("goal") not in {"next_form", "form_model_check"}:
         return
     protocol = value["protocol"]
@@ -268,7 +278,11 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False, common_
                 raise ValueError("Choose a missing check in the current common model")
             verify_marker(value, info["origin"], info["pilot_order"])
             common = approvals(snapshot, context, value)
-            if common_target in {r["filename"] for r in common}:
+            from diffeoforge.pilot_common_capacity import describe
+
+            capacity = describe(value)
+            shortfall = capacity["target_count"] > capacity["current_controls"]
+            if common_target in {r["filename"] for r in common} and not shortfall:
                 raise ValueError("This form already has common-model approval; no repeat needed")
             proposed = dict(target=common_target, marker=value, common=common, joint=False,
                             action="form_model_check")
@@ -281,7 +295,7 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False, common_
             for key in ("baseline", "anchor", "regional_recipe", "regional_continuation",
                         "optimization", "failure_parent_recovery", "shared_model_check",
                         "search_family", "common_model_step", "control_capacity_request",
-                        "common_diagnosis_test", "common_basis_step"):
+                        "common_diagnosis_test", "common_basis_step", "common_capacity_request"):
                 strategy.pop(key, None)
             previous = dict(directory=str(snapshot.study_directory),
                 manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))

@@ -6,11 +6,11 @@ from pathlib import Path
 import numpy as np
 
 
-def extend(points, spacing):
+def extend(points, spacing, *, target_count=None):
     from diffeoforge.reference_fit_search import control_grid
 
-    count = math.ceil(len(points) * 1.5)
-    if count > 2000:
+    count = math.ceil(len(points) * 1.5) if target_count is None else target_count
+    if type(count) is not int or not len(points) < count <= 2000:
         raise ValueError("This basis is already too large for the bounded pilot density test")
     bounds = tuple(v for pair in zip(points.min(0), points.max(0), strict=True) for v in pair)
     grid, _ = control_grid(bounds, target=2000)
@@ -31,17 +31,48 @@ def copy_basis(root, record):
     controls = parent.attachment_comparison["controls"]
     source = study._safe_study_path(parent.study_directory, controls["copy"])
     destination = root / "method-controls.txt"
+    request = (record.get("guided", {}).get("strategy") or {}).get("common_capacity_request")
+    if request:
+        from diffeoforge.pilot_common_capacity import points, validate
+
+        value = record["guided"]["strategy"]["form_progress"]
+        validate(request, value)
+        spacing = controls["spacing"] * .8
+        np.savetxt(destination, extend(points(value), spacing,
+                                      target_count=request["target_count"]), fmt="%.17g")
+        from diffeoforge.mesh import sha256_file
+
+        return dict(copy=destination.name, sha256=sha256_file(destination),
+                    count=request["target_count"], spacing=spacing)
     study._copy_bound(source, destination, controls["sha256"])
     return dict(controls, copy=destination.name)
 
 
-def write(root, request, controls, points, momenta, source, momenta_source):
+def _extended(root, record, points, spacing):
+    strategy = (record or {}).get("guided", {}).get("strategy") or {}
+    transfer = strategy.get("common_basis_step")
+    if transfer:
+        from diffeoforge import reference_calibration_study as study
+        from diffeoforge.guided_feedback import verify_reference
+
+        basis = verify_reference(transfer["protocol"]["reference"])
+        row = basis.attachment_comparison["controls"]
+        result = np.loadtxt(study._safe_study_path(basis.study_directory, row["copy"]), ndmin=2)
+        if (not len(points) < len(result) <= 2000
+                or not np.array_equal(result[:len(points)], points)):
+            raise ValueError("Shared basis must exactly embed this form's saved controls")
+        return result
+    capacity = strategy.get("common_capacity_request")
+    return extend(points, spacing, target_count=capacity["target_count"] if capacity else None)
+
+
+def write(root, request, controls, points, momenta, source, momenta_source, *, record=None):
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.mesh import sha256_file
     from diffeoforge.reference_pca_deformations import _write_momenta
 
     spacing = controls["spacing"] * .8
-    extended = extend(points, spacing)
+    extended = _extended(root, record, points, spacing)
     initial = np.zeros((1, len(extended), 3))
     initial[:, :len(points)] = momenta
     cp, mp = root / "density-controls.txt", root / "density-momenta.txt"
@@ -88,7 +119,8 @@ def verify(root, manifest, record):
             or values["initial_control_point_spacing"]
             != previous["initial_control_point_spacing"] * .8
             or record["controls"]["spacing"] != values["initial_control_point_spacing"]
-            or not np.array_equal(points, extend(old, record["controls"]["spacing"]))
+            or not np.array_equal(points, _extended(
+                root, record, old, record["controls"]["spacing"]))
             or arrays["momenta"].shape != (1, len(points), 3)
             or not np.array_equal(arrays["momenta"][:, :len(old)], arrays["source_momenta"])
             or np.any(arrays["momenta"][:, len(old):] != 0)):

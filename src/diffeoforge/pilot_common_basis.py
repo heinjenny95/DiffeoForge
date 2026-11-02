@@ -23,6 +23,11 @@ def preview(snapshot, target, protocol):
 
     basis = verify_reference(protocol["reference"])
     nested = basis.attachment_comparison.get("refinement") or {}
+    capacity = (guided.record(basis).get("strategy") or {}).get("common_capacity_request")
+    if capacity and nested.get("initialization") != "nested":
+        previous = verify_reference(capacity["protocol"]["reference"])
+        nested = dict(initialization="nested",
+                      source_controls=previous.attachment_comparison["controls"])
     if nested.get("initialization") != "nested":
         return None
     info = guided.record(snapshot)

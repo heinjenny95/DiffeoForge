@@ -23,6 +23,15 @@ def recovery(window, layout, identifier, choice):
         "Your suitable individual fits and previous common approvals remain saved."))
     reason.setWordWrap(True)
     layout.addWidget(reason)
+    capacity = choice.get("capacity_request")
+    if capacity:
+        note = QLabel(f"Accepted single-fit control demand: {capacity['required_controls']}. "
+            f"Shared basis test: {capacity['current_controls']} → {capacity['target_count']}. "
+            "Preserved field prefixes and local additions are included. All forms will use "
+            "the same adopted basis; a control count alone does not guarantee matching shape.")
+        note.setObjectName("commonAcceptedCapacity")
+        note.setWordWrap(True)
+        layout.addWidget(note)
     diagnosis = choice.get("diagnosis")
     if diagnosis:
         summary = QLabel(

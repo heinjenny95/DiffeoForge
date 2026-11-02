@@ -38,7 +38,7 @@ def optimization_context(snapshot, context, references):
                 additional_iterations=ITERATIONS,
                 blocked_reason=choice.get("reason", "")
                 if choice["mode"] in {"stalled", "feedback", "review", "approved",
-                                      "capacity", "prepared"} else "")
+                                      "capacity", "fresh_capacity", "prepared"} else "")
     return result
 
 
@@ -93,8 +93,20 @@ def preview(snapshot, context, target, *, value=None):
     value = value or marker(snapshot)
     if not value or value["stage"] != "model" or not target:
         return None
+    from diffeoforge.pilot_common_capacity import choice as capacity_choice
+    from diffeoforge.pilot_common_capacity import describe
+
+    capacity = describe(value)
+    shortfall = capacity["target_count"] > capacity["current_controls"]
+    if shortfall:
+        target = max(capacity["demand"], key=capacity["demand"].get)
     saved = _saved(snapshot, target, value["protocol"])
     if not saved:
+        tests = _diagnostic_tests(snapshot, target, value)
+        if tests:
+            return _capacity_status(tests[-1][0], target)
+        if shortfall:
+            return capacity_choice(value, target)
         from diffeoforge.pilot_common_basis import preview as basis_preview
 
         transfer = basis_preview(snapshot, target, value["protocol"])
@@ -104,7 +116,7 @@ def preview(snapshot, context, target, *, value=None):
                     label="Prepare first common-model check · " + target)
     parent, candidate, ref, inspected = saved[-1]
     label = f"Test {guided.record(parent)['screen_trials_spent']}"
-    if parent.visual_reviews.get(candidate.candidate_id) is True:
+    if parent.visual_reviews.get(candidate.candidate_id) is True and not shortfall:
         return dict(mode="approved", available=False, target=target, reference=ref,
                     label="Common-model fit already approved · " + target,
                     reason="This matching result is already approved. Continue to the next "
@@ -121,31 +133,7 @@ def preview(snapshot, context, target, *, value=None):
     tests = _diagnostic_tests(snapshot, target, value)
     # An already prepared capacity experiment must be inspected rather than duplicated.
     if tests and tests[-1][1]["kind"] == "capacity":
-        tested, _ = tests[-1]
-        other = tested.candidates[0]
-        from diffeoforge.guided_feedback import reference
-
-        if other.status != "completed":
-            return dict(mode="prepared", available=False, target=target, diagnosis=diagnosis,
-                label="Complete the prepared control-point comparison · " + target,
-                reason="A separate capacity test is already prepared or running. Use its "
-                       "normal Run/check controls; another test is not prepared automatically.")
-        try:
-            tested_ref = reference(tested, other.candidate_id)
-        except ValueError:
-            return dict(mode="stalled", available=False, target=target, diagnosis=diagnosis,
-                label="Inspect the saved control-point comparison · " + target,
-                reason="The saved capacity test has no complete technically valid field. "
-                       "Inspect its retained result and checks; it is not repeated automatically.")
-        return dict(mode="review" if other.candidate_id not in tested.visual_reviews else "stalled",
-            available=other.candidate_id not in tested.visual_reviews, target=target,
-            reference=tested_ref, diagnosis=diagnosis,
-            comparison_kind="capacity",
-            test_number=guided.record(tested)["screen_trials_spent"],
-            label="Review saved control-point comparison · " + target,
-            reason="This separate capacity test already exists. Inspect it and, if suitable, "
-                   "explicitly adopt its settings as a shared-model revision. Earlier shape "
-                   "and common-model approvals stay saved under their original protocol.")
+        return _capacity_status(tests[-1][0], target, diagnosis)
     feedback = [event for event in study._load_events(parent.study_directory)
                 if event["event"] == "guided_fit_feedback"
                 and event["current"]["candidate_id"] == candidate.candidate_id]
@@ -166,20 +154,9 @@ def preview(snapshot, context, target, *, value=None):
     recommendation = recommend(diagnosis, capped=iteration_limited(candidate),
         iteration_tests=iteration_tests,
         density_tested=any(t["kind"] == "capacity" for _, t in tests), veto=stalled)
-    if recommendation and recommendation["kind"] == "capacity":
-        import math
-
-        count = parent.attachment_comparison["controls"]["count"]
-        available = math.ceil(count * 1.5) <= 2000
-        return dict(mode="capacity", available=available, target=target, reference=ref,
-            diagnosis=diagnosis, additional_iterations=ITERATIONS, current_controls=count,
-            proposed_controls=math.ceil(count * 1.5),
-            label=f"Compare more controls · {count} → {math.ceil(count * 1.5)} · {target}",
-            reason=recommendation["reason"] + " The saved common field is retained with "
-                "zero-momentum added controls, for at most 120 steps. This separate model "
-                "candidate does not replace your protocol or any approval."
-                if available else "The proposed comparison exceeds the 2,000-control limit. "
-                "Keep the accepted fits and review another shared-model hypothesis.")
+    if shortfall or recommendation and recommendation["kind"] == "capacity":
+        return capacity_choice(value, target, grow=not shortfall, reference=ref,
+                               diagnosis=diagnosis)
     if recommendation and recommendation["kind"] in {"inspect", "stalled"}:
         return dict(mode="stalled", available=False, target=target, reference=ref,
                     diagnosis=diagnosis,
@@ -212,6 +189,32 @@ def preview(snapshot, context, target, *, value=None):
                 "Earlier suitable fits and common approvals remain saved.")
 
 
+def _capacity_status(tested, target, diagnosis=None):
+    from diffeoforge.guided_feedback import reference
+
+    other = tested.candidates[0]
+    if other.status != "completed":
+        return dict(mode="prepared", available=False, target=target, diagnosis=diagnosis,
+            label="Complete the prepared control-point comparison · " + target,
+            reason="A separate capacity test is already prepared or running. Use its "
+                   "normal Run/check controls; another test is not prepared automatically.")
+    try:
+        tested_ref = reference(tested, other.candidate_id)
+    except ValueError:
+        return dict(mode="stalled", available=False, target=target, diagnosis=diagnosis,
+            label="Inspect the saved control-point comparison · " + target,
+            reason="The saved capacity test has no complete technically valid field. "
+                   "Inspect its retained result and checks; it is not repeated automatically.")
+    return dict(mode="review" if other.candidate_id not in tested.visual_reviews else "stalled",
+        available=other.candidate_id not in tested.visual_reviews, target=target,
+        reference=tested_ref, diagnosis=diagnosis, comparison_kind="capacity",
+        test_number=guided.record(tested)["screen_trials_spent"],
+        label="Review saved control-point comparison · " + target,
+        reason="This separate capacity test already exists. Inspect it and, if suitable, "
+               "explicitly adopt its settings as a shared-model revision. Earlier shape "
+               "and common-model approvals stay saved under their original protocol.")
+
+
 def apply_plan(snapshot, proposed, plan, context):
     """Change initialization only; never transfer a regional field to the common model."""
     choice = preview(snapshot, context, proposed["target"], value=proposed["marker"])
@@ -221,8 +224,12 @@ def apply_plan(snapshot, proposed, plan, context):
         from diffeoforge.pilot_common_basis import apply
 
         return apply(plan, choice, proposed["marker"]["protocol"])
-    if choice["mode"] not in {"continue", "capacity"}:
+    if choice["mode"] not in {"continue", "capacity", "fresh_capacity"}:
         raise ValueError(choice["reason"])
+    if choice.get("capacity_request"):
+        from diffeoforge.pilot_common_capacity import apply
+
+        return apply(plan, choice)
     state = plan["strategy"]
     if choice.get("diagnosis"):
         state["common_diagnosis_test"] = dict(version="accepted-shape-common-test-v1",
@@ -261,7 +268,13 @@ def _diagnostic_tests(snapshot, target, value):
             continue
         seen.add(parent.study_directory)
         info = guided.record(parent)
-        marker = (info.get("strategy") or {}).get("common_diagnosis_test")
+        strategy = info.get("strategy") or {}
+        marker = strategy.get("common_diagnosis_test")
+        capacity = strategy.get("common_capacity_request")
+        if capacity:
+            marker = dict(kind="capacity", protocol=capacity["protocol"], accepted=next(
+                (dict(r, target=r["filename"]) for r in capacity["reviews"]
+                 if r["filename"] == target), {}))
         accepted = next((r for r in value["reviews"] if r["filename"] == target), None)
         if (marker and info["target"] == target and marker["protocol"] == value["protocol"]
                 and marker["accepted"]["directory"] == (accepted or {}).get("directory")):

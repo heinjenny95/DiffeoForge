@@ -114,7 +114,9 @@ def render(window, prepared):
         if progress_summary.get("common_start"):
             start = progress_summary["common_start"]
             note = QLabel(f"Common-model starting basis: {start['controls']} controls. "
-                          "Missing checks with higher recorded control demand are tried first. "
+                          f"Accepted complete-field demand: {start['required_controls']}. "
+                          "If needed, the larger common basis is tested first on the form "
+                          "with the highest demand. "
                           "Accepted individual "
                           "fits and previous decisions remain saved.")
             note.setWordWrap(True)

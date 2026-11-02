@@ -32,8 +32,10 @@ def branch_total(snapshot, candidate, *, _seen=None):
         return count
     strategy = (record(snapshot) or {}).get("strategy") or {}
     diagnostic = strategy.get("common_diagnosis_test")
+    capacity = (dict(reference=strategy["baseline"])
+                if strategy.get("common_capacity_request") and strategy.get("baseline") else None)
     step = (strategy.get("common_model_step") or strategy.get("optimization") or diagnostic
-            or strategy.get("common_basis_step"))
+            or strategy.get("common_basis_step") or capacity)
     if not step:
         return count
     if strategy.get("common_model_step") and step.get("version") not in {LEGACY_VERSION, VERSION}:
@@ -51,6 +53,11 @@ def branch_total(snapshot, candidate, *, _seen=None):
 
 def source(manifest, candidate_id):
     first_ids = {c["candidate_id"] for c in manifest["plan"]["stages"][0]["candidates"]}
+    strategy = manifest.get("attachment_comparison", {}).get("guided", {}).get("strategy") or {}
+    if (strategy.get("common_capacity_request") and strategy.get("baseline")
+            and candidate_id in first_ids):
+        ref = strategy["baseline"]
+        return Path(ref["directory"]), ref["candidate_id"]
     diagnostic = ((manifest.get("attachment_comparison", {}).get("guided", {}).get(
         "strategy") or {}).get("common_diagnosis_test"))
     if diagnostic and candidate_id in first_ids:

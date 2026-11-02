@@ -16,9 +16,20 @@ recorded objective progress provides limited supporting evidence; an accepted
 protected local correction instead motivates a capacity contrast. These are
 testable hypotheses, not unique causal diagnoses or anatomical decisions.
 
-The capacity contrast uses the existing nested field route: retain every old
-control and momentum and append zero-momentum controls, increasing the count by
-50% within the 2,000-control guard. Kernel, attachment, precision, tolerance,
+The complete accepted field's recorded control budget is a floor for the shared
+capacity test. Preserved prefixes and added local residual fields are counted
+together; a later refinement of the same field is not counted twice. All accepted
+single shapes contribute, and the highest-demand form is tested first. Local
+counts are never discarded merely because their fitted momenta cannot be copied
+directly into the shared model. This is a capacity policy, not proof that a count
+is a mathematically necessary or sufficient model size.
+
+When a shared field already exists, the capacity contrast retains every old
+control and momentum and appends zero-momentum controls. Its count reaches at
+least the recorded accepted demand; a later capacity contrast can increase by
+50%. A missing shared field starts directly on the larger candidate basis.
+The 2,000-control guard is explicit; an over-budget demand is not silently reduced.
+Kernel, attachment, precision, tolerance,
 integration, solver and other numerical settings remain fixed. The allowance is
 120 steps, with fresh optimizer history and explicit cumulative effort. At most
 two same-basis continuation rounds precede the capacity alternative; one bound
@@ -35,9 +46,10 @@ nested basis, with zero added momenta and new review, rather than restarting col
 Separate fields are never spliced and another animal's momenta are never reused.
 
 Before the first common phase, the largest accepted transferable direct nested
-basis with unchanged fitting physics is preferred. Local residual counts do not
-define a common basis; their recorded demand helps prioritize remaining forms.
-An already active shared protocol is not silently reselected by this heuristic.
+basis with unchanged fitting physics is preferred as the seed. If that basis
+falls below complete-field demand, a larger common candidate is prepared first,
+including when the demand came from local corrections. An already active shared
+protocol is not silently reselected; the larger candidate needs explicit adoption.
 
 Unavailable comparison evidence is identified explicitly; corruption fails its
 identity checks. Sampling agreement does not grant suitability. Preparation runs
