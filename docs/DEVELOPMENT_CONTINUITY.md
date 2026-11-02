@@ -1,4 +1,18 @@
-# Active follow-up — rejected common-capacity candidate recovery
+# Development continuity — dev187 installed and verified
+
+dev187 runtime `e34056e2a765ec7fb62bd32112c08736b0a24b52` is installed after complete backup,
+exact Windows-product checks and fresh idle guards. Every installed byte and
+companion verifies; good fits/reviews, project and desktop/Qt state are unchanged.
+The prior runtime remains recoverable. Rejected common-capacity candidates can
+continue through bounded field-preserving experiments without false approval.
+The independent public journey reaches joint numerical qualification without
+repeated-form loops. No new private native contrast or anatomical success is
+claimed. See [delivery and limits](V187_DELIVERY.md).
+
+The earlier active sections below are historical. Their old build/test actions
+are complete and must not be restarted.
+
+# Earlier source follow-up — rejected common-capacity candidate recovery
 
 Source adds a bounded pre-adoption route for a better but still unsuitable
 capacity candidate. The same grid and saved momenta seed separate measured

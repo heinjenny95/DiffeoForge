@@ -2,6 +2,13 @@
 
 ## Open owner follow-up — 1 November 2026
 
+- [ ] Promote preparation of an unsuitable common candidate into the fixed
+  next-step area. The dev187 route is available in the content section, but the
+  actual-state dialog check finds it below the initial viewport. Keep earlier
+  individual-fit restoration secondary and verify discoverability at normal
+  window sizes. This is an open usability follow-up, separate from the qualified
+  candidate transition and complete joint-qualification journey.
+
 - [x] Let a reviewed but unsuitable shared-capacity candidate continue without
   falsely approving or prematurely adopting it. Retain its controls/momenta and
   all original fits/reviews; use finite, measured iteration or attachment
