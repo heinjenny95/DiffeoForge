@@ -81,6 +81,13 @@ class GuidedFeedbackControls(QWidget):
         self.save.setObjectName("primary")
         self.save.setEnabled(False)
         layout.addWidget(self.save)
+        if data.get('require_fit_decision'):
+            self.save.hide()
+            hint = QLabel("Choose how this changed, then Suitable fit or Needs improvement "
+                          "below. Both decisions are saved together.")
+            hint.setWordWrap(True)
+            hint.setObjectName('commonFitDecisionHint')
+            layout.addWidget(hint)
         self._ready = False
         self.buttons.buttonClicked.connect(self._update)
         self.save.clicked.connect(lambda: self.saveRequested.emit(self.decision))

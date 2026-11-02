@@ -63,6 +63,13 @@ saves do not grant suitability, adopt parameters, create a numerical child or
 erase earlier reviews. The next candidate preparation is available in the fixed
 action area; contrasts are labelled as setting tests rather than extra iterations.
 
+The first review of a common result saves relative comparison and the explicit
+Suitable fit / Needs improvement decision together. Its comparison-only save
+is hidden, with a visible explanation of these two decisions. An already reviewed
+result can still save relative feedback independently. This avoids reopening the
+same first review merely because a comparison was saved without a fit decision;
+Better never silently becomes suitability.
+
 A worse contrast does not silently become the next starting field: the next
 contrast uses its preceding candidate on the same grid. Reopening a result always
 targets the latest reviewed candidate, separately from this numerical seed.

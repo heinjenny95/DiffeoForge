@@ -55,7 +55,7 @@ def compared(snapshot, outcome):
         comparison_displayed=False, note='Explicit public-fixture comparison'))
 
 
-def rejected_capacity(tmp_path, monkeypatch, *, outcome='better'):
+def rejected_capacity(tmp_path, monkeypatch, *, outcome='better', reviewed=True):
     from test_guided_pilot import run_batch
     from test_pilot_common_diagnosis import evidence
     from test_pilot_region_feedback import reject
@@ -76,7 +76,9 @@ def rejected_capacity(tmp_path, monkeypatch, *, outcome='better'):
     monkeypatch.setattr(diagnosis, 'diagnose', measured)
     root = guided.next_action(current.study_directory, 'adaptive_common_continue',
                               'guided-varifold')
-    root = reject(run_batch(root, monkeypatch, capped=True), 'guided-varifold')
+    root = run_batch(root, monkeypatch, capped=True)
+    if reviewed:
+        root = reject(root, 'guided-varifold')
     if outcome is not None:
         root = compared(root, outcome)
     return local, root, trend

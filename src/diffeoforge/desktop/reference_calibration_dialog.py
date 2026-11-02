@@ -901,6 +901,7 @@ class _CalibrationCandidateViewerDialog(QDialog):
 
                     self.guided_feedback = GuidedFeedbackControls(guided_feedback_context)
                     self.guided_feedback.saveRequested.connect(self._record_guided_feedback)
+                    self.guided_feedback.buttons.buttonClicked.connect(self._update_review_progress)
                     decision_layout.insertWidget(1, self.guided_feedback)
                     feature_layout.addWidget(self.anatomical_notes)
                 else:
@@ -950,12 +951,19 @@ class _CalibrationCandidateViewerDialog(QDialog):
         return decision
 
     def _record_guided_feedback(self, _decision=None):
+        if self.guided_feedback and self.guided_feedback.data.get('require_fit_decision'):
+            self.review_gate.setText(
+                "Choose Suitable fit or Needs improvement to save the comparison and fit decision.")
+            return
         if self.canvas.comparison_ready and self.guided_feedback_decision and not self._read_only:
             self._guided_feedback_only = True
             self.accept()
 
     def _ranking_ready(self):
-        return self.fit_preferences is None or self.fit_preferences.selection_ready
+        return ((self.fit_preferences is None or self.fit_preferences.selection_ready)
+            and (not self.guided_feedback
+                 or not self.guided_feedback.data.get('require_fit_decision')
+                 or self.guided_feedback.decision is not None))
 
     @property
     def review_complete(self) -> bool:
@@ -4576,10 +4584,14 @@ class ReferenceCalibrationDialog(QDialog):
                     raise ValueError("Saved common-model result changed")
                 candidate = next(c for c in parent.candidates
                                  if c.candidate_id == reference["candidate_id"])
+                context = prepare_context(parent, candidate.candidate_id)
+                if context:
+                    context['require_fit_decision'] = (
+                        candidate.candidate_id not in parent.visual_reviews)
                 return (parent, collect_calibration_qc_pairs(parent.study_directory, candidate),
                         normalized_candidate_subject_fit(parent, candidate),
                         alternatives(parent, candidate.candidate_id),
-                        prepare_context(parent, candidate.candidate_id))
+                        context)
 
         self._viewer_preparation.request_operation(("guided-common", origin, reference), prepare)
 
