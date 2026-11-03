@@ -6,6 +6,7 @@ stores measurements, never approval or permission to skip fresh input checks.
 from collections import OrderedDict
 from threading import RLock
 
+from diffeoforge.pilot_regions import MEASUREMENT_VERSION
 from diffeoforge.reference_calibration import _canonical_hash
 
 _CACHE = OrderedDict()
@@ -17,7 +18,7 @@ def measured(reference, regions):
     from diffeoforge.pilot_recovery import capture
 
     parent = verify_reference(reference)  # Validate current bytes even on cache hits.
-    key = _canonical_hash(dict(version=2, reference=reference, regions=regions))
+    key = _canonical_hash(dict(version=MEASUREMENT_VERSION, reference=reference, regions=regions))
     with _LOCK:
         if key in _CACHE:
             _CACHE.move_to_end(key)
@@ -26,7 +27,8 @@ def measured(reference, regions):
     subject = (candidate.metrics or {}).get('attachment_comparison', {}).get('subjects', {}).get(
         reference['target'], {})
     saved = subject.get('marked_regions', {}).get('measurements', [])
-    if ([r['region'] for r in saved] == regions and all(
+    if ([r['region'] for r in saved] == regions
+            and all(r.get('measurement_version') == MEASUREMENT_VERSION for r in saved) and all(
             'original_to_fit_mean' in repeat for r in saved for repeat in r['repeats'])):
         result = dict(baseline=saved, global_baseline=subject)
     else:
@@ -47,14 +49,13 @@ def compare(before, after):
     for first, second in zip(before['baseline'], after['baseline'], strict=True):
         floor = first['diagonal'] * 1e-6
         for key in ('original_to_fit_mean', 'original_to_fit_p95', 'original_to_fit_p99',
-                    'fit_to_original_p95'):
+                    'fit_to_original_p95', 'fit_to_original_p99'):
             x = [r[key] for r in first['repeats'] if r.get(key) is not None]
             y = [r[key] for r in second['repeats'] if r.get(key) is not None]
             if len(x) != 2 or len(y) != 2:
                 continue
-            if key != 'fit_to_original_p95':
-                better |= max(y) + floor < min(x) * .95
-                gain = max(gain, 1. - max(y) / max(min(x), floor))
+            better |= max(y) + floor < min(x) * .95
+            gain = max(gain, 1. - max(y) / max(min(x), floor))
             worse |= min(y) > max(x) * 1.05 + floor
     x, y = before['global_baseline'], after['global_baseline']
     global_worse = bool(y.get('warnings')) or any(

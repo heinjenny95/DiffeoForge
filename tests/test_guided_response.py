@@ -178,6 +178,9 @@ def test_empty_history_is_scanned_once_instead_of_recursively_revisiting_prefixe
                  for i in range(24)]
     loaded = []
     monkeypatch.setattr(feedback, '_local_events', lambda *a: [])
+    # The synthetic snapshots have no working-fit edit journals either.
+    # Keep the real reader strict for production studies with missing ledgers.
+    monkeypatch.setattr(study, '_load_events', lambda *a: ())
     monkeypatch.setattr(feedback, 'sha256_file', lambda p: 'bound')
     monkeypatch.setattr(guided, 'record', lambda s: dict(target='form', origin='same',
         history=[dict(directory=str(i), manifest_sha256='bound')

@@ -24,6 +24,7 @@ SYMPTOMS = {
     "unsure": "I am unsure what is wrong",
 }
 MAX_REGIONS = 8
+MEASUREMENT_VERSION = "surface-region-measurement-v2"
 
 
 def validate(regions, sources):
@@ -88,8 +89,9 @@ def face_mask(vertices, faces, center, radius):
 def measure(original, reconstruction, regions):
     """Sample every marked patch directly, including patches missed by a global sample.
 
-    Reverse distances use reconstructed samples in the same 3D sphere. An empty
-    reverse sample is unknown, never a zero error or proof of correspondence.
+    Each direction samples the faces selected by the same original-space brush
+    directly. Filtering a whole-shape sample can miss a small reverse projection.
+    An empty reverse patch stays unknown, never a zero error or correspondence.
     """
     from diffeoforge.reference_fit_search import grouped_surface_distances, surface_samples
 
@@ -100,7 +102,6 @@ def measure(original, reconstruction, regions):
     diagonal = float(np.linalg.norm(np.ptp(av, axis=0)))
     result = []
     seeds = (20261022, 20261023)
-    reverse_samples = {seed: surface_samples(bv, bf, 8192, seed=seed) for seed in seeds}
     forward_groups, reverse_groups = [], []
     for row in regions:
         from diffeoforge.regional_fit import mask as region_mask
@@ -108,11 +109,12 @@ def measure(original, reconstruction, regions):
         chosen = region_mask(av[af].mean(1), [row])
         if not chosen.any():
             raise ValueError("The marked brush contains no original face centres; enlarge it")
+        reverse_chosen = region_mask(bv[bf].mean(1), [row])
         repeats = []
         for seed in seeds:
             points = surface_samples(av, af[chosen], 2048, seed=seed)
-            reverse = reverse_samples[seed]
-            reverse = reverse[region_mask(reverse, [row])]
+            reverse = (surface_samples(bv, bf[reverse_chosen], 2048, seed=seed)
+                       if reverse_chosen.any() else np.empty((0, 3), float))
             forward_groups.append(points)
             reverse_groups.append(reverse)
             repeats.append(
@@ -121,7 +123,10 @@ def measure(original, reconstruction, regions):
                 )
             )
         result.append(
-            dict(region=row, selected_faces=int(chosen.sum()), diagonal=diagonal, repeats=repeats)
+            dict(region=row, measurement_version=MEASUREMENT_VERSION,
+                 selected_faces=int(chosen.sum()),
+                 reverse_selected_faces=int(reverse_chosen.sum()),
+                 diagonal=diagonal, repeats=repeats)
         )
     forward = grouped_surface_distances(forward_groups, bv, bf)
     reverse = grouped_surface_distances(reverse_groups, av, af)
@@ -132,6 +137,7 @@ def measure(original, reconstruction, regions):
             original_to_fit_mean=float(np.mean(distances)),
             original_to_fit_p99=float(np.quantile(distances, 0.99)),
             fit_to_original_p95=float(np.quantile(back, 0.95)) if len(back) else None,
+            fit_to_original_p99=float(np.quantile(back, 0.99)) if len(back) else None,
         )
     return result
 
@@ -145,9 +151,10 @@ def comparison(before, after, global_before, global_after):
     improved, worsened = False, False
     for a, b in zip(before, after, strict=True):
         floor = a["diagonal"] * 1e-6
-        for key in ("original_to_fit_p95", "original_to_fit_p99", "fit_to_original_p95"):
-            x = [r[key] for r in a["repeats"] if r[key] is not None]
-            y = [r[key] for r in b["repeats"] if r[key] is not None]
+        for key in ("original_to_fit_p95", "original_to_fit_p99",
+                    "fit_to_original_p95", "fit_to_original_p99"):
+            x = [r[key] for r in a["repeats"] if r.get(key) is not None]
+            y = [r[key] for r in b["repeats"] if r.get(key) is not None]
             if len(x) != 2 or len(y) != 2:
                 continue
             improved |= max(y) + floor < min(x) * 0.95

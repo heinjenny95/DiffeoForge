@@ -8,7 +8,7 @@ from copy import deepcopy
 from pathlib import Path
 from threading import RLock
 
-VERSION = "accepted-shape-common-diagnosis-v1"
+VERSION = "accepted-shape-common-diagnosis-v2"
 _CACHE = OrderedDict()
 _LOCK = RLock()
 
@@ -134,7 +134,8 @@ def assess(measured, previous=None):
                                                measured.get("marked_current", []), strict=True)):
         if first["region"] != second["region"]:
             raise ValueError("Accepted/common marked geometry must use the same original areas")
-        for key in ("original_to_fit_p95", "fit_to_original_p95"):
+        for key in ("original_to_fit_p95", "original_to_fit_p99",
+                    "fit_to_original_p95", "fit_to_original_p99"):
             x = [r[key] for r in first["repeats"] if r.get(key) is not None]
             y = [r[key] for r in second["repeats"] if r.get(key) is not None]
             if len(x) == len(y) == 2 and min(y) > max(x) * 1.15 + floor:
@@ -157,7 +158,8 @@ def assess(measured, previous=None):
                                  measured.get("marked_current", []), strict=True):
             if first["region"] != second["region"]:
                 raise ValueError("Common trend must keep the same accepted marked regions")
-            for key in ("original_to_fit_p95", "fit_to_original_p95"):
+            for key in ("original_to_fit_p95", "original_to_fit_p99",
+                        "fit_to_original_p95", "fit_to_original_p99"):
                 x = [r[key] for r in first["repeats"] if r.get(key) is not None]
                 y = [r[key] for r in second["repeats"] if r.get(key) is not None]
                 if len(x) == len(y) == 2 and min(y) > max(x) * 1.15 + floor:

@@ -1,5 +1,23 @@
 # Development continuity — dev187 installed and verified
 
+## Source follow-up — measure marked reverse projections directly
+
+Filtering whole-shape samples could miss a small marked extra projection. Regional
+measurements now sample both selected surface patches directly with two bounded
+2,048-point repeats, retain unknown empty reverse patches and report reverse P99.
+Common advice checks both directional tails, and regional response recognizes
+removing an extra projection while retaining mixed-regression and global vetoes.
+New measurement/cache versions re-evaluate older metrics in memory without
+rewriting saved fields, reviews or prepared contracts. No native objective,
+iteration allowance, numerical accuracy rule or automatic approval changes.
+
+Eight public counterexample regressions and 67 distinct actual-source regional,
+response, common-diagnosis, candidate and protected-capture checks pass, including
+real point-to-triangle measurements and a small projection missed by local P95.
+An older synthetic empty-history fixture now also supplies an empty working-edit
+journal; production ledger readers stay strict. Ruff and whitespace checks pass.
+Private native model qualification remains separate; installed dev187 stays unchanged.
+
 ## Source follow-up — batch independent distance repeats
 
 Surface comparisons retain both independent equal-area sample repeats, both

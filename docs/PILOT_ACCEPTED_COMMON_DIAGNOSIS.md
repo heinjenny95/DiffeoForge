@@ -1,5 +1,21 @@
 # Common-model experiments against accepted individual shapes
 
+Marked measurements now sample each selected original and reconstructed patch
+directly, with 2,048 equal-area points in each of two deterministic repeats per
+direction. The reverse side previously filtered a whole-shape sample, which could
+leave a small marked reconstructed projection unmeasured. An absent reconstructed
+patch remains unknown. Both P95 and P99 tails inform regional response and common
+trend checks; a reverse-tail regression vetoes otherwise favorable averages.
+Removing an extra projection can count as measured improvement, while simultaneous
+loss of original surface remains a trade-off. Neither result grants suitability.
+
+The measurement protocol is versioned separately from annotations. Saved older
+measurements are re-evaluated in memory before new advice; their receipts, fields,
+reviews and prepared contracts stay unchanged. Identity validation still precedes
+cache reuse. The common diagnosis cache has its own new version. This is a bounded
+sampling improvement, not proof that every arbitrarily small feature is detected,
+and it does not change the optimizer's objective or numerical allowance.
+
 New comparisons evaluate the current effective marked areas on the accepted,
 current and previous fields. Later common-fit annotations must not be ignored
 merely because they were absent from the original accepted review. The existing
