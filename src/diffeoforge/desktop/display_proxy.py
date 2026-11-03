@@ -1,8 +1,9 @@
-"""Bounded, display-only quadric vertex clustering (no analysis geometry edits).
+"""Bounded, display-only reduction (no analysis geometry edits).
 
-Cluster representatives minimize incident face-plane error, regularized toward
-their centroid and clamped to the source cell. This is a lossy visualization,
-not topology preservation, anatomical validation, or a scientific decimator.
+Desktop previews use volume-preserving quadric edge collapse rather than merging
+nearby sides of a thin feature into one spatial cell. The NumPy-only headless
+fallback retains bounded clustering. Both are lossy visualization, not topology
+preservation, anatomical validation, or scientific mesh decimation.
 """
 
 from __future__ import annotations
@@ -67,6 +68,61 @@ def _finish(
     return DisplayProxy(points, triangles, edges, source_faces, budget, method)
 
 
+def _quadric_edge_proxy(
+    points: np.ndarray, faces: np.ndarray, budget: int,
+    cancelled: threading.Event | None,
+) -> DisplayProxy:
+    from vtkmodules.util.numpy_support import (
+        numpy_to_vtk,
+        numpy_to_vtkIdTypeArray,
+        vtk_to_numpy,
+    )
+    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkPolyData
+    from vtkmodules.vtkFiltersCore import vtkQuadricDecimation
+
+    vertices = vtkPoints()
+    vertices.SetData(numpy_to_vtk(points, deep=True))
+    cells = vtkCellArray()
+    cells.SetData(
+        numpy_to_vtkIdTypeArray(np.arange(0, len(faces) * 3 + 1, 3, dtype=np.int64), deep=True),
+        numpy_to_vtkIdTypeArray(faces.ravel(), deep=True),
+    )
+    surface = vtkPolyData()
+    surface.SetPoints(vertices)
+    surface.SetPolys(cells)
+    reducer = vtkQuadricDecimation()
+    reducer.SetInputData(surface)
+    reducer.SetTargetReduction(1 - max(1, budget - 2) / len(faces))
+    reducer.VolumePreservationOn()
+
+    def observe_cancel(caller, _event):
+        if cancelled is not None and cancelled.is_set():
+            caller.AbortExecuteOn()
+
+    reducer.AddObserver("ProgressEvent", observe_cancel)
+    _check(cancelled)
+    reducer.Update()
+    _check(cancelled)
+    output = reducer.GetOutput()
+    if not output.GetNumberOfPoints() or not 0 < output.GetNumberOfPolys() <= budget:
+        raise ValueError("No bounded display proxy available; inspect original detail explicitly")
+    offsets = vtk_to_numpy(output.GetPolys().GetOffsetsArray())
+    if not np.all(np.diff(offsets) == 3):
+        raise ValueError("Display reduction returned non-triangular geometry")
+    result_faces = vtk_to_numpy(output.GetPolys().GetConnectivityArray()).reshape(-1, 3)
+    used, compact = np.unique(result_faces, return_inverse=True)
+    result_points = vtk_to_numpy(output.GetPoints().GetData())[used].copy()
+    if not np.isfinite(result_points).all():
+        raise ValueError("Display reduction returned non-finite geometry")
+    result_points = np.clip(result_points, points.min(axis=0), points.max(axis=0))
+    _check(cancelled)
+    return _finish(
+        result_points, compact.reshape(-1, 3), len(faces), budget,
+        "quadric edge collapse; display only",
+    )
+
+
 def build_display_proxy(
     vertices: object,
     triangles: object,
@@ -95,6 +151,13 @@ def build_display_proxy(
     span = float(np.ptp(points, axis=0).max())
     if not span > 0:
         raise ValueError("Display geometry has no spatial extent")
+    try:
+        return _quadric_edge_proxy(points, faces, budget, cancelled)
+    except ModuleNotFoundError as error:
+        # VTK is a required desktop dependency. Keep the NumPy-only library
+        # usable in headless environments without importing optional GUI stacks.
+        if not error.name or not error.name.startswith("vtk"):
+            raise
     normalized = (points - origin) / span
     # Resolution decreases monotonically. At most ten bounded clustering passes;
     # no source faces are dropped by uniform sampling to hit the final budget.

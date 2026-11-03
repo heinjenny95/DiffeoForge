@@ -1,5 +1,25 @@
 # Development continuity — dev187 installed and verified
 
+## Source follow-up — retain thin features in desktop previews
+
+Spatial vertex clustering could merge the nearby sides of a narrow protrusion
+and underuse the display face allowance. The desktop reducer now uses
+volume-preserving quadric edge collapse within the same 8,000-face bound.
+It changes only immutable display arrays; scientific meshes, saved fields and
+reviews stay unchanged. Settled previews remain sufficient for inspection,
+and original detail stays optional. Native reduction observes cancellation
+before a partial result can become a ready frame. The NumPy-only headless
+fallback retains the earlier bounded clustering.
+
+Seventeen focused checks cover a reproduced thin-protrusion loss, native reduction
+cancellation, deterministic bounded output, source immutability, cache behavior,
+surface picking, optional full-detail presentation, preview request ordering,
+headless fallback and release of the native filter/input geometry.
+An older optional-detail test fixture lacked original wire edges; the fixture
+now supplies both nonempty layers and waits for an actually presented frame.
+This does not change the approval policy. Private fit/model qualification and
+installer delivery remain separate; installed dev187 is unchanged.
+
 ## Source follow-up — retain the project's joint update settings
 
 Preparing a contrast from a frozen saved singleton previously copied its freeze

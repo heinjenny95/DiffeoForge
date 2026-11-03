@@ -49,7 +49,7 @@ def test_proxy_cache_and_cancel() -> None:
         build_display_proxy(vertices, faces, cancelled=event)
 
 
-def test_large_proxy_cannot_enable_qc_until_original_pixels_are_presented(
+def test_optional_full_detail_waits_for_nonempty_original_pixels(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -62,12 +62,14 @@ def test_large_proxy_cannot_enable_qc_until_original_pixels_are_presented(
 
     vertices, faces = grid(75)
     proxy = build_display_proxy(vertices, faces)
+    edges = np.unique(np.sort(np.concatenate(
+        (faces[:, :2], faces[:, 1:], faces[:, (2, 0)])), axis=1), axis=0)
     model = MeshPreviewModel(
         tmp_path / "synthetic.vtk",
         "a" * 64,
         tuple(map(tuple, vertices)),
         tuple(map(tuple, faces)),
-        (),
+        tuple(map(tuple, edges)),
         (-1, 1, -1, 1, 0, 0),
         display_proxy=proxy,
     )
@@ -79,11 +81,11 @@ def test_large_proxy_cannot_enable_qc_until_original_pixels_are_presented(
 
     def wait_for_frame() -> None:
         deadline = time.monotonic() + 10
-        while not canvas._frames.ready(canvas._frame_key()) and time.monotonic() < deadline:
+        while not canvas.comparison_ready and time.monotonic() < deadline:
             app.processEvents()
             time.sleep(0.005)
         app.processEvents()
-        assert canvas._frames.ready(canvas._frame_key())
+        assert canvas.comparison_ready
 
     wait_for_frame()
     assert not canvas.full_resolution_ready

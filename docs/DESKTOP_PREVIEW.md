@@ -22,6 +22,20 @@ convergence status, and 10,000-face planning contract are tracked by
 The distribution architecture and its stricter release gates remain in
 [Desktop executable and installer architecture](DESKTOP_DISTRIBUTION.md).
 
+## Pilot display proxy fidelity
+
+The desktop's bounded display reducer uses volume-preserving quadric edge
+collapse so nearby sides of a thin feature are not merged solely because they
+occupy one spatial cell. The 8,000-face limit, exact source identity and immutable
+scientific geometry remain unchanged. Reduction observes cancellation through
+native progress callbacks; a cancelled result cannot become a settled frame.
+The NumPy-only headless fallback retains bounded vertex clustering.
+
+These remain approximate display meshes. A settled matching preview is sufficient
+for visual review, and loading original detail is an explicit optional action.
+Better display fidelity does not establish anatomical suitability, optimizer
+convergence or a change to the saved deformation.
+
 ## What works now
 
 The last three steps are **Compute atlas → Visual quality review → Results & PCA**.
