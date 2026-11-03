@@ -48,6 +48,11 @@
                 ],
                 "properties": {
                   "parameter_provenance": {
+                    "anyOf": [{"required": ["finite_accepted_guard"], "properties": {
+                      "finite_accepted_guard": {"const": {
+                        "version": "new-ordinary-c5-v1", "scope": "new_full_target_singleton", "recovery": "none"
+                      }}
+                    }}, {
                     "required": [
                       "regional_fit",
                       "finite_accepted_guard"
@@ -71,7 +76,7 @@
                           "recovery"
                         ]
                       }
-                    }
+                    }}]
                   }
                 }
               },

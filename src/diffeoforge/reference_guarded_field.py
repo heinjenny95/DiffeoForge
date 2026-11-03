@@ -1,4 +1,4 @@
-"""Exact original input basis for NEW explicitly guarded regional fields only.
+"""Exact original input basis for NEW explicitly guarded singleton fields.
 
 Common atlas/PCA loading and historical exported-CP semantics are unchanged.
 """
@@ -41,7 +41,7 @@ def _output_json_or_events(data, relative, *, events=False):
 
 
 def bind_original_control_points(data):
-    """Return a regional-only dataclass copy bound to original CP + accepted M.
+    """Return a scoped singleton copy bound to original CP + accepted M.
 
     Call after the common completed-run loader. An unmarked historical field is
     returned by identity, without reinterpretation or accessing guard metadata.
@@ -50,10 +50,17 @@ def bind_original_control_points(data):
     marker = declaration(config)
     if marker is None:
         return data
+    from diffeoforge.reference_ordinary_guard import DECLARATION as ORDINARY
+
+    ordinary = marker == ORDINARY
+    if ordinary:
+        from diffeoforge.reference_ordinary_guard import validate
+
+        validate(config, len(data.subject_labels))
     if (
-        marker != DECLARATION
+        marker not in (DECLARATION, ORDINARY)
         or len(data.subject_labels) != 1
-        or not config["project"]["parameter_provenance"].get("regional_fit")
+        or not ordinary and not config["project"]["parameter_provenance"].get("regional_fit")
         or config["optimization"]["method"] != "lbfgs"
         or not config["optimization"]["freeze_template"]
         or not config["optimization"]["freeze_control_points"]
@@ -66,7 +73,7 @@ def bind_original_control_points(data):
     session, session_sha = _output_json_or_events(data, "numerical-guard/session.json")
     events, events_sha = _output_json_or_events(data, "numerical-guard/events.jsonl", events=True)
     provenance = session["provenance"]
-    if provenance["scope"] != DECLARATION:
+    if provenance["scope"] != marker:
         raise ValueError("Guard session scope differs from prepared field")
     model_path = root / "engine/model.xml"
     model_rows = [

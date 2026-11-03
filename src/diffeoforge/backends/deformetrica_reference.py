@@ -316,7 +316,8 @@ def generate_engine_files(
         adapter = engine_directory / "sitecustomize.py"
         adapter.write_bytes(rendered["sitecustomize.py"])
         paths.append(adapter)
-    for name in ("finite_accepted_guard.py", "regional_guard_runtime.py", "cpu_surface_gather.py",
+    for name in ("finite_accepted_guard.py", "regional_guard_runtime.py",
+                 "ordinary_guard_runtime.py", "ordinary-scope.json", "cpu_surface_gather.py",
                  "guard-policy.json",
                  "pilot_review_runtime.py", "linear_conditioning.py", "conditioning.npy"):
         if name in rendered:
@@ -481,7 +482,8 @@ def _build_launcher_command(
     singleton = arguments[0] == "estimate" and needs_adapter(config)
     from diffeoforge.reference_checkpoint_schedule import needs_adapter as compact
 
-    scipy_compat = arguments[0] == "estimate" and config["optimization"]["method"] == "lbfgs"
+    scipy_compat = (arguments[0] == "estimate"
+                    and config.get("optimization", {}).get("method") == "lbfgs")
     if (singleton or verified_shooting_grid or scipy_compat
             or (arguments[0] == "estimate" and compact(config))):
         # Use the original executable/interpreter. The adapter is confined to this

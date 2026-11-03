@@ -1,5 +1,30 @@
 # Development continuity — dev187 installed and verified
 
+## Source follow-up — explicit full-target singleton native guard
+
+New explicitly marked ordinary varifold singleton probes can use existing native
+L-BFGS with the unchanged C5 finite accepted-state observer. The generated scope,
+policy and runtime assets are protected by preparation/run manifests. Host/native
+checks exclude regional terms, timed review, unsupported precision, unfrozen or
+multi-target scope and automatic restoration. The completed-field reader binds
+the original protected control bits and finite accepted momentum export. Existing
+unmarked and regional contracts retain their earlier rendering and behavior.
+
+All 86 focused backend/configuration, preparation, scope, original-basis and
+guided-initialization checks pass, including historical regional regressions.
+Command-only launcher requests retain compatibility when optimization settings
+are absent; a complete explicit L-BFGS configuration still selects its adapter.
+Public native cold/warm pairs are exactly equal
+on CPU and CUDA for objective/gradient traces, callbacks and exported momenta;
+changed input is rejected before evaluation. The real product worker completes
+and verifies a public fit. A separate real native cancellation test returns a
+verified stopped state after 2.17 seconds. Fit-quality, surface/time qualification,
+finite pilot orchestration and cohort review are separate; no new pilot suggestion,
+profile or installer is delivered by this infrastructure change. Dev187 remains
+installed while local qualification continues.
+
+See [full-target singleton guard](ORDINARY_SINGLETON_GUARD.md).
+
 ## Source follow-up — working annotations on reopened common fields
 
 An older saved common field could hide annotations added later in the working

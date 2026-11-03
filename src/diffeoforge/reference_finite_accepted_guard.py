@@ -35,6 +35,13 @@ def mark_new_configuration(config):
     from diffeoforge.regional_fit import read_plan
 
     provenance = config["project"].get("parameter_provenance", {})
+    from diffeoforge.reference_ordinary_guard import DECLARATION as ORDINARY
+
+    if provenance.get("finite_accepted_guard") == ORDINARY:
+        from diffeoforge.reference_ordinary_guard import validate
+
+        validate(config)
+        return
     if not regional(config):
         clear_runtime_markers(config)
         return
@@ -62,6 +69,12 @@ def mark_new_configuration(config):
 
 def extend_engine_files(config, subject_count, rendered):
     entry = declaration(config)
+    from diffeoforge.reference_ordinary_guard import DECLARATION as ORDINARY
+
+    if entry == ORDINARY:
+        from diffeoforge.reference_ordinary_guard import extend_engine_files as ordinary
+
+        return ordinary(config, subject_count, rendered)
     if entry is None:
         provenance = config.get("project", {}).get("parameter_provenance", {})
         if any(provenance.get(k) for k in (

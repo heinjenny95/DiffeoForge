@@ -37,9 +37,15 @@
     }}}}}}
   }, {
     "if": {"properties": {"optimization": {"properties": {"method": {"const": "lbfgs"}}}}},
-    "then": {"properties": {"project": {"required": ["parameter_provenance"],
+    "then": {"anyOf": [{"properties": {"project": {"required": ["parameter_provenance"],
       "properties": {"parameter_provenance": {"required": ["regional_fit"]}}
-    }}}
+    }}}, {"properties": {"project": {"required": ["parameter_provenance"],
+      "properties": {"parameter_provenance": {"required": ["finite_accepted_guard"],
+        "properties": {"finite_accepted_guard": {"const": {
+          "version": "new-ordinary-c5-v1", "scope": "new_full_target_singleton", "recovery": "none"
+        }}}
+      }}
+    }}}]}
   }, {
     "if": {"properties": {"project": {"properties": {"parameter_provenance": {
       "anyOf": [{"required": ["pilot_review"]}, {"required": ["surface_gather"]}]
@@ -121,6 +127,9 @@
               }
             },
             "finite_accepted_guard": {
+              "oneOf": [{"const": {
+                "version": "new-ordinary-c5-v1", "scope": "new_full_target_singleton", "recovery": "none"
+              }}, {
               "type": "object",
               "additionalProperties": false,
               "required": [
@@ -138,7 +147,7 @@
                 "recovery": {
                   "const": "none"
                 }
-              }
+              }}]
             },
             "regional_fit": {
               "type": "object", "additionalProperties": false,

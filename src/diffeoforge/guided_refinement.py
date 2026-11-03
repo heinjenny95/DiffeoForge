@@ -10,9 +10,16 @@ VERSION = "guided-refinement-v1"
 
 
 def load_field(run):
+    from diffeoforge.reference_ordinary_guard import DECLARATION
     from diffeoforge.reference_pca import load_reference_momenta
 
-    return load_reference_momenta(run, allow_singleton=True)
+    data = load_reference_momenta(run, allow_singleton=True)
+    if (data.run_report.manifest["effective_config"].get("project", {}).get(
+            "parameter_provenance", {}).get("finite_accepted_guard") == DECLARATION):
+        from diffeoforge.reference_guarded_field import bind_original_control_points
+
+        return bind_original_control_points(data)
+    return data
 
 
 def integration_upgrade(before, after, regional):
