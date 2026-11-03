@@ -344,7 +344,7 @@ def _area_volume(geometry):
 
 def compare_geometry(original, reconstruction, *, original_key=None):
     """Independent area samples, regional tails and geometry diagnostics."""
-    from diffeoforge.reference_fit_search import distances_to_surface, surface_samples
+    from diffeoforge.reference_fit_search import grouped_surface_distances, surface_samples
 
     av, af = np.asarray(original.vertices, float), np.asarray(original.triangles, int)
     bv, bf = np.asarray(reconstruction.vertices, float), np.asarray(reconstruction.triangles, int)
@@ -366,13 +366,17 @@ def compare_geometry(original, reconstruction, *, original_key=None):
                 _TARGET_EVIDENCE.pop(next(iter(_TARGET_EVIDENCE)))
             _TARGET_EVIDENCE[cache_key] = cached
     repeats = []
-    for seed in (20261021, 20261022):
-        ap = cached["samples"][seed]
-        bp = surface_samples(bv, bf, SAMPLES, seed=seed)
-        directions = [
-            (ap, distances_to_surface(ap, bv, bf)),
-            (bp, distances_to_surface(bp, av, af)),
-        ]
+    seeds = (20261021, 20261022)
+    original_samples = [cached["samples"][seed] for seed in seeds]
+    fitted_samples = [surface_samples(bv, bf, SAMPLES, seed=seed) for seed in seeds]
+    # Repeat samples remain independent; share only native process startup and
+    # the unchanged full reference surface, preserving each query's order.
+    forward = grouped_surface_distances(original_samples, bv, bf)
+    reverse = grouped_surface_distances(fitted_samples, av, af)
+    for ap, bp, first, second in zip(
+        original_samples, fitted_samples, forward, reverse, strict=True
+    ):
+        directions = [(ap, first), (bp, second)]
         tails, regions = [], {}
         for direction, (points, distances) in enumerate(directions):
             cells = np.clip(

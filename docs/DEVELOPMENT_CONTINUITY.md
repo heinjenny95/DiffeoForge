@@ -1,5 +1,22 @@
 # Development continuity — dev187 installed and verified
 
+## Source follow-up — batch independent distance repeats
+
+Surface comparisons retain both independent equal-area sample repeats, both
+directions, regional tails, warning flags and original geometry. The existing
+isolated grouped-query helper now shares one worker per reference surface across
+the repeats, reducing four worker launches to two without changing query order.
+No worker protocol, cancellation/timeout rule, fit allowance or approval changes.
+
+Two reproduced dispatch regressions precede the change. Thirty-eight focused
+native-distance, process-lifetime, attachment comparison and annotation/cache
+checks pass on the actual implementation. Independent versus grouped native
+scores are exactly equal for protrusion and shrinkage fixtures; read-only parity
+also holds for all six saved-field diagnosis rows. A local profiled pass uses
+24 rather than 38 workers. This improves diagnosis preparation; it is not a claim
+of faster scientific optimization or anatomical success. Installed dev187 stays
+unchanged while model qualification continues separately.
+
 ## Qualification follow-up — complete pilot journeys
 
 The 2026-11-03 current-head regression pack passes all 68 checks across retained

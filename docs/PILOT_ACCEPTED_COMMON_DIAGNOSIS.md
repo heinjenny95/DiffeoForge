@@ -176,3 +176,12 @@ reopening and two cumulative checkpoint extensions. These exercise navigation
 and provenance, not native anatomical success. Separate native reproduction and
 space/time checks cannot substitute for unresolved visible feature differences;
 no new scientific profile or installer follows from these test results alone.
+
+Distance dispatch shares each unchanged full reference surface across the two
+independent repeat samples. The isolated grouped-query helper preserves sample
+order and both directions; no proxy, downsampling, cutoff, approval or numerical
+criterion is introduced. Native comparisons for protrusion/shrinkage fixtures
+match independent queries exactly, and existing process-failure/timeout behavior
+is retained. Current-field annotation, cache-identity and recommendation checks
+remain in the focused 38-test qualification. Fewer helper launches shorten
+comparison preparation, independently of native optimizer performance.
