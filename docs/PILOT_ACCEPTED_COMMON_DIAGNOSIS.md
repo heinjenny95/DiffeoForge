@@ -1,5 +1,16 @@
 # Common-model experiments against accepted individual shapes
 
+New comparisons evaluate the current effective marked areas on the accepted,
+current and previous fields. Later common-fit annotations must not be ignored
+merely because they were absent from the original accepted review. The existing
+annotation history resolves edits and explicit Clear; an absent legacy annotation
+set retains the accepted-review fallback. An explicit empty set stays empty.
+The same set is used for every field in a trend comparison, and the geometry
+cache includes its source-validated contents. Editing a mark cannot reuse an
+earlier unmarked score or cause mismatched-region trend comparisons. This changes
+new advice only; saved fields, approvals, prepared/running contracts and numerical
+budgets are unchanged.
+
 The original project's template/control update choices are retained separately
 from a frozen singleton used as initialization. A capacity, continuation or
 surface-setting contrast must not overwrite those future joint settings with

@@ -1,5 +1,21 @@
 # Development continuity — dev187 installed and verified
 
+## Source follow-up — compare the current common-fit annotations
+
+Common diagnosis previously measured only the original accepted review's marked
+areas, so a later missing projection or preservation mark could be absent from
+its advice. New comparisons resolve the current effective annotation set and use
+it consistently on the accepted, current and previous saved fields. Explicit
+Clear remains empty; absent legacy annotations keep the accepted-review fallback.
+Source validation and the geometry-cache identity now include the chosen marks.
+This updates advice without changing saved reviews, fields, native allowances or
+prepared/running contracts. Three reproduced failures precede the fix;23 distinct
+focused checks cover current/cleared/absent marks, source validation, cache
+invalidation, local trend vetoes, comparison feedback, bounded candidates and
+review/adoption navigation. Read-only comparisons on six saved private fields
+preserve the review ledger and launch no optimizer. Native model-quality
+qualification remains separate; installed dev187 is unchanged.
+
 ## Source follow-up — retain thin features in desktop previews
 
 Spatial vertex clustering could merge the nearby sides of a narrow protrusion

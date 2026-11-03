@@ -44,7 +44,7 @@ def _geometry(parent, candidate, target):
     return loaded.geometry, original, manifest["inputs"]["template"]["sha256"], report
 
 
-def _compare(accepted_ref, current_ref):
+def _compare(accepted_ref, current_ref, *, regions=None):
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.guided_feedback import verify_reference
     from diffeoforge.reference_attachment_comparison import compare_geometry
@@ -57,7 +57,8 @@ def _compare(accepted_ref, current_ref):
             != current.attachment_comparison["guided"]["origin"]
             or accepted.visual_reviews.get(accepted_ref["candidate_id"]) is not True):
         raise ValueError("Common diagnosis requires this cohort's approved individual shape")
-    key = _canonical_hash(dict(version=VERSION, accepted=accepted_ref, current=current_ref))
+    regions = deepcopy(accepted.problem_regions.get(accepted_ref["candidate_id"], {}).get(
+        accepted_ref["target"], []) if regions is None else regions)
     pairs = []
     for parent, ref in ((accepted, accepted_ref), (current, current_ref)):
         candidate = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
@@ -72,6 +73,12 @@ def _compare(accepted_ref, current_ref):
     original = load_surface_mesh(original_path)
     if original.metadata.sha256 != first[1]["sha256"]:
         raise ValueError("Common diagnosis original changed")
+    from diffeoforge.pilot_regions import validate
+
+    validate({accepted_ref["target"]: regions} if regions else {},
+             {accepted_ref["target"]: first[1]["sha256"]})
+    key = _canonical_hash(dict(version=VERSION, accepted=accepted_ref, current=current_ref,
+                               regions=regions))
     with _LOCK:
         if key in _CACHE:
             _CACHE.move_to_end(key)
@@ -91,8 +98,6 @@ def _compare(accepted_ref, current_ref):
         accepted_local=bool(accepted.attachment_comparison.get("regional_objective")),
         accepted_controls=count(accepted_ref),
         current_controls=current.attachment_comparison["controls"]["count"])
-    regions = accepted.problem_regions.get(accepted_ref["candidate_id"], {}).get(
-        accepted_ref["target"], [])
     if regions:
         from diffeoforge.guided_response import measured
 
@@ -185,7 +190,7 @@ def assess(measured, previous=None):
 
 
 def diagnose(snapshot, value, current_ref, previous_ref=None):
-    from diffeoforge.guided_feedback import reference, verify_reference
+    from diffeoforge.guided_feedback import reference, region_state, verify_reference
 
     row = next((r for r in value["reviews"] if r["filename"] == current_ref["target"]), None)
     if not row:
@@ -194,10 +199,15 @@ def diagnose(snapshot, value, current_ref, previous_ref=None):
     ref["target"] = ref.pop("filename")
     parent = verify_reference(ref)
     accepted = reference(parent, row["candidate_id"])
-    measured = _compare(accepted, current_ref)
+    current = verify_reference(current_ref)
+    regions, cleared = region_state(current, current_ref["candidate_id"], current_ref["target"])
+    # Use one current annotation set on every compared field. Explicit Clear
+    # stays empty; absent legacy annotations retain the accepted-fit fallback.
+    regions = regions if regions or cleared else None
+    measured = _compare(accepted, current_ref, regions=regions)
     if measured is None:
         return None
-    previous = _compare(accepted, previous_ref) if previous_ref else None
+    previous = _compare(accepted, previous_ref, regions=regions) if previous_ref else None
     return dict(version=VERSION, accepted=accepted, current=current_ref,
                 previous=previous_ref, original_sha256=measured["original_sha256"],
                 accepted_test_number=parent.attachment_comparison["guided"]["screen_trials_spent"],
