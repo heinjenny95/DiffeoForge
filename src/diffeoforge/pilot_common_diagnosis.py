@@ -8,7 +8,7 @@ from copy import deepcopy
 from pathlib import Path
 from threading import RLock
 
-VERSION = "accepted-shape-common-diagnosis-v3"
+VERSION = "accepted-shape-common-diagnosis-v4"
 _CACHE = OrderedDict()
 _LOCK = RLock()
 
@@ -214,8 +214,61 @@ def assess(measured, previous=None, *, require_problem_progress=False):
                 warnings=list(b.get("warnings", [])))
 
 
+def comparison_regions(snapshot, current, current_ref):
+    """Use later verified working edits without overwriting the saved fit's journal."""
+    from diffeoforge import reference_calibration_study as study
+    from diffeoforge import reference_guided_pilot as guided
+    from diffeoforge.guided_feedback import local_region_edit, region_state
+    from diffeoforge.mesh import sha256_file
+
+    identifier, target = current_ref["candidate_id"], current_ref["target"]
+    rows, cleared = region_state(current, identifier, target)
+    fallback = rows if rows or cleared else None
+    if snapshot is None or snapshot.study_directory == current.study_directory:
+        return fallback
+    info = guided.record(snapshot) or {}
+    history = info.get("history", [])
+    positions = [i for i, row in enumerate(history)
+                 if Path(row["directory"]).resolve() == current.study_directory.resolve()]
+    if not positions:
+        return fallback  # An older/unrelated context cannot supersede this saved field.
+    if any(history[i]["manifest_sha256"] != current_ref["manifest_sha256"] for i in positions):
+        raise ValueError("Working annotation history changed")
+    parents, seen = [current], {current.study_directory.resolve()}
+    for row in history[positions[-1] + 1:]:
+        root = Path(row["directory"])
+        if sha256_file(root / study.STUDY_MANIFEST) != row["manifest_sha256"]:
+            raise ValueError("Working annotation history changed")
+        if root.resolve() not in seen:
+            parents.append(study.load_reference_calibration_study(root))
+            seen.add(root.resolve())
+    if snapshot.study_directory.resolve() not in seen:
+        parents.append(snapshot)
+    origin = Path(guided.record(current)["origin"]).resolve()
+    edits = []
+    for order, parent in enumerate(parents):
+        other = guided.record(parent) or {}
+        if Path(other["origin"]).resolve() != origin:
+            raise ValueError("Working annotations belong to another cohort")
+        if other.get("target") != target:
+            continue
+        methods = parent.attachment_comparison["methods"]
+        identifiers = ([identifier] if methods.get(identifier) == current_ref["method"] else
+                       [key for key, method in methods.items() if method == current_ref["method"]])
+        if len(identifiers) != 1:
+            continue
+        edit = local_region_edit(parent, identifiers[0], target)
+        if edit is not None:
+            recorded_at, regions, clear = edit
+            edits.append((recorded_at, order, regions, clear))
+    if not edits:
+        return fallback
+    _, _, regions, _ = max(edits, key=lambda row: row[:2])
+    return regions  # Explicit Clear remains [], including a newer edit on an older field.
+
+
 def diagnose(snapshot, value, current_ref, previous_ref=None):
-    from diffeoforge.guided_feedback import reference, region_state, verify_reference
+    from diffeoforge.guided_feedback import reference, verify_reference
 
     row = next((r for r in value["reviews"] if r["filename"] == current_ref["target"]), None)
     if not row:
@@ -225,10 +278,7 @@ def diagnose(snapshot, value, current_ref, previous_ref=None):
     parent = verify_reference(ref)
     accepted = reference(parent, row["candidate_id"])
     current = verify_reference(current_ref)
-    regions, cleared = region_state(current, current_ref["candidate_id"], current_ref["target"])
-    # Use one current annotation set on every compared field. Explicit Clear
-    # stays empty; absent legacy annotations retain the accepted-fit fallback.
-    regions = regions if regions or cleared else None
+    regions = comparison_regions(snapshot, current, current_ref)
     measured = _compare(accepted, current_ref, regions=regions)
     if measured is None:
         return None

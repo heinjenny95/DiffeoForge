@@ -1,5 +1,22 @@
 # Development continuity — dev187 installed and verified
 
+## Source follow-up — working annotations on reopened common fields
+
+An older saved common field could hide annotations added later in the working
+history. New advice validates the descendant manifest/cohort chain and selects
+the latest explicit same-original edit timestamp across that context and the
+saved field. Explicit Clear, a newer edit on an older field, another attachment
+identifier, unrelated forms and changed history are covered. The same effective
+patches apply to all compared geometries. No fit, review, allowance, native
+equation or existing prepared contract is rewritten.
+
+Five reproduced diagnosis failures precede the fix. All 46 focused checks pass,
+including ten new lineage/timestamp regressions; the additional 15 feedback and
+working-fit checks also pass. Ruff and whitespace checks pass. A read-only actual
+saved-state check confirms the new annotation selection with the original review
+bindings and ledger preserved. Native solver/model qualification remains separate;
+installed dev187 is unchanged.
+
 ## Source follow-up — retain explicitly reviewed problem goals
 
 A common field could be closer to an accepted individual that still missed the

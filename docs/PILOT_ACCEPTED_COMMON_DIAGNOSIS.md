@@ -1,5 +1,14 @@
 # Common-model experiments against accepted individual shapes
 
+Reopening an older common field does not discard later working annotations.
+The diagnosis checks the sealed descendant history for explicit edits on the
+same original form and attachment method, validates its manifest and cohort,
+and compares their original edit timestamps. A newer edit or explicit Clear on
+the older field still wins over earlier descendant edits. Another form, an older
+context or ambiguous method selection cannot substitute its marks. The chosen
+set is measured on the accepted, current and previous fields alike; their saved
+journals, suitability reviews and numerical contracts stay unchanged.
+
 An explicitly rejected common result keeps its current problem marks as goals,
 including when the accepted individual reference already had the same residual.
 Before unchanged continuation, each problem patch needs repeat-confirmed local

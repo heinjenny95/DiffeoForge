@@ -252,17 +252,8 @@ def regions(snapshot, identifier, target):
     return region_state(snapshot, identifier, target)[0]
 
 
-def region_state(snapshot, identifier, target, *, _seen=None, _search_history=True):
-    """A patch lives until explicit Clear, across reviews, saved starts and successors.
-
-    Older empty payloads cannot prove the user pressed Clear. Never rewrite those
-    journals; recover a same-source patch in presentation only.
-    """
-    seen = set() if _seen is None else _seen
-    key = (str(snapshot.study_directory), identifier, target)
-    if key in seen:
-        raise ValueError("Cyclic marked-area history")
-    seen.add(key)
+def local_region_edit(snapshot, identifier, target):
+    """Latest explicit local edit with its original timestamp; no history inference."""
     candidates = []
     from diffeoforge.guided_working_fit import edits
 
@@ -278,7 +269,24 @@ def region_state(snapshot, identifier, target, *, _seen=None, _search_history=Tr
     if rows or target in edit.get("cleared", []):
         candidates.append((edit.get("recorded_at", -1), rows, target in edit.get("cleared", [])))
     if candidates:
-        _, rows, clear = max(candidates, key=lambda r: r[0])
+        return max(candidates, key=lambda r: r[0])
+    return None
+
+
+def region_state(snapshot, identifier, target, *, _seen=None, _search_history=True):
+    """A patch lives until explicit Clear, across reviews, saved starts and successors.
+
+    Older empty payloads cannot prove the user pressed Clear. Never rewrite those
+    journals; recover a same-source patch in presentation only.
+    """
+    seen = set() if _seen is None else _seen
+    key = (str(snapshot.study_directory), identifier, target)
+    if key in seen:
+        raise ValueError("Cyclic marked-area history")
+    seen.add(key)
+    local = local_region_edit(snapshot, identifier, target)
+    if local is not None:
+        _, rows, clear = local
         return rows, clear
     info = guided.record(snapshot) or {}
     inherited = info.get("feedback") or {}
