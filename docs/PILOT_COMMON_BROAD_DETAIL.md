@@ -4,6 +4,9 @@ This is a separate, explicit common-model hypothesis after a measured shared-fit
 plateau. It uses the existing native Deformetrica L-BFGS implementation with the
 qualified full-target singleton guard. It is not a replacement numerical solver,
 an automatic recovery mechanism, or a guarantee for every anatomical dataset.
+Explicit About the same/Worse feedback on a failed parameter contrast can choose
+this qualified hypothesis directly; exhausting another old detail/weight contrast
+is not required. Improving feedback and numerical warnings retain their gates.
 
 ## Model and support
 

@@ -71,3 +71,58 @@ def test_source_candidate_budget_and_invalid_geometry_fail_before_generation():
         source_supported_sites(prefix, v, f, target_count=2001)
     with pytest.raises(ValueError):
         source_supported_sites(prefix, np.asarray(v) * np.nan, f, target_count=24)
+
+
+@pytest.mark.parametrize("kind", ["detail", "weight"])
+@pytest.mark.parametrize("outcome", ["same", "worse"])
+def test_explicit_failed_contrast_can_choose_qualified_route_without_another_old_setting(
+    monkeypatch, kind, outcome
+):
+    from types import SimpleNamespace
+
+    from diffeoforge import pilot_multiscale_choice as choices
+    from diffeoforge import pilot_multiscale_study as pipeline
+    from diffeoforge import reference_guided_pilot as guided
+
+    monkeypatch.setattr(guided, "record", lambda _: dict(history=[], pilot_order=["a", "b"]))
+    monkeypatch.setattr(pipeline, "adopted_family", lambda _: None)
+    snapshot = SimpleNamespace(attachment_comparison={})
+    reviews = [dict(filename="a"), dict(filename="b")]
+    value = dict(reviews=reviews)
+    previous = dict(
+        mode="candidate_refine",
+        kind=kind,
+        human_feedback=dict(outcome=outcome),
+        diagnosis=dict(gap=True, warnings=[]),
+        reference=dict(directory="saved", candidate_id="one"),
+        review_reference=dict(directory="saved", candidate_id="one"),
+        test_number=8,
+    )
+    before = deepcopy(value)
+    result = choices.choice(snapshot, value, "a", previous)
+    assert result["mode"] == "broad_detail" and result["available"]
+    assert "2,000 CP" in result["label"] and value == before
+    assert result["review_reference"] == previous["review_reference"]
+    assert result["test_number"] == 8
+
+
+@pytest.mark.parametrize("outcome,warnings", [("better", []), ("same", ["invalid geometry"])])
+def test_useful_improvement_and_numerical_warnings_do_not_trigger_new_route(
+    monkeypatch, outcome, warnings
+):
+    from types import SimpleNamespace
+
+    from diffeoforge import pilot_multiscale_choice as choices
+    from diffeoforge import reference_guided_pilot as guided
+
+    monkeypatch.setattr(guided, "record", lambda _: dict(history=[], pilot_order=["a"]))
+    previous = dict(
+        mode="candidate_refine",
+        kind="detail",
+        human_feedback=dict(outcome=outcome),
+        diagnosis=dict(gap=True, warnings=warnings),
+    )
+    assert (
+        choices.choice(SimpleNamespace(attachment_comparison={}), dict(reviews=[{}]), "a", previous)
+        is previous
+    )

@@ -78,7 +78,11 @@ def test_common_viewer_feedback_roundtrip_and_fixed_next_action(tmp_path, monkey
             saved = guided_feedback.presentation(current, 'guided-varifold')['feedback']
             assert saved['outcome'] == outcome
             choice = guided_strategy.state(current)['common_recovery']
-            assert choice['kind'] == ('iterations' if outcome == 'better' else 'detail')
+            if outcome == 'better':
+                assert choice['kind'] == 'iterations'
+            else:
+                assert choice['mode'] == 'broad_detail'
+                assert '2,000 CP' in choice['label']
             assert parent.next_step_button.isVisible() and parent.next_step_button.isEnabled()
             assert parent.next_step_button.text() == choice['label']
             assert parent._guided_footer_action == (
@@ -153,7 +157,8 @@ def test_first_common_review_saves_comparison_and_rejection_in_one_visit(tmp_pat
         opinion = guided_feedback.presentation(saved, 'guided-varifold')['feedback']
         assert opinion['outcome'] == 'same'
         choice = guided_strategy.state(saved)['common_recovery']
-        assert choice['mode'] == 'candidate_refine' and choice['kind'] != 'iterations'
+        assert choice['mode'] == 'broad_detail'
+        assert '2,000 CP' in choice['label']
         assert parent.next_step_button.isEnabled()
         assert parent.next_step_button.text() == choice['label']
         assert pilot_form_progress.marker(saved) == ledger

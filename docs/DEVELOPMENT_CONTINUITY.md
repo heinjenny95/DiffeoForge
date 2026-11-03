@@ -10,6 +10,9 @@ Each form starts from zero, captures overall shape, then transfers its complete
 same-basis field into the declared detail objective. Existing native L-BFGS,
 120 iterations per stage, 37 RK2 points and finite accepted-state checks apply.
 There is no third stage, unchanged-iteration loop or automatic recovery.
+Explicit About the same/Worse feedback on an unsuccessful parameter contrast
+can enter this qualified route directly, without first exhausting another old
+detail/weight contrast. Useful improvement and numerical-warning gates remain.
 
 The normal worker executes the two stages and preserves a cancelled checked
 capture for explicit detail preparation. Reviews compare the final detail with

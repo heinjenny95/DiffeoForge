@@ -7,6 +7,15 @@ import pytest
 from diffeoforge import pilot_common_candidate as candidate
 
 
+@pytest.fixture(autouse=True)
+def keep_legacy_candidate_component_under_test(monkeypatch):
+    """Exercise retained pre-profile contracts; the new default has its own journeys."""
+    from diffeoforge import pilot_multiscale_choice
+
+    monkeypatch.setattr(pilot_multiscale_choice, 'choice',
+                        lambda snapshot, value, target, previous: previous)
+
+
 def test_candidate_policy_uses_finite_iterations_or_surface_contrasts_without_approval():
     measured = dict(gap=True, trend='improving', warnings=[])
     assert candidate.decide(measured, capped=True, counts={}, outcome='better') == 'iterations'

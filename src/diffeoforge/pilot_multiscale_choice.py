@@ -36,9 +36,15 @@ def choice(snapshot, value, target, previous):
     from diffeoforge.pilot_multiscale_study import adopted_family, marker
 
     diagnosis = (previous or {}).get("diagnosis") or {}
+    plateau_contrast = (
+        previous
+        and previous["mode"] == "candidate_refine"
+        and previous.get("kind") in {"detail", "weight"}
+        and (previous.get("human_feedback") or {}).get("outcome") in {"same", "worse"}
+    )
     eligible = (
         previous
-        and previous["mode"] == "stalled"
+        and (previous["mode"] == "stalled" or plateau_contrast)
         and diagnosis.get("gap")
         and not diagnosis.get("warnings")
     )
@@ -142,7 +148,19 @@ def choice(snapshot, value, target, previous):
     if model or eligible:
         if len(value["reviews"]) != len(info["pilot_order"]):
             return previous
+        retained_review = {
+            key: previous[key]
+            for key in (
+                "reference",
+                "review_reference",
+                "test_number",
+                "comparison_kind",
+                "diagnosis",
+            )
+            if previous and key in previous
+        }
         return dict(
+            retained_review,
             mode="broad_detail",
             available=True,
             target=target,
