@@ -1,5 +1,15 @@
 # Common-model experiments against accepted individual shapes
 
+An explicitly rejected common result keeps its current problem marks as goals,
+including when the accepted individual reference already had the same residual.
+Before unchanged continuation, each problem patch needs repeat-confirmed local
+gain without an opposing directional regression. A first comparison with no local
+trend cannot infer this progress from an improving overall objective. Stable
+preserve/fixed areas stay under regression checks without being required to improve.
+Unreviewed or suitable results do not acquire a rejection merely from old marks.
+The diagnosis version distinguishes this new advice; old fields, approvals,
+prepared contracts and native stopping rules are unchanged.
+
 Marked measurements now sample each selected original and reconstructed patch
 directly, with 2,048 equal-area points in each of two deterministic repeats per
 direction. The reverse side previously filtered a whole-shape sample, which could

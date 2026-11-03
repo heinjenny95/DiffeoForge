@@ -8,7 +8,7 @@ from copy import deepcopy
 from pathlib import Path
 from threading import RLock
 
-VERSION = "accepted-shape-common-diagnosis-v2"
+VERSION = "accepted-shape-common-diagnosis-v3"
 _CACHE = OrderedDict()
 _LOCK = RLock()
 
@@ -110,7 +110,7 @@ def _compare(accepted_ref, current_ref, *, regions=None):
     return result
 
 
-def assess(measured, previous=None):
+def assess(measured, previous=None, *, require_problem_progress=False):
     """Repeat-aware local and whole-shape comparisons; mixed change vetoes continuation."""
     a, b = measured["accepted"], measured["current"]
     floor = a["diagonal"] * 1e-4
@@ -176,11 +176,34 @@ def assess(measured, previous=None):
             progress.append(max(r[key] for r in now) + floor
                             < min(r[key] for r in before) * .95)
         marked_progress = all(progress)
+    # A newly rejected problem remains a goal even if the accepted reference
+    # already missed it. Stable preserve/fixed marks do not require improvement.
+    active = [i for i, row in enumerate(measured.get("marked_current", []))
+              if require_problem_progress and row["region"].get("purpose", "problem") == "problem"]
+    if active:
+        outcomes = []
+        for index in active:
+            useful = worsened = False
+            if previous:
+                now = measured["marked_current"][index]["repeats"]
+                before = previous["marked_current"][index]["repeats"]
+                for key in ("original_to_fit_p95", "original_to_fit_p99",
+                            "fit_to_original_p95", "fit_to_original_p99"):
+                    x = [r[key] for r in before if r.get(key) is not None]
+                    y = [r[key] for r in now if r.get(key) is not None]
+                    if len(x) != 2 or len(y) != 2:
+                        continue
+                    useful |= max(y) + floor < min(x) * .95
+                    worsened |= min(y) > max(x) * 1.05 + floor
+            outcomes.append(useful and not worsened)
+        progress = all(outcomes)
+        marked_progress = progress if marked_progress is None else marked_progress and progress
     tail = measured.get("objective_tail", [])
     numerical_progress = (len(tail) >= 3 and all(
         y >= x for x, y in zip(tail[:-1], tail[1:], strict=True))
                           and tail[-1] - tail[0] > max(abs(tail[0]), 1.) * 1e-6)
-    return dict(local_losses=lost, gap=bool(lost or whole_gap), trend=trend,
+    return dict(local_losses=lost, gap=bool(lost or whole_gap or active), trend=trend,
+                reviewed_problem_marks=len(active),
                 marked_progress=marked_progress,
                 accepted_local=measured["accepted_local"], numerical_progress=numerical_progress,
                 accepted_controls=measured["accepted_controls"],
@@ -210,11 +233,12 @@ def diagnose(snapshot, value, current_ref, previous_ref=None):
     if measured is None:
         return None
     previous = _compare(accepted, previous_ref, regions=regions) if previous_ref else None
+    rejected = getattr(current, "visual_reviews", {}).get(current_ref["candidate_id"]) is False
     return dict(version=VERSION, accepted=accepted, current=current_ref,
                 previous=previous_ref, original_sha256=measured["original_sha256"],
                 accepted_test_number=parent.attachment_comparison["guided"]["screen_trials_spent"],
                 template_sha256=measured["template_sha256"],
-                **assess(measured, previous))
+                **assess(measured, previous, require_problem_progress=rejected))
 
 
 def recommend(diagnosis, *, capped, iteration_tests=0, density_tested=False, veto=False):
@@ -233,9 +257,11 @@ def recommend(diagnosis, *, capped, iteration_tests=0, density_tested=False, vet
             "the accepted shape without a measured whole-shape regression. Test up to 120 "
             "additional steps with the same basis.")
     if not density_tested and not diagnosis["warnings"]:
-        return dict(kind="capacity", reason="The accepted shape exposes unresolved local "
-            "or whole-shape differences. Compare additional controls before another unchanged "
-            "iteration round. This is a capacity hypothesis, not a proven cause.")
+        reason = ("Your reviewed problem areas still need improvement. "
+                  if diagnosis.get("reviewed_problem_marks") else
+                  "The accepted shape exposes unresolved local or whole-shape differences. ")
+        return dict(kind="capacity", reason=reason + "Compare additional controls before "
+            "another unchanged iteration round. This is a capacity hypothesis, not a proven cause.")
     return dict(kind="stalled", reason="The bounded comparison has not resolved this model. "
         "Keep all accepted fits; review a shared-model revision or another fitting scale "
         "rather than repeating identical tests.")

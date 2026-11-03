@@ -1,5 +1,19 @@
 # Development continuity — dev187 installed and verified
 
+## Source follow-up — retain explicitly reviewed problem goals
+
+A common field could be closer to an accepted individual that still missed the
+currently marked feature. New advice retains those explicitly rejected problem
+patches as goals and requires measured local progress before unchanged iteration
+rounds. Stable fixed/preserve marks are not forced to improve. First comparisons,
+unreviewed states and old reviews do not invent local progress or rejection.
+The new diagnosis cache version changes advice only; earlier fields, approvals,
+contracts, native objective, accuracy and allowances stay unchanged.
+
+Three public controller-level regressions precede the fix. The 27 focused
+common/current-mark/diagnosis/candidate checks include six new cases and pass, alongside Ruff and
+whitespace checks. Private fit qualification remains separate; dev187 is unchanged.
+
 ## Source follow-up — measure marked reverse projections directly
 
 Filtering whole-shape samples could miss a small marked extra projection. Regional
@@ -11,8 +25,8 @@ New measurement/cache versions re-evaluate older metrics in memory without
 rewriting saved fields, reviews or prepared contracts. No native objective,
 iteration allowance, numerical accuracy rule or automatic approval changes.
 
-Eight public counterexample regressions and 67 distinct actual-source regional,
-response, common-diagnosis, candidate and protected-capture checks pass, including
+The 67 distinct actual-source regional, response, common-diagnosis, candidate and
+protected-capture checks include eight new counterexample regressions and pass, including
 real point-to-triangle measurements and a small projection missed by local P95.
 An older synthetic empty-history fixture now also supplies an empty working-edit
 journal; production ledger readers stay strict. Ruff and whitespace checks pass.
