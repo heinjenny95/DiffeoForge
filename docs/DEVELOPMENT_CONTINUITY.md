@@ -1,4 +1,28 @@
-# Development continuity — dev187 installed and verified
+# Development continuity — dev188 installed and verified
+
+## dev188 delivery closure
+
+The local Windows installation is now dev188, built from runtime source
+`28192984868d6a49e204c4f4f28b627d33d3d0f8`. The tested installer completed
+successfully after a complete verified backup and fresh idle checks. Every
+installed bundle byte, all six build companions, version/installation registry,
+project files and desktop/Qt settings were verified. Existing fits and reviews
+were unchanged across installation; no owner computation was interrupted.
+
+Qualification covers 60 distinct cases across the completed scoped and followup
+suites, with affected cases rerun after their fixes, plus the earlier compatibility
+checks. The exact product archive passes the completed two-stage review/reopen,
+retained-reference, checked-endpoint and fixed-action tests. Its real 3-D viewer
+loads the actual checked result and enables Better/Same/Worse and suitability
+controls after settled geometry; the test closes without saving a decision.
+Light/dark views, worker startup/cancellation and process-lifetime checks pass.
+Runtime dependency versions remain unchanged. The source and native dataset
+qualification are described below; caps do not become convergence or approval.
+
+The installer remains local because no Drive upload was requested. GitHub and
+the existing Project log are updated separately. No release/tag/merge, new
+scientific approval or full-cohort/PCA claim is implied. Paused side agents and
+the held NAS archive batch remain paused.
 
 ## dev188 source — bounded shared-model capture/detail
 
