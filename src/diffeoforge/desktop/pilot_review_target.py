@@ -30,7 +30,8 @@ def choose(snapshot, guidance, info):
     common_current = (not snapshot.attachment_comparison.get("regional_objective")
         and (info.get("goal") in {"shared_check", "form_model_check", "common_continue"}
              or any(strategy.get(k) for k in ("common_capacity_request",
-                                              "common_candidate_step", "common_basis_step"))
+                                              "common_candidate_step", "common_basis_step",
+                                              "common_multiscale"))
              or optimization.get("common_model") is True))
     scope = ("joint" if info["phase"] == "joint" else "common-model"
              if common_current else "individual")

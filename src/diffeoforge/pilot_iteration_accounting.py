@@ -61,6 +61,12 @@ def branch_total(snapshot, candidate, *, _seen=None):
 def source(manifest, candidate_id):
     first_ids = {c["candidate_id"] for c in manifest["plan"]["stages"][0]["candidates"]}
     strategy = manifest.get("attachment_comparison", {}).get("guided", {}).get("strategy") or {}
+    multiscale = strategy.get("common_multiscale")
+    if multiscale and multiscale["stage"] == "detail" and candidate_id in first_ids:
+        from diffeoforge.pilot_multiscale_study import bound_snapshot
+
+        capture = bound_snapshot(multiscale["capture"])
+        return capture.study_directory, capture.candidates[0].candidate_id
     if strategy.get("common_candidate_step") and candidate_id in first_ids:
         ref = strategy["common_candidate_step"]["reference"]
         return Path(ref["directory"]), ref["candidate_id"]

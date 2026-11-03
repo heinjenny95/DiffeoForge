@@ -43,20 +43,31 @@ def field_inputs(run, cache):
     return data
 
 
-def endpoint(candidate):
-    """Return the exact measured endpoint, checking its immutable binding."""
+def endpoints(candidate):
+    """Return the exact measured endpoint per form, checking every binding."""
     subjects = (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
-    rows = [
-        r[kind]["evaluation"]["endpoint"]
-        for r in subjects.values()
-        for kind in ("regional_quality", "ordinary_quality")
-        if r.get(kind)
-    ]
+    result = {}
+    for subject, r in subjects.items():
+        rows = [r[kind]["evaluation"]["endpoint"] for kind in
+                ("regional_quality", "ordinary_quality", "cohort_quality") if r.get(kind)]
+        if not rows:
+            continue
+        if len(rows) != 1 or sha256_file(Path(rows[0]["path"])) != rows[0]["sha256"]:
+            raise ValueError("The evaluated reconstruction changed or is ambiguous")
+        result[subject] = rows[0]
+    return result
+
+
+def endpoint(candidate, subject=None):
+    """Singleton callers retain their strict scope; cohort callers name a form."""
+    rows = endpoints(candidate)
+    if subject is not None:
+        return rows.get(subject)
     if not rows:
         return None
-    if len(rows) != 1 or sha256_file(Path(rows[0]["path"])) != rows[0]["sha256"]:
+    if len(rows) != 1:
         raise ValueError("The evaluated singleton reconstruction changed or is ambiguous")
-    return rows[0]
+    return next(iter(rows.values()))
 
 
 def evaluate_points(

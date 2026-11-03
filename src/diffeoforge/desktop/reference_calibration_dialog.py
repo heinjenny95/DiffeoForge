@@ -138,7 +138,10 @@ def collect_calibration_qc_pairs(
         raise ValueError("Calibration study must contain exactly one bound template")
 
     run_directory = calibration_candidate_run_directory(candidate)
-    if (candidate.metrics or {}).get("metric_version") == "fixed-state-resolution-adoption-v1":
+    fixed_state_evaluation = (
+        (candidate.metrics or {}).get("metric_version") == "fixed-state-resolution-adoption-v1"
+    )
+    if fixed_state_evaluation:
         from diffeoforge.reference_resolution_adoption import inventory
 
         output_inventory = inventory(root, candidate)
@@ -162,10 +165,15 @@ def collect_calibration_qc_pairs(
         if not path.is_file() or not path.is_relative_to(output):
             continue
         if (f"__EstimatedParameters__Template_{object_id}__" in name
-                or name.endswith(f"__EstimatedParameters__Template_{object_id}.vtk")):
+                or name.endswith(f"__EstimatedParameters__Template_{object_id}.vtk")
+                or fixed_state_evaluation
+                and name == "Evaluation__EstimatedParameters__Template_surface.vtk"):
             atlas_path = path
             continue
-        if f"__Reconstruction__{object_id}__subject_" not in name:
+        native_name = f"__Reconstruction__{object_id}__subject_" in name
+        saved_evaluation_name = (fixed_state_evaluation
+                                and name.startswith("Evaluation__Reconstruction__subject_"))
+        if not (native_name or saved_evaluation_name):
             continue
         encoded_source_name = name.split("__subject_", 1)[1]
         source_name = encoded_source_name.removesuffix(".vtk")
@@ -181,13 +189,13 @@ def collect_calibration_qc_pairs(
             f"unexpected reconstructions: {unexpected or 'none'}"
         )
 
-    from diffeoforge.regional_evaluation import endpoint
+    from diffeoforge.regional_evaluation import endpoints
 
-    evaluated = endpoint(candidate)
+    evaluated = endpoints(candidate)
     if evaluated:
-        if len(subject_paths) != 1:
-            raise ValueError("Regional evaluation cannot replace a cohort reconstruction")
-        reconstructions[next(iter(subject_paths))] = Path(evaluated["path"])
+        if set(evaluated) != set(subject_paths):
+            raise ValueError("Evaluated reconstructions do not cover the exact pilot cohort")
+        reconstructions.update({name: Path(row["path"]) for name, row in evaluated.items()})
 
     pairs = [
         CalibrationQcPair(
@@ -208,7 +216,7 @@ def collect_calibration_qc_pairs(
             reconstruction_path=reconstructions[name],
             required=True,
             original_sha256=original_hashes[name],
-            reconstruction_sha256=evaluated["sha256"] if evaluated else output_hashes[
+            reconstruction_sha256=evaluated[name]["sha256"] if evaluated else output_hashes[
                 reconstructions[name].relative_to(output).as_posix()
             ],
         )
@@ -4110,7 +4118,8 @@ class ReferenceCalibrationDialog(QDialog):
             subjects = ((candidate.metrics or {}).get('attachment_comparison', {})
                         .get('subjects', {}))
             rejected = any((r.get(kind) or {}).get('numerical_selection_suitable') is False
-                for r in subjects.values() for kind in ('regional_quality', 'ordinary_quality'))
+                for r in subjects.values() for kind in
+                ('regional_quality', 'ordinary_quality', 'cohort_quality'))
             self.status.setText(
                 f'{candidate_id}: fit saved, but numerical checks did not pass. '
                 'The retained starting fit stays available.' if rejected else

@@ -6,7 +6,8 @@ from diffeoforge.desktop.info_disclosure import InfoDisclosure
 
 def pin_recovery(window, snapshot, choice):
     """Keep the candidate's next preparation outside scrolling repair/history tools."""
-    if (not choice or choice.get("mode") != "candidate_refine"
+    if (not choice or choice.get("mode") not in
+            {"candidate_refine", "broad_detail", "detail_pending"}
             or not choice.get("available") or window._guided_footer_action
             or len(snapshot.candidates) != 1):
         return
@@ -19,7 +20,9 @@ def pin_recovery(window, snapshot, choice):
     window.next_step_button.setToolTip("Prepare this separate common-setting test. "
         "Existing fits and approvals stay saved; fitting starts only with Run.")
     window._guided_footer_action = (
-        snapshot.study_directory, "adaptive_common_continue", identifier)
+        snapshot.study_directory,
+        "adaptive_multiscale_detail" if choice["mode"] == "detail_pending"
+        else "adaptive_common_continue", identifier)
     _set_action_emphasis(window.next_step_button, True)
 
 
@@ -111,15 +114,17 @@ def recovery(window, layout, identifier, choice):
             and target["reference"] == choice["reference"]):
         return  # Use the single, permanently visible action with the exact result name.
     pinned = getattr(window, "_guided_footer_action", None)
-    if (choice["mode"] == "candidate_refine" and pinned
-            and pinned[1:] == ("adaptive_common_continue", identifier)):
+    action = ("adaptive_multiscale_detail" if choice["mode"] == "detail_pending"
+              else "adaptive_common_continue")
+    if (choice["mode"] in {"candidate_refine", "broad_detail", "detail_pending"} and pinned
+            and pinned[1:] == (action, identifier)):
         return
     if choice["available"]:
         button = QPushButton(choice["label"])
         button.setObjectName("primary")
         button.clicked.connect(lambda: window._open_common_saved_fit(choice["reference"])
             if choice["mode"] in {"review", "feedback"} else window._start_pilot(adaptive=False,
-                guided_action=("adaptive_common_continue", identifier, choice["target"])))
+                guided_action=(action, identifier, choice["target"])))
         layout.addWidget(button)
 
 

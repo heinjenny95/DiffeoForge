@@ -1,5 +1,44 @@
 # Development continuity — dev187 installed and verified
 
+## dev188 source — bounded shared-model capture/detail
+
+A measured shared-fit plateau can now offer one separate, explicit two-stage
+common hypothesis. It retains all accepted individual reviews and the unchanged
+original source. A deterministic shared 2,000-site basis combines compatible
+retained locations with source-surface coverage; old momenta are not spliced.
+Each form starts from zero, captures overall shape, then transfers its complete
+same-basis field into the declared detail objective. Existing native L-BFGS,
+120 iterations per stage, 37 RK2 points and finite accepted-state checks apply.
+There is no third stage, unchanged-iteration loop or automatic recovery.
+
+The normal worker executes the two stages and preserves a cancelled checked
+capture for explicit detail preparation. Reviews compare the final detail with
+the accepted individual fit. Adoption is explicit; subsequent forms retain that
+exact shared model. Original joint optimizer/template/control choices are
+preserved. New-profile joint results get independent source/time/native-export
+qualification and one hash-bound endpoint per form. Failed checks stay visible;
+caps, numerical checks and anatomical approval remain separate.
+
+Separate local qualification completed the same declared protocol on six forms
+and one joint confirmation, with unchanged strict temporal, optimizer-grid,
+native-export and conforming-source geometry gates. A too-coarse temporal failure
+remains preserved alongside its explicitly declared finer same-field check.
+All six comparison figures were inspected; owner review of a new joint model is
+still required. The real normal-worker two-stage lifecycle also passed, with
+every accepted parameter state identical to its separately qualified counterpart.
+A dedicated cancellation after an accepted native step returned a verified
+stopped state in 17.03 seconds and started no detail stage. A public native
+two-form run separately passed the production joint checker. Software journeys
+cover retained reviews, finite dispatch, cancellation, reopening, comparison,
+adoption, next-form progression and final joint-stage retention. These checks
+do not establish suitability for every dataset or a full-cohort/PCA approval.
+
+Source version is dev188; installed dev187 remains unchanged until exact-package
+qualification, backup, idle checks and installation are verified. GitHub, Project
+log and final installation receipts must be checked separately.
+
+See [bounded common capture/detail](PILOT_COMMON_BROAD_DETAIL.md).
+
 ## Source follow-up — qualified ordinary fixed-field endpoints
 
 New guarded ordinary singleton results now have a separate source/time quality

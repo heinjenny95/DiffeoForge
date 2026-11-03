@@ -140,11 +140,15 @@ def test_new_individual_ledger_reaches_joint_and_final_completion_without_new_fi
         if not current.visual_reviews:
             current = approve(run_batch(current, monkeypatch), "guided-varifold")
         proposed = strategy.state(current)["next_forms"]["guided-varifold"]
-        if not proposed["available"]:
+        if (not proposed["available"] or
+                (proposed.get("common_reuse") or {}).get("mode") == "broad_detail"):
             # This fixture retains a rejected original common fit. Repeating its
             # disabled Next action cannot make it suitable. Follow the explicit
             # different-setting/review/adoption route instead.
-            assert proposed["common_reuse"]["mode"] == "stalled" and not revised
+            # Exercise the still available explicit weight/review/adoption path.
+            # The new broad/detail route has separate field and stage journeys;
+            # this receipt-only controller cannot supply its native checkpoints.
+            assert proposed["common_reuse"]["mode"] in {"stalled", "broad_detail"} and not revised
             individual_reviews = deepcopy(proposed["marker"]["reviews"])
             changed = guided.next_action(current.study_directory, "adaptive_recover",
                                          "guided-varifold", goal="goal:weight")

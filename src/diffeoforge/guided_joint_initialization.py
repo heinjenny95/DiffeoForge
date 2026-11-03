@@ -12,6 +12,15 @@ from diffeoforge.mesh import sha256_file
 VERSION = "accepted-singletons-v1"
 
 
+def _new_shared_field(parent):
+    from diffeoforge.pilot_multiscale_study import marker
+
+    profile = marker(parent.attachment_comparison)
+    if profile and profile["stage"] != "detail":
+        raise ValueError("Complete the declared detail before joint common-model confirmation")
+    return bool(profile)
+
+
 def references(rows):
     result = []
     for row in sorted(rows, key=lambda r: r["filename"]):
@@ -65,8 +74,10 @@ def bind(root, manifest, record):
     points = np.loadtxt(root / record["controls"]["copy"]).reshape(-1, 3)
     parts = []
     arrays = {}
+    check_shared_field = False
     for index, ref in enumerate(refs):
         parent = verify_reference(ref)
+        check_shared_field |= _new_shared_field(parent)
         approved = dict(ref)
         approved["filename"] = approved.pop("target")
         if (guided._approved_record(parent, ref["candidate_id"]) != approved
@@ -113,9 +124,12 @@ def bind(root, manifest, record):
     _write_momenta(path, combined)
     if not np.array_equal(read_deformetrica_momenta(path), combined):
         raise ValueError("Joint momenta serialization changed accepted coefficients")
+    from diffeoforge.cohort_field_quality import VERSION as QUALITY_VERSION
+
     return dict(record, joint_initialization=dict(request, parts=parts, subjects=labels,
         momenta=dict(copy=path.name, sha256=sha256_file(path)),
-        optimizer_history_retained=False, anatomical_approval_created=False))
+        optimizer_history_retained=False, anatomical_approval_created=False,
+        **({"field_quality": QUALITY_VERSION} if check_shared_field else {})))
 
 
 def verify(root, manifest, record):
@@ -142,9 +156,11 @@ def verify(root, manifest, record):
     method = next(iter(record["methods"].values()))
     requested = load_config(root / manifest["source_config"]["copy"])
     arrays = {}
+    check_shared_field = False
     for part in request["parts"]:
         ref = part["reference"]
         parent = verify_reference(ref)
+        check_shared_field |= _new_shared_field(parent)
         row = dict(ref)
         row["filename"] = row.pop("target")
         candidate = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
@@ -171,6 +187,10 @@ def verify(root, manifest, record):
                 or not np.array_equal(np.loadtxt(control).reshape(-1, 3), points)):
             raise ValueError("Accepted joint starting-field bytes or basis changed")
         arrays[ref["target"]] = read_deformetrica_momenta(path, allow_singleton=True)
+    from diffeoforge.cohort_field_quality import VERSION as QUALITY_VERSION
+
+    if request.get("field_quality") != (QUALITY_VERSION if check_shared_field else None):
+        raise ValueError("New shared-model joint field qualification scope changed")
     path = study._safe_study_path(root, request["momenta"]["copy"])
     if (sha256_file(path) != request["momenta"]["sha256"]
             or not np.array_equal(read_deformetrica_momenta(path),

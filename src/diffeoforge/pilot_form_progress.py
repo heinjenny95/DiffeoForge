@@ -145,6 +145,12 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
     if snapshot.plan.pilot_subject_count != 1 or info["phase"] == "joint":
         raise ValueError("Review an individual form before continuing to another")
     accepted, accepted_id = _reviewed_source(snapshot, identifier, starting_fit)
+    from diffeoforge.pilot_multiscale_study import marker as multiscale_marker
+
+    multiscale = multiscale_marker(accepted.attachment_comparison)
+    if multiscale and multiscale["stage"] == "capture":
+        raise ValueError("Complete the declared detail stage before adopting or advancing "
+                         "this common model. The checked capture stays saved.")
     if accepted.plan.pilot_subject_count != 1 or guided.record(accepted)["phase"] == "joint":
         raise ValueError("Choose a reviewed individual starting fit")
     row = guided._approved_record(accepted, accepted_id)
@@ -168,6 +174,7 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
         or accepted_strategy.get("common_capacity_request")
         or accepted_strategy.get("common_candidate_step")
         or accepted_strategy.get("common_basis_step")
+        or accepted_strategy.get("common_multiscale")
         or (accepted_strategy.get("optimization") or {}).get("common_model"))
     # Common-model review must not erase the accepted individual comparison target.
     if not (saved and (common_result or revise) and any(
@@ -260,7 +267,8 @@ def verify(info, record, manifest, root):
     value = info["strategy"]["form_progress"]
     verify_marker(value, info["origin"], info["pilot_order"])
     if (info["strategy"].get("common_capacity_request")
-            or info["strategy"].get("common_candidate_step")):
+            or info["strategy"].get("common_candidate_step")
+            or info["strategy"].get("common_multiscale")):
         return  # Independently bound demand/basis/allowance verification follows.
     if info.get("goal") not in {"next_form", "form_model_check"}:
         return
@@ -317,7 +325,7 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False, common_
                         "optimization", "failure_parent_recovery", "shared_model_check",
                         "search_family", "common_model_step", "control_capacity_request",
                         "common_diagnosis_test", "common_basis_step", "common_capacity_request",
-                        "common_candidate_step"):
+                        "common_candidate_step", "common_multiscale"):
                 strategy.pop(key, None)
             previous = dict(directory=str(snapshot.study_directory),
                 manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))

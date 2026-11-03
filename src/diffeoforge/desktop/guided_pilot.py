@@ -68,6 +68,8 @@ def render(window, prepared):
     title = QLabel(
         "Use the approved common settings"
         if approved_common_revision
+        else "Shared model · capture then detail"
+        if info.get("goal") == "common_multiscale"
         else "Check the next pilot form"
         if info.get("goal") == "next_form"
         else "Check the common model"
@@ -90,6 +92,9 @@ def render(window, prepared):
     explanation = QLabel(
         f"One common configuration · {snapshot.plan.pilot_subject_count} pilot specimens."
         if info["phase"] == "joint"
+        else f"{info['target']}\n{guidance['total']} pilot forms · "
+        "a separate shared-model test; your accepted individual fits stay saved."
+        if info.get("goal") == "common_multiscale"
         else f"{info['target']}\n{guidance['total']} selected pilot forms · "
         f"{guidance['checked']} checked with these settings · "
         f"{info['screen_trials_spent']} tests prepared so far."
@@ -111,7 +116,18 @@ def render(window, prepared):
     valid_next = next((row for row in next_forms.values() if row.get("available")), None)
     progress_summary = valid_next or guidance.get("form_progress_summary")
     if progress_summary:
+        multiscale = (info.get("strategy") or {}).get("common_multiscale")
+        progress_value = (info.get("strategy") or {}).get("form_progress") or {}
+        final_values = (multiscale or {}).get("specification", {}).get("stages", [{}])[-1].get(
+            "values")
+        adopted = (progress_value.get("protocol", {}).get("reference", {}).get("values")
+                   == final_values)
         progress_note = QLabel(
+            f"Accepted individual fits: {progress_summary['shapes']} / "
+            f"{progress_summary['total']}, retained unchanged. This separate common-model "
+            "candidate still needs your review and explicit adoption. Earlier common-model "
+            "decisions stay saved under their original settings."
+            if multiscale and not adopted else
             f"Shape review: {progress_summary['shapes']} / {progress_summary['total']} forms. "
             f"Common-model checks: {progress_summary['checked']} / "
             f"{progress_summary['total']}. Your suitable individual fits stay saved; "
@@ -197,6 +213,10 @@ def render(window, prepared):
         if resume_checks
         else f"Run joint check · {snapshot.plan.pilot_subject_count} specimens"
         if info["phase"] == "joint"
+        else "Run common-model test · capture → detail · 2 stages"
+        if (info.get("strategy") or {}).get("common_multiscale", {}).get("stage") == "capture"
+        else "Run final detail stage · retain the checked capture"
+        if (info.get("strategy") or {}).get("common_multiscale", {}).get("stage") == "detail"
         else f"Compare Current / Varifold · {len(pending)} trials on 1 specimen"
         if len(snapshot.candidates) == 2
         else "Run prepared test · 1 trial on 1 specimen"
@@ -316,6 +336,19 @@ def render(window, prepared):
                               + candidate.label)
         method_title.setObjectName("sectionTitle")
         layout.addWidget(method_title)
+        from diffeoforge.pilot_multiscale_study import marker as multiscale_marker
+
+        multiscale = multiscale_marker(snapshot.attachment_comparison)
+        if multiscale:
+            number = 1 if multiscale["stage"] == "capture" else 2
+            description = ("Capture the overall shape; detail follows after its checks."
+                           if number == 1 else
+                           "Match detail from this form's checked capture; review this result.")
+            note = QLabel(f"Common model · stage {number} of 2: {description} "
+                          "2,000 shared control points · up to 120 iterations in this stage.")
+            note.setObjectName("commonMultiscaleStage")
+            note.setWordWrap(True)
+            layout.addWidget(note)
         decision = snapshot.visual_reviews.get(candidate.candidate_id)
         already_inspected = bool(feedback and feedback.get("current_inspected"))
         state = (
@@ -337,10 +370,19 @@ def render(window, prepared):
         )
         runtime = (candidate.metrics or {}).get("runtime_seconds")
         total = (candidate.metrics or {}).get("pipeline_wall_seconds")
+        effort = (candidate.metrics or {}).get("objective_stages") or {}
+        if multiscale and effort.get("stage") == "detail":
+            if total is not None and effort.get("capture_pipeline_wall_seconds") is not None:
+                total += effort["capture_pipeline_wall_seconds"]
+            if runtime is not None and effort.get("capture_runtime_seconds") is not None:
+                runtime += effort["capture_runtime_seconds"]
         if total is not None:
             state += f" · {total / 60:.1f} min total"
             if runtime is not None:
-                state += f" ({runtime / 60:.1f} min including review waits)"
+                state += (f" ({runtime / 60:.1f} min fitting across both stages)"
+                          if multiscale and effort.get("stage") == "detail" else
+                          f" ({runtime / 60:.1f} min fitting)" if multiscale else
+                          f" ({runtime / 60:.1f} min including review waits)")
         elif runtime is not None:
             state += f" · {runtime / 60:.1f} min"
         resumed = (candidate.metrics or {}).get('qualification_resume_wall_seconds')
@@ -356,6 +398,27 @@ def render(window, prepared):
         label.setWordWrap(True)
         layout.addWidget(label)
         subjects = (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
+        ordinary = next((r["ordinary_quality"] for r in subjects.values()
+                         if r.get("ordinary_quality")), None)
+        if ordinary:
+            checked = QLabel("Source, time-resolution and native-export checks passed. "
+                "Inspect the shape before choosing Suitable fit."
+                if ordinary.get("passed") else
+                "Numerical checks did not pass. Your earlier fit stays saved; inspect "
+                "the technical measurements before another test.")
+            checked.setWordWrap(True)
+            checked.setObjectName("commonOrdinaryQuality")
+            layout.addWidget(checked)
+        cohort = [r["cohort_quality"] for r in subjects.values() if r.get("cohort_quality")]
+        if cohort:
+            checked = QLabel(f"Shared-source, time-resolution and export checks passed for "
+                f"all {len(cohort)} forms. Review the checked reconstructions below."
+                if all(r.get("passed") for r in cohort) else
+                "Shared-field checks did not pass for every form. Earlier suitable fits "
+                "and decisions stay saved.")
+            checked.setObjectName("commonCohortQuality")
+            checked.setWordWrap(True)
+            layout.addWidget(checked)
         quality = next((r["regional_quality"] for r in subjects.values()
                         if r.get("regional_quality")), None)
         if quality:

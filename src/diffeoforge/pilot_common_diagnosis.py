@@ -32,7 +32,7 @@ def _geometry(parent, candidate, target):
         return None  # Explicitly unavailable; never substitute a proxy or an old field.
     if len(rows) != 1:
         raise ValueError("Common diagnosis requires one bound reconstruction")
-    row = endpoint(candidate) or dict(
+    row = endpoint(candidate, subject=target) or dict(
         path=str(study._safe_study_path(run / "output", rows[0]["path"])),
         sha256=rows[0]["sha256"])
     path = Path(row["path"])

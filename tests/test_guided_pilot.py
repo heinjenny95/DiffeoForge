@@ -60,7 +60,7 @@ def run_batch(snapshot, monkeypatch, *, controller=_CompletedController, refinem
                           final_iteration=120, maximum_iterations=120)
         return replace(_metrics(atlas), **values)
 
-    def measured(root, manifest, candidate, run):
+    def measured(root, manifest, candidate, run, **_qualification_callbacks):
         names = [r["filename"] for r in manifest["inputs"]["subjects"]]
         detail = _detail(names)
         if refinement_guard:

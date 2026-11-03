@@ -132,6 +132,11 @@ def prepare(directory):
 
 
 def prepare_controls(root, manifest, record):
+    from diffeoforge.pilot_multiscale_study import bind as bind_multiscale
+
+    multiscale = bind_multiscale(root, manifest, record)
+    if multiscale is not None:
+        return multiscale
     from diffeoforge.regional_continuation import bind as bind_numerical
     from diffeoforge.regional_continuation import marker
 
@@ -173,6 +178,9 @@ def verify(root, manifest):
     from diffeoforge import reference_calibration_study as study
 
     record = manifest["attachment_comparison"]
+    from diffeoforge.pilot_multiscale_study import verify as verify_multiscale
+
+    verify_multiscale(record.get("guided", {}), record, manifest, root)
     from diffeoforge.pilot_control_capacity import verify as verify_capacity
 
     verify_capacity(root, manifest, record)
@@ -315,6 +323,9 @@ def configure(config, root, manifest, candidate_id):
         from diffeoforge.regional_pilot import configure as configure_regional
 
         configure_regional(config, record)
+        from diffeoforge.pilot_multiscale_study import configure_candidate
+
+        configure_candidate(config, root, record)
     else:
         _, comparison = context(root, manifest)
         config["optimization"].update(comparison["confirmation_freeze_settings"])
@@ -425,8 +436,19 @@ def measure(root, manifest, candidate, run, *, cancelled=lambda: False, event_ca
 
     marker = report.manifest["effective_config"]["project"].get(
         "parameter_provenance", {}).get("finite_accepted_guard")
-    quality_kind = "ordinary_quality" if marker == ORDINARY else "regional_quality"
-    if marker == ORDINARY:
+    from diffeoforge.cohort_field_quality import VERSION as COHORT_QUALITY
+
+    joint_qualities = None
+    scope = manifest["attachment_comparison"].get("joint_initialization", {}).get("field_quality")
+    quality_kind = ("cohort_quality" if scope == COHORT_QUALITY else
+                    "ordinary_quality" if marker == ORDINARY else "regional_quality")
+    if scope == COHORT_QUALITY:
+        from diffeoforge.cohort_field_quality import evaluate_and_measure
+
+        joint_qualities = evaluate_and_measure(root, candidate, run, cancelled=cancelled,
+                                               event_callback=event_callback)["subjects"]
+        quality = None
+    elif marker == ORDINARY:
         from diffeoforge.ordinary_field_quality import evaluate_and_measure
 
         quality = evaluate_and_measure(root, candidate, run, cancelled=cancelled,
@@ -446,6 +468,10 @@ def measure(root, manifest, candidate, run, *, cancelled=lambda: False, event_ca
     }
     subjects = {}
     for row in manifest["inputs"]["subjects"]:
+        if joint_qualities is not None:
+            if set(joint_qualities) != {r["filename"] for r in manifest["inputs"]["subjects"]}:
+                raise ValueError("Joint field qualification lost a required form")
+            quality = joint_qualities[row["filename"]]
         matches = [
             path
             for name, path in paths.items()
@@ -474,7 +500,7 @@ def measure(root, manifest, candidate, run, *, cancelled=lambda: False, event_ca
                 baseline, subjects[row["filename"]])
         if quality:
             subjects[row["filename"]][quality_kind] = quality
-            if quality_kind == "ordinary_quality" and not quality["passed"]:
+            if quality_kind in {"ordinary_quality", "cohort_quality"} and not quality["passed"]:
                 subjects[row["filename"]]["warnings"].append(
                     "Saved-field source/time qualification did not pass; inspect the retained "
                     "fit and its numerical checks before another model test.")
@@ -690,7 +716,9 @@ def run(runner, event_callback=None, *, candidate_ids=None):
                 dict(payload=payload, sha256=_canonical_hash(payload)),
                 overwrite=True,
             )
-        return result
+        from diffeoforge.pilot_multiscale_study import followup
+
+        return followup(runner, result, event_callback)
     finally:
         runner._method_comparison_dispatch = False
         lock.rmdir()

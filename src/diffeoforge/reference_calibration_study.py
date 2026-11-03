@@ -2362,6 +2362,9 @@ class ReferenceCalibrationStudyRunner:
                     metrics = collect_reference_calibration_run_metrics(request.destination)
                     measured = metrics.as_manifest()
                     annotate(measured, iteration_offset)
+                    from diffeoforge.pilot_multiscale_study import annotate_effort
+
+                    annotate_effort(measured, manifest)
                     if request.resume_source is not None:
                         record = next(e for e in _load_events(self.study_directory)
                                       if e["event"] == "pilot_qualification_declared"
@@ -2393,7 +2396,9 @@ class ReferenceCalibrationStudyRunner:
                         marker = load_config(candidate.config_path)["project"].get(
                             "parameter_provenance", {}).get("finite_accepted_guard")
                         if (manifest["attachment_comparison"].get("regional_objective")
-                                or marker == ORDINARY):
+                                or marker == ORDINARY
+                                or manifest["attachment_comparison"].get(
+                                    "joint_initialization", {}).get("field_quality")):
                             options = dict(cancelled=lambda: self._cancel_requested,
                                            event_callback=event_callback)
                         measured.update(measure(

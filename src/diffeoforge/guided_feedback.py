@@ -15,7 +15,7 @@ def severe_regression(snapshot, identifier):
     subjects = (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
     return any(r.get("refinement_guard", {}).get("severe") is True
                or any(r.get(kind) and not r[kind]["numerical_selection_suitable"]
-                      for kind in ("regional_quality", "ordinary_quality"))
+                      for kind in ("regional_quality", "ordinary_quality", "cohort_quality"))
                for r in subjects.values())
 
 
@@ -90,6 +90,13 @@ def local_strategy_reference(snapshot, role):
     """Keep legacy coverage history without treating another form as a local fit."""
     info = guided.record(snapshot)
     ref = (info.get("strategy") or {}).get(role)
+    if ref is None and role == "baseline" and (info.get("strategy") or {}).get(
+            "common_multiscale"):
+        reviews = info["strategy"]["form_progress"]["reviews"]
+        row = next((r for r in reviews if r["filename"] == info["target"]), None)
+        if row:
+            ref = dict(row)
+            ref["target"] = ref.pop("filename")
     if ref is None:
         return None
     parent = verify_reference(ref)

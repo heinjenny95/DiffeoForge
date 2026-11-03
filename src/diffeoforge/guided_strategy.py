@@ -226,8 +226,12 @@ def _read_state(snapshot):
         from diffeoforge.pilot_form_progress import compatible, proposal
 
         result["common_revision"] = {}
+        from diffeoforge.pilot_multiscale_study import marker as multiscale_marker
+
+        multiscale = multiscale_marker(snapshot.attachment_comparison)
         if (snapshot.plan.pilot_subject_count == 1 and info["phase"] != "joint"
-                and not snapshot.attachment_comparison.get("regional_objective")):
+                and not snapshot.attachment_comparison.get("regional_objective")
+                and not (multiscale and multiscale["stage"] == "capture")):
             for candidate in snapshot.candidates:
                 if (snapshot.visual_reviews.get(candidate.candidate_id) is True
                         and not compatible(
@@ -438,6 +442,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     strategy.pop("common_basis_step", None)
     strategy.pop("common_capacity_request", None)
     strategy.pop("common_candidate_step", None)
+    strategy.pop("common_multiscale", None)
     strategy.pop("control_capacity_request", None)
     strategy["previous"] = dict(directory=str(snapshot.study_directory),
         manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))
@@ -588,6 +593,10 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
 
 def transition(snapshot, action, identifier, *, goal=None):
     """Called under the existing transition lock; never dispatch an optimizer."""
+    if action == "multiscale_detail":
+        from diffeoforge.pilot_multiscale_study import prepare_detail
+
+        return prepare_detail(snapshot)
     if action in {"common_continue", "adopt_common_model"}:
         from diffeoforge.pilot_form_progress import transition as common_transition
 

@@ -197,6 +197,7 @@ def prepare(directory):
 def _batch(
     source, previous, *, phase, target, methods, values, approved, history, spent, goal=None,
     feedback=None, coverage_extension=None, strategy=None,
+    destination_parent=None,
 ):
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.guided_joint_initialization import references as joint_references
@@ -215,6 +216,7 @@ def _batch(
         for key in ("freeze_template", "freeze_control_points")
     }
     cohort_method = config["optimization"]["method"]
+    multiscale = (strategy or {}).get("common_multiscale")
     iterations = (max(ITERATIONS, previous.attachment_comparison["iterations"])
                   if strategy is not None and previous else ITERATIONS)
     if goal in {"shared_check", "next_form", "form_model_check", "common_continue"}:
@@ -277,6 +279,11 @@ def _batch(
         from diffeoforge.pilot_form_progress import configure
 
         configure(config, strategy["form_progress"], cohort_method)
+    if multiscale:
+        from diffeoforge.pilot_multiscale_study import configure_source
+
+        configure_source(config, multiscale)
+        iterations = 120
     if ((strategy or {}).get("regional_recipe")
             and not (strategy or {}).get("regional_continuation")):
         from diffeoforge.regional_pilot import configure_numerics
@@ -320,7 +327,7 @@ def _batch(
     center = dict(values)
     refinement = (strategy or {}).get("baseline") if phase == "refine" else None
     capacity = (strategy or {}).get("control_capacity_request")
-    if (not capacity and strategy is not None and phase == "screen"
+    if (not multiscale and not capacity and strategy is not None and phase == "screen"
             and not refinement and not strategy.get("control_basis")
             and config["project"]["parameter_provenance"]["recommendation"].get(
                 "expected_shape_disparity") in {"high", "extreme"}):
@@ -337,7 +344,7 @@ def _batch(
                              "existing fits remain saved and no optimizer was started.")
         center["initial_control_point_spacing"] = capacity["spacing"]
         iterations = ITERATIONS
-    elif not refinement and not (strategy or {}).get("control_basis"):
+    elif not multiscale and not refinement and not (strategy or {}).get("control_basis"):
         center["initial_control_point_spacing"] = spacing
     selected = (
         source.plan.selected_pilot_subjects
@@ -360,7 +367,8 @@ def _batch(
     candidates = tuple(
         CalibrationCandidate(
             "guided-" + method,
-            method.title() + (" · joint confirmation" if phase == "joint" else
+            method.title() + (" · " + multiscale["stage"] + " · shared broad/detail"
+                              if multiscale else " · joint confirmation" if phase == "joint" else
                               " · protected local fit" if goal == "regional" else
                               " · atlas-model check" if goal == "shared_check" else ""),
             tuple(sorted(center.items())),
@@ -402,7 +410,9 @@ def _batch(
     config["project"]["parameter_provenance"]["recommendation"]["calibration_plan"] = (
         plan.provenance
     )
-    destination = source.study_directory.parent / ("guided-pilot-" + uuid4().hex[:12])
+    parent_directory = (Path(destination_parent).resolve() if destination_parent is not None
+                        else source.study_directory.parent)
+    destination = parent_directory / ("guided-pilot-" + uuid4().hex[:12])
     config_path = destination.with_suffix(".yaml")
     study._write_yaml(config_path, config, overwrite=False)
     result = study.create_reference_calibration_study(

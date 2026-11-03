@@ -62,7 +62,11 @@ def approvals(snapshot, context, value):
     rows = [*guided.record(snapshot)["approved"],
             *(case["approval"] for case in context["cases"] if case.get("approval"))]
     for candidate in snapshot.candidates:
-        if snapshot.visual_reviews.get(candidate.candidate_id) is True:
+        from diffeoforge.pilot_multiscale_study import marker as multiscale_marker
+
+        multiscale = multiscale_marker(snapshot.attachment_comparison)
+        if (snapshot.visual_reviews.get(candidate.candidate_id) is True
+                and not (multiscale and multiscale["stage"] == "capture")):
             rows.append(guided._approved_record(snapshot, candidate.candidate_id))
     return list({row["filename"]: row for row in rows
                  if compatible(row, value["protocol"])}.values())
@@ -100,6 +104,17 @@ def _saved(snapshot, target, protocol):
 
 
 def preview(snapshot, context, target, *, value=None):
+    from diffeoforge.pilot_form_progress import marker
+    from diffeoforge.pilot_multiscale_choice import choice
+
+    value = value or marker(snapshot)
+    if not value or value["stage"] != "model" or not target:
+        return None
+    previous = _preview(snapshot, context, target, value=value)
+    return choice(snapshot, value, target, previous)
+
+
+def _preview(snapshot, context, target, *, value=None):
     from diffeoforge.guided_progress import iteration_limited
     from diffeoforge.pilot_form_progress import marker
     from diffeoforge.reference_attachment_comparison import ITERATIONS
@@ -244,6 +259,11 @@ def apply_plan(snapshot, proposed, plan, context):
     choice = preview(snapshot, context, proposed["target"], value=proposed["marker"])
     if not choice or choice["mode"] == "fresh":
         return plan
+    if choice["mode"] == "broad_detail":
+        from diffeoforge.pilot_multiscale_study import adopted_family, apply
+
+        value = proposed["marker"]
+        return apply(plan, snapshot, value, model=adopted_family(value))
     if choice["mode"] == "basis":
         from diffeoforge.pilot_common_basis import apply
 
