@@ -168,3 +168,11 @@ physics verification. Native shape-transfer qualification and a public complete
 prepare/review/adopt/other-form journey are separate checks; neither establishes
 that one shared protocol fits every form. Composed-field projection and new model
 profiles remain outside this production change.
+
+The extended current-head qualification on 2026-11-03 passes all 68 synthetic
+workflow/guard checks, including complete retained-review-to-joint-to-finish
+journeys, duplicate dispatch, failed/stagnant candidate families, exact saved-fit
+reopening and two cumulative checkpoint extensions. These exercise navigation
+and provenance, not native anatomical success. Separate native reproduction and
+space/time checks cannot substitute for unresolved visible feature differences;
+no new scientific profile or installer follows from these test results alone.

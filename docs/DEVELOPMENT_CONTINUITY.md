@@ -1,5 +1,19 @@
 # Development continuity — dev187 installed and verified
 
+## Qualification follow-up — complete pilot journeys
+
+The 2026-11-03 current-head regression pack passes all 68 checks across retained
+individual/common reviews, repeated reopen/dispatch, finite candidate families,
+explicit model adoption, direct-field initialization, cumulative checkpoint
+budgets, cohort handoff and final qualification/completion. The synthetic
+controllers never start a native optimizer or alter private owner studies.
+
+A separate six-form native engineering comparison passes independent export
+reproduction and shared-source spatial/temporal checks. Visible feature
+differences remain, so this is not anatomical acceptance or a qualified shared
+model profile. No profile, installer or accuracy relaxation is promoted; the
+next existing-native preconditioning contrast remains isolated in private tests.
+
 ## Source follow-up — compare the current common-fit annotations
 
 Common diagnosis previously measured only the original accepted review's marked
