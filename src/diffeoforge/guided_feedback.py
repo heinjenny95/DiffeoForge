@@ -14,8 +14,9 @@ def severe_regression(snapshot, identifier):
     candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
     subjects = (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
     return any(r.get("refinement_guard", {}).get("severe") is True
-               or (r.get("regional_quality") and not r["regional_quality"][
-                   "numerical_selection_suitable"]) for r in subjects.values())
+               or any(r.get(kind) and not r[kind]["numerical_selection_suitable"]
+                      for kind in ("regional_quality", "ordinary_quality"))
+               for r in subjects.values())
 
 
 def reference(snapshot, identifier, target=None):

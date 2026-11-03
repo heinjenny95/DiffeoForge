@@ -4109,8 +4109,8 @@ class ReferenceCalibrationDialog(QDialog):
             self._preview_prefetch.request_operation(candidate_id, prefetch)
             subjects = ((candidate.metrics or {}).get('attachment_comparison', {})
                         .get('subjects', {}))
-            rejected = any((r.get('regional_quality') or {}).get(
-                'numerical_selection_suitable') is False for r in subjects.values())
+            rejected = any((r.get(kind) or {}).get('numerical_selection_suitable') is False
+                for r in subjects.values() for kind in ('regional_quality', 'ordinary_quality'))
             self.status.setText(
                 f'{candidate_id}: fit saved, but numerical checks did not pass. '
                 'The retained starting fit stays available.' if rejected else

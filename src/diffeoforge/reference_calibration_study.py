@@ -2388,7 +2388,12 @@ class ReferenceCalibrationStudyRunner:
                         from diffeoforge.reference_attachment_comparison import measure
 
                         options = {}
-                        if manifest["attachment_comparison"].get("regional_objective"):
+                        from diffeoforge.reference_ordinary_guard import DECLARATION as ORDINARY
+
+                        marker = load_config(candidate.config_path)["project"].get(
+                            "parameter_provenance", {}).get("finite_accepted_guard")
+                        if (manifest["attachment_comparison"].get("regional_objective")
+                                or marker == ORDINARY):
                             options = dict(cancelled=lambda: self._cancel_requested,
                                            event_callback=event_callback)
                         measured.update(measure(

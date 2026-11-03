@@ -28,12 +28,12 @@ def subdivide(vertices, faces, selected, *, maximum_vertices=500_000):
     return np.vstack((v, v[edges].mean(1))), output, parents
 
 
-def selection(vertices, faces, regions, width, *, source_vertices=None):
+def selection(vertices, faces, regions, width, *, source_vertices=None, whole_surface=False):
     from diffeoforge.mesh_filter_worker import run_mesh_filter
     from diffeoforge.regional_fit import mask
 
     v, f = np.asarray(vertices, float), np.asarray(faces, np.int64)
-    active = mask(v[f].mean(1), regions, halo=width)
+    active = np.ones(len(f), bool) if whole_surface else mask(v[f].mean(1), regions, halo=width)
     lengths = np.max(np.linalg.norm(v[f] - v[np.roll(f, 1, axis=1)], axis=2), axis=1)
     selected = active & (lengths > width * 0.5 * (1 + 1e-8))
     flagged = run_mesh_filter("intersections", vertices=v, faces=f)["faces"]
@@ -63,7 +63,8 @@ def _selection(receipt, source, fitted, regions, width, *, coarse_input_clean=Fa
     if not np.array_equal(before.triangles, fitted.triangles):
         raise ValueError('Incoming field and fitted contact grids differ')
     return selection(fitted.vertices, fitted.triangles, regions, width,
-                     source_vertices=None if coarse_input_clean else before.vertices)
+                     source_vertices=None if coarse_input_clean else before.vertices,
+                     **(dict(whole_surface=True) if receipt.get('whole_surface_sampling') else {}))
 
 
 def coarse_input_contacts(receipt, cache=None):

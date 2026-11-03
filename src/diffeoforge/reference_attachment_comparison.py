@@ -421,10 +421,21 @@ def measure(root, manifest, candidate, run, *, cancelled=lambda: False, event_ca
     from diffeoforge.surface_io import load_surface_mesh
 
     report = collect_run_report(run)
-    from diffeoforge.regional_quality import evaluate_and_measure
+    from diffeoforge.reference_ordinary_guard import DECLARATION as ORDINARY
 
-    quality = evaluate_and_measure(root, manifest, candidate, run,
-                                  cancelled=cancelled, event_callback=event_callback)
+    marker = report.manifest["effective_config"]["project"].get(
+        "parameter_provenance", {}).get("finite_accepted_guard")
+    quality_kind = "ordinary_quality" if marker == ORDINARY else "regional_quality"
+    if marker == ORDINARY:
+        from diffeoforge.ordinary_field_quality import evaluate_and_measure
+
+        quality = evaluate_and_measure(root, candidate, run, cancelled=cancelled,
+                                       event_callback=event_callback)
+    else:
+        from diffeoforge.regional_quality import evaluate_and_measure
+
+        quality = evaluate_and_measure(root, manifest, candidate, run,
+                                      cancelled=cancelled, event_callback=event_callback)
     paths = {
         Path(row["path"]).name: run / "output" / row["path"]
         for row in report.inventory
@@ -462,7 +473,11 @@ def measure(root, manifest, candidate, run, *, cancelled=lambda: False, event_ca
             subjects[row["filename"]]["refinement_guard"] = geometry_guard(
                 baseline, subjects[row["filename"]])
         if quality:
-            subjects[row["filename"]]["regional_quality"] = quality
+            subjects[row["filename"]][quality_kind] = quality
+            if quality_kind == "ordinary_quality" and not quality["passed"]:
+                subjects[row["filename"]]["warnings"].append(
+                    "Saved-field source/time qualification did not pass; inspect the retained "
+                    "fit and its numerical checks before another model test.")
         feedback = manifest["attachment_comparison"].get("guided", {}).get("feedback")
         if feedback and feedback["target"] == row["filename"]:
             from diffeoforge.guided_refinement import geometry_guard

@@ -1,5 +1,26 @@
 # Development continuity — dev187 installed and verified
 
+## Source follow-up — qualified ordinary fixed-field endpoints
+
+New guarded ordinary singleton results now have a separate source/time quality
+record. It uses the unchanged saved field, conforming original-source sampling,
+bounded nested RK2 grids and the existing temporal, native-export and actual-grid
+accuracy criteria. Whole-surface sampling is explicit; old regional behavior stays
+unchanged. Measurements and previews use the qualified hash-bound endpoint.
+Failed checks stay visible and veto replacement of a retained starting fit;
+cancellation reaches native evaluation and geometry workers without refitting.
+
+Two reproduced identity counterexamples now fail closed: altered native bytes
+before verification and an original target changed during it. All 85 distinct
+focused validation, presentation, refinement, regional/material and feedback checks
+pass. A completed public product run passes the real unchanged-field pipeline,
+including source refinement, actual-grid accuracy and native export reproduction.
+Ruff and whitespace checks pass. Native exports, old fields and approvals remain
+unchanged. The finite coarse/detail common workflow and cohort qualification are
+still separate ongoing work; installed dev187 is unchanged.
+
+See [ordinary fixed-field quality](ORDINARY_FIELD_QUALITY.md).
+
 ## Source follow-up — explicit full-target singleton native guard
 
 New explicitly marked ordinary varifold singleton probes can use existing native

@@ -47,14 +47,15 @@ def endpoint(candidate):
     """Return the exact measured endpoint, checking its immutable binding."""
     subjects = (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
     rows = [
-        r["regional_quality"]["evaluation"]["endpoint"]
+        r[kind]["evaluation"]["endpoint"]
         for r in subjects.values()
-        if r.get("regional_quality")
+        for kind in ("regional_quality", "ordinary_quality")
+        if r.get(kind)
     ]
     if not rows:
         return None
     if len(rows) != 1 or sha256_file(Path(rows[0]["path"])) != rows[0]["sha256"]:
-        raise ValueError("The evaluated regional reconstruction changed")
+        raise ValueError("The evaluated singleton reconstruction changed or is ambiguous")
     return rows[0]
 
 
