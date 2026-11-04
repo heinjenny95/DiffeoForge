@@ -369,6 +369,10 @@ def verify_strategy(info, record, manifest, study_root=None):
                 return False
             if optimization["common_model"]:
                 allowance = ITERATIONS
+            elif strategy.get("regional_continuation"):
+                # A same-objective successor gets one additional block of the
+                # prior size. The cumulative branch total is recorded separately.
+                allowance = candidate.metrics["maximum_iterations"]
         if (info["phase"] != "refine" or info["goal"] != "optimize"
                 or parent.plan.pilot_subject_count != 1 or not iteration_limited(candidate)
                 or set(record["methods"].values()) != {optimization["reference"]["method"]}

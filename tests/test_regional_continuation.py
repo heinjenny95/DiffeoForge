@@ -348,13 +348,13 @@ def test_ineligible_states_never_auto_continue(case, change):
     assert continuation.proposal(case.snapshot, case.identifier, case.data) is None
 
 
-def prepared(case):
+def prepared(case, *, iterations=8):
     proposal = continuation.proposal(case.snapshot, case.identifier, case.data)
     marker = proposal["regional_continuation"]
     root = case.tmp / "new-study"
     root.mkdir()
     record = dict(
-        iterations=8,
+        iterations=iterations,
         methods={case.identifier: "varifold"},
         refinement=dict(version="guided-refinement-v1", reference=case.ref),
         guided=dict(
@@ -375,6 +375,39 @@ def prepared(case):
     continuation.verify(root, manifest, record)
     regional_pilot.verify(root, manifest, record)
     return root, manifest, record, old_seals
+
+
+@pytest.mark.parametrize("versioned,iterations,expected", [
+    (True, 4, True), (True, 8, False), (False, 8, True),
+])
+def test_pilot_reopens_regional_successor_with_its_declared_allowance(
+    case, monkeypatch, versioned, iterations, expected,
+):
+    from diffeoforge import guided_strategy
+    from diffeoforge.pilot_common_model import EFFORT_VERSION
+
+    root, manifest, record, _ = prepared(case, iterations=iterations)
+    previous = case.tmp / "previous"
+    previous.mkdir()
+    previous_manifest = previous / study.STUDY_MANIFEST
+    write_json(previous_manifest, dict(parent=True))
+    case.snapshot.study_directory = previous
+    case.snapshot.attachment_comparison = dict(methods={case.identifier: "varifold"})
+    origin = str(case.tmp / "origin")
+    monkeypatch.setattr(study, "_verify_manifest", lambda path: {
+        "attachment_comparison": {"guided": {"origin": origin, "screen_trials_spent": 4}},
+    })
+    monkeypatch.setattr(guided_strategy, "_verify_reference", guided_feedback.verify_reference)
+    info = record["guided"]
+    info.update(origin=origin, phase="refine", pilot_order=["target.vtk", "other.vtk"],
+                screen_trial_limit=None, screen_trials_spent=5)
+    optimization = dict(reference=case.ref, iterations=iterations)
+    if versioned:
+        optimization.update(version=EFFORT_VERSION, initial_iterations=4, common_model=False)
+    info["strategy"].update(previous=dict(directory=str(previous),
+                                          manifest_sha256=sha256_file(previous_manifest)),
+                            baseline=case.ref, optimization=optimization)
+    assert guided_strategy.verify_strategy(info, record, manifest, root) is expected
 
 
 def test_real_prepare_and_render_keep_all_geometry_prefix_basis_and_physics(case, monkeypatch):
@@ -559,7 +592,20 @@ def test_actual_batch_staging_never_presents_regional_terms_as_full_cohort(
 
 def preview_inputs(case, monkeypatch):
     """Real inputs() assembly, with unrelated historical UI lookup fixtures."""
+    from test_guided_pilot import origin
+
     from diffeoforge import guided_response, guided_strategy, regional_search
+    from diffeoforge.config import load_config
+
+    origin_root = case.tmp / "preview-origin"
+    origin_root.mkdir()
+    original = origin(origin_root)
+    original_manifest = study._verify_manifest(original.study_directory)
+    config = load_config(original.study_directory / original_manifest["source_config"]["copy"])
+    case.config["project"]["parameter_provenance"]["recommendation"] = copy.deepcopy(
+        config["project"]["parameter_provenance"]["recommendation"]
+    )
+    study._write_yaml(case.candidate.config_path, case.config, overwrite=True)
 
     case.snapshot.study_directory = case.tmp / "preview-study"
     context = dict(case.data["context"], allowed={case.identifier: True})

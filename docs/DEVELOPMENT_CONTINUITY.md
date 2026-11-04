@@ -1,5 +1,21 @@
 # Development continuity — dev189 installed and verified
 
+## dev190 source — regional continuation allowance
+
+The same-objective regional successor receives an additional block equal to
+its predecessor's native allowance. Its cumulative branch count is recorded
+separately. The guided study validator now checks the additional allowance for
+this versioned contract. Previously it applied the older doubled-budget rule
+and rejected valid prepared successors when reopening them. Existing legacy
+and common-model contracts keep their own allowance rules.
+
+The regression covers a versioned successor with the correct extra block,
+rejection of the doubled allowance for that contract, and legacy reopening.
+The two saved pending continuations that exposed the issue now load read-only
+with 600 earlier iterations and 600 additional iterations. Their source fits,
+reviews and prepared files were preserved. This delivery is a local package
+for review while the owner tests the installed dev189.
+
 ## dev189 delivery closure
 
 The local Windows app is dev189, built from runtime commit
