@@ -4,7 +4,8 @@ import math
 
 import numpy as np
 
-VERSION = "common-broad-detail-v1"
+LEGACY_VERSION = "common-broad-detail-v1"
+VERSION = "common-broad-detail-v2"
 MAX_CONTROLS = 2000
 AREA_SAMPLES = 8192
 SOURCE_VERTEX_CANDIDATES = 65536
@@ -17,16 +18,23 @@ VALUE_KEYS = (
 )
 
 
-def specification(values, *, precision, tolerance, required_controls):
+def specification(values, *, precision, tolerance, required_controls, controls=None,
+                  version=VERSION):
     """One declared two-objective experiment, never an unchanged continuation."""
     if (
-        precision != "float32"
+        version not in {VERSION, LEGACY_VERSION}
+        or precision != "float32"
         or type(required_controls) is not int
         or not 1 <= required_controls <= MAX_CONTROLS
     ):
         raise ValueError(
             "This qualified shared hypothesis requires Float32 and at most 2,000 controls"
         )
+    selected = MAX_CONTROLS if version == LEGACY_VERSION else (
+        required_controls if controls is None else controls)
+    if (type(selected) is not int or not required_controls <= selected <= MAX_CONTROLS
+            or version == LEGACY_VERSION and controls not in {None, MAX_CONTROLS}):
+        raise ValueError("Shared support must cover the accepted control demand within its guard")
     if (
         isinstance(tolerance, bool)
         or not isinstance(tolerance, (int, float))
@@ -52,7 +60,7 @@ def specification(values, *, precision, tolerance, required_controls):
     )
     detail = dict(capture, attachment_kernel_width=width * 0.45)
     return dict(
-        version=VERSION,
+        version=version,
         baseline=base,
         stages=[
             dict(name="capture", values=capture, maximum_iterations=120, initializer="native_zero"),
@@ -63,7 +71,7 @@ def specification(values, *, precision, tolerance, required_controls):
                 initializer="same_form_complete_capture_field",
             ),
         ],
-        controls=MAX_CONTROLS,
+        controls=selected,
         required_controls=required_controls,
         precision=precision,
         timepoints=37,
@@ -167,7 +175,7 @@ def source_supported_sites(prefix, vertices, faces, *, target_count=MAX_CONTROLS
         minimum = np.minimum(minimum, np.sum((cloud - point) ** 2, axis=1))
         added.append(index)
     return points, dict(
-        version=VERSION,
+        version=LEGACY_VERSION,
         count=len(points),
         preserved_sites=len(prefix),
         source_vertex_candidates=len(ids),
@@ -183,13 +191,13 @@ def source_supported_sites(prefix, vertices, faces, *, target_count=MAX_CONTROLS
     )
 
 
-def retained_support(snapshot, value):
+def retained_support(snapshot, value, *, version=VERSION):
     """Read complete accepted-field sites on their verified original cohort.
 
-    Original common settings remain the physics reference. A matching current
-    ordinary candidate may contribute its extra control locations, even when
-    its shape was rejected; none of its momenta or approval is reused.
-    Every accepted field/prefix contributes locations only, not coefficients.
+    The original common settings supply the movement scale. V2 takes support
+    from that basis, the accepted fields and the original surface. V1 also
+    retained compatible sites from an unapproved current candidate.
+    Every accepted field or prefix contributes only its locations.
     """
     from pathlib import Path
 
@@ -222,7 +230,8 @@ def retained_support(snapshot, value):
     prefix_study = base
     current = study._verify_manifest(snapshot.study_directory)
     if (
-        not snapshot.attachment_comparison.get("regional_objective")
+        version == LEGACY_VERSION
+        and not snapshot.attachment_comparison.get("regional_objective")
         and current["inputs"]["template"]["sha256"] == template_row["sha256"]
         and snapshot.attachment_comparison["controls"]["count"] > controls["count"]
     ):
@@ -277,17 +286,28 @@ def retained_support(snapshot, value):
         include(study.calibration_candidate_run_directory(c), ref["target"], target["sha256"])
     union, merged = merge_sites(prefix, blocks, diagonal=diagonal)
     counts = demand(value)
+    selection = None
+    if version == VERSION:
+        from diffeoforge.pilot_adaptive_support import select_sites
+
+        union, selection = select_sites(
+            union, source.vertices, source.triangles,
+            kernel_width=original["values"]["deformation_kernel_width"] * 0.5,
+            required_controls=max(counts.values()),
+        )
     spec = specification(
         original["values"],
         precision=config["runtime"]["precision"],
         tolerance=config["optimization"]["convergence_tolerance"],
         required_controls=max(counts.values()),
+        controls=len(union) if version == VERSION else None,
+        version=version,
     )
     return (
         union,
         source,
         dict(
-            version=VERSION,
+            version=version,
             original_protocol=original,
             template=dict(path=str(template), sha256=sha256_file(template)),
             prefix=dict(
@@ -305,6 +325,7 @@ def retained_support(snapshot, value):
             union=merged,
             accepted_control_demand=counts,
             specification=spec,
+            **(dict(selection=selection) if selection else {}),
             accepted_reviews=rows,
             sites_only=True,
             momenta_transferred=False,

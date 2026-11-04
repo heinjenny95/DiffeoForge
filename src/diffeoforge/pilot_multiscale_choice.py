@@ -159,14 +159,26 @@ def choice(snapshot, value, target, previous):
             )
             if previous and key in previous
         }
+        from diffeoforge.pilot_multiscale_study import request
+
+        try:
+            declaration = request(snapshot, value, target=target, model=model)
+        except (OSError, ValueError) as error:
+            return dict(retained_review, mode="stalled", available=False, target=target,
+                        label="Inspect shared-control evidence · " + target,
+                        reason=str(error))
+        count = declaration["specification"]["controls"]
+        support = ("from the adopted shared basis" if model else
+                   "derived from accepted individual fields and measured source coverage")
         return dict(
             retained_review,
             mode="broad_detail",
             available=True,
             target=target,
-            label="Prepare broad/detail common test · 2,000 CP · " + target,
+            label=f"Prepare broad/detail common test · {count:,} CP · " + target,
             reason="One explicit two-stage hypothesis: capture the whole form, then match "
-            "detail on the same original template and 2,000 control sites. Up to "
+            f"detail on the same original template and {count:,} shared control sites "
+            f"{support}. Up to "
             "120 native iterations per stage, fresh optimizer history, no timed "
             "review pauses or automatic recovery. Checks follow each stage. "
             "Your accepted individual fits and all previous decisions stay saved.",

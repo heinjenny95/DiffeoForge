@@ -15,15 +15,26 @@ cohort. The initial common protocol supplies the scale reference. An already
 adopted broad/detail protocol reuses its original family; its kernel is not
 halved again for each form.
 
-The new hypothesis uses half the reference deformation width and half its noise
-standard deviation. A shared set of 2,000 control locations retains the original
-common sites, compatible extra ordinary-candidate sites, and the union of accepted
-complete-field/prefix sites. Additional locations use deterministic farthest-point
-sampling of the unchanged original source surface: 8,192 equal-area samples,
-up to 65,536 source vertices, and fixed seed 2026110207. Existing rows are retained.
-Sites from differently fitted fields are ambient locations only. Their momenta
-are never added, projected, or copied to another form. Over-budget accepted
-support and unsupported precision are rejected rather than silently reduced.
+New v2 hypotheses use half the reference deformation width and half its noise
+standard deviation. The shared basis retains the original common sites and the
+union of approved complete-field sites, including preserved prefixes and local
+additions. Compatible sites from an unapproved contrast are excluded. The largest
+complete approved-field count is the minimum capacity.
+
+The selector adds farthest points from the original source surface until both
+the minimum capacity and measured coverage are met. Coverage requires the most
+distant sampled source location to be within one proposed deformation width of
+a control site. The deterministic sample uses 8,192 equal-area points, up to
+65,536 source vertices, and seed 2026110207. Preparation records the approved
+demand, retained sites, added sites, and measured coverage. The preparation
+action and candidate card display the selected count. The resource ceiling is
+2,000 sites. Exceeding it blocks preparation with an explanation.
+
+Control sites represent locations. Reuse of those sites does not transfer any
+momenta between forms. Coverage is a sampled geometric criterion for a fit
+hypothesis. Each result still needs the usual quality checks and review.
+Earlier v1 preparations and adopted v1 families keep their exact saved basis
+and two-stage contract.
 
 Each new form starts its own capture from native zero momenta on the same original
 template and control basis. Capture uses attachment width twice the new

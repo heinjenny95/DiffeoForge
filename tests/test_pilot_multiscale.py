@@ -86,6 +86,7 @@ def test_explicit_failed_contrast_can_choose_qualified_route_without_another_old
 
     monkeypatch.setattr(guided, "record", lambda _: dict(history=[], pilot_order=["a", "b"]))
     monkeypatch.setattr(pipeline, "adopted_family", lambda _: None)
+    monkeypatch.setattr(pipeline, "request", lambda *a, **k: dict(specification=dict(controls=53)))
     snapshot = SimpleNamespace(attachment_comparison={})
     reviews = [dict(filename="a"), dict(filename="b")]
     value = dict(reviews=reviews)
@@ -101,7 +102,7 @@ def test_explicit_failed_contrast_can_choose_qualified_route_without_another_old
     before = deepcopy(value)
     result = choices.choice(snapshot, value, "a", previous)
     assert result["mode"] == "broad_detail" and result["available"]
-    assert "2,000 CP" in result["label"] and value == before
+    assert "53 CP" in result["label"] and value == before
     assert result["review_reference"] == previous["review_reference"]
     assert result["test_number"] == 8
 

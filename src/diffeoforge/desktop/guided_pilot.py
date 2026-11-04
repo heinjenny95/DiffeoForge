@@ -345,7 +345,8 @@ def render(window, prepared):
                            if number == 1 else
                            "Match detail from this form's checked capture; review this result.")
             note = QLabel(f"Common model · stage {number} of 2: {description} "
-                          "2,000 shared control points · up to 120 iterations in this stage.")
+                          f"{multiscale['specification']['controls']:,} shared control points "
+                          "· up to 120 iterations in this stage.")
             note.setObjectName("commonMultiscaleStage")
             note.setWordWrap(True)
             layout.addWidget(note)

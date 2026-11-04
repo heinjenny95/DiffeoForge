@@ -24,7 +24,7 @@ def synthetic_inputs(monkeypatch):
     from diffeoforge.pilot_common_capacity import demand
     from diffeoforge.surface_io import load_surface_mesh
 
-    def sites(snapshot, value):
+    def sites(snapshot, value, *, version=support.VERSION):
         parent = verify_reference(value["protocol"]["reference"])
         manifest = study._verify_manifest(parent.study_directory)
         row = manifest["inputs"]["template"]
@@ -33,11 +33,19 @@ def synthetic_inputs(monkeypatch):
         cp_path = parent.study_directory / cp["copy"]
         candidate = parent.candidates[0]
         cfg = load_config(candidate.config_path)
+        from diffeoforge.pilot_adaptive_support import select_sites
+
+        geometry = load_surface_mesh(path).geometry
+        counts = demand(value)
+        points, selection = select_sites(
+            np.loadtxt(cp_path, ndmin=2), geometry.vertices, geometry.triangles,
+            kernel_width=value["protocol"]["reference"]["values"]["deformation_kernel_width"]*.5,
+            required_controls=max(counts.values()))
         spec = support.specification(
             value["protocol"]["reference"]["values"],
             precision=cfg["runtime"]["precision"],
             tolerance=cfg["optimization"]["convergence_tolerance"],
-            required_controls=max(demand(value).values()),
+            required_controls=max(counts.values()), controls=len(points), version=version,
         )
         proof = dict(
             specification=spec,
@@ -49,8 +57,9 @@ def synthetic_inputs(monkeypatch):
                 study_manifest_sha256=sha256_file(parent.study_directory / study.STUDY_MANIFEST),
             ),
             blocks=[],
+            selection=selection,
         )
-        return np.loadtxt(cp_path, ndmin=2), load_surface_mesh(path).geometry, proof
+        return points, geometry, proof
 
     monkeypatch.setattr(support, "retained_support", sites)
 

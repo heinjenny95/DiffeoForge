@@ -1,5 +1,26 @@
 # Development continuity — dev188 installed and verified
 
+## Source follow-up — adaptive common control selection
+
+New broad/detail preparations derive their control count from the original
+common basis, all retained approved fields, and measured source coverage.
+Deterministic farthest-point additions stop when the basis meets the largest
+complete approved-field demand and covers the sampled source at the proposed
+movement width. The preparation button and stage card show the selected count.
+Saved v1 preparations and adopted families keep their declared controls.
+
+The 49 focused software cases passed, including the complete review and
+adoption journey. Actual prepared contracts rejected altered selection metadata,
+and the saved v1 detail contract reopened with identical bindings. Separate
+native two-stage tests on three forms from two datasets passed the source,
+integration, native export, and geometry checks with the existing iteration
+limits. The reduced basis showed a measurable detail tradeoff against the prior
+dense comparison. This qualification covers the tested forms and software
+workflow. Joint atlas and anatomical review remain separate decisions.
+The installed build is dev188.
+
+See [shared control selection](PILOT_COMMON_BROAD_DETAIL.md).
+
 ## dev188 delivery closure
 
 The local Windows installation is now dev188, built from runtime source

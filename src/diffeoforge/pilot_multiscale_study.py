@@ -9,7 +9,7 @@ from diffeoforge import reference_calibration_study as study
 from diffeoforge import reference_guided_pilot as guided
 from diffeoforge.config import load_config
 from diffeoforge.mesh import sha256_file
-from diffeoforge.pilot_multiscale import VERSION
+from diffeoforge.pilot_multiscale import LEGACY_VERSION, VERSION
 
 
 def marker(record):
@@ -57,21 +57,10 @@ def request(snapshot, value, *, target, model=None, capture=None):
     if target not in info["pilot_order"]:
         raise ValueError("Capture/detail target is outside this pilot")
     if model is None and capture is None:
-        from diffeoforge.pilot_common_capacity import demand
-        from diffeoforge.pilot_multiscale import specification
+        from diffeoforge.pilot_multiscale import retained_support
 
-        ref = value["protocol"]["reference"]
-        from diffeoforge.guided_feedback import verify_reference
-
-        parent = verify_reference(ref)
-        c = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
-        config = load_config(c.config_path)
-        spec = specification(
-            ref["values"],
-            precision=config["runtime"]["precision"],
-            tolerance=config["optimization"]["convergence_tolerance"],
-            required_controls=max(demand(value).values()),
-        )
+        _, _, proof = retained_support(snapshot, value)
+        spec = proof["specification"]
         return dict(
             version=VERSION,
             stage="capture",
@@ -90,7 +79,7 @@ def request(snapshot, value, *, target, model=None, capture=None):
     if original["accepted_marker"]["reviews"] != value["reviews"]:
         raise ValueError("The retained individual approvals changed")
     return dict(
-        version=VERSION,
+        version=original["version"],
         stage="detail" if capture else "capture",
         target=target,
         family=binding(base),
@@ -179,13 +168,17 @@ def bind(root, manifest, record):
         support = deepcopy(prior["multiscale"]["support"])
     else:
         parent = bound_snapshot(declaration["support_source"])
-        union, geometry, proof = retained_support(parent, declaration["accepted_marker"])
+        union, geometry, proof = retained_support(
+            parent, declaration["accepted_marker"], version=declaration["version"])
         if (
             proof["specification"] != declaration["specification"]
             or proof["template"]["sha256"] != manifest["inputs"]["template"]["sha256"]
         ):
             raise ValueError("New common support must retain the original template and model")
-        points, recipe = source_supported_sites(union, geometry.vertices, geometry.triangles)
+        if declaration["version"] == LEGACY_VERSION:
+            points, recipe = source_supported_sites(union, geometry.vertices, geometry.triangles)
+        else:
+            points, recipe = union, proof["selection"]
         path = root / "multiscale-controls.txt"
         np.savetxt(path, points, fmt="%.17g")
         support = dict(inputs=proof, sampling=recipe)
@@ -194,7 +187,7 @@ def bind(root, manifest, record):
         != manifest["inputs"]["template"]["sha256"]
     ):
         raise ValueError("Common capture/detail template changed")
-    details = dict(version=VERSION, support=support, initial_momenta=None)
+    details = dict(version=declaration["version"], support=support, initial_momenta=None)
     if declaration["capture"]:
         capture = bound_snapshot(declaration["capture"])
         old = study._verify_manifest(capture.study_directory)
@@ -257,9 +250,11 @@ def verify(info, record, manifest, root):
         precision=spec["precision"],
         tolerance=spec["tolerance"],
         required_controls=spec["required_controls"],
+        controls=spec["controls"],
+        version=declaration["version"],
     )
     if (
-        declaration["version"] != VERSION
+        declaration["version"] not in {VERSION, LEGACY_VERSION}
         or spec != expected
         or declaration["stage"] not in {"capture", "detail"}
         or declaration["target"] != info["target"]
@@ -312,6 +307,20 @@ def verify(info, record, manifest, root):
         or support["template"]["sha256"] != manifest["inputs"]["template"]["sha256"]
     ):
         raise ValueError("Original source support binding changed")
+    if declaration["version"] == VERSION:
+        from diffeoforge.pilot_adaptive_support import VERSION as SELECTION_VERSION
+
+        selected = support.get("selection") or {}
+        if (selected.get("version") != SELECTION_VERSION
+                or details["version"] != VERSION
+                or selected != details["support"]["sampling"]
+                or selected.get("count") != spec["controls"]
+                or selected.get("required_controls") != spec["required_controls"]
+                or selected.get("coverage_radius")
+                != spec["stages"][0]["values"]["deformation_kernel_width"]
+                or selected.get("maximum_candidate_support_distance", np.inf)
+                > selected["coverage_radius"]):
+            raise ValueError("Data-derived shared support differs from its bound selection")
     prefix = support["prefix"]
     if (
         sha256_file(Path(prefix["path"])) != prefix["sha256"]

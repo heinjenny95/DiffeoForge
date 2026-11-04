@@ -20,6 +20,9 @@ def test_common_viewer_feedback_roundtrip_and_fixed_next_action(tmp_path, monkey
 
     app = QApplication.instance() or QApplication([])
     _, current, trend = rejected_capacity(tmp_path, monkeypatch, outcome=None)
+    from test_pilot_multiscale_journey import synthetic_inputs
+
+    synthetic_inputs(monkeypatch)
     trend['value'] = 'improving'
     original_reviews = deepcopy(current.visual_reviews)
     original_ledger = deepcopy(pilot_form_progress.marker(current))
@@ -82,7 +85,7 @@ def test_common_viewer_feedback_roundtrip_and_fixed_next_action(tmp_path, monkey
                 assert choice['kind'] == 'iterations'
             else:
                 assert choice['mode'] == 'broad_detail'
-                assert '2,000 CP' in choice['label']
+                assert 'CP' in choice['label'] and '2,000 CP' not in choice['label']
             assert parent.next_step_button.isVisible() and parent.next_step_button.isEnabled()
             assert parent.next_step_button.text() == choice['label']
             assert parent._guided_footer_action == (
@@ -111,6 +114,9 @@ def test_first_common_review_saves_comparison_and_rejection_in_one_visit(tmp_pat
 
     app = QApplication.instance() or QApplication([])
     _, current, trend = rejected_capacity(tmp_path, monkeypatch, outcome=None, reviewed=False)
+    from test_pilot_multiscale_journey import synthetic_inputs
+
+    synthetic_inputs(monkeypatch)
     trend['value'] = 'improving'
     ledger = deepcopy(pilot_form_progress.marker(current))
     folders = set(current.study_directory.parent.iterdir())
@@ -158,7 +164,7 @@ def test_first_common_review_saves_comparison_and_rejection_in_one_visit(tmp_pat
         assert opinion['outcome'] == 'same'
         choice = guided_strategy.state(saved)['common_recovery']
         assert choice['mode'] == 'broad_detail'
-        assert '2,000 CP' in choice['label']
+        assert 'CP' in choice['label'] and '2,000 CP' not in choice['label']
         assert parent.next_step_button.isEnabled()
         assert parent.next_step_button.text() == choice['label']
         assert pilot_form_progress.marker(saved) == ledger
