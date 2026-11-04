@@ -5,6 +5,7 @@ from copy import deepcopy
 import pytest
 from test_guided_feedback import attempted
 from test_guided_pilot import approve, run_batch
+from test_interactive_pilot import initial
 from test_pilot_region_feedback import reject
 
 from diffeoforge import guided_strategy as strategy
@@ -16,9 +17,13 @@ from diffeoforge.mesh import sha256_file
 
 
 def local_fit(tmp_path, monkeypatch):
+    base, completed = attempted(tmp_path, monkeypatch)
+    return base, regional_fit(completed, monkeypatch)
+
+
+def regional_fit(completed, monkeypatch):
     from dataclasses import replace
 
-    base, completed = attempted(tmp_path, monkeypatch)
     accepted = approve(completed, 'guided-varifold')
     load = study.load_reference_calibration_study
     root = accepted.study_directory
@@ -33,7 +38,7 @@ def local_fit(tmp_path, monkeypatch):
             regional_objective=dict(version='synthetic-regional-classification')))
 
     monkeypatch.setattr(study, 'load_reference_calibration_study', classified)
-    return base, classified(root)
+    return classified(root)
 
 
 def test_suitable_regional_result_prepares_next_form_without_transferring_field_or_approval(
@@ -121,3 +126,35 @@ def test_progress_rejects_unapproved_or_changed_protocol(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match='protocol'):
         progress.verify_marker(bad, guided.record(accepted)['origin'],
                                guided.record(accepted)['pilot_order'])
+
+
+def test_switch_to_individual_forms_recovers_earlier_approved_fit(tmp_path, monkeypatch):
+    first = approve(run_batch(initial(tmp_path), monkeypatch), 'guided-varifold')
+    prior = guided._approved_record(first, 'guided-varifold')
+    second = guided.next_action(first.study_directory, 'adaptive_confirm', 'guided-varifold')
+    second = reject(run_batch(second, monkeypatch), 'guided-varifold')
+    trial = guided.next_action(second.study_directory, 'adaptive_recover',
+                               'guided-varifold', goal='goal:detail')
+    local = regional_fit(run_batch(trial, monkeypatch), monkeypatch)
+    accepted = guided._approved_record(local, 'guided-varifold')
+    assert progress.marker(local) is None
+    next_form = guided.next_action(local.study_directory, 'adaptive_next_form', 'guided-varifold')
+    saved = progress.marker(next_form)
+    assert {r['filename']: r for r in saved['reviews']} == {
+        r['filename']: r for r in (prior, accepted)}
+    assert guided.record(next_form)['target'] not in {prior['filename'], accepted['filename']}
+    assert not next_form.visual_reviews and next_form.candidates[0].attempts == 0
+    assert saved['common_approval_created'] is False
+    assert accepted not in guided.record(next_form)['approved']
+
+    # Older prepared pilots can already have a forms ledger with missing entries.
+    # Read the same history with that incomplete ledger and recover its counts.
+    incomplete = dict(saved, reviews=[accepted])
+    monkeypatch.setattr(progress, 'marker', lambda _: deepcopy(incomplete))
+    current = approve(run_batch(next_form, monkeypatch), 'guided-varifold')
+    context = strategy.state(current)
+    following = context['next_forms']['guided-varifold']
+    assert {r['filename']: r for r in following['marker']['reviews']} == {
+        r['filename']: r for r in (prior, accepted,
+                                  guided._approved_record(current, 'guided-varifold'))}
+    assert following['shapes'] == context['form_progress_summary']['shapes'] == 3

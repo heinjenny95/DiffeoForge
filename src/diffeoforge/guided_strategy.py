@@ -108,6 +108,8 @@ def _context(snapshot):
 
 
 def _read_context(snapshot):
+    from diffeoforge.pilot_form_progress import is_common_check
+
     cases, goals = [], []
     for row in [*guided.record(snapshot)["history"], None]:
         other = snapshot
@@ -123,6 +125,7 @@ def _read_context(snapshot):
             raise ValueError("Saved pilot history belongs to another source cohort")
         if info.get("goal") in set(DESCRIPTIONS) - {"other_method"}:
             goals.append(info["goal"])
+        individual = other.plan.pilot_subject_count == 1 and not is_common_check(info)
         for candidate in other.candidates:
             if candidate.status == "completed":
                 feedback = [e for e in study._load_events(other.study_directory)
@@ -133,6 +136,7 @@ def _read_context(snapshot):
                                 if c.candidate_id == candidate.candidate_id),
                     target=info["target"],
                     goal=info.get("goal"),
+                    individual=individual,
                     reference=other.attachment_comparison.get("refinement", {}).get("reference"),
                     comparison=(info.get("strategy") or {}).get("anchor"),
                     family=(info.get("strategy") or {}).get("search_family", info.get("goal")),
@@ -216,12 +220,13 @@ def _read_state(snapshot):
     if (info.get("strategy") or {}).get("form_progress"):
         from diffeoforge.pilot_common_model import approvals
         from diffeoforge.pilot_common_model import preview as common_preview
-        from diffeoforge.pilot_form_progress import marker
+        from diffeoforge.pilot_form_progress import individual_reviews, marker
 
         progress = marker(snapshot)
         result["checked"] = len(approvals(snapshot, result, progress))
         result["form_progress_summary"] = dict(
-            shapes=len(progress["reviews"]), checked=result["checked"], total=result["total"])
+            shapes=len(individual_reviews(progress, result, info["pilot_order"])),
+            checked=result["checked"], total=result["total"])
         result["common_recovery"] = common_preview(snapshot, result, info["target"])
         from diffeoforge.pilot_form_progress import compatible, proposal
 

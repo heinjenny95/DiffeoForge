@@ -19,6 +19,27 @@ def marker(snapshot):
     return deepcopy(result) if result else None
 
 
+def is_common_check(info):
+    strategy = info.get("strategy") or {}
+    return (info.get("goal") in {"form_model_check", "common_continue"}
+            or any(strategy.get(key) for key in (
+                "shared_model_check", "common_diagnosis_test", "common_capacity_request",
+                "common_model_step", "common_candidate_step", "common_basis_step",
+                "common_multiscale"))
+            or bool((strategy.get("optimization") or {}).get("common_model")))
+
+
+def individual_reviews(value, context, pilot_order):
+    """Fill gaps in the individual ledger from verified same-pilot history."""
+    rows = {row["filename"]: row for row in value["reviews"]}
+    if value["stage"] == "forms":
+        for case in reversed(context["cases"]):
+            row = case.get("approval")
+            if case.get("individual") and row and row["filename"] in pilot_order:
+                rows.setdefault(row["filename"], row)
+    return list(rows.values())
+
+
 def retain_review_for_trial(snapshot, identifier, strategy):
     """Carry an approved last individual form into a separately prepared trial.
 
@@ -160,6 +181,7 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
     value = deepcopy(saved) if saved else dict(version=VERSION, reviews=[], origin_review=row,
                          protocol=_protocol(accepted, accepted_id),
                          stage="forms", common_approval_created=False)
+    value["reviews"] = individual_reviews(value, context, info["pilot_order"])
     # A different individual result never silently replaces the shared protocol.
     # Explicit model revision is separate from recording that shape's suitability.
     if revise:
@@ -167,17 +189,9 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
                 or compatible(row, value["protocol"])):
             raise ValueError("Choose an approved ordinary fit with different shared settings")
         value.update(origin_review=row, protocol=_protocol(accepted, accepted_id), stage="model")
-    accepted_info = guided.record(accepted)
-    accepted_strategy = accepted_info.get("strategy") or {}
-    common_result = (accepted_info.get("goal") in {"form_model_check", "common_continue"}
-        or accepted_strategy.get("common_diagnosis_test")
-        or accepted_strategy.get("common_capacity_request")
-        or accepted_strategy.get("common_candidate_step")
-        or accepted_strategy.get("common_basis_step")
-        or accepted_strategy.get("common_multiscale")
-        or (accepted_strategy.get("optimization") or {}).get("common_model"))
+    common_result = is_common_check(guided.record(accepted))
     # Common-model review must not erase the accepted individual comparison target.
-    if not (saved and (common_result or revise) and any(
+    if not ((common_result or revise) and any(
             r["filename"] == row["filename"] for r in value["reviews"])):
         value["reviews"] = list({r["filename"]: r for r in [*value["reviews"], row]}.values())
     if model:

@@ -1,5 +1,13 @@
 # Development continuity — dev189 installed and verified
 
+## dev191 source — retain individual pilot approvals
+
+The transition to individual form review restores missing approvals from the
+verified history of the same pilot. It fills gaps in older forms ledgers and
+keeps their existing entries. The next individual check skips covered forms.
+Common-model coverage still requires a fit on the matching protocol. Existing
+prepared contracts and adopted common families retain their recorded bindings.
+
 ## dev190 source — regional continuation allowance
 
 The same-objective regional successor receives an additional block equal to
