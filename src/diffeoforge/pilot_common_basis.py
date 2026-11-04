@@ -168,8 +168,11 @@ def apply(plan, choice, protocol):
 
 def verify(info, record, manifest, root):
     from diffeoforge.guided_feedback import verify_reference
+    from diffeoforge import pilot_common_warm_start
 
     marker = info["strategy"]["common_basis_step"]
+    if marker["version"] == pilot_common_warm_start.VERSION:
+        return pilot_common_warm_start.verify(info, record, manifest, root)
     ref, protocol = marker["reference"], marker["protocol"]
     seed = verify_reference(ref)
     basis = verify_reference(protocol["reference"])

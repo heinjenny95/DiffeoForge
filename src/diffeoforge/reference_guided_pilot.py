@@ -250,7 +250,9 @@ def _batch(
         retained = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
         config = copy.deepcopy(load_config(retained.config_path))
         iterations = ITERATIONS
-    if transfer:
+    from diffeoforge.pilot_common_warm_start import VERSION as ACCEPTED_WARM_VERSION
+
+    if transfer and transfer["version"] != ACCEPTED_WARM_VERSION:
         from diffeoforge.guided_feedback import verify_reference
 
         parent = verify_reference(transfer["reference"])

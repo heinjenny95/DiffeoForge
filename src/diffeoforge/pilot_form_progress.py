@@ -281,6 +281,7 @@ def verify(info, record, manifest, root):
     value = info["strategy"]["form_progress"]
     verify_marker(value, info["origin"], info["pilot_order"])
     if (info["strategy"].get("common_capacity_request")
+            or info["strategy"].get("common_basis_step")
             or info["strategy"].get("common_candidate_step")
             or info["strategy"].get("common_multiscale")):
         return  # Independently bound demand/basis/allowance verification follows.

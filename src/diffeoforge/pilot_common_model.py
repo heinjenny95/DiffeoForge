@@ -52,7 +52,7 @@ def optimization_context(snapshot, context, references):
                 blocked_reason=choice.get("reason", "")
                 if choice["mode"] in {"stalled", "feedback", "review", "approved",
                                       "capacity", "fresh_capacity", "prepared", "adopt",
-                                      "candidate_refine"} else "")
+                                      "candidate_refine", "accepted_warm"} else "")
     return result
 
 
@@ -130,9 +130,34 @@ def _preview(snapshot, context, target, *, value=None):
     if shortfall:
         target = max(capacity["demand"], key=capacity["demand"].get)
     tests = _diagnostic_tests(snapshot, target, value)
-    if tests and tests[-1][1]["kind"] == "capacity":
-        return _capacity_status(tests[-1][0], target, snapshot=snapshot, value=value)
     saved = _saved(snapshot, target, value["protocol"])
+    capacity_result = (tests[-1][0] if tests and tests[-1][1]["kind"] == "capacity" else None)
+    approved = next((ref for parent, candidate, ref, _ in reversed(saved)
+                     if parent.visual_reviews.get(candidate.candidate_id) is True), None)
+    if approved and not shortfall:
+        return dict(mode="approved", available=False, target=target, reference=approved,
+                    label="Common-model fit already approved · " + target,
+                    reason="This matching result is already approved. Continue to the next "
+                           "missing common-model check; no repeat is needed.")
+    if not shortfall:
+        from diffeoforge import pilot_common_warm_start as warm
+
+        seed = warm.seed_for(value, target)
+        if seed:
+            choice = warm.preview(snapshot, value, target, seed)
+            if choice["mode"] != "accepted_warm" or choice["kind"] != "warm":
+                return choice
+            if capacity_result:
+                checked = _capacity_status(capacity_result, target, snapshot=snapshot, value=value)
+                if checked["mode"] in {"prepared", "review", "adopt"}:
+                    return checked
+            elif saved and not saved[-1][3]:
+                # Keep the exact current review destination before preparing a new test.
+                choice = None
+            if choice:
+                return choice
+    if capacity_result:
+        return _capacity_status(capacity_result, target, snapshot=snapshot, value=value)
     if not saved:
         if shortfall:
             return capacity_choice(value, target)
@@ -145,11 +170,6 @@ def _preview(snapshot, context, target, *, value=None):
                     label="Prepare first common-model check · " + target)
     parent, candidate, ref, inspected = saved[-1]
     label = f"Test {guided.record(parent)['screen_trials_spent']}"
-    if parent.visual_reviews.get(candidate.candidate_id) is True and not shortfall:
-        return dict(mode="approved", available=False, target=target, reference=ref,
-                    label="Common-model fit already approved · " + target,
-                    reason="This matching result is already approved. Continue to the next "
-                    "missing common-model check; no repeat is needed.")
     if not inspected:
         return dict(mode="review", available=True, target=target, reference=ref,
                     test_number=guided.record(parent)["screen_trials_spent"],
@@ -255,7 +275,7 @@ def _capacity_status(tested, target, diagnosis=None, *, snapshot=None, value=Non
 
 
 def apply_plan(snapshot, proposed, plan, context):
-    """Change initialization only; never transfer a regional field to the common model."""
+    """Prepare the selected common test without transferring anatomical approval."""
     choice = preview(snapshot, context, proposed["target"], value=proposed["marker"])
     if not choice or choice["mode"] == "fresh":
         return plan
@@ -266,6 +286,10 @@ def apply_plan(snapshot, proposed, plan, context):
         return apply(plan, snapshot, value, model=adopted_family(value))
     if choice["mode"] == "basis":
         from diffeoforge.pilot_common_basis import apply
+
+        return apply(plan, choice, proposed["marker"]["protocol"])
+    if choice["mode"] == "accepted_warm":
+        from diffeoforge.pilot_common_warm_start import apply
 
         return apply(plan, choice, proposed["marker"]["protocol"])
     if choice["mode"] == "candidate_refine":

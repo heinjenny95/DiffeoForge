@@ -1,5 +1,16 @@
 # Development continuity — dev189 installed and verified
 
+## dev192 source — compare from the accepted individual field
+
+An explicitly suitable, numerically qualified regional fit can seed a bounded
+common check when it is one complete direct field on the same original template,
+control basis, precision, integration grid and movement scale. The common test
+uses the shared surface objective and ordinary optimizer settings. It copies the
+individual field as initialization and requires a separate suitability review.
+A reviewed warm result that loses detail can offer one finer attachment test
+from the same approved field. The previous individual and common decisions
+remain separate, including when the contrast requires a common-model revision.
+
 ## dev191 source — retain individual pilot approvals
 
 The transition to individual form review restores missing approvals from the

@@ -7,7 +7,7 @@ from diffeoforge.desktop.info_disclosure import InfoDisclosure
 def pin_recovery(window, snapshot, choice):
     """Keep the candidate's next preparation outside scrolling repair/history tools."""
     if (not choice or choice.get("mode") not in
-            {"candidate_refine", "broad_detail", "detail_pending"}
+            {"candidate_refine", "accepted_warm", "broad_detail", "detail_pending"}
             or not choice.get("available") or window._guided_footer_action
             or len(snapshot.candidates) != 1):
         return
@@ -116,7 +116,7 @@ def recovery(window, layout, identifier, choice):
     pinned = getattr(window, "_guided_footer_action", None)
     action = ("adaptive_multiscale_detail" if choice["mode"] == "detail_pending"
               else "adaptive_common_continue")
-    if (choice["mode"] in {"candidate_refine", "broad_detail", "detail_pending"} and pinned
+    if (choice["mode"] in {"candidate_refine", "accepted_warm", "broad_detail", "detail_pending"} and pinned
             and pinned[1:] == (action, identifier)):
         return
     if choice["available"]:
