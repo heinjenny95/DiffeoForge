@@ -1,4 +1,17 @@
-# Development continuity — dev189 installed and verified
+# Development continuity — dev192 installed and verified
+
+## dev192 local delivery
+
+The Windows runtime was built from commit
+`7f2f84a8d4ac11ad72d9e1d36a4b7ff0bee518ad`. The normal local worker completed
+two isolated accepted-field common checks and one data-triggered attachment
+contrast. The exact frozen runtime reopened both review paths with the original
+individual decisions intact. The tests showed a useful warm start and a case
+where one important area still needs review. Joint and anatomical approval
+remain separate.
+
+The local installer and all installed bundle bytes were verified. The verified
+backup preserves the previous runtime, project files and desktop settings.
 
 ## dev192 source — compare from the accepted individual field
 

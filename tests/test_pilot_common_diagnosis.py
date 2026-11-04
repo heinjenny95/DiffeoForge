@@ -324,7 +324,7 @@ def test_bound_geometry_cache_rechecks_output_original_approval_and_target(tmp_p
                             ((Path(k), v) for k, v in snapshots.items())
                             if s.candidates[0] is candidate))
     monkeypatch.setattr(result_report, 'collect_run_report', lambda run: reports[run])
-    monkeypatch.setattr(regional_evaluation, 'endpoint', lambda candidate: None)
+    monkeypatch.setattr(regional_evaluation, 'endpoint', lambda candidate, *, subject=None: None)
     monkeypatch.setattr(diagnosis, '_CACHE', OrderedDict())
     a, b = refs
     first = diagnosis._compare(a, b)
