@@ -1,4 +1,17 @@
-# Development continuity — dev188 installed and verified
+# Development continuity — dev189 installed and verified
+
+## dev189 delivery closure
+
+The local Windows app is dev189, built from runtime commit
+`64a1199f8a0824e13449524dc21425697ba1f18c`. The frozen application
+reproduced the data-derived counts for both test datasets and opened a saved
+v1 two-stage contract with its original control basis. The package passed
+startup, worker, and saved-result checks.
+
+The installer completed successfully after verified backups and an idle check.
+Post-install verification matched every packaged file, the version registry,
+desktop settings and both protected pilot projects. The v188 runtime is
+preserved in the local backup. The installer remains local.
 
 ## Source follow-up — adaptive common control selection
 
@@ -17,7 +30,7 @@ integration, native export, and geometry checks with the existing iteration
 limits. The reduced basis showed a measurable detail tradeoff against the prior
 dense comparison. This qualification covers the tested forms and software
 workflow. Joint atlas and anatomical review remain separate decisions.
-The installed build is dev188.
+The source qualification preceded the dev189 package and installation above.
 
 See [shared control selection](PILOT_COMMON_BROAD_DETAIL.md).
 
