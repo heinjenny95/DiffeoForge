@@ -28,9 +28,10 @@ def live_cancellation(checker, repository, root, native, worker):
     root.mkdir()
     mesh = read_vtk_polydata(repository / "examples/synthetic/meshes/template.vtk")
     vertices, triangles = list(mesh.vertices), list(mesh.triangles)
-    # Subdivide only the public template so one dense evaluation lasts long
-    # enough to distinguish in-flight cancellation from a completed-run race.
-    for _ in range(3):
+    # Two refinements give 5,120 faces: long enough to observe live progress,
+    # while bounding the dense Torch self-attachment below the runner's RAM.
+    # A third refinement would quadruple faces and multiply dense memory by 16.
+    for _ in range(2):
         edges, refined = {}, []
 
         def midpoint(a, b, edge_map=edges):
