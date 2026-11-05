@@ -1,5 +1,16 @@
 # Roadmap
 
+## Initialization performance follow-up — 5 November 2026
+
+- [x] Add a read-only numerical equality gate for independent fixed-basis
+  initializer comparisons, including exact retained fields, ordered inputs,
+  complete per-subject stop evidence and honest capped status.
+  [Protocol and limits](docs/INITIALIZATION_PERFORMANCE.md).
+- [ ] Qualify bounded concurrent initialization on full scientific geometry and
+  the production native runtime after the active atlas completes. Keep existing
+  runs and defaults intact until the measured timing and complete field/quality
+  checks support a change. CPU proxy screens alone do not close this item.
+
 ## Open owner follow-up — 1 November 2026
 
 - [x] Source fix: promote preparation of an unsuitable common candidate into the

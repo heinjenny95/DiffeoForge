@@ -1,5 +1,14 @@
 # Development continuity — dev192 installed and verified
 
+## Source follow-up — initializer comparison evidence
+
+The read-only [initializer equality gate](INITIALIZATION_PERFORMANCE.md) compares
+ordered inputs, the fixed basis, effective contracts, every momentum bit and
+complete native stop/iteration receipts. It preserves capped status and rejects
+incomplete coverage or changed retained fields. A CPU scheduling screen is
+separate from full-resolution GPU qualification. Production initialization,
+the installed dev192 application and existing scientific work remain unchanged.
+
 ## dev192 local delivery
 
 The Windows runtime was built from commit
