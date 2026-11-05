@@ -17,6 +17,9 @@ import yaml
 from diffeoforge.config import ConfigurationError, load_config, validate_input_paths
 from diffeoforge.mesh import inspect_vtk, sha256_file
 from diffeoforge.reference_checkpoint_schedule import needs_adapter, new_run_config
+from diffeoforge.reference_initial_fit_screen import NATIVE_SCREEN, REVIEW_PRIORITY
+from diffeoforge.reference_initial_fit_screen import RECEIPT as INITIAL_SCREEN
+from diffeoforge.reference_initial_fit_screen import VERSION as INITIAL_SCREEN_VERSION
 from diffeoforge.strict_json import load_strict_json_object
 
 METHOD = "preserved_pilot_momenta_fixed_basis_initialization"
@@ -111,6 +114,7 @@ def configure_preserved_pilot(config, *, root, seed, config_directory):
         "individual_max_iterations": int(config["optimization"]["max_iterations"]),
         "early_review_iteration": 10,
         "early_review_enabled": False,
+        "initial_fit_screen": INITIAL_SCREEN_VERSION,
         "completed_initialization_indices": [],
         "early_review_approved": False,
         "limitation": "Pilot rows initialize the common joint model; each other specimen "
@@ -204,12 +208,27 @@ def choose_early_review(config_path, *, enabled):
     plan["early_review_enabled"] = enabled
     plan["early_review_choice"] = {"source_config_sha256": sha256_file(path)}
     target = path.with_name(f"{path.stem}-early-review-{'on' if enabled else 'off'}.yaml")
+    return _write_linked_atlas_config(config, target)
+
+
+def with_initial_fit_screen(config_path):
+    """Use a previously finished pilot for a new screened atlas, without changing its files."""
+    path = Path(config_path).resolve()
+    config = load_config(path)
+    plan = initialization(config)
+    if not plan or plan["method"] != METHOD or plan.get("initial_fit_screen"):
+        return path
+    plan["initial_fit_screen"] = INITIAL_SCREEN_VERSION
+    return _write_linked_atlas_config(config, path.with_name(f"{path.stem}-fit-screen.yaml"))
+
+
+def _write_linked_atlas_config(config, target):
     from diffeoforge.initialization import _CONFIG_MARKER
 
     rendered = _CONFIG_MARKER + "\n" + yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
     if target.exists():
         if target.read_text(encoding="utf-8") != rendered:
-            raise ConfigurationError("Existing early-review configuration differs.")
+            raise ConfigurationError("Existing linked atlas configuration differs.")
     else:
         with target.open("x", encoding="utf-8", newline="\n") as handle:
             handle.write(rendered)
@@ -228,6 +247,17 @@ def read_early_check(run_directory, *, verified_report=None):
     return verify_early_check_files(run, report.manifest["effective_config"])
 
 
+def is_initial_fit_review(run_directory):
+    """Identify the review wording only; continuation verifies the full receipt."""
+    path = Path(run_directory) / "output" / EARLY_CHECK
+    try:
+        return load_strict_json_object(path.read_bytes(), path, label="Early atlas check").get(
+            "phase"
+        ) == "initialization"
+    except (OSError, ValueError):
+        return False
+
+
 def verify_early_check_files(run_directory, config):
     """Check the checkpoint receipt, including before terminal inventory is sealed."""
     run = Path(run_directory).resolve()
@@ -236,6 +266,12 @@ def verify_early_check_files(run_directory, config):
         raise ConfigurationError("This run has no preserved-pilot initialization contract.")
     path = run / "output" / EARLY_CHECK
     value = load_strict_json_object(path.read_bytes(), path, label="Early atlas check")
+    if value.get("phase") == "initialization":
+        if (value.get("checkpoint_sha256") != sha256_file(run / "output/deformetrica-state.p")
+                or not value.get("pilot_indices")):
+            raise ConfigurationError("Flagged initial fits differ from the review checkpoint.")
+        _verify_initial_screen(run, plan, value)
+        return value
     if (
         value.get("version") != "0.1"
         or value.get("pilot_indices") != plan["pilot_indices"]
@@ -264,6 +300,52 @@ def verify_early_check_files(run_directory, config):
     return value
 
 
+def _verify_initial_screen(run, plan, value):
+    """Bind every screened initializer row and any displayed meshes to the saved state."""
+    screened = [i for i in range(len(plan["subject_labels"])) if i not in plan["pilot_indices"]]
+    if (
+        plan.get("initial_fit_screen") != INITIAL_SCREEN_VERSION
+        or value.get("version") != INITIAL_SCREEN_VERSION
+        or value.get("phase") != "initialization" or value.get("iteration") != 0
+        or value.get("subject_labels") != plan["subject_labels"]
+        or value.get("checkpoint_sha256") != sha256_file(run / "output/atlas-initialized-state.p")
+        or [row["index"] for row in value["screened"]] != screened
+    ):
+        raise ConfigurationError("Initial fit screen differs from its saved cohort or state.")
+    flagged, required = [], []
+    for row in value["screened"]:
+        threshold = row["distance_threshold"]
+        if not np.isfinite(threshold) or threshold <= 0:
+            raise ConfigurationError("An initial-fit screen threshold is invalid.")
+        for patch in row["patches"]:
+            point = np.asarray(patch["peak_point"], dtype=float)
+            if (patch["direction"] not in {"missing_surface", "extra_surface"}
+                    or point.shape != (3,) or not np.isfinite(point).all()
+                    or not np.isfinite(patch["peak_distance"])
+                    or patch["peak_distance"] < threshold
+                    or not 0 < patch["area_fraction"] <= 1):
+                raise ConfigurationError("An initial-fit inspection marker is invalid.")
+        priority = max((p["peak_distance"] / threshold * p["area_fraction"]**0.5
+                        for p in row["patches"]), default=0.)
+        if not np.isclose(priority, row["priority"], rtol=1e-12, atol=1e-15):
+            raise ConfigurationError("An initial-fit review priority is inconsistent.")
+        if row["patches"]:
+            flagged.append(row["index"])
+        if priority >= REVIEW_PRIORITY:
+            required.append(row["index"])
+    if (value["pilot_indices"] != required
+            or [row["index"] for row in value["meshes"]] != flagged):
+        raise ConfigurationError("Flagged initial fit review is incomplete or inconsistent.")
+    for row in value["meshes"]:
+        relative = Path(row["after"]["path"])
+        mesh = run / "output" / relative
+        if (relative != Path(f'initial-fit-review/fit-{row["index"]:04d}.vtk') or mesh.is_symlink()
+                or row["after"]["index"] != row["index"]
+                or sha256_file(mesh) != row["after"]["sha256"]):
+            raise ConfigurationError("An initial-fit review mesh changed.")
+        inspect_vtk(mesh)
+
+
 def record_early_review(run_directory, *, approved, inspected_subjects, notes=""):
     from diffeoforge.atomic_io import write_text_safely
 
@@ -273,7 +355,9 @@ def record_early_review(run_directory, *, approved, inspected_subjects, notes=""
     check = read_early_check(run)
     expected = {check["subject_labels"][i] for i in check["pilot_indices"]}
     if approved and set(inspected_subjects) != expected:
-        raise ConfigurationError("Inspect all pilot specimens before continuing the joint atlas.")
+        raise ConfigurationError(
+            "Inspect all required specimens before continuing the joint atlas."
+        )
     record = {
         "version": "0.1",
         "approved": bool(approved),
@@ -295,6 +379,8 @@ def record_early_review_choice(run_directory, *, enabled):
         raise ConfigurationError("Use anatomical review to approve an enabled early check.")
     run = Path(run_directory).resolve()
     check = read_early_check(run)
+    if check.get("phase") == "initialization":
+        raise ConfigurationError("Flagged initial fits require a recorded visual review.")
     review_path = run / "analysis" / REVIEW
     if review_path.is_file():
         review = load_strict_json_object(review_path.read_bytes(), review_path,
@@ -324,6 +410,8 @@ def configure_resume(config, source_run):
         check = read_early_check(source_run)
         review_path = source_run / "analysis" / REVIEW
         if not review_path.is_file():
+            if check.get("phase") == "initialization":
+                raise ConfigurationError("Review the flagged initial fits before the joint atlas.")
             choice_path = source_run / "analysis" / REVIEW_CHOICE
             if not choice_path.is_file():
                 raise ConfigurationError("Review the early atlas check before resuming, or "
@@ -357,13 +445,17 @@ def configure_resume(config, source_run):
             or review.get("inspected_subjects") != required
         ):
             raise ConfigurationError("Early atlas review is rejected, incomplete or stale.")
-        plan["early_review_approved"] = True
         plan["completed_initialization_indices"] = list(range(len(plan["subject_labels"])))
-        plan["early_review_binding"] = {
+        binding = {
             "review_sha256": sha256_file(review_path),
             "check_sha256": sha256_file(guard),
             "checkpoint_sha256": check["checkpoint_sha256"],
         }
+        if check.get("phase") == "initialization":
+            plan["initial_fit_screen_binding"] = binding
+        else:
+            plan["early_review_approved"] = True
+            plan["early_review_binding"] = binding
     elif (source_run / "output" / PROGRESS).exists():
         progress_path = source_run / "output" / PROGRESS
         progress = load_strict_json_object(
@@ -388,6 +480,17 @@ def configure_resume(config, source_run):
                     "Initializer progress is not bound to the saved checkpoint."
                 )
         plan["completed_initialization_indices"] = indices
+        screen_path = source_run / "output" / INITIAL_SCREEN
+        if screen_path.exists():
+            screened = load_strict_json_object(screen_path.read_bytes(), screen_path,
+                                               label="Initial fit screen")
+            _verify_initial_screen(source_run, plan, screened)
+            if screened["pilot_indices"]:
+                raise ConfigurationError("Flagged initial fits have no sealed review checkpoint.")
+            plan["initial_fit_screen_binding"] = {
+                "check_sha256": sha256_file(screen_path),
+                "checkpoint_sha256": screened["checkpoint_sha256"],
+            }
 
 
 def adapter_source(config):
@@ -404,7 +507,94 @@ def adapter_source(config):
         and config["optimization"]["freeze_control_points"]
     ):
         raise ConfigurationError("Saved-atlas refinement requires a frozen template and controls.")
-    return "\n_DF_ATLAS_PLAN = " + repr(plan) + "\n" + ADAPTER
+    screen = ""
+    if plan.get("initial_fit_screen") == INITIAL_SCREEN_VERSION:
+        screen = (
+            "\n_DF_INITIAL_SCREEN_VERSION = " + repr(INITIAL_SCREEN_VERSION)
+            + "\n_DF_INITIAL_SCREEN_WIDTH = " + repr(config["model"]["attachment"]["kernel_width"])
+            + "\n_DF_INITIAL_REVIEW_PRIORITY = " + repr(REVIEW_PRIORITY)
+            + "\n" + NATIVE_SCREEN + SCREEN_ADAPTER
+        )
+    return "\n_DF_ATLAS_PLAN = " + repr(plan) + "\n" + screen + ADAPTER
+
+
+SCREEN_ADAPTER = """
+def _df_screen_initial_fits(estimator, labels, pilot):
+    def read_mesh(path):
+        reader = vtk.vtkPolyDataReader()
+        reader.SetFileName(path)
+        reader.Update()
+        poly = reader.GetOutput()
+        if poly.GetNumberOfPolys() <= 0:
+            raise ValueError("Initial fit screen could not read a staged surface")
+        return poly
+
+    indices = [i for i in range(len(labels)) if i not in pilot]
+    root = _df_os.path.abspath(_df_os.path.join(estimator.output_dir, ".."))
+    output = estimator.output_dir
+    review_dir = _df_os.path.join(output, "initial-fit-review")
+    screened, meshes = [], []
+    if indices:
+        import xml.etree.ElementTree as ET
+        import torch
+        import vtk
+        from vtk.util.numpy_support import numpy_to_vtk
+
+        engine = _df_os.path.join(root, "engine")
+        filename = ET.parse(_df_os.path.join(engine, "model.xml")).findtext(
+            "template/object/filename")
+        material = read_mesh(_df_os.path.normpath(_df_os.path.join(engine, filename)))
+        model = estimator.statistical_model
+        device, _ = _df_utilities.get_best_device(model.gpu_mode)
+        data, points, controls, momenta = model._fixed_effects_to_torch_tensors(
+            False, device=device)
+        exponential = model.exponential
+        with torch.no_grad():
+            exponential.set_initial_template_points(points)
+            exponential.set_initial_control_points(controls)
+            for number, index in enumerate(indices, 1):
+                _df_log.info("DiffeoForge initial fit screen: specimen %s of %s (%s)",
+                             number, len(indices), labels[index])
+                if labels[index] != _df_os.path.basename(labels[index]):
+                    raise ValueError("Unsafe initial fit screen subject label")
+                original = read_mesh(_df_os.path.join(root, "input", "subjects", labels[index]))
+                exponential.set_initial_momenta(momenta[index])
+                exponential.update()
+                deformed = model.template.get_deformed_data(exponential.get_template_points(), data)
+                coordinates = deformed["landmark_points"].detach().cpu().numpy()
+                if coordinates.shape != (material.GetNumberOfPoints(), 3):
+                    raise ValueError("Initial fit screen source connectivity differs")
+                moved = vtk.vtkPoints()
+                moved.SetData(numpy_to_vtk(coordinates, deep=True))
+                fitted = vtk.vtkPolyData()
+                fitted.ShallowCopy(material)
+                fitted.SetPoints(moved)
+                result = _df_initial_residuals(original, fitted, _DF_INITIAL_SCREEN_WIDTH)
+                screened.append(dict(index=index, **result))
+                if result["patches"]:
+                    _df_os.makedirs(review_dir, exist_ok=True)
+                    name = "fit-%04d.vtk" % index
+                    model.template.write(review_dir, [name],
+                                         {"landmark_points": coordinates})
+                    relative = "initial-fit-review/" + name
+                    meshes.append(dict(index=index, after=dict(index=index, path=relative,
+                        sha256=_df_digest(_df_os.path.join(output, relative)))))
+    required = [row["index"] for row in screened
+                if row["priority"] >= _DF_INITIAL_REVIEW_PRIORITY]
+    value = dict(version=_DF_INITIAL_SCREEN_VERSION, phase="initialization",
+                 subject_labels=labels, pilot_indices=required,
+                 iteration=int(estimator.current_iteration), screened=screened, meshes=meshes,
+                 checkpoint_sha256=_df_digest(estimator.state_file))
+    if required:
+        _df_json_atomic(_df_os.path.join(output, "early-atlas-check.json"), value)
+        _df_log.info("DiffeoForge initial fit screen: %s required reviews, %s additional "
+                     "comparisons. Checkpoint saved before any joint iterations.",
+                     len(required), len(meshes) - len(required))
+        raise KeyboardInterrupt
+    _df_json_atomic(_df_os.path.join(output, "initial-fit-screen.json"), value)
+    _df_log.info("DiffeoForge initial fit screen finished: %s checked, %s advisory comparisons. "
+                 "Starting the joint atlas.", len(indices), len(meshes))
+"""
 
 
 # Runs in the pinned reference interpreter. Native likelihood, gradient,
@@ -462,9 +652,12 @@ def _df_pilot_shapes(estimator, phase):
 _df_atlas_base_update = _df_ga.update
 
 def _df_atlas_update(self, *args, **kwargs):
+    screen_required = (_DF_ATLAS_PLAN.get("initial_fit_screen")
+                       and not _DF_ATLAS_PLAN.get("initial_fit_screen_binding"))
     if (getattr(self, "_df_individual_initialization", False)
             or _DF_ATLAS_PLAN["early_review_approved"]
             or (not _DF_ATLAS_PLAN.get("early_review_enabled", True)
+                and not screen_required
                 and set(_DF_ATLAS_PLAN["completed_initialization_indices"])
                 == set(range(len(_DF_ATLAS_PLAN["subject_labels"]))))):
         return _df_atlas_base_update(self, *args, **kwargs)
@@ -557,6 +750,10 @@ def _df_atlas_update(self, *args, **kwargs):
         self._dump_state_file()
     finally:
         self.state_file = original_state_file
+    if screen_required:
+        if self.current_iteration != 0:
+            raise RuntimeError("Initial fit screening requires the pre-joint checkpoint")
+        _df_screen_initial_fits(self, labels, pilot)
     if not review_enabled:
         _df_log.info("DiffeoForge joint atlas: initialized %s of %s specimens; "
                      "optional early review disabled; continuing native optimization",

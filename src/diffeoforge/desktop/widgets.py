@@ -641,9 +641,10 @@ class _PilotAtlasHandoffWorker(QRunnable):
             from diffeoforge.reference_atlas_handoff import (
                 choose_early_review,
                 upgrade_saved_pilot_config,
+                with_initial_fit_screen,
             )
 
-            path = upgrade_saved_pilot_config(self.config_path)
+            path = with_initial_fit_screen(upgrade_saved_pilot_config(self.config_path))
             path = choose_early_review(path, enabled=self.early_review)
             result = load_existing_reference_project(path)
         except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
@@ -667,29 +668,52 @@ class _EarlyAtlasCheckWorker(QRunnable):
 
             report = collect_run_report(self.run_directory)
             check = read_early_check(self.run_directory, verified_report=report)
+            initial = check.get("phase") == "initialization"
+            flagged = {row["index"]: row["patches"] for row in check.get("screened", [])}
             subjects = {
                 Path(item["staged_path"]).name: item
                 for item in report.manifest["inputs"] if item["role"] == "subject"
             }
             pairs = []
-            for item in check["meshes"]:
+            required = set(check["pilot_indices"])
+            for item in sorted(check["meshes"], key=lambda row: row["index"] not in required):
                 name = check["subject_labels"][item["index"]]
                 source = subjects[name]
                 after = self.run_directory / "output" / item["after"]["path"]
+                markers = []
+                if initial:
+                    patches = flagged[item["index"]]
+                    labels = []
+                    for kind, code, description in (
+                        ("missing_surface", "M", "missing"),
+                        ("extra_surface", "E", "extra"),
+                    ):
+                        points = [tuple(patch["peak_point"]) for patch in patches
+                                  if patch["direction"] == kind]
+                        if points:
+                            labels.append(f"{code}: {description} surface")
+                        markers.extend((f"{code}{i}", point)
+                                       for i, point in enumerate(points, 1))
+                    label = ", ".join(labels)
+                    if item["index"] not in required:
+                        label = f"Optional · {label}"
+                else:
+                    label = "Early atlas / original"
                 pairs.append(CalibrationQcPair(
-                    name, f"Early atlas / original — {name}",
-                    self.run_directory / source["staged_path"], after, True,
-                    source["geometry"]["sha256"], item["after"]["sha256"],
+                    name, f"{label} — {name}",
+                    self.run_directory / source["staged_path"], after, item["index"] in required,
+                    source["geometry"]["sha256"], item["after"]["sha256"], tuple(markers),
                 ))
-                pairs.append(CalibrationQcPair(
-                    f"baseline:{name}", f"Preserved pilot / early atlas — {name}",
-                    self.run_directory / "output" / item["before"]["path"], after, False,
-                    item["before"]["sha256"], item["after"]["sha256"],
-                ))
+                if not initial:
+                    pairs.append(CalibrationQcPair(
+                        f"baseline:{name}", f"Preserved pilot / early atlas — {name}",
+                        self.run_directory / "output" / item["before"]["path"], after, False,
+                        item["before"]["sha256"], item["after"]["sha256"],
+                    ))
         except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
             return
-        self.signals.succeeded.emit((self.run_directory, tuple(pairs)))
+        self.signals.succeeded.emit((self.run_directory, tuple(pairs), initial))
 
 
 class _EarlyAtlasResumeWorker(QRunnable):
@@ -8513,7 +8537,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _prepare_reference_resume(
         self, result: ResumableReferenceRun, *, early_review_done: bool = False
     ) -> None:
-        from diffeoforge.reference_atlas_handoff import EARLY_CHECK
+        from diffeoforge.reference_atlas_handoff import EARLY_CHECK, is_initial_fit_review
 
         approved = getattr(self, "_approved_early_review_run", None) == result.run_directory
         self._approved_early_review_run = None
@@ -8522,6 +8546,9 @@ class DiffeoForgeWindow(QMainWindow):
             not early_review_done and not approved
             and (result.run_directory / "output" / EARLY_CHECK).is_file()
         ):
+            if is_initial_fit_review(result.run_directory):
+                self._open_early_atlas_check(result.run_directory)
+                return
             decision = self._optional_early_atlas_decision()
             if decision == "review":
                 self._open_early_atlas_check(result.run_directory)
@@ -10476,7 +10503,7 @@ class DiffeoForgeWindow(QMainWindow):
         worker.signals.succeeded.connect(self._early_atlas_check_ready)
         worker.signals.failed.connect(self._preserved_atlas_failed)
         self._worker = worker
-        self.run_state_label.setText("Verifying the early checkpoint and pilot comparisons…")
+        self.run_state_label.setText("Verifying the checkpoint and review comparisons…")
         self._sync_ready_state()
         self._thread_pool.start(worker)
 
@@ -10491,13 +10518,16 @@ class DiffeoForgeWindow(QMainWindow):
             self._close_after_worker = False
             self.close()
             return
-        run, pairs = prepared
+        run, pairs, initial = prepared
         dialog = CalibrationCandidateViewerDialog(
             run / "analysis/early-review", SimpleNamespace(
                 run_directory=run, candidate_id="early-atlas-check"
             ), self, pairs=pairs,
         )
-        dialog.setWindowTitle("Early atlas check — preserve the approved pilot anatomy")
+        dialog.setWindowTitle(
+            "Review flagged starting fits before the joint atlas" if initial
+            else "Early atlas check — preserve the approved pilot anatomy"
+        )
         dialog.setStyleSheet(self.styleSheet())
         try:
             dialog.exec()
@@ -10528,10 +10558,18 @@ class DiffeoForgeWindow(QMainWindow):
             self._approved_early_review_run = run
             self._start_run_lookup(RunLookupPurpose.RESUME_INTERRUPTED, run)
             return
-        self.run_state_label.setText(
-            "Early atlas fit rejected. The checkpoint and review are saved; "
-            "this joint atlas will not continue without a new approval."
-        )
+        from diffeoforge.reference_atlas_handoff import is_initial_fit_review
+
+        if is_initial_fit_review(run):
+            self.run_state_label.setText(
+                "Starting-fit review saved. Open the saved pilot to compare the affected "
+                "forms in a separate pilot test. The joint atlas has not started."
+            )
+        else:
+            self.run_state_label.setText(
+                "Early atlas fit rejected. The checkpoint and review are saved; "
+                "this joint atlas will not continue without a new approval."
+            )
         self._sync_ready_state()
 
     @Slot(str)
@@ -11650,6 +11688,14 @@ class DiffeoForgeWindow(QMainWindow):
                 self.run_optimizer_label.setText(
                     f"Elapsed: {self._format_duration(elapsed)}. Joint optimization follows."
                 )
+            elif "DiffeoForge initial fit screen:" in latest_message:
+                message = latest_message.split("DiffeoForge initial fit screen:", 1)[1].strip()
+                self.run_stage_label.setText("Check starting fits")
+                self.run_progress_bar.setRange(0, 0)
+                self.run_progress_bar.setFormat("Check for missing or extra surface")
+                self.run_optimizer_label.setText(
+                    f"Elapsed: {self._format_duration(elapsed)}. Joint fitting has not started."
+                )
             elif state == "computing_first_iteration":
                 message = (
                     "Computing the first objective and gradient."
@@ -11996,12 +12042,19 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self.run_progress_bar.setValue(self.run_progress_bar.maximum())
         elif result.interrupted:
-            from diffeoforge.reference_atlas_handoff import EARLY_CHECK
+            from diffeoforge.reference_atlas_handoff import EARLY_CHECK, is_initial_fit_review
 
-            early = (Path(terminal.payload["destination"]) / "output" / EARLY_CHECK).is_file()
+            destination = Path(terminal.payload["destination"])
+            early = (destination / "output" / EARLY_CHECK).is_file()
+            initial = early and is_initial_fit_review(destination)
+            self.review_early_atlas_button.setText(
+                "Review flagged starting fits…" if initial else "Review early atlas check…"
+            )
             self.review_early_atlas_button.setVisible(early)
             self.run_state_label.setObjectName("status")
             self.run_state_label.setText(
+                "Joint fitting has not started. Review the flagged starting fits before continuing."
+                if initial else
                 "Optional early atlas check ready. Review now or continue from the saved "
                 "checkpoint without the optional check. The full mesh export has not started."
                 if early else

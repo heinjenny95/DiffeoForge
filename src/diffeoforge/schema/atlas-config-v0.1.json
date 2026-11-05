@@ -774,6 +774,16 @@
                         "individual_max_iterations": {"type": "integer", "minimum": 1, "maximum": 20000},
                         "early_review_iteration": {"type": "integer", "minimum": 1, "maximum": 20000},
                         "early_review_enabled": {"type": "boolean"},
+                        "initial_fit_screen": {"const": "local-surface-residual-v1"},
+                        "initial_fit_screen_binding": {
+                          "type": "object", "additionalProperties": false,
+                          "required": ["check_sha256", "checkpoint_sha256"],
+                          "properties": {
+                            "check_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "checkpoint_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "review_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                          }
+                        },
                         "early_review_choice": {
                           "type": "object", "additionalProperties": false,
                           "required": ["source_config_sha256"],

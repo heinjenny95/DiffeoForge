@@ -1,5 +1,25 @@
 # Development continuity — dev192 installed and verified
 
+## dev194 — inspect local starting-fit discrepancies before joint optimization
+
+New preserved-pilot atlas preparations screen the initialized surfaces outside
+the pilot at iteration zero. The existing initializer fields are reused. The
+screen checks connected areas in both point-to-triangle distance directions and
+uses the selected attachment scale. It displays the largest local marks on each
+flagged comparison. Priority weights the peak by the square root of the affected
+area fraction. The strongest findings require review. Smaller findings are
+advisory and remain in the receipt. With no required review, the joint run
+proceeds directly. Otherwise it resumes from the saved checkpoint and with the
+same joint budget after explicit review. A cancelled or rejected review preserves the checkpoint
+and all prior pilot decisions. Numerical tolerance remains separate from visual
+approval. The screen cannot guarantee that a later joint result preserves every
+feature, and final atlas review remains required.
+
+Opening a saved pilot and preparing a new atlas creates a separate screened
+configuration. Existing prepared configurations and their continuations retain
+their saved behavior. The optional ten-iteration pilot-anatomy comparison is
+separate from the new initializer screen.
+
 ## dev193 staged — carry pilot continuation effort into the atlas budget
 
 New final configurations include matching completed native checkpoint

@@ -39,6 +39,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._frames = SurfaceFrameCache(self)
         self._frames.changed.connect(self.update)
         self._presented_key: tuple | None = None
+        self._inspection_markers: dict[str, tuple[float, float, float]] = {}
         self._wheel_timer = QTimer(self)
         self._wheel_timer.setSingleShot(True)
         self._wheel_timer.setInterval(160)
@@ -87,6 +88,7 @@ class CalibrationComparisonCanvas3D(QWidget):
 
         self._original = original
         self._reconstruction = reconstruction
+        self._inspection_markers.clear()
         self._frames.clear()
         self._presented_key = None
         self.original_detail.setChecked(False)
@@ -108,6 +110,11 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._scale = float(np.max(maximum - minimum))
         if not math.isfinite(self._scale) or self._scale <= 0:
             raise ValueError("Comparison meshes must have positive finite extent")
+        self.update()
+
+    def set_inspection_markers(self, markers: dict[str, tuple[float, float, float]]) -> None:
+        """Show measured positions in the shared camera without changing either layer."""
+        self._inspection_markers = dict(markers)
         self.update()
 
     def clear(self) -> None:
@@ -384,6 +391,13 @@ class CalibrationComparisonCanvas3D(QWidget):
         image = self._frames.request(key, scene)
         if image is not None:
             painter.drawImage(0, 0, image)
+            if self._inspection_markers:
+                _, positions = self._project(np.asarray(tuple(self._inspection_markers.values())))
+                painter.setPen(QColor("#aa1551"))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                for label, (x, y) in zip(self._inspection_markers, positions, strict=True):
+                    painter.drawEllipse(QPointF(x, y), 8, 8)
+                    painter.drawText(QPointF(x + 11, y - 7), label)
         has_geometry = bool(layers) and all(
             len(layer.vertices) and len(layer.indices) for layer in layers
         )

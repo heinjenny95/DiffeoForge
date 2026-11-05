@@ -110,6 +110,7 @@ class CalibrationQcPair:
     required: bool
     original_sha256: str | None = None
     reconstruction_sha256: str | None = None
+    inspection_markers: tuple[tuple[str, tuple[float, float, float]], ...] = ()
 
 
 def collect_calibration_qc_pairs(
@@ -1169,6 +1170,8 @@ class _CalibrationCandidateViewerDialog(QDialog):
             self.canvas.original_detail.setChecked(True)
         else:
             self.canvas.reset_view()
+        if pair.inspection_markers:
+            self.canvas.set_inspection_markers(dict(pair.inspection_markers))
         if self.fit_preferences or self._compact_review:
             self._comparison_intro.setText(
                 f"{pair.original_path.name} · Orange: original · Blue: reconstruction"

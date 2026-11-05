@@ -1650,9 +1650,13 @@ def execute_run(
         return_code == 2 and execution_error is None and initialization(config)
         and (run_path / "output" / EARLY_CHECK).is_file()
     ):
-        verify_early_check_files(run_path, config)
+        check = verify_early_check_files(run_path, config)
         interrupted = True
-        execution_error = "Planned early atlas review; exact checkpoint and pilot shapes preserved"
+        execution_error = (
+            "Flagged initial fits require review before joint optimization"
+            if check.get("phase") == "initialization"
+            else "Planned early atlas review; exact checkpoint and pilot shapes preserved"
+        )
     if (
         return_code != 0
         and execution_error is None
@@ -2127,12 +2131,13 @@ def prepare_resume_run(
         copied_artifacts: list[Path] = []
         from diffeoforge.reference_atlas_handoff import (
             EARLY_CHECK,
+            INITIAL_SCREEN,
             PROGRESS,
             REVIEW,
             REVIEW_CHOICE,
         )
 
-        for relative in (f"output/{EARLY_CHECK}", f"output/{PROGRESS}",
+        for relative in (f"output/{EARLY_CHECK}", f"output/{PROGRESS}", f"output/{INITIAL_SCREEN}",
                          f"analysis/{REVIEW}", f"analysis/{REVIEW_CHOICE}"):
             source = source_run / relative
             if not source.is_file():

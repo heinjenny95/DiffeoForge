@@ -19,6 +19,7 @@ from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_atlas_handoff import (
     ADAPTER,
     EARLY_CHECK,
+    INITIAL_SCREEN_VERSION,
     METHOD,
     PROGRESS,
     REFINEMENT_METHOD,
@@ -30,9 +31,11 @@ from diffeoforge.reference_atlas_handoff import (
     configure_resume,
     early_review_enabled,
     initialization,
+    is_initial_fit_review,
     record_early_review,
     record_early_review_choice,
     verify_early_check_files,
+    with_initial_fit_screen,
 )
 from diffeoforge.reference_checkpoint_schedule import new_run_config, render_adapter
 from diffeoforge.reference_pca import read_deformetrica_momenta
@@ -165,6 +168,7 @@ def test_missing_incomplete_rejected_or_stale_review_never_resumes(early):
 def test_new_handoff_defaults_off_and_linked_opt_in_preserves_source(preserved):
     config, path, _, _, _ = preserved
     assert early_review_enabled(initialization(config)) is False
+    assert initialization(config)["initial_fit_screen"] == INITIAL_SCREEN_VERSION
     target = path.with_name("optional.yaml")
     target.write_text(yaml.safe_dump(config), encoding="utf-8")
     original = target.read_bytes()
@@ -177,6 +181,64 @@ def test_new_handoff_defaults_off_and_linked_opt_in_preserves_source(preserved):
     assert early_review_enabled(legacy) is True
     with pytest.raises(ConfigurationError, match="boolean"):
         choose_early_review(target, enabled=0)
+
+
+def test_old_saved_pilot_gets_screen_only_in_new_linked_config(preserved):
+    config, path, _, _, _ = preserved
+    initialization(config).pop("initial_fit_screen")
+    target = path.with_name("saved-pilot.yaml")
+    target.write_text(yaml.safe_dump(config), encoding="utf-8")
+    original = target.read_bytes()
+    linked = with_initial_fit_screen(target)
+    assert linked != target and target.read_bytes() == original
+    assert initialization(load_config(linked))["initial_fit_screen"] == INITIAL_SCREEN_VERSION
+    assert with_initial_fit_screen(linked) == linked
+
+
+def test_flagged_initial_fit_requires_its_own_review_and_keeps_pilot_gate(early):
+    config, run, old = early
+    output = run / "output"
+    plan = initialization(config)
+    plan["early_review_enabled"] = True
+    (output / "atlas-initialized-state.p").write_bytes(
+        (output / "deformetrica-state.p").read_bytes()
+    )
+    indices = sorted(set(range(len(plan["subject_labels"]))) - set(plan["pilot_indices"]))
+    flagged = indices[0]
+    fit = output / "initial-fit-review" / f"fit-{flagged:04d}.vtk"
+    fit.parent.mkdir()
+    fit.write_bytes((output / old["meshes"][0]["after"]["path"]).read_bytes())
+    value = {
+        "version": INITIAL_SCREEN_VERSION,
+        "phase": "initialization",
+        "pilot_indices": [flagged],
+        "subject_labels": plan["subject_labels"],
+        "iteration": 0,
+        "checkpoint_sha256": old["checkpoint_sha256"],
+        "screened": [{"index": index, "distance_threshold": .1,
+                      "priority": 2 * .05**.5 if index == flagged else 0.,
+                      "patches": [{"direction": "missing_surface", "peak_point": [1, 2, 3],
+                                   "peak_distance": .2, "area_fraction": .05}]
+                      if index == flagged else []} for index in indices],
+        "meshes": [{"index": flagged, "after": {"index": flagged,
+                    "path": fit.relative_to(output).as_posix(), "sha256": sha256_file(fit)}}],
+    }
+    (output / EARLY_CHECK).write_text(json.dumps(value), encoding="utf-8")
+    assert is_initial_fit_review(run)
+    with pytest.raises(ConfigurationError, match="Review the flagged"):
+        configure_resume(config, run)
+    with pytest.raises(ConfigurationError, match="require a recorded visual review"):
+        record_early_review_choice(run, enabled=False)
+    label = plan["subject_labels"][flagged]
+    record_early_review(run, approved=True, inspected_subjects=[label])
+    configure_resume(config, run)
+    assert plan["initial_fit_screen_binding"]["review_sha256"] == sha256_file(
+        run / "analysis" / REVIEW
+    )
+    assert not plan["early_review_approved"] and plan["early_review_enabled"]
+    fit.write_bytes(fit.read_bytes() + b"\n")
+    with pytest.raises(ConfigurationError, match="mesh changed"):
+        configure_resume(config, run)
 
 
 def test_optional_review_choice_is_bound_and_never_anatomical_approval(early):
@@ -391,6 +453,7 @@ def test_disabled_early_check_runs_native_optimizer_without_review_exports(
     plan.update(subject_labels=["a", "b"], pilot_indices=[0, 1],
                 completed_initialization_indices=[0, 1] if already_initialized else [],
                 early_review_enabled=False, early_review_approved=False)
+    plan.pop("initial_fit_screen")
     support = ModuleType("deformetrica.support")
     support.utilities = SimpleNamespace()
     monkeypatch.setitem(sys.modules, "deformetrica.support", support)

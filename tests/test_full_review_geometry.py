@@ -4,6 +4,7 @@ import os
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 import time
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -110,6 +111,17 @@ def test_preview_is_sufficient_to_approve_without_loading_full_geometry(viewer):
     assert "Preview ready" in viewer.v.status.text()
     viewer.v.complete_button.click()
     assert viewer.v.review_passed and viewer.v.review_complete
+
+
+def test_initial_fit_marker_keeps_preview_ready_and_clears_for_the_next_pair(viewer):
+    v = viewer.v
+    original_pair = v._pairs[0]
+    v._pairs = (replace(original_pair, inspection_markers=(("M1", (.5, .2, 0.)),)),)
+    show_proxy(viewer)
+    assert v.canvas._inspection_markers == {"M1": (.5, .2, 0.)}
+    v._pairs = (original_pair,)
+    v._pair_loaded(0, tuple(model(p, True) for p in viewer.paths))
+    assert v.canvas._inspection_markers == {}
 
 
 def test_preview_navigation_blocks_decisions_until_selected_image_settles(viewer):
