@@ -19,6 +19,28 @@ PYTHON_URL = (
 PYTHON_SHA256 = "375b6eead6c852cabbf3ccfd43dc4f6dd4c36381bf74c9a7910acb839fd5c57f"
 
 
+def make_portable_launchers(prefix):
+    binary = prefix / "bin"
+    shell_prefix = '#!/bin/sh\nset -eu\nDF_BIN=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\n'
+    launcher = shell_prefix + '''
+export PATH="$DF_BIN:$PATH"
+export CC="$DF_BIN/df-cc" CXX="$DF_BIN/df-cxx"
+export PYTHONNOUSERSITE=1 USE_CUDA=0 CUDA_VISIBLE_DEVICES=-1
+unset QT_PLUGIN_PATH QML2_IMPORT_PATH DYLD_LIBRARY_PATH DYLD_FRAMEWORK_PATH
+exec "$DF_BIN/python3.8" -B -c 'from deformetrica.__main__ import main; main()' "$@"
+'''
+    (binary / "deformetrica").write_text(launcher)
+    (binary / "cmake").write_text(shell_prefix + '''
+exec "$DF_BIN/python3.8" -B -c 'from cmake import cmake; cmake()' "$@"
+''')
+    for name, compiler in (("df-cc", "clang"), ("df-cxx", "clang++")):
+        (binary / name).write_text(
+            '#!/bin/sh\nexec /usr/bin/' + compiler + ' -arch x86_64 "$@"\n'
+        )
+    for name in ("deformetrica", "cmake", "df-cc", "df-cxx"):
+        (binary / name).chmod(0o755)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("output", type=Path)
@@ -51,6 +73,10 @@ def main():
                               str(repository / "distribution/macos/reference-requirements.txt")],
                    check=True, env=env)
     subprocess.run(command + ["-B", "-m", "pip", "check"], check=True, env=env)
+    make_portable_launchers(prefix)
+    # The selected pinned CMake and target-architecture compiler also apply to
+    # adapter-launched native children, not just pip installation subprocesses.
+    os.environ["PATH"] = str(prefix / "bin") + os.pathsep + os.environ["PATH"]
     code = (
         "import json,platform,torch,deformetrica,pykeops; "
         "print(json.dumps(dict(machine=platform.machine(),python=platform.python_version(),"

@@ -1,12 +1,16 @@
 """Evidence-only PyInstaller one-directory build for Windows x86-64 CPU."""
 
+import os
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 repository = Path(SPEC).resolve().parents[2]
 source = repository / "src"
-entrypoints = repository / "distribution" / "windows"
+entrypoint_platform = os.environ.get("DIFFEOFORGE_BUILD_ENTRYPOINT_PLATFORM", "windows")
+if entrypoint_platform not in {"windows", "macos"}:
+    raise RuntimeError("Unsupported frozen entrypoint platform")
+entrypoints = repository / "distribution" / entrypoint_platform
 schema_directory = source / "diffeoforge" / "schema"
 schema_data = [
     (str(path), "diffeoforge/schema")
