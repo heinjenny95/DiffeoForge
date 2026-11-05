@@ -1,5 +1,42 @@
 # macOS v193 colleague test packaging
 
+## Verified colleague packages — 5 November 2026
+
+Both native package builds passed at source
+`73efd0e9482350877bada9c1feb968bde9ae9e17`
+([build evidence](https://github.com/heinjenny95/DiffeoForge/actions/runs/42000032958)).
+The application-source baseline remains v193/`54fb9ff`. Each Mac build passed
+49 pilot/dialog/worker software cases; two optional Modern-engine cases were
+skipped because that engine is outside these packages. Nine local packaging
+entrypoint/request-boundary cases also passed.
+
+The exact downloaded DMGs then passed independent installation and computation
+on four fresh runners
+([qualification](https://github.com/heinjenny95/DiffeoForge/actions/runs/42008396497),
+verification source `e58b46c676548e58ddda19dd102fae295cd770fb`). The checked
+families are macOS15 and macOS26, each on Intel and Apple Silicon. Fresh user
+homes and absent build prefixes excluded prior KeOps caches. Checks covered
+Cocoa startup, media export, actual frozen execution, Current/Varifold output,
+checkpoint continuation from cap2 to302 without changing its source, queued
+cancellation and an interrupted live calculation. Live cancellation took
+0.397–0.570 seconds on these public fixtures; this is not a general latency
+guarantee. Installed file inventories and ad-hoc signatures remained unchanged.
+
+| DMG | Bytes | SHA-256 |
+| --- | ---: | --- |
+| Intel | 912663508 | `8494a46780d2916446d25b36f80e3546b569a213e3d0741c4a47cc478920f9a1` |
+| Apple Silicon | 919632222 | `dc8b8aca8b86f5ab42668bd89a0605c6e0263bb5acf7b2583ed135d51fe6174b` |
+
+Both DMGs were downloaded and hash-verified locally. Their two temporary
+installer artifacts were deleted through the exact artifact IDs after local
+retrieval and independent qualification. Public test receipts remain separate.
+Colleague ZIPs retain the image, hashes, exact platform observations, instructions
+and upstream source/license notices. No release, tag, merge or Drive upload was
+made. Physical colleague first use and scientific dataset acceptance remain open.
+The owner's Windows installation and active scientific work were not changed.
+
+## Application and runtime scope
+
 The requested targets are native Apple-Silicon and Intel desktop bundles using
 the unchanged v193 application source baseline
 `54fb9ffc454f3f19a10943aeac25203037f22e32`. Packaging and platform-launcher work

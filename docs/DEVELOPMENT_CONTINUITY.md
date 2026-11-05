@@ -17,10 +17,15 @@ not been installed or uploaded to Drive. Package verification is separate from
 native scientific convergence, clean-machine colleague acceptance and release.
 See [policy and verification](PILOT_ITERATION_BUDGET.md).
 
-The product target remains Windows, macOS and Linux. Each advertised platform
-must qualify the complete pilot/atlas workflow and its backend setup, rather
-than infer support from an offscreen GUI or a different engine's CPU tests.
-Native macOS/Linux installation packages are not yet qualified.
+The product target remains Windows, macOS and Linux. The v193 native macOS
+colleague packages now have verified builds and independent downloaded-DMG
+installation/computation checks on macOS15/26 for Intel and Apple Silicon.
+Their application sources match the v193 baseline. The bundled reference
+runtime is CPU-only, using Rosetta on Apple Silicon; signatures are ad-hoc,
+without Apple notarization. See [exact scope and evidence](MACOS_V193_PACKAGING.md).
+Independent colleague first use, full scientific workflow acceptance and native
+Linux packaging remain separate open gates. Windows remains installed at dev192;
+the staged v193 Windows installer has not been executed.
 
 ## Source follow-up — initializer comparison evidence
 
