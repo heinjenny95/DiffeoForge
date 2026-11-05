@@ -1187,6 +1187,12 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
     with all time ranges and whole-worker RSS reported. This is not end-to-end
     atlas calibration; see `reference/public-engine-pair-v1/README.md`.
 - [ ] Cross-platform CPU distribution
+  - Product target: Windows, macOS and Linux, with the complete import,
+    pilot fit/review, atlas preparation, save/reopen and checkpoint-continuation
+    workflow on each advertised route. First-use instructions must explain and
+    verify the platform-specific numerical backend. Qualify installed packages
+    on clean machines with a public example; keep CPU/GPU and engine evidence
+    distinct. Windows delivery does not close macOS or Linux acceptance.
   - [ ] Isolate the Intel-Mac offscreen GUI segmentation fault in CI 34834843155;
     retain the failed observation and inspect native object/thread lifetimes,
     without skipping tests or claiming a fix from an unrelated numeric CPU pass

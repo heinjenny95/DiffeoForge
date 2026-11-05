@@ -1,6 +1,6 @@
 # Development continuity — dev192 installed and verified
 
-## dev193 source — carry pilot continuation effort into the atlas budget
+## dev193 staged — carry pilot continuation effort into the atlas budget
 
 New final configurations include matching completed native checkpoint
 continuations when recommending iteration headroom, even if the researcher
@@ -9,9 +9,18 @@ native stops and rejection state constrain that evidence. No field or approval
 is adopted by the budget calculation. The same allowance reaches native atlas
 XML and fixed-basis initialization. Version 2 provenance explains the included
 continuations. Existing completed configurations and valid legacy finish retries
-retain their exact saved contracts. The installed dev192 runtime and active
-scientific work remain unchanged while package verification is pending.
+retain their exact saved contracts. The Windows private-alpha package is built
+and verified, including a probe bound to the product's exact frozen Python
+archive and bundled schema. All 80 focused software cases passed. Installed
+dev192 and active scientific work remain unchanged; dev193 is staged and has
+not been installed or uploaded to Drive. Package verification is separate from
+native scientific convergence, clean-machine colleague acceptance and release.
 See [policy and verification](PILOT_ITERATION_BUDGET.md).
+
+The product target remains Windows, macOS and Linux. Each advertised platform
+must qualify the complete pilot/atlas workflow and its backend setup, rather
+than infer support from an offscreen GUI or a different engine's CPU tests.
+Native macOS/Linux installation packages are not yet qualified.
 
 ## Source follow-up — initializer comparison evidence
 
