@@ -213,7 +213,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15-intel, macos-15]
+        include:
+          - os: macos-15-intel
+            artifact_os: macos-15-intel
+          - os: macos-15
+            artifact_os: macos-15
+          - os: macos-26-intel
+            artifact_os: macos-15-intel
+          - os: macos-26
+            artifact_os: macos-15
     env:
       OMP_NUM_THREADS: "1"
       MPLBACKEND: Agg
@@ -229,7 +237,7 @@ jobs:
         with:
           github-token: ${{ github.token }}
           run-id: ${{ inputs.source_run }}
-          pattern: DiffeoForge-v193-${{ matrix.os }}-[0-9a-f]*
+          pattern: DiffeoForge-v193-${{ matrix.artifact_os }}-[0-9a-f]*
           path: ${{ runner.temp }}/mac-candidate
           merge-multiple: true
       - name: Independently install and compute from downloaded DMG

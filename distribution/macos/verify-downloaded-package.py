@@ -71,7 +71,8 @@ def main():
     assert checker.inventory(installed) == proof["application_files"]
     run(["codesign", "--verify", "--deep", "--strict", installed], capture_output=True)
     final = dict(status="downloaded_package_independently_verified", version=proof["version"],
-                 host_architecture=platform.machine(), source_package=proof["package"],
+                 host_architecture=platform.machine(), macos_version=platform.mac_ver()[0],
+                 source_package=proof["package"],
                  original_build_prefix_available=False, original_keops_cache_used=False,
                  cocoa_startup=True, media_export=True, production_worker_and_native_checks=results,
                  installed_bytes_unchanged=True, signing="ad-hoc", notarized=False,
