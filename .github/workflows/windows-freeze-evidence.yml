@@ -6,8 +6,12 @@ on:
       target:
         description: "Requested packaging evidence target"
         type: choice
-        options: [windows, macos-probe, macos]
+        options: [windows, macos-probe, macos, macos-verify]
         default: windows
+      source_run:
+        description: "Mac candidate workflow run ID (verification only)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -198,6 +202,48 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+  macos-independent-install:
+    if: ${{ inputs.target == 'macos-verify' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 65
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-15]
+    env:
+      OMP_NUM_THREADS: "1"
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install external verification tools only
+        run: python -m pip install -e '.[analysis]'
+      - name: Fetch the exact already-built candidate
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source_run }}
+          pattern: DiffeoForge-v193-${{ matrix.os }}-*
+          path: ${{ runner.temp }}/mac-candidate
+          merge-multiple: true
+      - name: Independently install and compute from downloaded DMG
+        run: python -B distribution/macos/verify-downloaded-package.py '${{ runner.temp }}/mac-candidate' '${{ runner.temp }}/Independent Mac Käfer'
+      - name: Keep public qualification evidence only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: macos-independent-install-${{ matrix.os }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/Independent Mac Käfer/independent-verification.json
+            ${{ runner.temp }}/Independent Mac Käfer/public-workflows/runs/*/logs/deformetrica.log
+          if-no-files-found: warn
+          retention-days: 2
 
   macos-reference-probe:
     if: ${{ inputs.target == 'macos-probe' }}
