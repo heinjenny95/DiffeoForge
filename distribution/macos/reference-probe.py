@@ -25,7 +25,7 @@ def make_portable_launchers(prefix):
     launcher = shell_prefix + '''
 export PATH="$DF_BIN:$PATH"
 export CC="$DF_BIN/df-cc" CXX="$DF_BIN/df-cxx"
-export PYTHONNOUSERSITE=1 USE_CUDA=0 CUDA_VISIBLE_DEVICES=-1
+export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 USE_CUDA=0 CUDA_VISIBLE_DEVICES=-1
 unset QT_PLUGIN_PATH QML2_IMPORT_PATH DYLD_LIBRARY_PATH DYLD_FRAMEWORK_PATH
 exec "$DF_BIN/python3.8" -B -c 'from deformetrica.__main__ import main; main()' "$@"
 '''
@@ -53,13 +53,24 @@ def avoid_clang_version_header_collision(prefix):
     mathematical = {str(p.relative_to(package)): hashlib.sha256(p.read_bytes()).hexdigest()
                     for p in (package / "keops").rglob("*") if p.is_file()}
     version.rename(package / "package-version.txt")
-    source.write_text(original.replace(token, "'package-version.txt'), encoding='utf-8'"))
+    patched = original.replace(token, "'package-version.txt'), encoding='utf-8'")
+    assert patched.count("set_bin_folder()") == 1
+    # Compiled native modules may retain loader paths to this runtime. Do not
+    # reuse another installation's cache after a user moves or copies the app.
+    patched = patched.replace(
+        "set_bin_folder()",
+        "import hashlib\nset_bin_folder(os.path.join(os.path.expanduser('~'), '.cache', "
+        "'diffeoforge-mac-v193-' + hashlib.sha256(os.path.realpath(__file__).encode())"
+        ".hexdigest()[:16]))",
+    )
+    source.write_text(patched)
     assert mathematical == {
         str(p.relative_to(package)): hashlib.sha256(p.read_bytes()).hexdigest()
         for p in (package / "keops").rglob("*") if p.is_file()
     }
     return dict(before_sha256=before, after_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                 metadata_rename="version -> package-version.txt",
+                cache_isolation="installation-path-bound macOS v193 cache",
                 mathematical_files=len(mathematical), mathematical_bytes_unchanged=True)
 
 

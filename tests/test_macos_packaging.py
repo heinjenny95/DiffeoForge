@@ -67,3 +67,17 @@ def test_mac_packaging_does_not_change_other_launch_environments(monkeypatch, pl
     monkeypatch.setenv("PATH", "/original")
     module.configure_runtime_path()
     assert module.os.environ["PATH"] == "/original"
+
+
+def test_mac_qualification_uses_the_real_native_launch_request_contract(tmp_path):
+    spec = importlib.util.spec_from_file_location("mac_package_check", ROOT / "build-package.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    config = tmp_path / "atlas.yaml"
+    config.write_text("native request contract fixture\n")
+    request = module.reference_request(
+        config, tmp_path / "new-run", tmp_path / "Runtime/bin/deformetrica", "new-run"
+    )
+    assert request.launcher_type == "native"
+    assert request.launcher_engine is None and request.launcher_image is None
+    assert request.destination == tmp_path / "new-run"

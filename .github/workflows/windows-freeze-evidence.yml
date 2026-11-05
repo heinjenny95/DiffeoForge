@@ -299,8 +299,10 @@ jobs:
           python-version: "3.12"
       - name: Install v193 desktop builder and test tools
         run: |
-          python -m pip install -e '.[desktop,dev]'
-          python -m pip install -r distribution/macos/desktop-requirements.txt
+          python -m venv "$RUNNER_TEMP/mac-builder"
+          echo "$RUNNER_TEMP/mac-builder/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/mac-builder/bin/python" -m pip install -e '.[desktop,dev]' -r distribution/macos/desktop-requirements.txt
+          "$RUNNER_TEMP/mac-builder/bin/python" -m pip check
       - name: Check native pilot and UI software paths
         run: |
           pytest -q tests/test_pilot_iteration_budget.py tests/test_pilot_iteration_budget_transfer.py tests/test_reference_calibration_dialog.py tests/test_desktop_worker_controller.py

@@ -10,3 +10,4 @@ svglib==1.6.0
 imageio==2.38.1
 imageio-ffmpeg==0.6.0
 PyInstaller==6.21.0
+psutil==7.2.2

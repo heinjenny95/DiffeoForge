@@ -11,4 +11,5 @@ def configure_runtime_path():
     native = contents / "Resources/ReferenceRuntime/bin"
     if (native / "deformetrica").is_file():
         os.environ["PATH"] = str(native) + os.pathsep + os.environ.get("PATH", "")
+        os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 

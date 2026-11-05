@@ -42,6 +42,14 @@ def inventory(root):
             for p in sorted(root.rglob("*")) if p.is_file() and not p.is_symlink()}
 
 
+def reference_request(path, destination, native, identifier):
+    return DesktopReferenceLaunchRequest(
+        request_id=identifier, config_path=path.resolve(), destination=destination.resolve(),
+        run_id=identifier, expected_config_sha256=digest(path), launcher_type="native",
+        launcher_executable=str(native), launcher_engine=None, launcher_image=None,
+    )
+
+
 def reference_check(repository, root, native, worker):
     """Production frozen worker, normal export, checkpoint successor and cancellation."""
     meshes = root / "Example Käfer/meshes"
@@ -62,11 +70,7 @@ def reference_check(repository, root, native, worker):
         path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
         destination = root / "runs" / name
         if name == "worker-keops":
-            request = DesktopReferenceLaunchRequest(
-                request_id=name, config_path=path.resolve(), destination=destination.resolve(),
-                run_id=name, expected_config_sha256=digest(path), launcher_type="native",
-                launcher_executable=str(native),
-            )
+            request = reference_request(path, destination, native, name)
             request.verify_launch_inputs()
             result = ReferenceExecutionController(request, worker_command=(str(worker),)).run()
             assert result.completed and result.exit_code == 0, (result.outcome, result.stderr)
@@ -87,12 +91,7 @@ def reference_check(repository, root, native, worker):
     results["checkpoint_continuation"] = {"cap": 302, "source_unchanged": True}
     # A queued safe cancellation must stop without creating a scientific run.
     path = root / "worker-keops.yaml"
-    request = DesktopReferenceLaunchRequest(
-        request_id="cancel-before-prepare", config_path=path.resolve(),
-        destination=(root / "runs/cancelled").resolve(), run_id="cancelled",
-        expected_config_sha256=digest(path), launcher_type="native",
-        launcher_executable=str(native),
-    )
+    request = reference_request(path, root / "runs/cancelled", native, "cancelled")
     controller = ReferenceExecutionController(request, worker_command=(str(worker),))
     assert controller.request_cancel()
     cancelled = controller.run()
@@ -122,6 +121,16 @@ def main():
     contents = app / "Contents"
     native_prefix = contents / "Resources/ReferenceRuntime"
     shutil.copytree(native_root / "python", native_prefix, symlinks=True)
+    # A relocated check must not silently use its original interpreter/libraries
+    # or already-compiled kernels from the native setup phase.
+    (native_root / "python").rename(native_root / "python-build-prefix-retained")
+    fresh_home = root / "Qualification Home"
+    fresh_home.mkdir()
+    os.environ["HOME"] = str(fresh_home)
+    os.environ["MPLCONFIGDIR"] = str(fresh_home / "matplotlib")
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+    env.update(HOME=str(fresh_home), MPLCONFIGDIR=str(fresh_home / "matplotlib"),
+               PYTHONDONTWRITEBYTECODE="1")
     native = native_prefix / "bin/deformetrica"
     executable = contents / "MacOS/DiffeoForge"
     worker = contents / "MacOS/DiffeoForgeReferenceExecutionWorker"
