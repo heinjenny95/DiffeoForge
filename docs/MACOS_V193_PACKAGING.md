@@ -31,9 +31,27 @@ Both DMGs were downloaded and hash-verified locally. Their two temporary
 installer artifacts were deleted through the exact artifact IDs after local
 retrieval and independent qualification. Public test receipts remain separate.
 Colleague ZIPs retain the image, hashes, exact platform observations, instructions
-and upstream source/license notices. No release, tag, merge or Drive upload was
-made. Physical colleague first use and scientific dataset acceptance remain open.
+and upstream source/license notices. The initial local delivery did not create
+a release or tag, merge code or upload to Drive. Physical colleague first use
+and scientific dataset acceptance remain open.
 The owner's Windows installation and active scientific work were not changed.
+
+## Owner-requested GitHub distribution
+
+The owner subsequently requested repository-based download links. The complete
+packages are available in the
+[v193 macOS test prerelease](https://github.com/heinjenny95/DiffeoForge/releases/tag/v193-macos-test).
+Its tag points to the actual build source `73efd0e`, and its five assets contain
+the two complete colleague ZIPs, their checksum sidecars and the installation
+guide. All assets were staged as a draft and matched GitHub's server-side
+SHA-256 digests before publication. Anonymous downloads of both published ZIPs
+returned the correct archive header and expected full size.
+
+This is an explicitly requested development prerelease, not a general stable
+release or a new scientific approval. Binaries are release assets rather than
+Git source-history entries. No existing package was replaced, no main-branch
+merge occurred, and no Drive upload completed. The application version and
+the owner's installed runtime remain unchanged.
 
 ## Application and runtime scope
 
