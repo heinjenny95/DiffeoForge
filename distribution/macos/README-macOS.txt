@@ -23,6 +23,9 @@ Copy the entire Example folder into Documents before using it. Do not save a
 project inside the DMG or inside DiffeoForge.app. The native reference executable
 is selected from the application's isolated environment; no system Python or
 pip installation is needed. The example is a software check, not anatomy approval.
+The first KeOps computation compiles formula-specific CPU kernels and can take
+several minutes. Later runs reuse the local cache. This one-time setup is separate
+from optimization iterations; detailed compiler messages remain in the run log.
 
 Keep Windows projects unchanged while testing a copy on Mac. Existing native
 checkpoints are tied to their original runtime and platform; do not move a Windows
