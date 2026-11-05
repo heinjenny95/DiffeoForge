@@ -9,11 +9,65 @@ import os
 import platform
 import plistlib
 import subprocess
+import time
 from pathlib import Path
+
+import yaml
+
+from diffeoforge.config import load_config
+from diffeoforge.desktop.reference_execution_controller import ReferenceExecutionController
+from diffeoforge.mesh import read_vtk_polydata, write_vtk_polydata
 
 
 def run(arguments, **kwargs):
     return subprocess.run([str(value) for value in arguments], check=True, **kwargs)
+
+
+def live_cancellation(checker, repository, root, native, worker):
+    """Cancel a real public-data native calculation after progress is observed."""
+    root.mkdir()
+    mesh = read_vtk_polydata(repository / "examples/synthetic/meshes/template.vtk")
+    vertices, triangles = list(mesh.vertices), list(mesh.triangles)
+    # Subdivide only the public template so one dense evaluation lasts long
+    # enough to distinguish in-flight cancellation from a completed-run race.
+    for _ in range(3):
+        edges, refined = {}, []
+
+        def midpoint(a, b):
+            key = tuple(sorted((a, b)))
+            if key not in edges:
+                edges[key] = len(vertices)
+                vertices.append(tuple((vertices[a][i] + vertices[b][i]) / 2 for i in range(3)))
+            return edges[key]
+
+        for a, b, c in triangles:
+            ab, bc, ca = midpoint(a, b), midpoint(b, c), midpoint(c, a)
+            refined.extend(((a, ab, ca), (ab, b, bc), (ca, bc, c), (ab, bc, ca)))
+        triangles = refined
+    template = write_vtk_polydata(root / "public-subdivided-template.vtk", vertices, triangles)
+    config = load_config(repository / "examples/minimal-atlas.yaml")
+    config["input"].update(directory=str(repository / "examples/synthetic/meshes"),
+                           template=str(template))
+    config["output"]["directory"] = str(root / "runs")
+    config["runtime"].update(threads=1, kernel_backend="torch",
+                             launcher={"type": "native", "executable": str(native)})
+    path = root / "cancel.yaml"
+    path.write_text(yaml.safe_dump(config, sort_keys=False))
+    request = checker.reference_request(path, root / "runs/live-cancel", native, "live-cancel")
+    controller = ReferenceExecutionController(request, worker_command=(str(worker),))
+    sent = []
+
+    def observe(event):
+        if event.kind == "progress" and not sent:
+            assert controller.request_cancel()
+            sent.append(time.monotonic())
+
+    result = controller.run(event_callback=observe)
+    assert sent and result.interrupted, (result.outcome, result.stderr)
+    seconds = time.monotonic() - sent[0]
+    assert seconds < 20, f"Native cancellation took {seconds:.2f}s"
+    return dict(outcome=result.outcome, seconds_after_request=seconds,
+                public_template_vertices=len(vertices), cancelled_after_progress=True)
 
 
 def main():
@@ -68,6 +122,9 @@ def main():
     worker = installed / "Contents/MacOS/DiffeoForgeReferenceExecutionWorker"
     results = checker.reference_check(Path(__file__).resolve().parents[2],
                                       output / "public-workflows", native, worker)
+    results["in_flight_cancellation"] = live_cancellation(
+        checker, Path(__file__).resolve().parents[2], output / "cancellation-check", native, worker
+    )
     assert checker.inventory(installed) == proof["application_files"]
     run(["codesign", "--verify", "--deep", "--strict", installed], capture_output=True)
     final = dict(status="downloaded_package_independently_verified", version=proof["version"],
