@@ -954,7 +954,7 @@
                       "required": ["version", "suggested_max_iterations", "previous_max_iterations",
                                    "observations", "pilot_near_iteration_cap", "reason", "boundary"],
                       "properties": {
-                        "version": {"const": "1"},
+                        "version": {"enum": ["1", "2"]},
                         "suggested_max_iterations": {"type": "integer", "minimum": 1},
                         "previous_max_iterations": {"type": "integer", "minimum": 1},
                         "observations": {"type": "array", "items": {
@@ -962,8 +962,38 @@
                         }},
                         "pilot_near_iteration_cap": {"type": "boolean"},
                         "reason": {"type": "string", "minLength": 1},
-                        "boundary": {"type": "string", "minLength": 1}
-                      }
+                        "boundary": {"type": "string", "minLength": 1},
+                        "evidence_policy": {"const": "selected-pilot-native-continuations-v1"},
+                        "evidence_scope": {"type": "string", "minLength": 1},
+                        "continuation_evidence": {
+                          "type": "array", "minItems": 1,
+                          "items": {
+                            "type": "object", "additionalProperties": false,
+                            "required": ["stage_id", "candidate_id", "source_candidate_id",
+                                         "source_completed_event_hash", "completed_event_hash",
+                                         "initial_iteration", "additional_iterations", "maximum_iterations"],
+                            "properties": {
+                              "stage_id": {"enum": ["attachment", "deformation", "noise", "timepoints"]},
+                              "candidate_id": {"type": "string", "minLength": 1},
+                              "source_candidate_id": {"type": "string", "minLength": 1},
+                              "source_completed_event_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                              "completed_event_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                              "initial_iteration": {"type": "integer", "minimum": 1},
+                              "additional_iterations": {"const": 300},
+                              "maximum_iterations": {"type": "integer", "minimum": 1}
+                            }
+                          }
+                        }
+                      },
+                      "allOf": [{
+                        "if": {"properties": {"version": {"const": "2"}}},
+                        "then": {"required": ["evidence_policy", "evidence_scope", "continuation_evidence"]},
+                        "else": {"not": {"anyOf": [
+                          {"required": ["evidence_policy"]},
+                          {"required": ["evidence_scope"]},
+                          {"required": ["continuation_evidence"]}
+                        ]}}
+                      }]
                     },
                     "runtime_calibration": {
                       "type": "object",

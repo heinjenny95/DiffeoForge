@@ -1,5 +1,15 @@
 # Roadmap
 
+## Pilot iteration-budget transfer — 5 November 2026
+
+- [x] Include matching completed native checkpoint continuations as effort
+  evidence for new atlas budgets when an earlier suitable pilot field is kept.
+  Preserve field selection, reviews and existing run/configuration bytes; reject
+  unrelated, failed, pending or rejected branches. Carry the recommendation
+  through both native atlas XML and independent initialization. Legacy pending
+  finishes retain their exact valid contract.
+  [Policy and checks](docs/PILOT_ITERATION_BUDGET.md).
+
 ## Initialization performance follow-up — 5 November 2026
 
 - [x] Add a read-only numerical equality gate for independent fixed-basis

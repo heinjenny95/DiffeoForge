@@ -1,5 +1,18 @@
 # Development continuity — dev192 installed and verified
 
+## dev193 source — carry pilot continuation effort into the atlas budget
+
+New final configurations include matching completed native checkpoint
+continuations when recommending iteration headroom, even if the researcher
+keeps an earlier suitable field. Source/event identity, cumulative counters,
+native stops and rejection state constrain that evidence. No field or approval
+is adopted by the budget calculation. The same allowance reaches native atlas
+XML and fixed-basis initialization. Version 2 provenance explains the included
+continuations. Existing completed configurations and valid legacy finish retries
+retain their exact saved contracts. The installed dev192 runtime and active
+scientific work remain unchanged while package verification is pending.
+See [policy and verification](PILOT_ITERATION_BUDGET.md).
+
 ## Source follow-up — initializer comparison evidence
 
 The read-only [initializer equality gate](INITIALIZATION_PERFORMANCE.md) compares

@@ -2924,12 +2924,26 @@ def _final_configuration(
         configure_preserved_pilot(
             config, root=seed_root, seed=seed, config_directory=root / "selected"
         )
-    from diffeoforge.iteration_budget import recommend_iteration_budget
+    from diffeoforge.iteration_budget import (
+        recommend_iteration_budget,
+        recommend_pilot_iteration_budget,
+    )
 
     calibration = config["project"]["parameter_provenance"]["recommendation"]["calibration_result"]
-    budget = recommend_iteration_budget(
+    legacy_budget = recommend_iteration_budget(
         config["optimization"]["max_iterations"], runtime_observations,
         selected_candidate_ids.values(),
+    )
+    rejected = set()
+    if continuation_source is not None and continuation_source.current_stage is not None:
+        rejected = {
+            (continuation_source.current_stage.stage_id, identifier)
+            for identifier, approved in continuation_source.visual_reviews.items()
+            if approved is False
+        }
+    budget = recommend_pilot_iteration_budget(
+        config["optimization"]["max_iterations"], runtime_observations,
+        selected_candidate_ids, _load_events(root), rejected_candidates=rejected,
     )
     calibration["iteration_budget_recommendation"] = budget
     config["optimization"]["max_iterations"] = budget["suggested_max_iterations"]
@@ -2941,8 +2955,21 @@ def _final_configuration(
     final_path = root / "selected" / "atlas-calibrated.yaml"
     final_path.parent.mkdir(parents=True, exist_ok=True)
     if final_path.exists():
-        if yaml.safe_load(final_path.read_text(encoding="utf-8")) != config:
-            raise ReferenceCalibrationStudyError("Existing final configuration differs")
+        existing = yaml.safe_load(final_path.read_text(encoding="utf-8"))
+        if existing != config:
+            # A finish retry may have an immutable v1 configuration written by
+            # an earlier runtime. Preserve that exact contract, never upgrade it
+            # in place or turn the saved researcher decision into a dead end.
+            legacy = copy.deepcopy(config)
+            legacy_calibration = legacy["project"]["parameter_provenance"]["recommendation"][
+                "calibration_result"]
+            legacy_calibration["iteration_budget_recommendation"] = legacy_budget
+            legacy["optimization"]["max_iterations"] = legacy_budget["suggested_max_iterations"]
+            if "full_cohort_initialization" in legacy_calibration:
+                legacy_calibration["full_cohort_initialization"]["individual_max_iterations"] = (
+                    legacy_budget["suggested_max_iterations"])
+            if existing != legacy:
+                raise ReferenceCalibrationStudyError("Existing final configuration differs")
     else:
         _write_yaml(final_path, config, overwrite=False)
     return final_path
