@@ -11,6 +11,12 @@ Torch 1.6.0 and PyKeOps 1.4.1 Intel binaries. Apple Silicon executes this
 reference environment through Rosetta 2 while keeping its GUI/workers native.
 The optional Modern engine and GPU/MPS execution are outside these packages.
 An external system Python is unnecessary. The current target is macOS15+.
+Rosetta is a compatibility route rather than a permanent native-ARM backend:
+[Apple's September2026 guidance](https://support.apple.com/en-us/102527) limits
+general Rosetta support to macOS27 or earlier. macOS28 is outside this package's
+reference-runtime support; a future native-ARM reference environment needs its
+own numerical qualification. Current advertised tests are the observed macOS
+runner versions, not an assumption about future releases.
 
 ## Compatibility boundary
 
