@@ -1,6 +1,6 @@
 DiffeoForge v193 - macOS colleague test build
 
-Choose AppleSilicon for M-series Macs or Intel for Intel Macs. These packages
+Requires macOS 15 or newer. Choose AppleSilicon for M-series Macs or Intel for Intel Macs. These packages
 contain the v193 application code, supervised workers and an isolated Deformetrica
 4.3.0 / Python 3.8 / Torch 1.6 CPU environment. On Apple Silicon the reference
 environment uses Rosetta 2. The application interface itself uses the selected
