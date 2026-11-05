@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-freeze-evidence-${{ github.ref }}
+  group: windows-freeze-evidence-${{ inputs.target || 'windows' }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

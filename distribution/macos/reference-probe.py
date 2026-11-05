@@ -41,6 +41,28 @@ exec "$DF_BIN/python3.8" -B -c 'from cmake import cmake; cmake()' "$@"
         (binary / name).chmod(0o755)
 
 
+def avoid_clang_version_header_collision(prefix):
+    """Rename package metadata that shadows libc++'s <version> header."""
+    package = prefix / "lib/python3.8/site-packages/pykeops"
+    source = package / "__init__.py"
+    version = package / "version"
+    original = source.read_text()
+    before = hashlib.sha256(source.read_bytes()).hexdigest()
+    token = "'version'), encoding='utf-8'"
+    assert original.count(token) == 1 and version.read_text().strip() == "1.4.1"
+    mathematical = {str(p.relative_to(package)): hashlib.sha256(p.read_bytes()).hexdigest()
+                    for p in (package / "keops").rglob("*") if p.is_file()}
+    version.rename(package / "package-version.txt")
+    source.write_text(original.replace(token, "'package-version.txt'), encoding='utf-8'"))
+    assert mathematical == {
+        str(p.relative_to(package)): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in (package / "keops").rglob("*") if p.is_file()
+    }
+    return dict(before_sha256=before, after_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                metadata_rename="version -> package-version.txt",
+                mathematical_files=len(mathematical), mathematical_bytes_unchanged=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("output", type=Path)
@@ -73,6 +95,7 @@ def main():
                               str(repository / "distribution/macos/reference-requirements.txt")],
                    check=True, env=env)
     subprocess.run(command + ["-B", "-m", "pip", "check"], check=True, env=env)
+    compatibility = avoid_clang_version_header_collision(prefix)
     make_portable_launchers(prefix)
     # The selected pinned CMake and target-architecture compiler also apply to
     # adapter-launched native children, not just pip installation subprocesses.
@@ -117,6 +140,7 @@ def main():
     proof = dict(status="passed", host_architecture=architecture,
                  native_architecture="x86_64", source_commit=os.environ.get("GITHUB_SHA"),
                  python_archive_sha256=PYTHON_SHA256, public_native_runs=outcomes,
+                 clang_metadata_compatibility=compatibility,
                  private_inputs_used=False, windows_owner_state_accessed=False)
     (root / "mac-reference-probe.json").write_text(json.dumps(proof, indent=2))
     print(json.dumps(proof), flush=True)
