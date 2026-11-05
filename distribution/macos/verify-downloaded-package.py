@@ -33,12 +33,12 @@ def live_cancellation(checker, repository, root, native, worker):
     for _ in range(3):
         edges, refined = {}, []
 
-        def midpoint(a, b):
+        def midpoint(a, b, edge_map=edges):
             key = tuple(sorted((a, b)))
-            if key not in edges:
-                edges[key] = len(vertices)
+            if key not in edge_map:
+                edge_map[key] = len(vertices)
                 vertices.append(tuple((vertices[a][i] + vertices[b][i]) / 2 for i in range(3)))
-            return edges[key]
+            return edge_map[key]
 
         for a, b, c in triangles:
             ab, bc, ca = midpoint(a, b), midpoint(b, c), midpoint(c, a)
