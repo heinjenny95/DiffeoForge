@@ -91,3 +91,22 @@ native precision, tolerance/line-search messages and atomic context bundle.
 Float64 controlled native scalars resolve a strictly positive step below the
 unchanged tolerance threshold, while the same values collapse in float32.
 These engineering checks do not optimize private meshes.
+
+## Owner-requested end of an external continuation chain
+
+An explicit owner cancellation is a separate operational terminal state. For a
+manually administered chain, identify the current block and all original
+processes from startup receipts, including boot/start/argv/cwd, parents and the
+declared environment. Preserve and verify a stable checkpoint and its reference
+context. Disable the one-shot continuation driver before terminating its scoped
+optimizer and contribution workers, using identity-bound handles rather than
+PID-only signalling. Verify process exit, released owned GPU contexts and the
+preserved source/checkpoint bytes through an independent connection.
+
+Keep the owner request and cancellation receipts separate from immutable native
+stopping metadata. Owner cancellation does not prove numerical failure,
+convergence, a complete final export or anatomical acceptance. Retain existing
+checkpoints, histories and accepted analyses; do not resume or restore them
+automatically. Retire the monitor for the ended chain while preserving unrelated
+paused automations. This does not change application defaults or authorize
+signals from ordinary read-only monitoring.
