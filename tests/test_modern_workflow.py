@@ -385,8 +385,15 @@ def _payload_bytes(directory: Path) -> dict[str, bytes]:
     }
 
 
+@pytest.mark.parametrize(
+    "block_order",
+    [
+        pytest.param(("momenta", "template", "control_points"), id="three-block"),
+        pytest.param(("momenta", "template"), id="fixed-controls"),
+    ],
+)
 def test_next_block_gradient_reuse_records_unchanged_joint_fit_and_less_work(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, block_order: tuple[str, ...],
 ) -> None:
     from diffeoforge.modern_bundle import ModernBundleError
     from diffeoforge.modern_continuation import CONFIG_NAME, create_modern_continuation
@@ -394,7 +401,7 @@ def test_next_block_gradient_reuse_records_unchanged_joint_fit_and_less_work(
 
     config = _analytical_varifold_configuration()
     config["optimization"].update(
-        block_order=["momenta", "template", "control_points"],
+        block_order=list(block_order),
         max_cycles=2,
         template_gradient="sobolev",
     )
@@ -421,8 +428,10 @@ def test_next_block_gradient_reuse_records_unchanged_joint_fit_and_less_work(
     assert "reused_cycle_boundary_gradients" not in within["work"]
     assert within["settings"]["reuse_next_block_gradient"] is True
     assert candidate["settings"]["reuse_cycle_boundary_gradient"] is True
+    assert candidate["settings"]["block_order"] == list(block_order)
     work = candidate["work"]
-    assert work["reused_block_gradients"] == work["paired_gradient_evaluations"] == 5
+    expected_reuses = 2 * (len(block_order) - 1) + 1
+    assert work["reused_block_gradients"] == work["paired_gradient_evaluations"] == expected_reuses
     assert work["reused_cycle_boundary_gradients"] == 1
     assert work["paired_gradient_fallbacks"] == 0
     assert work["objective_evaluations"] == within["work"]["objective_evaluations"] - 1
@@ -441,6 +450,7 @@ def test_next_block_gradient_reuse_records_unchanged_joint_fit_and_less_work(
         successor / verified_successor["result_bundle"]["path"]
     )
     assert successor_bundle["optimizer"]["settings"]["reuse_cycle_boundary_gradient"] is True
+    assert successor_bundle["optimizer"]["settings"]["block_order"] == list(block_order)
     assert successor_bundle["optimizer"]["work"]["reused_cycle_boundary_gradients"] == 0
 
     plan = collect_modern_workload(tmp_path / "within.yaml")
@@ -473,6 +483,16 @@ def test_next_block_gradient_reuse_records_unchanged_joint_fit_and_less_work(
     manifest_path.write_bytes(original_manifest)
     sidecar_path.write_bytes(original_sidecar)
 
+    wrong_schedule = copy.deepcopy(bundle)
+    wrong_schedule["optimizer"]["settings"]["block_order"] = (
+        ["momenta", "template"]
+        if len(block_order) == 3
+        else ["momenta", "template", "control_points"]
+    )
+    monkeypatch.setattr(workflow, "verify_modern_atlas_bundle", lambda _: wrong_schedule)
+    with pytest.raises(workflow.ModernWorkflowError, match="gradient-reuse block order differs"):
+        workflow.verify_modern_workflow(run)
+
     bundle["optimizer"]["settings"].pop("reuse_cycle_boundary_gradient")
     bundle["optimizer"]["work"].pop("reused_cycle_boundary_gradients")
     monkeypatch.setattr(workflow, "verify_modern_atlas_bundle", lambda _: bundle)
@@ -483,7 +503,7 @@ def test_next_block_gradient_reuse_records_unchanged_joint_fit_and_less_work(
 @pytest.mark.parametrize("updates", [
     {"reuse_next_block_gradient": False},
     {"block_order": ["template", "momenta", "control_points"]},
-    {"block_order": ["momenta", "template"]},
+    {"block_order": ["template", "momenta"]},
     {"reuse_cycle_boundary_gradient": "true"},
 ])
 def test_cycle_boundary_gradient_reuse_requires_an_eligible_schedule(updates: dict) -> None:

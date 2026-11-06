@@ -152,7 +152,11 @@
             "properties": {
               "settings": {
                 "required": ["reuse_next_block_gradient"],
-                "properties": {"block_order": {"const": ["momenta", "template", "control_points"]}}
+                "properties": {
+                  "block_order": {
+                    "enum": [["momenta", "template"], ["momenta", "template", "control_points"]]
+                  }
+                }
               },
               "work": {"required": ["reused_cycle_boundary_gradients"]}
             }

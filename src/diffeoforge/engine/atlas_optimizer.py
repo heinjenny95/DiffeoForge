@@ -25,6 +25,10 @@ from diffeoforge.engine.objective import (
 from diffeoforge.engine.sobolev import sobolev_template_gradient
 
 AtlasParameterBlock = Literal["momenta", "template", "control_points"]
+CYCLE_BOUNDARY_REUSE_BLOCK_ORDERS: tuple[tuple[AtlasParameterBlock, ...], ...] = (
+    ("momenta", "template"),
+    ("momenta", "template", "control_points"),
+)
 AtlasStepInitialization = Literal["fixed", "previous_accepted"]
 AtlasDirectionUpdate = Literal["steepest", "lbfgs"]
 AtlasLineSearchCondition = Literal["armijo", "strong_wolfe"]
@@ -606,11 +610,11 @@ def optimize_atlas(
             "reuse_next_block_gradient requires CPU analytical Varifold backward"
         )
     if reuse_cycle_boundary_gradient and (
-        not reuse_next_block_gradient or order != ("momenta", "template", "control_points")
+        not reuse_next_block_gradient or order not in CYCLE_BOUNDARY_REUSE_BLOCK_ORDERS
     ):
         raise ValueError(
             "reuse_cycle_boundary_gradient requires reuse_next_block_gradient and "
-            "the momenta, template, control_points schedule"
+            "the momenta, template schedule with optional final control_points"
         )
     if shared_step_scaling not in ("none", "inverse_subject_count"):
         raise ValueError("shared_step_scaling must be none or inverse_subject_count")

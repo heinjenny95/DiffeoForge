@@ -31,6 +31,7 @@ from diffeoforge import __version__
 from diffeoforge.config import ConfigurationError, validate_input_paths
 from diffeoforge.diagnostics import _physical_memory_bytes
 from diffeoforge.engine.atlas_optimizer import (
+    CYCLE_BOUNDARY_REUSE_BLOCK_ORDERS,
     AtlasOptimizationRecord,
     AtlasOptimizationResult,
     AtlasProgressCallback,
@@ -720,7 +721,7 @@ def _validate_report(report: dict[str, Any]) -> None:
     if boundary_enabled and (
         benchmark_version != BENCHMARK_VERSION
         or not configuration.get("reuse_next_block_gradient", False)
-        or configuration["block_order"] != ["momenta", "template", "control_points"]
+        or tuple(configuration["block_order"]) not in CYCLE_BOUNDARY_REUSE_BLOCK_ORDERS
         or configuration.get("subject_batch_workers", 1) != 1
         or configuration.get("template_gradient", "euclidean") != "euclidean"
     ):

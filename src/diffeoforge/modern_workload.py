@@ -19,6 +19,7 @@ from diffeoforge import __version__
 from diffeoforge.config import InputSummary, validate_input_paths
 from diffeoforge.diagnostics import _physical_memory_bytes
 from diffeoforge.engine import PairwiseEvaluationPlan
+from diffeoforge.engine.atlas_optimizer import CYCLE_BOUNDARY_REUSE_BLOCK_ORDERS
 from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import MeshMetadata, inspect_inputs, sha256_file
 from diffeoforge.modern_workflow import (
@@ -148,7 +149,7 @@ def _validate_report(report: dict[str, Any]) -> None:
             raise ModernWorkloadError("Unexpected cycle-boundary gradient reuse evidence")
     elif (
         not configuration.get("reuse_next_block_gradient", False)
-        or configuration["block_order"] != ["momenta", "template", "control_points"]
+        or tuple(configuration["block_order"]) not in CYCLE_BOUNDARY_REUSE_BLOCK_ORDERS
         or configuration.get("momenta_updates_per_cycle", 1) != 1
         or configuration.get("subject_batch_size") is not None
         or configuration.get("subject_batch_workers", 1) != 1

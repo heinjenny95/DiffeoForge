@@ -152,10 +152,10 @@ measure the compute change on this fixture.
 ### Reuse gradients across CPU cycles
 
 Add `optimization.reuse_cycle_boundary_gradient: true` to a recipe that
-already enables within-cycle reuse and uses the ordered blocks
-`momenta`, `template`, `control_points`. When an accepted control-point
-update leaves another cycle to run, its backward pass also computes the raw
-momentum gradient for the next cycle. The optimizer checks cancellation
+already enables within-cycle reuse and uses either the ordered blocks
+`momenta`, `template` or `momenta`, `template`, `control_points`. When the
+last accepted update leaves another cycle to run, its backward pass also
+computes the raw momentum gradient for the next cycle. The optimizer checks cancellation
 before consuming that gradient. At a tolerance stop or cycle cap it
 computes only the gradient needed for the current update.
 
@@ -163,7 +163,8 @@ The atlas bundle and optimizer benchmark count consumed boundary gradients
 separately within the total reused gradients. The effective configuration
 binds the opt-in to its checkpoints. A resumed process computes its first
 gradient from the saved parameters and counts that work. The checkpoint
-format and cycle allowance follow the original recipe.
+format and cycle allowance follow the original recipe. Two-block opt-in
+bundles require a reader that supports the two-block schedule.
 
 In the six-subject public CPU training check, both settings reached the
 same tolerance at cycle 12 with identical decisions and reconstruction

@@ -243,8 +243,15 @@ def test_subject_batched_scope_records_gradient_recomputation_objectives(
         _validate_report(report)
 
 
+@pytest.mark.parametrize(
+    "block_order",
+    [
+        pytest.param(("momenta", "template", "control_points"), id="three-block"),
+        pytest.param(("momenta", "template"), id="fixed-controls"),
+    ],
+)
 def test_cycle_boundary_reuse_benchmark_records_and_verifies_consumed_edges(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, block_order: tuple[str, ...],
 ) -> None:
     import diffeoforge.modern_optimizer_benchmark as module
 
@@ -257,14 +264,35 @@ def test_cycle_boundary_reuse_benchmark_records_and_verifies_consumed_edges(
         "autograd_strategy": "recompute", "varifold_backward": "analytical",
     }
     config["optimization"].update(
-        reuse_next_block_gradient=True, reuse_cycle_boundary_gradient=True,
+        block_order=list(block_order),
+        reuse_next_block_gradient=True,
+        reuse_cycle_boundary_gradient=True,
     )
     path = tmp_path / "cycle-boundary.yaml"
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     sample = _sample()
+    history = [
+        row for row in sample["history"] if row["block"] is None or row["block"] in block_order
+    ]
+    decisions = len(history) - 1
+    trials = sum(row["line_search_evaluations"] for row in history)
+    reuses = decisions - 1
     sample.update(
-        objective_evaluations=10, gradient_evaluations=7, paired_gradient_evaluations=5,
-        paired_gradient_fallbacks=0, reused_block_gradients=5, reused_cycle_boundary_gradients=1,
+        history=history,
+        history_sha256=_history_payload_sha256(history),
+        final_objective=history[-1]["objective"],
+        final_attachment=history[-1]["attachment"],
+        final_regularity=history[-1]["regularity"],
+        accepted_decisions=decisions,
+        line_search_evaluations=trials,
+        candidate_gradient_evaluations=decisions,
+        line_search_candidates_without_gradient=trials - decisions,
+        objective_evaluations=1 + trials,
+        gradient_evaluations=1 + decisions,
+        paired_gradient_evaluations=reuses,
+        paired_gradient_fallbacks=0,
+        reused_block_gradients=reuses,
+        reused_cycle_boundary_gradients=1,
     )
     monkeypatch.setattr(module, "_run_fresh_sample", lambda *_args: sample)
 
@@ -273,6 +301,7 @@ def test_cycle_boundary_reuse_benchmark_records_and_verifies_consumed_edges(
         path, subject_count=2, max_cycles=2, repeats=1, created_at=FIXED_TIME,
     )
     assert report["configuration"]["reuse_cycle_boundary_gradient"] is True
+    assert report["configuration"]["block_order"] == list(block_order)
     output = write_modern_optimizer_benchmark_report(report, tmp_path / "report")
     assert verify_modern_optimizer_benchmark_report(output) == report
     assert "Cycle-boundary gradient reuses" in (output / REPORT_HTML_NAME).read_text()

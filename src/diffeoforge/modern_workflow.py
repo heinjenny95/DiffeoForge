@@ -38,6 +38,7 @@ from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.config import ConfigurationError, InputSummary, validate_input_paths
 from diffeoforge.engine import PairwiseEvaluationPlan
 from diffeoforge.engine.atlas_optimizer import (
+    CYCLE_BOUNDARY_REUSE_BLOCK_ORDERS,
     AtlasCycleCheckpoint,
     AtlasOptimizationCancelled,
     AtlasOptimizationRecord,
@@ -186,11 +187,12 @@ def validate_modern_workflow_config(config: Mapping[str, Any]) -> None:
         )
     if optimizer.get("reuse_cycle_boundary_gradient", False) and (
         not optimizer.get("reuse_next_block_gradient", False)
-        or tuple(optimizer["block_order"]) != ("momenta", "template", "control_points")
+        or tuple(optimizer["block_order"]) not in CYCLE_BOUNDARY_REUSE_BLOCK_ORDERS
     ):
         raise ConfigurationError(
             "optimization.reuse_cycle_boundary_gradient requires "
-            "reuse_next_block_gradient and block_order=[momenta, template, control_points]"
+            "reuse_next_block_gradient and block_order=[momenta, template] or "
+            "block_order=[momenta, template, control_points]"
         )
     if line_search_condition == "strong_wolfe" and direction_update != "lbfgs":
         raise ConfigurationError(
@@ -2077,12 +2079,19 @@ def _verify_modern_workflow_and_bundle(
         raise ModernWorkflowError(f"Invalid nested atlas bundle pairwise plan: {error}") from error
     if bundle_engine["id"] != expected_pairwise.engine_id or nested_pairwise != expected_pairwise:
         raise ModernWorkflowError("Nested atlas bundle pairwise execution provenance differs")
+    effective_optimizer = effective["optimization"]
+    bundle_optimizer = bundle_manifest["optimizer"]["settings"]
     if any(
-        bundle_manifest["optimizer"]["settings"].get(flag, False)
-        != effective["optimization"].get(flag, False)
+        bundle_optimizer.get(flag, False) != effective_optimizer.get(flag, False)
         for flag in ("reuse_next_block_gradient", "reuse_cycle_boundary_gradient")
     ):
         raise ModernWorkflowError("Nested atlas bundle gradient-reuse setting differs")
+    reuse_cycle_boundary_gradient = effective_optimizer.get("reuse_cycle_boundary_gradient", False)
+    if (
+        reuse_cycle_boundary_gradient
+        and bundle_optimizer["block_order"] != effective_optimizer["block_order"]
+    ):
+        raise ModernWorkflowError("Nested atlas bundle gradient-reuse block order differs")
     if sha256_file(bundle / BUNDLE_MANIFEST_NAME) != manifest["result_bundle"]["manifest_sha256"]:
         raise ModernWorkflowError("Nested atlas bundle manifest SHA-256 differs")
     if len(bundle_manifest["subjects"]) != len(manifest["input"]["subjects"]):
@@ -2120,6 +2129,10 @@ def _verify_modern_workflow_and_bundle(
                 != record["manifest_sha256"]
                 or checkpoint["binding"]["engine_implementation"]
                 != manifest["engine"].get("implementation_version")
+                or (
+                    reuse_cycle_boundary_gradient
+                    and checkpoint["binding"]["block_order"] != effective_optimizer["block_order"]
+                )
             ):
                 raise ModernWorkflowError("Optimizer checkpoint binding differs")
             verified_checkpoints.append(checkpoint)

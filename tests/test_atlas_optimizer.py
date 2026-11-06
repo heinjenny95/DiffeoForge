@@ -1042,6 +1042,14 @@ def test_paired_gradient_reuse_preserves_exact_decisions_and_counts(
     [
         pytest.param({}, "max_cycles", 2, "accepted", 1, id="cap"),
         pytest.param(
+            {"block_order": ("momenta", "template")},
+            "max_cycles",
+            2,
+            "accepted",
+            1,
+            id="fixed-controls-cap",
+        ),
+        pytest.param(
             {"max_cycles": 3, "relative_objective_tolerance": 0.8},
             "relative_objective_tolerance",
             2,
@@ -1085,11 +1093,14 @@ def test_cycle_boundary_gradient_reuse_preserves_results_and_terminal_work(
     assert reused.history == ordinary.history
     assert reused.termination_reason == ordinary.termination_reason == reason
     assert reused.cycles_completed == ordinary.cycles_completed == cycles
-    assert reused.history[-1].block == "control_points"
+    terminal_block = "template" if "block_order" in overrides else "control_points"
+    assert reused.history[-1].block == terminal_block
     assert reused.history[-1].status == control_status
     assert [record.status for record in reused.history[1:3]] == ["accepted", "accepted"]
     assert torch.equal(reused.template_vertices, ordinary.template_vertices)
     assert torch.equal(reused.control_points, ordinary.control_points)
+    if terminal_block == "template":
+        assert torch.equal(reused.control_points, arguments[3])
     assert torch.equal(reused.momenta, ordinary.momenta)
     assert reused.total_line_search_evaluations == ordinary.total_line_search_evaluations
     assert reused.candidate_gradient_evaluations == ordinary.candidate_gradient_evaluations
@@ -1107,7 +1118,7 @@ def test_cycle_boundary_gradient_reuse_preserves_results_and_terminal_work(
     [
         {"reuse_next_block_gradient": False},
         {"block_order": ("momenta", "control_points", "template")},
-        {"block_order": ("momenta", "template")},
+        {"block_order": ("template", "momenta")},
     ],
 )
 def test_cycle_boundary_gradient_reuse_requires_the_exact_joint_schedule(overrides: dict) -> None:
