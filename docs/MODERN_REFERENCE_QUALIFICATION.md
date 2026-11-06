@@ -38,6 +38,11 @@ established 64-row screening value. A different prospectively justified value
 can be frozen with `--tile-size N`; the generated configuration and its hash
 record the choice before Modern results exist.
 
+New designs follow the reference run's Deformetrica RK2 setting for both
+shooting and flow. With RK2 off, both use Euler. With RK2 on, shooting uses RK2
+and flow uses `deformetrica_heun` to match the legacy corrector. Previously
+frozen designs continue to verify against their recorded configuration.
+
 Verify the frozen design without computing:
 
 ```text

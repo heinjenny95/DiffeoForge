@@ -110,15 +110,19 @@ def _completed_reference_run(
     linear_momenta: bool = False,
     launcher: dict[str, str] | None = None,
     three_components: bool = False,
+    use_rk2: bool | None = None,
 ) -> Path:
     example = Path(__file__).parents[1] / "examples" / "minimal-atlas.yaml"
-    if launcher is not None:
+    if launcher is not None or use_rk2 is not None:
         config = yaml.safe_load(example.read_text(encoding="utf-8"))
         for key in ("directory", "template"):
             config["input"][key] = str((example.parent / config["input"][key]).resolve())
-        config["runtime"]["launcher"] = launcher
+        if launcher is not None:
+            config["runtime"]["launcher"] = launcher
+        if use_rk2 is not None:
+            config["model"]["deformation"]["use_rk2"] = use_rk2
         tmp_path.mkdir(parents=True, exist_ok=True)
-        example = tmp_path / "synthetic-launcher.yaml"
+        example = tmp_path / "synthetic-reference.yaml"
         example.write_text(yaml.safe_dump(config), encoding="utf-8")
     run = prepare_run(example, run_id="reference-pca-test", output_directory=tmp_path)
     manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
@@ -1905,6 +1909,25 @@ def test_registration_qc_finalized_binding_detects_changed_review_bytes(
         load_finalized_registration_qc_review(review)
 
 
+@pytest.mark.parametrize(
+    ("use_rk2", "native_flag", "shooting", "flow"),
+    [(False, "Off", "euler", "euler"), (True, "On", "rk2", "deformetrica_heun")],
+)
+def test_modern_reference_qualification_matches_native_integration(
+    tmp_path: Path, use_rk2: bool, native_flag: str, shooting: str, flow: str,
+) -> None:
+    run = _completed_reference_run(tmp_path / "reference", use_rk2=use_rk2)
+    xml = ET.parse(run / "engine" / "optimization_parameters.xml")
+    assert xml.findtext("use-rk2") == native_flag
+    destination = create_modern_reference_qualification(
+        run, tmp_path / "design", subject_count=3, max_cycles=1, threads=1,
+    )
+    design = verify_modern_reference_qualification_design(destination)
+    config_path = destination / design["modern_workflow"]["config_path"]
+    deformation = yaml.safe_load(config_path.read_text(encoding="utf-8"))["model"]["deformation"]
+    assert (deformation["shooting_integrator"], deformation["flow_integrator"]) == (shooting, flow)
+
+
 def test_modern_reference_qualification_design_is_prospective_and_tamper_evident(
     tmp_path: Path,
 ) -> None:
@@ -2199,6 +2222,7 @@ def test_modern_full_atlas_qualification_binds_initial_template_and_template_gat
     historical_config_path = historical / design["modern_workflow"]["config_path"]
     historical_config = yaml.safe_load(historical_config_path.read_text(encoding="utf-8"))
     historical_config["schema_version"] = "0.6"
+    historical_config["model"]["deformation"]["flow_integrator"] = "deformetrica_heun"
     historical_config["optimization"].pop("template_gradient")
     historical_config["optimization"].pop("sobolev_kernel_width_ratio")
     historical_config_path.write_text(

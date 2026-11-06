@@ -614,6 +614,8 @@ def create_modern_reference_qualification(
 
         effective = report.manifest["effective_config"]
         model = effective["model"]
+        deformation = model["deformation"]
+        use_rk2 = deformation["use_rk2"]
         optimization = effective["optimization"]
         noise_std = float(model["noise_std"])
         output = destination_path.parent / f"{destination_path.name}-modern-run"
@@ -669,10 +671,10 @@ def create_modern_reference_qualification(
                     "kernel_width": float(model["attachment"]["kernel_width"]),
                 },
                 "deformation": {
-                    "kernel_width": float(model["deformation"]["kernel_width"]),
-                    "timepoints": int(model["deformation"]["timepoints"]),
-                    "shooting_integrator": ("rk2" if model["deformation"]["use_rk2"] else "euler"),
-                    "flow_integrator": "deformetrica_heun",
+                    "kernel_width": float(deformation["kernel_width"]),
+                    "timepoints": int(deformation["timepoints"]),
+                    "shooting_integrator": "rk2" if use_rk2 else "euler",
+                    "flow_integrator": "deformetrica_heun" if use_rk2 else "euler",
                 },
                 "noise_variance": noise_std**2,
             },
