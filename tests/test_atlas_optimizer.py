@@ -55,6 +55,19 @@ def _problem(
     return arguments, keywords
 
 
+def _analytical_varifold_problem(
+    *, subjects: int = 2, identical: bool = False
+) -> tuple[tuple, dict]:
+    arguments, keywords = _problem(subjects=subjects, identical=identical)
+    return arguments, {
+        **keywords,
+        "attachment_type": "varifold",
+        "gaussian_tile_plan": engine.GaussianTilePlan(
+            2, 2, autograd_strategy="recompute", varifold_backward="analytical"
+        ),
+    }
+
+
 def test_every_accepted_block_monotonically_improves_the_objective() -> None:
     arguments, keywords = _problem()
 
@@ -519,16 +532,21 @@ def test_multiblock_lbfgs_uses_separate_deterministic_curvature_histories() -> N
 
 
 @pytest.mark.parametrize("template_gradient", ["euclidean", "sobolev"])
+@pytest.mark.parametrize("reuse_next_block_gradient", [False, True])
 def test_multiblock_lbfgs_resume_reproduces_uninterrupted_trajectory_exactly(
     template_gradient: str,
+    reuse_next_block_gradient: bool,
 ) -> None:
-    arguments, keywords = _problem(subjects=2)
+    arguments, keywords = (
+        _analytical_varifold_problem() if reuse_next_block_gradient else _problem()
+    )
     settings = {
         "gradient_tolerance": 0.0,
         "step_initialization": "previous_accepted",
         "direction_update": "lbfgs",
         "lbfgs_history_size": 3,
         "template_gradient": template_gradient,
+        "reuse_next_block_gradient": reuse_next_block_gradient,
     }
     uninterrupted = optimize_atlas(
         *arguments,
@@ -545,6 +563,7 @@ def test_multiblock_lbfgs_resume_reproduces_uninterrupted_trajectory_exactly(
         checkpoint_callback=checkpoints.append,
     )
     checkpoint = checkpoints[-1]
+    assert checkpoint.reusable_gradient is None
     resumed = optimize_atlas(
         checkpoint.template_vertices,
         arguments[1],
@@ -575,6 +594,9 @@ def test_multiblock_lbfgs_resume_reproduces_uninterrupted_trajectory_exactly(
     assert torch.equal(resumed.template_vertices, uninterrupted.template_vertices)
     assert torch.equal(resumed.control_points, uninterrupted.control_points)
     assert torch.equal(resumed.momenta, uninterrupted.momenta)
+    assert first.reused_block_gradients + resumed.reused_block_gradients == (
+        uninterrupted.reused_block_gradients
+    )
 
 
 def test_resume_state_preserves_a_completed_cycle_convergence_decision() -> None:
@@ -851,14 +873,22 @@ def test_progress_observer_reports_failed_decision_not_rejected_candidates() -> 
     assert result.total_line_search_evaluations == 1
 
 
-def test_identical_subject_is_stationary_for_every_block() -> None:
-    arguments, keywords = _problem(subjects=1, identical=True)
+@pytest.mark.parametrize("reuse_next_block_gradient", [False, True])
+def test_identical_subject_is_stationary_for_every_block(reuse_next_block_gradient: bool) -> None:
+    arguments, keywords = (
+        _analytical_varifold_problem(subjects=1, identical=True)
+        if reuse_next_block_gradient
+        else _problem(subjects=1, identical=True)
+    )
 
-    result = optimize_atlas(*arguments, **keywords, max_cycles=5)
+    result = optimize_atlas(
+        *arguments, **keywords, max_cycles=5, reuse_next_block_gradient=reuse_next_block_gradient
+    )
 
     assert result.termination_reason == "gradient_tolerance"
     assert result.converged is True
     assert result.cycles_completed == 1
+    assert result.paired_gradient_evaluations == result.reused_block_gradients == 0
     assert [record.status for record in result.history] == [
         "initial",
         "stationary",
@@ -910,10 +940,16 @@ def test_failed_first_block_preserves_all_initial_parameters() -> None:
     assert torch.equal(result.momenta, arguments[4])
 
 
+@pytest.mark.parametrize("reuse_next_block_gradient", [False, True])
 def test_rejected_atlas_candidate_does_not_request_an_unused_gradient(
     monkeypatch,
+    reuse_next_block_gradient: bool,
 ) -> None:
-    arguments, keywords = _problem(subjects=1)
+    arguments, keywords = (
+        _analytical_varifold_problem(subjects=1)
+        if reuse_next_block_gradient
+        else _problem(subjects=1)
+    )
     original_grad = torch.autograd.grad
     calls = 0
 
@@ -931,6 +967,7 @@ def test_rejected_atlas_candidate_does_not_request_an_unused_gradient(
         template_step_size=10.0,
         control_points_step_size=10.0,
         max_line_search_iterations=1,
+        reuse_next_block_gradient=reuse_next_block_gradient,
     )
 
     assert result.termination_reason == "line_search_failed"
@@ -938,7 +975,134 @@ def test_rejected_atlas_candidate_does_not_request_an_unused_gradient(
     assert result.objective_evaluations == 2
     assert result.gradient_evaluations == 1
     assert result.candidate_gradient_evaluations == 0
+    assert result.paired_gradient_evaluations == 0
+    assert result.reused_block_gradients == 0
     assert calls == 1
+
+
+@pytest.mark.parametrize("template_gradient", ["euclidean", "sobolev"])
+def test_paired_gradient_reuse_preserves_exact_decisions_and_counts(
+    template_gradient: str,
+) -> None:
+    arguments, keywords = _analytical_varifold_problem()
+    settings = {
+        **keywords,
+        "max_cycles": 2,
+        "gradient_tolerance": 0.0,
+        "direction_update": "lbfgs",
+        "step_initialization": "previous_accepted",
+        "template_gradient": template_gradient,
+    }
+    separate = optimize_atlas(*arguments, **settings)
+    paired = optimize_atlas(*arguments, **settings, reuse_next_block_gradient=True)
+
+    assert paired.settings.reuse_next_block_gradient
+    assert paired.history == separate.history
+    assert paired.termination_reason == separate.termination_reason == "max_cycles"
+    assert torch.equal(paired.template_vertices, separate.template_vertices)
+    assert torch.equal(paired.control_points, separate.control_points)
+    assert torch.equal(paired.momenta, separate.momenta)
+    assert paired.total_line_search_evaluations == separate.total_line_search_evaluations
+    assert paired.candidate_gradient_evaluations == separate.candidate_gradient_evaluations
+    assert paired.paired_gradient_evaluations == paired.reused_block_gradients == 4
+    assert paired.paired_gradient_fallbacks == 0
+    assert paired.objective_evaluations + paired.reused_block_gradients == (
+        separate.objective_evaluations
+    )
+    assert paired.gradient_evaluations + paired.reused_block_gradients == (
+        separate.gradient_evaluations
+    )
+
+
+@pytest.mark.parametrize("unavailable", ["missing", "nonfinite", "value_error"])
+def test_unavailable_paired_gradient_falls_back_to_ordinary_block_gradient(
+    monkeypatch, unavailable: str
+) -> None:
+    arguments, keywords = _analytical_varifold_problem()
+    settings = {**keywords, "max_cycles": 1, "template_gradient": "sobolev"}
+    separate = optimize_atlas(*arguments, **settings)
+    original_grad = torch.autograd.grad
+    first_pair = True
+
+    def omit_following(*args, **kwargs):
+        nonlocal first_pair
+        if kwargs.get("allow_unused") and first_pair:
+            first_pair = False
+            if unavailable == "value_error":
+                raise ValueError("optional derivative failure")
+            active, following = original_grad(*args, **kwargs)
+            if unavailable == "missing":
+                return active, None
+            return active, torch.full_like(following, float("nan"))
+        return original_grad(*args, **kwargs)
+
+    monkeypatch.setattr(torch.autograd, "grad", omit_following)
+    paired = optimize_atlas(*arguments, **settings, reuse_next_block_gradient=True)
+
+    fallbacks = int(unavailable == "value_error")
+    assert paired.history == separate.history
+    assert torch.equal(paired.template_vertices, separate.template_vertices)
+    assert torch.equal(paired.control_points, separate.control_points)
+    assert torch.equal(paired.momenta, separate.momenta)
+    assert paired.candidate_gradient_evaluations == separate.candidate_gradient_evaluations
+    assert paired.paired_gradient_evaluations == 2
+    assert paired.reused_block_gradients == 1
+    assert paired.paired_gradient_fallbacks == fallbacks
+    assert paired.objective_evaluations == separate.objective_evaluations - 1 + fallbacks
+    assert paired.gradient_evaluations == separate.gradient_evaluations - 1 + fallbacks
+
+
+@pytest.mark.parametrize("cancel_at", ["paired_backward", "before_reuse"])
+def test_paired_gradient_path_preserves_cancellation_boundaries(monkeypatch, cancel_at: str):
+    arguments, keywords = _analytical_varifold_problem()
+    original_grad = torch.autograd.grad
+    requested = False
+    progress = []
+    checkpoints = []
+
+    def cancel_after_pair(*args, **kwargs):
+        nonlocal requested
+        gradients = original_grad(*args, **kwargs)
+        if kwargs.get("allow_unused") and cancel_at == "paired_backward":
+            requested = True
+        return gradients
+
+    def observe(record) -> None:
+        nonlocal requested
+        progress.append(record.status)
+        if record.status == "accepted" and cancel_at == "before_reuse":
+            requested = True
+
+    monkeypatch.setattr(torch.autograd, "grad", cancel_after_pair)
+    with pytest.raises(engine.AtlasOptimizationCancelled, match="cancellation requested"):
+        optimize_atlas(
+            *arguments,
+            **keywords,
+            reuse_next_block_gradient=True,
+            progress_callback=observe,
+            checkpoint_callback=checkpoints.append,
+            cancel_requested=lambda: requested,
+        )
+
+    assert progress == (["initial"] if cancel_at == "paired_backward" else ["initial", "accepted"])
+    assert not checkpoints
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"subject_batch_size": 1},
+        {"block_order": ("momenta",)},
+        {"momenta_updates_per_cycle": 2},
+        {"line_search_condition": "strong_wolfe", "direction_update": "lbfgs"},
+        {"gaussian_tile_plan": None},
+        {"attachment_type": "current"},
+    ],
+)
+def test_paired_gradient_reuse_requires_the_qualified_execution_route(overrides: dict) -> None:
+    arguments, keywords = _analytical_varifold_problem()
+    with pytest.raises(ValueError, match="reuse_next_block_gradient requires"):
+        optimize_atlas(*arguments, **{**keywords, **overrides}, reuse_next_block_gradient=True)
 
 
 def test_all_parameter_blocks_move_on_a_nontrivial_problem() -> None:

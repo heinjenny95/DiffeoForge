@@ -596,6 +596,9 @@ def write_modern_atlas_bundle(
         final = result.history[-1]
         optimizer_manifest = asdict(result.settings)
         optimizer_manifest["block_order"] = list(result.settings.block_order)
+        reuse_enabled = result.settings.reuse_next_block_gradient
+        if not reuse_enabled:
+            optimizer_manifest.pop("reuse_next_block_gradient")
         manifest = {
             "bundle_version": BUNDLE_VERSION,
             "created_at": timestamp.strip(),
@@ -617,6 +620,19 @@ def write_modern_atlas_bundle(
                 "failed_block": result.failed_block,
                 "cycles_completed": result.cycles_completed,
                 "total_line_search_evaluations": result.total_line_search_evaluations,
+                **(
+                    {
+                        "work": {
+                            "objective_evaluations": result.objective_evaluations,
+                            "gradient_evaluations": result.gradient_evaluations,
+                            "candidate_gradient_evaluations": result.candidate_gradient_evaluations,
+                            "paired_gradient_evaluations": result.paired_gradient_evaluations,
+                            "paired_gradient_fallbacks": result.paired_gradient_fallbacks,
+                            "reused_block_gradients": result.reused_block_gradients,
+                        }
+                    }
+                    if reuse_enabled else {}
+                ),
                 "history_path": history_path.relative_to(temporary).as_posix(),
                 "convergence_plot_path": convergence_plot_path.relative_to(temporary).as_posix(),
                 "final_objective": final.objective,
@@ -835,6 +851,25 @@ def _verify_optimizer_svg(path: Path, history_path: Path, optimizer: dict) -> No
         raise ModernBundleError("Optimizer convergence SVG gradient tolerance differs")
 
 
+def _gradient_reuse_work_is_consistent(
+    work: dict, decisions: int, line_search_evaluations: int
+) -> bool:
+    """Check aggregate work for an unbatched run with within-cycle reuse."""
+
+    paired = work["paired_gradient_evaluations"]
+    retries = work["paired_gradient_fallbacks"]
+    reused = work["reused_block_gradients"]
+    candidates = work["candidate_gradient_evaluations"]
+    block_starts = max(1, decisions) - reused
+    base_gradients = block_starts + candidates
+    return (
+        0 <= reused < max(1, decisions)
+        and reused + retries <= paired <= candidates <= line_search_evaluations
+        and work["objective_evaluations"] == block_starts + line_search_evaluations + retries
+        and base_gradients <= work["gradient_evaluations"] <= base_gradients + retries
+    )
+
+
 def verify_modern_atlas_bundle(directory: Path | str) -> dict:
     """Verify schema, sidecar, exact file inventory, hashes, sizes, and VTK geometry."""
 
@@ -886,6 +921,30 @@ def verify_modern_atlas_bundle(directory: Path | str) -> dict:
         )
 
     optimizer_record = manifest["optimizer"]
+    if optimizer_record["settings"].get("reuse_next_block_gradient", False):
+        settings = optimizer_record["settings"]
+        engine = manifest["engine"]
+        blocks = settings["block_order"]
+        decisions = optimizer_record["cycles_completed"] * len(blocks)
+        failed_block = optimizer_record["failed_block"]
+        if failed_block is not None:
+            if failed_block not in blocks:
+                raise ModernBundleError("Failed optimizer block differs from its schedule")
+            decisions += blocks.index(failed_block) + 1
+        if (
+            engine.get("device") != "cpu"
+            or engine.get("pairwise_evaluation", {}).get("varifold_backward") != "analytical"
+            or manifest["model"]["attachment_type"] != "varifold"
+            or settings.get("line_search_condition", "armijo") != "armijo"
+            or settings.get("subject_batch_size") is not None
+            or len(blocks) < 2
+            or settings.get("momenta_updates_per_cycle", 1) != 1
+            or not _gradient_reuse_work_is_consistent(
+                optimizer_record["work"], decisions,
+                optimizer_record["total_line_search_evaluations"],
+            )
+        ):
+            raise ModernBundleError("Invalid next-block gradient reuse evidence")
     convergence_plot_value = optimizer_record.get("convergence_plot_path")
     if convergence_plot_value is not None:
         _verify_optimizer_svg(

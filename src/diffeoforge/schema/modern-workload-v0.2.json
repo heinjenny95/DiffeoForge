@@ -185,6 +185,7 @@
         },
         "momenta_updates_per_cycle": {"type": "integer", "minimum": 1, "maximum": 100},
         "max_line_search_iterations": {"type": "integer", "minimum": 1},
+        "reuse_next_block_gradient": {"const": true},
         "subject_batch_size": {"type": ["integer", "null"], "minimum": 1},
         "subject_batch_workers": {"type": "integer", "minimum": 1, "maximum": 64},
         "threads": {"type": "integer", "minimum": 1},

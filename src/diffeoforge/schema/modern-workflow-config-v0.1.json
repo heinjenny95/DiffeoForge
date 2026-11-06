@@ -286,6 +286,7 @@
         "shared_step_scaling": {"enum": ["none", "inverse_subject_count"]},
         "template_gradient": {"enum": ["euclidean", "sobolev"]},
         "sobolev_kernel_width_ratio": {"type": "number", "exclusiveMinimum": 0},
+        "reuse_next_block_gradient": {"type": "boolean"},
         "checkpoint_interval_cycles": {"type": "integer", "minimum": 1},
         "checkpoint_retention": {"enum": ["all", "latest"]},
         "resume_state": {

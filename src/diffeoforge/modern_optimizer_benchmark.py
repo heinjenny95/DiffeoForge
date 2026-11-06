@@ -40,6 +40,7 @@ from diffeoforge.engine.dense import prepare_surface_attachment_target
 from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import inspect_vtk, sha256_file
 from diffeoforge.modern_benchmark import _positive_integer, _prepare_problem, _summary, _timestamp
+from diffeoforge.modern_bundle import _gradient_reuse_work_is_consistent
 from diffeoforge.modern_workflow import (
     configure_modern_torch_runtime,
     load_modern_workflow_config,
@@ -51,6 +52,11 @@ LEGACY_BENCHMARK_VERSION = "0.1"
 BENCHMARK_VERSION = "0.2"
 SUPPORTED_BENCHMARK_VERSIONS = (LEGACY_BENCHMARK_VERSION, BENCHMARK_VERSION)
 SCHEMA_NAME = "modern-optimizer-benchmark-v0.1.json"
+_REUSE_WORK_FIELDS = (
+    "paired_gradient_evaluations",
+    "paired_gradient_fallbacks",
+    "reused_block_gradients",
+)
 REPORT_JSON_NAME = "optimizer-benchmark.json"
 REPORT_CSV_NAME = "samples.csv"
 REPORT_HTML_NAME = "optimizer-benchmark.html"
@@ -226,6 +232,8 @@ def _optimizer_keywords(config: dict[str, Any], max_cycles: int) -> dict[str, An
                 "subject_batch_workers": optimizer.get("subject_batch_workers", 1),
             }
         )
+    if optimizer.get("reuse_next_block_gradient", False):
+        keywords["reuse_next_block_gradient"] = True
     return keywords
 
 
@@ -292,6 +300,10 @@ def _result_sample(result: AtlasOptimizationResult) -> dict[str, Any]:
         "objective_evaluations": result.objective_evaluations,
         "gradient_evaluations": result.gradient_evaluations,
         "candidate_gradient_evaluations": result.candidate_gradient_evaluations,
+        **(
+            {field: getattr(result, field) for field in _REUSE_WORK_FIELDS}
+            if result.settings.reuse_next_block_gradient else {}
+        ),
         "line_search_candidates_without_gradient": without_gradient,
         "final_objective": final.objective,
         "final_attachment": final.attachment,
@@ -542,7 +554,11 @@ def _consistency(samples: list[dict[str, Any]]) -> dict[str, Any]:
     )
     reference = samples[0]
     exact = all(
-        all(sample[field] == reference[field] for field in exact_fields) for sample in samples[1:]
+        all(
+            sample.get(field) == reference.get(field)
+            for field in (*exact_fields, *_REUSE_WORK_FIELDS)
+        )
+        for sample in samples[1:]
     )
     numerical = all(
         math.isclose(
@@ -757,10 +773,30 @@ def _validate_report(report: dict[str, Any]) -> None:
         )
         if report["configuration"].get("subject_batch_size") is not None:
             expected_objective_evaluations += expected_gradient_evaluations
-        if sample["objective_evaluations"] != expected_objective_evaluations:
-            raise ModernOptimizerBenchmarkError("Objective-evaluation count is inconsistent")
-        if sample["gradient_evaluations"] != expected_gradient_evaluations:
-            raise ModernOptimizerBenchmarkError("Gradient-evaluation count is inconsistent")
+        reuse_enabled = report["configuration"].get("reuse_next_block_gradient", False)
+        reuse_fields = set(_REUSE_WORK_FIELDS).intersection(sample)
+        if reuse_enabled:
+            if (
+                single_block
+                or report["configuration"].get("subject_batch_size") is not None
+                or report["configuration"].get("momenta_updates_per_cycle", 1) != 1
+                or report["configuration"].get("line_search_condition", "armijo") != "armijo"
+                or report["configuration"].get("device") != "cpu"
+                or report["configuration"]["pairwise_evaluation"].get("varifold_backward")
+                != "analytical"
+                or reuse_fields != set(_REUSE_WORK_FIELDS)
+                or not _gradient_reuse_work_is_consistent(
+                    sample, decisions, sample["line_search_evaluations"]
+                )
+            ):
+                raise ModernOptimizerBenchmarkError(
+                    "Next-block gradient reuse work is inconsistent"
+                )
+        else:
+            if reuse_fields or sample["objective_evaluations"] != expected_objective_evaluations:
+                raise ModernOptimizerBenchmarkError("Objective-evaluation count is inconsistent")
+            if sample["gradient_evaluations"] != expected_gradient_evaluations:
+                raise ModernOptimizerBenchmarkError("Gradient-evaluation count is inconsistent")
         decisions_per_cycle = len(report["configuration"]["block_order"]) + (
             report["configuration"].get("momenta_updates_per_cycle", 1) - 1
             if "momenta" in report["configuration"]["block_order"]
@@ -834,6 +870,13 @@ def collect_modern_optimizer_benchmark(
         raise TypeError("progress_callback must be callable or None")
     source = Path(config_path).expanduser().resolve()
     config = load_modern_workflow_config(source)
+    optimizer = config["optimization"]
+    if optimizer.get("reuse_next_block_gradient", False) and (
+        optimizer.get("template_gradient", "euclidean") != "euclidean"
+    ):
+        raise ConfigurationError(
+            "Use modern-run to measure next-block gradient reuse with a Sobolev template"
+        )
     if config["preprocessing"]["procrustes"]["enabled"]:
         raise ConfigurationError(
             "modern-optimizer-benchmark requires preprocessing.procrustes.enabled=false"
@@ -923,6 +966,10 @@ def collect_modern_optimizer_benchmark(
             "gradient_tolerance": optimizer["gradient_tolerance"],
             "minimum_step_size": optimizer["minimum_step_size"],
             "max_line_search_iterations": optimizer["max_line_search_iterations"],
+            **(
+                {"reuse_next_block_gradient": True}
+                if optimizer.get("reuse_next_block_gradient", False) else {}
+            ),
             **(
                 {
                     "step_initialization": optimizer.get("step_initialization", "fixed"),

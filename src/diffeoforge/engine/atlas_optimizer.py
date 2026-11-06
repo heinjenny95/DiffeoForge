@@ -138,6 +138,7 @@ class AtlasOptimizerSettings:
     shared_step_scaling: AtlasSharedStepScaling = "none"
     template_gradient: AtlasTemplateGradient = "euclidean"
     sobolev_kernel_width_ratio: float = 1.0
+    reuse_next_block_gradient: bool = False
 
 
 @dataclass(frozen=True)
@@ -157,6 +158,9 @@ class AtlasOptimizationResult:
     objective_evaluations: int = 0
     gradient_evaluations: int = 0
     candidate_gradient_evaluations: int = 0
+    reused_block_gradients: int = 0
+    paired_gradient_evaluations: int = 0
+    paired_gradient_fallbacks: int = 0
 
 
 @dataclass(frozen=True)
@@ -198,6 +202,7 @@ class _BlockEvaluation:
     state: _State
     gradient: torch.Tensor
     gradient_norm: torch.Tensor
+    next_raw_gradient: torch.Tensor | None = None
 
 
 @dataclass(frozen=True)
@@ -208,6 +213,7 @@ class _PendingBlockEvaluation:
     total: torch.Tensor
     variable: torch.Tensor | None
     block: AtlasParameterBlock
+    next_variable: torch.Tensor | None = None
 
 
 def _integer(name: str, value: int, *, minimum: int) -> int:
@@ -449,6 +455,7 @@ def optimize_atlas(
     shared_step_scaling: AtlasSharedStepScaling = "none",
     template_gradient: AtlasTemplateGradient = "euclidean",
     sobolev_kernel_width_ratio: float = 1.0,
+    reuse_next_block_gradient: bool = False,
     resume_state: AtlasOptimizerResumeState | None = None,
     progress_callback: AtlasProgressCallback | None = None,
     checkpoint_callback: AtlasCheckpointCallback | None = None,
@@ -459,7 +466,9 @@ def optimize_atlas(
     Blocks are updated sequentially. Each accepted candidate must satisfy the
     declared ascent line-search condition. ``previous_accepted`` may
     reuse the last accepted step as the next declared line-search start; that
-    state is deterministic and recorded in the accepted history. This is a
+    state is deterministic and recorded in the accepted history. When enabled,
+    the accepted Armijo candidate's backward can also compute the next block's
+    raw gradient for the same state inside the cycle. This is a
     correctness prototype, not a claim of Deformetrica optimizer-trajectory
     equivalence or production convergence.
     """
@@ -473,6 +482,8 @@ def optimize_atlas(
         raise TypeError("checkpoint_callback must be callable or None")
     if cancel_requested is not None and not callable(cancel_requested):
         raise TypeError("cancel_requested must be callable or None")
+    if not isinstance(reuse_next_block_gradient, bool):
+        raise TypeError("reuse_next_block_gradient must be bool")
 
     def check_cancellation() -> None:
         if cancel_requested is None:
@@ -571,6 +582,24 @@ def optimize_atlas(
         raise ValueError("subject_batch_workers must not exceed 64")
     if normalized_subject_batch_workers > 1 and normalized_subject_batch_size is None:
         raise ValueError("subject_batch_workers greater than 1 requires subject_batch_size")
+    if reuse_next_block_gradient and (
+        line_search_condition != "armijo"
+        or normalized_subject_batch_size is not None
+        or len(order) < 2
+        or momenta_updates != 1
+    ):
+        raise ValueError(
+            "reuse_next_block_gradient requires unbatched Armijo, distinct blocks, "
+            "and one visit per block per cycle"
+        )
+    if reuse_next_block_gradient and (
+        attachment_type != "varifold"
+        or not isinstance(gaussian_tile_plan, GaussianTilePlan)
+        or gaussian_tile_plan.varifold_backward != "analytical"
+    ):
+        raise ValueError(
+            "reuse_next_block_gradient requires CPU analytical Varifold backward"
+        )
     if shared_step_scaling not in ("none", "inverse_subject_count"):
         raise ValueError("shared_step_scaling must be none or inverse_subject_count")
     if template_gradient not in ("euclidean", "sobolev"):
@@ -615,6 +644,7 @@ def optimize_atlas(
         shared_step_scaling=shared_step_scaling,
         template_gradient=template_gradient,
         sobolev_kernel_width_ratio=sobolev_width_ratio,
+        reuse_next_block_gradient=reuse_next_block_gradient,
     )
     for name, value in (
         ("initial_template_vertices", initial_template_vertices),
@@ -623,6 +653,8 @@ def optimize_atlas(
     ):
         if not isinstance(value, torch.Tensor):
             raise TypeError(f"{name} must be a torch.Tensor")
+        if reuse_next_block_gradient and value.device.type != "cpu":
+            raise ValueError("reuse_next_block_gradient requires CPU tensors")
 
     target_sequence = tuple(targets)
     effective_initial_step_sizes = dict(step_sizes)
@@ -691,6 +723,9 @@ def optimize_atlas(
     objective_evaluations = 0
     gradient_evaluations = 0
     candidate_gradient_evaluations = 0
+    reused_block_gradients = 0
+    paired_gradient_evaluations = 0
+    paired_gradient_fallbacks = 0
 
     def subject_slices() -> tuple[slice, ...]:
         size = normalized_subject_batch_size
@@ -808,6 +843,8 @@ def optimize_atlas(
         control_points: torch.Tensor,
         momenta: torch.Tensor,
         block: AtlasParameterBlock,
+        *,
+        next_block: AtlasParameterBlock | None = None,
     ) -> _PendingBlockEvaluation | None:
         nonlocal objective_evaluations
         check_cancellation()
@@ -832,7 +869,9 @@ def optimize_atlas(
             "momenta": momenta.detach().clone(),
         }
         variable = parameters[block].requires_grad_(True)
-        parameters[block] = variable
+        next_variable = (
+            parameters[next_block].requires_grad_(True) if next_block is not None else None
+        )
         with torch.enable_grad():
             objective_evaluations += 1
             objective = atlas_objective(
@@ -860,29 +899,20 @@ def optimize_atlas(
             total=objective.total,
             variable=variable,
             block=block,
+            next_variable=next_variable,
         )
 
-    def evaluate_gradient(
-        pending: _PendingBlockEvaluation,
+    def finish_gradient(
+        state: _State,
+        block: AtlasParameterBlock,
+        gradient: torch.Tensor,
+        next_raw_gradient: torch.Tensor | None = None,
     ) -> _BlockEvaluation | None:
-        nonlocal gradient_evaluations, objective_evaluations
-        check_cancellation()
-        if pending.variable is None:
-            objective_evaluations += 1
-            gradient_evaluations += 1
-            gradient = evaluate_batched_gradient(pending.state, pending.block)
-            if gradient is None:
-                return None
-        else:
-            with torch.enable_grad():
-                gradient_evaluations += 1
-                (gradient,) = torch.autograd.grad(pending.total, pending.variable)
-        check_cancellation()
         if not bool(torch.isfinite(gradient).all()):
             return None
-        if pending.block == "template" and template_gradient == "sobolev":
+        if block == "template" and template_gradient == "sobolev":
             gradient = sobolev_template_gradient(
-                pending.state.template_vertices,
+                state.template_vertices,
                 gradient,
                 deformation_kernel_width=deformation_kernel_width,
                 kernel_width_ratio=sobolev_width_ratio,
@@ -894,10 +924,60 @@ def optimize_atlas(
         if not bool(torch.isfinite(gradient_norm)):
             return None
         return _BlockEvaluation(
-            state=pending.state,
+            state=state,
             gradient=gradient.detach(),
             gradient_norm=gradient_norm.detach(),
+            next_raw_gradient=(
+                next_raw_gradient.detach()
+                if next_raw_gradient is not None and bool(torch.isfinite(next_raw_gradient).all())
+                else None
+            ),
         )
+
+    def evaluate_gradient(
+        pending: _PendingBlockEvaluation,
+    ) -> _BlockEvaluation | None:
+        nonlocal gradient_evaluations, objective_evaluations
+        nonlocal paired_gradient_evaluations, paired_gradient_fallbacks
+        check_cancellation()
+        next_raw_gradient = None
+        if pending.variable is None:
+            objective_evaluations += 1
+            gradient_evaluations += 1
+            gradient = evaluate_batched_gradient(pending.state, pending.block)
+            if gradient is None:
+                return None
+        elif pending.next_variable is None:
+            with torch.enable_grad():
+                gradient_evaluations += 1
+                (gradient,) = torch.autograd.grad(pending.total, pending.variable)
+        else:
+            try:
+                with torch.enable_grad():
+                    gradient_evaluations += 1
+                    paired_gradient_evaluations += 1
+                    gradient, next_raw_gradient = torch.autograd.grad(
+                        pending.total,
+                        (pending.variable, pending.next_variable),
+                        allow_unused=True,
+                    )
+            except ValueError:
+                # Retry the active derivative alone so a failure on the
+                # optional derivative cannot turn a valid trial into a rejection.
+                paired_gradient_fallbacks += 1
+                fallback = evaluate_objective(
+                    pending.state.template_vertices,
+                    pending.state.control_points,
+                    pending.state.momenta,
+                    pending.block,
+                )
+                if fallback is None:
+                    return None
+                return evaluate_gradient(fallback)
+            if gradient is None:
+                raise RuntimeError("active atlas gradient is disconnected from the objective")
+        check_cancellation()
+        return finish_gradient(pending.state, pending.block, gradient, next_raw_gradient)
 
     def replace_block(
         state: _State,
@@ -1114,6 +1194,9 @@ def optimize_atlas(
             objective_evaluations=objective_evaluations,
             gradient_evaluations=gradient_evaluations,
             candidate_gradient_evaluations=candidate_gradient_evaluations,
+            reused_block_gradients=reused_block_gradients,
+            paired_gradient_evaluations=paired_gradient_evaluations,
+            paired_gradient_fallbacks=paired_gradient_fallbacks,
         )
 
     if resume_state is not None and resume_state.completed_cycle_termination_reason is not None:
@@ -1126,8 +1209,11 @@ def optimize_atlas(
 
     for cycle in range(1, cycles + 1):
         stationary_blocks = 0
+        next_gradient_cache: tuple[_State, AtlasParameterBlock, torch.Tensor] | None = None
         for visit_index, block in enumerate(schedule):
             lbfgs_history = lbfgs_histories[block]
+            cached_gradient = next_gradient_cache
+            next_gradient_cache = None
             if cycle == 1 and visit_index == 0:
                 evaluated = initial
                 initial = None
@@ -1138,6 +1224,14 @@ def optimize_atlas(
                 check_cancellation()
                 evaluated = reusable_single_block_evaluation
                 reusable_single_block_evaluation = None
+            elif (
+                cached_gradient is not None
+                and cached_gradient[0] is current
+                and cached_gradient[1] == block
+            ):
+                check_cancellation()
+                reused_block_gradients += 1
+                evaluated = finish_gradient(current, block, cached_gradient[2])
             else:
                 pending = evaluate_objective(
                     current.template_vertices,
@@ -1179,6 +1273,11 @@ def optimize_atlas(
             directional_derivative = torch.sum(evaluated.gradient * direction)
             accepted: _BlockEvaluation | None = None
             evaluations = 0
+            next_block = (
+                schedule[visit_index + 1]
+                if reuse_next_block_gradient and visit_index + 1 < len(schedule)
+                else None
+            )
             current_value = {
                 "template": current.template_vertices,
                 "control_points": current.control_points,
@@ -1238,7 +1337,9 @@ def optimize_atlas(
                         current_value + step_size * direction,
                     )
                     try:
-                        candidate_pending = evaluate_objective(*candidate_parameters, block)
+                        candidate_pending = evaluate_objective(
+                            *candidate_parameters, block, next_block=next_block
+                        )
                     except ValueError:
                         candidate_pending = None
                     if candidate_pending is not None:
@@ -1274,6 +1375,8 @@ def optimize_atlas(
                 )
 
             current = accepted.state
+            if next_block is not None and accepted.next_raw_gradient is not None:
+                next_gradient_cache = (current, next_block, accepted.next_raw_gradient)
             if direction_update == "lbfgs":
                 step = (step_size * direction).detach()
                 # L-BFGS is applied to the equivalent minimization objective

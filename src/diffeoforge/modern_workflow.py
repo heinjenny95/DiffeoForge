@@ -171,6 +171,17 @@ def validate_modern_workflow_config(config: Mapping[str, Any]) -> None:
             "optimization.subject_batch_workers=1"
         )
     line_search_condition = optimizer.get("line_search_condition", "armijo")
+    if optimizer.get("reuse_next_block_gradient", False) and (
+        pairwise.varifold_backward != "analytical"
+        or line_search_condition != "armijo"
+        or optimizer.get("subject_batch_size") is not None
+        or len(optimizer["block_order"]) < 2
+        or momenta_updates != 1
+    ):
+        raise ConfigurationError(
+            "optimization.reuse_next_block_gradient requires CPU analytical Varifold, "
+            "unbatched Armijo, multiple blocks and one visit per block"
+        )
     if line_search_condition == "strong_wolfe" and direction_update != "lbfgs":
         raise ConfigurationError(
             "optimization.line_search_condition=strong_wolfe currently requires "
@@ -1088,6 +1099,10 @@ def modern_optimizer_arguments(config: Mapping[str, Any]) -> dict[str, Any]:
         "shared_step_scaling": optimizer.get("shared_step_scaling", "none"),
         "template_gradient": optimizer.get("template_gradient", "euclidean"),
         "sobolev_kernel_width_ratio": optimizer.get("sobolev_kernel_width_ratio", 1.0),
+        **(
+            {"reuse_next_block_gradient": True}
+            if optimizer.get("reuse_next_block_gradient", False) else {}
+        ),
     }
 
 
@@ -2042,6 +2057,10 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
         raise ModernWorkflowError(f"Invalid nested atlas bundle pairwise plan: {error}") from error
     if bundle_engine["id"] != expected_pairwise.engine_id or nested_pairwise != expected_pairwise:
         raise ModernWorkflowError("Nested atlas bundle pairwise execution provenance differs")
+    if bundle_manifest["optimizer"]["settings"].get("reuse_next_block_gradient", False) != (
+        effective["optimization"].get("reuse_next_block_gradient", False)
+    ):
+        raise ModernWorkflowError("Nested atlas bundle gradient-reuse setting differs")
     if sha256_file(bundle / BUNDLE_MANIFEST_NAME) != manifest["result_bundle"]["manifest_sha256"]:
         raise ModernWorkflowError("Nested atlas bundle manifest SHA-256 differs")
     if len(bundle_manifest["subjects"]) != len(manifest["input"]["subjects"]):

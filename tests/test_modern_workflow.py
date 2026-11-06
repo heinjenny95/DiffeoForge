@@ -249,6 +249,47 @@ def _payload_bytes(directory: Path) -> dict[str, bytes]:
     }
 
 
+def test_next_block_gradient_reuse_records_unchanged_joint_fit_and_less_work(
+    tmp_path: Path,
+) -> None:
+    from diffeoforge.modern_workload import collect_modern_workload
+
+    config = _analytical_varifold_configuration()
+    config["optimization"].update(
+        block_order=["momenta", "template", "control_points"],
+        max_cycles=2,
+        template_gradient="sobolev",
+    )
+    results = []
+    for enabled in (False, True):
+        recipe = tmp_path / f"reuse-{enabled}.yaml"
+        config["optimization"]["reuse_next_block_gradient"] = enabled
+        recipe.write_text(yaml.safe_dump(config), encoding="utf-8")
+        run = workflow.run_modern_workflow(
+            recipe, destination=tmp_path / f"run-{enabled}", created_at=FIXED_TIME
+        )
+        manifest = workflow.verify_modern_workflow(run)
+        bundle_path = run / manifest["result_bundle"]["path"]
+        bundle = workflow.verify_modern_atlas_bundle(bundle_path)
+        results.append((bundle_path, bundle["optimizer"]))
+
+    (baseline_path, baseline), (candidate_path, candidate) = results
+    assert "work" not in baseline
+    assert "reuse_next_block_gradient" not in baseline["settings"]
+    assert candidate["settings"]["reuse_next_block_gradient"] is True
+    work = candidate["work"]
+    assert work["reused_block_gradients"] == work["paired_gradient_evaluations"] == 4
+    assert work["paired_gradient_fallbacks"] == 0
+    assert (baseline_path / baseline["history_path"]).read_bytes() == (
+        candidate_path / candidate["history_path"]
+    ).read_bytes()
+    plan = collect_modern_workload(recipe)
+    assert plan["configuration"]["reuse_next_block_gradient"] is True
+    assert plan["optimizer_bound"]["objective_gradient_evaluation_upper_bound"] >= (
+        work["objective_evaluations"]
+    )
+
+
 def _write_landmarks(path: Path, *, reverse_one_subject: bool = False) -> Path:
     meshes = [MESH_DIRECTORY / "template.vtk", *sorted(MESH_DIRECTORY.glob("subject-*.vtk"))]
     indices = (0, 40, 80)

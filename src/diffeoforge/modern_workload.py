@@ -153,6 +153,12 @@ def _validate_report(report: dict[str, Any]) -> None:
         * expected_decisions_per_cycle
         * (1 + report["configuration"]["max_line_search_iterations"])
     )
+    if configuration.get("reuse_next_block_gradient", False):
+        expected_evaluations += (
+            configuration["max_cycles"]
+            * (len(configuration["block_order"]) - 1)
+            * configuration["max_line_search_iterations"]
+        )
     template_gradient = configuration.get("template_gradient", "euclidean")
     sobolev_evaluations = (
         configuration["max_cycles"]
@@ -509,6 +515,15 @@ def collect_modern_workload(
     evaluation_upper_bound = 1 + optimizer["max_cycles"] * decisions_per_cycle * (
         1 + optimizer["max_line_search_iterations"]
     )
+    reuse_enabled = optimizer.get("reuse_next_block_gradient", False)
+    formula = "1 + max_cycles * block_decisions_per_cycle * (1 + max_line_search_iterations)"
+    if reuse_enabled:
+        evaluation_upper_bound += (
+            optimizer["max_cycles"]
+            * (len(optimizer["block_order"]) - 1)
+            * optimizer["max_line_search_iterations"]
+        )
+        formula += " + max_cycles * (parameter_blocks - 1) * max_line_search_iterations"
     template_gradient = optimizer.get("template_gradient", "euclidean")
     sobolev_kernel_width_ratio = float(
         optimizer.get("sobolev_kernel_width_ratio", 1.0)
@@ -605,6 +620,10 @@ def collect_modern_workload(
                 "momenta_updates_per_cycle", 1
             ),
             "max_line_search_iterations": optimizer["max_line_search_iterations"],
+            **(
+                {"reuse_next_block_gradient": True}
+                if reuse_enabled else {}
+            ),
             "subject_batch_size": optimizer.get("subject_batch_size"),
             "subject_batch_workers": optimizer.get("subject_batch_workers", 1),
             "threads": config["runtime"]["threads"],
@@ -612,10 +631,7 @@ def collect_modern_workload(
         },
         "operation_model": operation,
         "optimizer_bound": {
-            "formula": (
-                "1 + max_cycles * block_decisions_per_cycle * "
-                "(1 + max_line_search_iterations)"
-            ),
+            "formula": formula,
             "parameter_blocks": len(optimizer["block_order"]),
             "block_decisions_per_cycle": decisions_per_cycle,
             "objective_gradient_evaluation_upper_bound": evaluation_upper_bound,
@@ -749,6 +765,8 @@ def render_modern_workload_html(report: dict[str, Any]) -> str:
         )
     )
     reviewed_items += varifold_backward_item
+    if configuration.get("reuse_next_block_gradient", False):
+        reviewed_items += "<li>Next-block gradients: reused within each cycle</li>"
     operation_items = implementation_item + "".join(
         f"<li>{label}: {value}</li>"
         for label, value in (

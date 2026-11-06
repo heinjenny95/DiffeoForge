@@ -219,6 +219,10 @@ def collect_modern_optimizer_benchmark_design(
     source = Path(config_path).expanduser().resolve()
     source_sha256 = sha256_file(source)
     config = load_modern_workflow_config(source)
+    if config["optimization"].get("reuse_next_block_gradient", False):
+        raise ConfigurationError(
+            "Use modern-optimizer-benchmark for explicit next-block gradient reuse"
+        )
     if config["preprocessing"]["procrustes"]["enabled"]:
         raise ConfigurationError(
             "modern-optimizer-benchmark-design requires preprocessing.procrustes.enabled=false"

@@ -99,6 +99,34 @@ Use `modern-optimizer-benchmark` with the reviewed YAML to measure the complete
 optimizer on a declared workload. The objective-only studies compare the
 standard and checkpointed recompute modes.
 
+### Reuse gradients within a joint CPU cycle
+
+Set `optimization.reuse_next_block_gradient: true` to opt into the
+within-cycle CPU path. It requires analytical Varifold backward, unbatched
+Armijo, multiple distinct optimization blocks and one update per block.
+After a trial clears Armijo, one backward pass computes the current
+gradient and the raw gradient for the next block on the same accepted
+parameters. A rejected trial never supplies a gradient to a later block.
+The next template update applies its configured Sobolev transform when
+it consumes the raw gradient.
+
+The optimizer resets the cache at every cycle boundary. The effective
+configuration binds this setting for checkpoint recovery and exact
+continuation. The atlas bundle reports physical objective and backward
+evaluations, the number of line-search candidates that requested gradients,
+paired evaluations, retries and consumed gradients. Workload plans include
+a conservative allowance for retry forwards. Use the normal `modern-run`
+workflow to time this path with a Sobolev template and the standalone
+`modern-optimizer-benchmark` command for a Euclidean template.
+
+Three paired one-thread CPU runs on the same six-subject synthetic joint
+fixture reached the same tolerance at cycle 10, with identical decisions,
+parameters and reconstruction bytes. Each reused run used 45 objective
+forwards and 40 backwards, down from 65 and 60. The median paired optimizer
+wall time fell 18.3% and median paired process CPU time fell 19.0%. Sampled
+peak working set differed by less than 0.4% in each pair. These repeats
+measure the compute change on this fixture.
+
 The direct CLI workflow remains a VTK contract. The guided desktop can first
 read triangular PLY, OBJ, or STL surfaces for landmarking and reviewed GPA,
 preserve byte-identical raw copies, and point this workflow at the resulting
