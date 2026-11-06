@@ -1617,8 +1617,22 @@ def test_artifact_resolver_rejects_traversal_and_windows_drive_paths(tmp_path: P
 
 
 def test_modern_init_and_cli_run_form_a_public_folder_to_bundle_path(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from diffeoforge import modern_bundle
+
+    bundle_checks = []
+    original_verify = modern_bundle.verify_modern_atlas_bundle
+
+    def verify_bundle(directory: Path | str) -> dict:
+        bundle_checks.append(Path(directory))
+        return original_verify(directory)
+
+    monkeypatch.setattr(modern_bundle, "verify_modern_atlas_bundle", verify_bundle)
+    monkeypatch.setattr(workflow, "verify_modern_atlas_bundle", verify_bundle)
+
     config = tmp_path / "modern.yaml"
     init_code = main(
         [
@@ -1669,21 +1683,49 @@ def test_modern_init_and_cli_run_form_a_public_folder_to_bundle_path(
     captured = capsys.readouterr()
 
     assert return_code == 0
-    assert "Modern workflow completed" in captured.out
-    assert "Subject meshes: 5" in captured.out
-    assert "PCA scree plot:" in captured.out
-    assert "PCA scores plot:" in captured.out
-    assert "PCA PC2 vs PC3 plot:" in captured.out
-    assert "PCA deformation meshes:" in captured.out
+    assert len(bundle_checks) == 3
+    assert bundle_checks[0].name.startswith(".atlas-bundle.tmp-")
+    assert bundle_checks[1].parent.parent.name.startswith(".cli-run.tmp-")
     assert "Progress [7/7 stages] verification completed" in captured.out
-    assert workflow.verify_modern_workflow(tmp_path / "cli-run")["project"]["name"]
+    assert not captured.err
+    run = (tmp_path / "cli-run").resolve()
+    manifest = workflow.verify_modern_workflow(run)
+    assert manifest["project"]["name"]
+    bundle = run / manifest["result_bundle"]["path"]
+    assert bundle_checks[2] == bundle
+    bundle_manifest = json.loads((bundle / modern_bundle.MANIFEST_NAME).read_bytes())
+    pca = bundle_manifest["pca"]
+    expected_run = [
+        f"Modern workflow completed: {run}",
+        "Subject meshes: 5",
+        "Preprocessing: none",
+        f"Atlas/PCA bundle: {bundle}",
+        f"PCA scree plot: {bundle / pca['plots']['scree_path']}",
+        f"PCA scores plot: {bundle / pca['plots']['scores_path']}",
+        f"PCA PC2 vs PC3 plot: {bundle / pca['plots']['scores_pc2_pc3_path']}",
+        f"PCA deformation meshes: {bundle / Path(pca['deformations']['mean_path']).parent}",
+    ]
+    assert captured.out.splitlines()[-len(expected_run) :] == expected_run
 
-    verify_code = main(["modern-verify", str(tmp_path / "cli-run")])
+    bundle_checks.clear()
+    verify_code = main(["modern-verify", str(run)])
     verify_output = capsys.readouterr()
     assert verify_code == 0
-    assert "Modern workflow verified" in verify_output.out
-    assert "PCA scree plot:" in verify_output.out
-    assert "PCA PC2 vs PC3 plot:" in verify_output.out
+    assert bundle_checks == [bundle]
+    assert not verify_output.err
+    assert verify_output.out.splitlines() == [
+        f"Modern workflow verified: {run}",
+        "Subject meshes: 5",
+        expected_run[4],
+        expected_run[6],
+    ]
+
+    plot = bundle / pca["plots"]["scree_path"]
+    plot.write_bytes(plot.read_bytes() + b"\n")
+    assert main(["modern-verify", str(run)]) == 2
+    tampered = capsys.readouterr()
+    assert not tampered.out
+    assert "size differs" in tampered.err
 
 
 def test_modern_init_cli_generates_only_coherent_blockwise_plans(

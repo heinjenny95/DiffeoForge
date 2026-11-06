@@ -70,12 +70,13 @@ from diffeoforge.mesh_quality_report import (
     mesh_quality_reports_match,
 )
 from diffeoforge.modern_bundle import (
-    MANIFEST_NAME as BUNDLE_MANIFEST_NAME,
-)
-from diffeoforge.modern_bundle import (
+    BUNDLE_VERSION,
     ModernAtlasModelSettings,
     verify_modern_atlas_bundle,
     write_modern_atlas_bundle,
+)
+from diffeoforge.modern_bundle import (
+    MANIFEST_NAME as BUNDLE_MANIFEST_NAME,
 )
 from diffeoforge.modern_checkpoint import (
     CHECKPOINT_VERSION,
@@ -1670,7 +1671,6 @@ def run_modern_workflow(
             created_at=timestamp,
             execution_device=runtime["device"],
         )
-        bundle_manifest = verify_modern_atlas_bundle(bundle_path)
         emit_progress("bundle", "completed", "Atlas and PCA bundle verified", 6)
         check_cancellation()
 
@@ -1747,7 +1747,7 @@ def run_modern_workflow(
             },
             "result_bundle": {
                 "path": bundle_path.relative_to(temporary).as_posix(),
-                "bundle_version": bundle_manifest["bundle_version"],
+                "bundle_version": BUNDLE_VERSION,
                 "manifest_sha256": sha256_file(bundle_path / BUNDLE_MANIFEST_NAME),
             },
             "optimizer_checkpoints": checkpoint_records,
@@ -1830,6 +1830,15 @@ def _resolve_artifact(root: Path, value: object, *, directory: bool = False) -> 
 
 def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
     """Verify schema, exact inventory, copied geometry, and the nested atlas bundle."""
+
+    manifest, _ = _verify_modern_workflow_and_bundle(directory)
+    return manifest
+
+
+def _verify_modern_workflow_and_bundle(
+    directory: Path | str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return both manifests from a single full workflow verification."""
 
     root = Path(directory).expanduser().resolve()
     if not root.is_dir():
@@ -2121,4 +2130,4 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
                 for name in ("objective", "attachment", "regularity")
             ):
                 raise ModernWorkflowError("Final optimizer checkpoint values differ")
-    return manifest
+    return manifest, bundle_manifest

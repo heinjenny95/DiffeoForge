@@ -3171,10 +3171,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "modern-run":
         try:
-            from diffeoforge.modern_bundle import verify_modern_atlas_bundle
             from diffeoforge.modern_workflow import (
+                _verify_modern_workflow_and_bundle,
                 run_modern_workflow,
-                verify_modern_workflow,
             )
 
             run_directory = run_modern_workflow(
@@ -3182,12 +3181,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 destination=args.output,
                 progress_callback=_show_modern_progress,
             )
-            manifest = verify_modern_workflow(run_directory)
+            manifest, bundle_manifest = _verify_modern_workflow_and_bundle(run_directory)
             print(f"Modern workflow completed: {run_directory}")
             print(f"Subject meshes: {len(manifest['input']['subjects'])}")
             print(f"Preprocessing: {manifest['preprocessing']['id']}")
             bundle = run_directory / manifest["result_bundle"]["path"]
-            bundle_manifest = verify_modern_atlas_bundle(bundle)
             print(f"Atlas/PCA bundle: {bundle}")
             print(f"PCA scree plot: {bundle / bundle_manifest['pca']['plots']['scree_path']}")
             print(f"PCA scores plot: {bundle / bundle_manifest['pca']['plots']['scores_path']}")
@@ -4430,13 +4428,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "modern-verify":
         try:
-            from diffeoforge.modern_bundle import verify_modern_atlas_bundle
-            from diffeoforge.modern_workflow import verify_modern_workflow
+            from diffeoforge.modern_workflow import _verify_modern_workflow_and_bundle
 
-            manifest = verify_modern_workflow(args.run_directory)
+            manifest, bundle_manifest = _verify_modern_workflow_and_bundle(args.run_directory)
             run_directory = args.run_directory.resolve()
             bundle = run_directory / manifest["result_bundle"]["path"]
-            bundle_manifest = verify_modern_atlas_bundle(bundle)
             print(f"Modern workflow verified: {run_directory}")
             print(f"Subject meshes: {len(manifest['input']['subjects'])}")
             print(f"PCA scree plot: {bundle / bundle_manifest['pca']['plots']['scree_path']}")
