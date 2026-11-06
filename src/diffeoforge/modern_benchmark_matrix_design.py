@@ -291,6 +291,11 @@ def collect_modern_benchmark_matrix_design(
     source_sha256 = sha256_file(source)
     config = load_modern_workflow_config(source)
     source_pairwise = pairwise_evaluation_from_config(config)
+    if source_pairwise.varifold_backward == "analytical":
+        raise ConfigurationError(
+            "The standard/recompute objective benchmark matrix does not support "
+            "analytical Varifold backward"
+        )
     if source_pairwise.mode != "blockwise":
         raise ConfigurationError(
             "modern-benchmark-matrix-design requires configured blockwise pairwise execution"

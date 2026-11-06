@@ -404,6 +404,10 @@ def write_modern_atlas_bundle(
     )
     if not isinstance(resolved_pairwise_evaluation, PairwiseEvaluationPlan):
         raise TypeError("pairwise_evaluation must be PairwiseEvaluationPlan or None")
+    if resolved_pairwise_evaluation.varifold_backward == "analytical" and (
+        execution_device != "cpu" or model_settings.attachment_type != "varifold"
+    ):
+        raise ValueError("Analytical Varifold backward requires a CPU Varifold bundle")
     resolved_quality_settings = (
         MeshQualitySettings() if quality_settings is None else quality_settings
     )

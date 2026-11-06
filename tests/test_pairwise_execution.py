@@ -93,3 +93,43 @@ def test_mapping_rejects_missing_or_extra_fields() -> None:
                 "automatic": True,
             }
         )
+
+
+
+def test_analytical_varifold_plan_round_trips_with_distinct_identity() -> None:
+    baseline = PairwiseEvaluationPlan("blockwise", 17, 23, "recompute")
+    assert "varifold_backward" not in baseline.as_manifest()
+    assert baseline.gaussian_tile_plan.varifold_backward is None
+
+    manifest = {**baseline.as_manifest(), "varifold_backward": "analytical"}
+    plan = PairwiseEvaluationPlan.from_mapping(manifest)
+    assert plan.as_manifest() == manifest
+    assert plan.gaussian_tile_plan.varifold_backward == "analytical"
+    assert plan.engine_id == "diffeoforge_modern_blockwise_recompute_varifold_analytical"
+    assert plan != baseline
+
+
+@pytest.mark.parametrize("strategy", ["automatic", True, 1])
+def test_analytical_varifold_plan_rejects_unsupported_selectors(strategy) -> None:
+    with pytest.raises(ValueError, match="varifold_backward"):
+        PairwiseEvaluationPlan("blockwise", 17, 23, "recompute", strategy)
+    with pytest.raises(ValueError, match="varifold_backward"):
+        engine.GaussianTilePlan(17, 23, "recompute", strategy)
+
+
+def test_analytical_varifold_plan_requires_blockwise_recompute() -> None:
+    with pytest.raises(ValueError, match="requires blockwise recompute"):
+        PairwiseEvaluationPlan(varifold_backward="analytical")
+    with pytest.raises(ValueError, match="requires blockwise recompute"):
+        PairwiseEvaluationPlan("blockwise", 17, 23, varifold_backward="analytical")
+    with pytest.raises(ValueError, match="requires recompute"):
+        engine.GaussianTilePlan(17, 23, varifold_backward="analytical")
+
+
+
+def test_explicit_null_varifold_backward_is_rejected_in_provenance() -> None:
+    baseline = PairwiseEvaluationPlan("blockwise", 17, 23, "recompute")
+    with pytest.raises(ValueError, match="must be omitted"):
+        PairwiseEvaluationPlan.from_mapping(
+            {**baseline.as_manifest(), "varifold_backward": None},
+        )

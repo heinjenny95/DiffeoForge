@@ -114,6 +114,58 @@ def _write_config(path: Path, **kwargs) -> Path:
     return path
 
 
+def _analytical_varifold_configuration() -> dict:
+    config = _configuration()
+    config["schema_version"] = "0.3"
+    config["input"]["subject_pattern"] = "subject-0[12].vtk"
+    config["model"]["attachment"]["type"] = "varifold"
+    config["optimization"]["block_order"] = ["momenta"]
+    config["analysis"]["deformation_components"] = 1
+    config["runtime"]["pairwise_evaluation"] = {
+        "mode": "blockwise",
+        "query_tile_size": 128,
+        "source_tile_size": 128,
+        "autograd_strategy": "recompute",
+        "varifold_backward": "analytical",
+    }
+    return config
+
+
+@pytest.mark.parametrize("device, attachment", [("cuda", "varifold"), ("cpu", "current")])
+def test_analytical_varifold_backward_rejects_other_workflows(
+    device: str, attachment: str
+) -> None:
+    config = _analytical_varifold_configuration()
+    config["runtime"]["device"] = device
+    config["model"]["attachment"]["type"] = attachment
+    with pytest.raises(ConfigurationError, match="Analytical Varifold|analytical"):
+        workflow.validate_modern_workflow_config(config)
+
+
+def test_analytical_varifold_workflow_binds_the_nested_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _analytical_varifold_configuration()
+    config_path = tmp_path / "analytical.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    run = workflow.run_modern_workflow(
+        config_path, destination=tmp_path / "analytical-run", created_at=FIXED_TIME
+    )
+    manifest = workflow.verify_modern_workflow(run)
+    expected = config["runtime"]["pairwise_evaluation"]
+    assert manifest["engine"]["pairwise_evaluation"] == expected
+    assert manifest["engine"]["id"] == "diffeoforge_modern_blockwise_recompute_varifold_analytical"
+    bundle = workflow.verify_modern_atlas_bundle(run / manifest["result_bundle"]["path"])
+    assert bundle["engine"]["id"] == manifest["engine"]["id"]
+    assert bundle["engine"]["pairwise_evaluation"] == expected
+
+    bundle["engine"]["id"] = "diffeoforge_modern_blockwise_recompute"
+    bundle["engine"]["pairwise_evaluation"].pop("varifold_backward")
+    monkeypatch.setattr(workflow, "verify_modern_atlas_bundle", lambda _: bundle)
+    with pytest.raises(workflow.ModernWorkflowError, match="Nested atlas bundle pairwise"):
+        workflow.verify_modern_workflow(run)
+
+
 def _payload_bytes(directory: Path) -> dict[str, bytes]:
     return {
         path.relative_to(directory).as_posix(): path.read_bytes()

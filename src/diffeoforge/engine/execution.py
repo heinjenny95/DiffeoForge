@@ -51,10 +51,19 @@ class PairwiseEvaluationPlan:
     query_tile_size: int | None = None
     source_tile_size: int | None = None
     autograd_strategy: Literal["standard", "recompute"] = "standard"
+    varifold_backward: Literal["analytical"] | None = None
 
     def __post_init__(self) -> None:
         if self.mode not in {"dense", "blockwise"}:
             raise ValueError("mode must be 'dense' or 'blockwise'")
+        if self.varifold_backward is not None:
+            if (
+                not isinstance(self.varifold_backward, str)
+                or self.varifold_backward != "analytical"
+            ):
+                raise ValueError("varifold_backward must be 'analytical' or None")
+            if self.mode != "blockwise" or self.autograd_strategy != "recompute":
+                raise ValueError("analytical Varifold backward requires blockwise recompute")
         if self.mode == "dense":
             if self.query_tile_size is not None or self.source_tile_size is not None:
                 raise ValueError("dense mode requires null query/source tile sizes")
@@ -78,16 +87,20 @@ class PairwiseEvaluationPlan:
         if not isinstance(value, Mapping):
             raise TypeError("pairwise_evaluation must be a mapping")
         required = {"mode", "query_tile_size", "source_tile_size"}
-        if not required <= set(value) or not set(value) <= required | {"autograd_strategy"}:
+        optional = {"autograd_strategy", "varifold_backward"}
+        if not required <= set(value) or not set(value) <= required | optional:
             raise ValueError(
                 "pairwise_evaluation must contain exactly mode, query_tile_size, "
-                "source_tile_size, and optionally autograd_strategy"
+                "source_tile_size, and optionally autograd_strategy and varifold_backward"
             )
+        if "varifold_backward" in value and value["varifold_backward"] is None:
+            raise ValueError("varifold_backward must be omitted or set to 'analytical'")
         return cls(
             mode=value["mode"],
             query_tile_size=value["query_tile_size"],
             source_tile_size=value["source_tile_size"],
             autograd_strategy=value.get("autograd_strategy", "standard"),
+            varifold_backward=value.get("varifold_backward"),
         )
 
     @property
@@ -100,12 +113,15 @@ class PairwiseEvaluationPlan:
             query_rows=self.query_tile_size,
             source_rows=self.source_tile_size,
             autograd_strategy=self.autograd_strategy,
+            varifold_backward=self.varifold_backward,
         )
 
     @property
     def engine_id(self) -> str:
         """Return the immutable engine identifier for this evaluation mode."""
 
+        if self.varifold_backward == "analytical":
+            return "diffeoforge_modern_blockwise_recompute_varifold_analytical"
         suffix = (
             "_recompute"
             if self.mode == "blockwise" and self.autograd_strategy == "recompute"
@@ -123,4 +139,6 @@ class PairwiseEvaluationPlan:
         }
         if self.autograd_strategy != "standard":
             manifest["autograd_strategy"] = self.autograd_strategy
+        if self.varifold_backward is not None:
+            manifest["varifold_backward"] = self.varifold_backward
         return manifest

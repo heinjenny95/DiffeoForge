@@ -300,6 +300,11 @@ def _effective_pairwise_plan(
     query_tile_size: int | None,
     source_tile_size: int | None,
 ) -> tuple[PairwiseEvaluationPlan, bool]:
+    if source_plan.varifold_backward == "analytical":
+        raise ConfigurationError(
+            "The objective benchmark does not support analytical Varifold backward. "
+            "Use modern-optimizer-benchmark for this execution plan."
+        )
     query_rows = _tile_override_value("query_tile_size", query_tile_size)
     source_rows = _tile_override_value("source_tile_size", source_tile_size)
     if (query_rows is None) != (source_rows is None):

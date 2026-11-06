@@ -19,6 +19,20 @@
     "scientific_boundary",
     "immutability_contract"
   ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "engine": {"required": ["pairwise_evaluation"], "properties": {"pairwise_evaluation": {"required": ["varifold_backward"]}}}
+        }
+      },
+      "then": {
+        "properties": {
+          "model": {"properties": {"attachment_type": {"const": "varifold"}}}
+        }
+      }
+    }
+  ],
   "properties": {
     "bundle_version": {"const": "0.1"},
     "created_at": {"type": "string", "minLength": 1},
@@ -27,7 +41,7 @@
       "additionalProperties": false,
       "required": ["id", "diffeoforge", "pytorch", "numpy", "device", "dtype"],
       "properties": {
-        "id": {"enum": ["diffeoforge_modern_dense", "diffeoforge_modern_blockwise", "diffeoforge_modern_blockwise_recompute"]},
+        "id": {"enum": ["diffeoforge_modern_dense", "diffeoforge_modern_blockwise", "diffeoforge_modern_blockwise_recompute", "diffeoforge_modern_blockwise_recompute_varifold_analytical"]},
         "implementation_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
         "diffeoforge": {"type": "string", "minLength": 1},
         "pytorch": {"type": "string", "minLength": 1},
@@ -41,6 +55,22 @@
           "if": {
             "required": ["pairwise_evaluation"],
             "properties": {
+              "pairwise_evaluation": {"required": ["varifold_backward"]}
+            }
+          },
+          "then": {
+            "required": ["implementation_version"],
+            "properties": {
+              "id": {"const": "diffeoforge_modern_blockwise_recompute_varifold_analytical"},
+              "device": {"const": "cpu"}
+            }
+          },
+          "else": {"not": {"properties": {"id": {"const": "diffeoforge_modern_blockwise_recompute_varifold_analytical"}}}}
+        },
+        {
+          "if": {
+            "required": ["pairwise_evaluation"],
+            "properties": {
               "pairwise_evaluation": {
                 "properties": {"mode": {"const": "blockwise"}}
               }
@@ -48,7 +78,7 @@
           },
           "then": {
             "properties": {
-              "id": {"enum": ["diffeoforge_modern_blockwise", "diffeoforge_modern_blockwise_recompute"]}
+              "id": {"enum": ["diffeoforge_modern_blockwise", "diffeoforge_modern_blockwise_recompute", "diffeoforge_modern_blockwise_recompute_varifold_analytical"]}
             }
           }
         },
@@ -76,7 +106,7 @@
             }
           },
           "then": {
-            "properties": {"id": {"const": "diffeoforge_modern_blockwise_recompute"}}
+            "properties": {"id": {"enum": ["diffeoforge_modern_blockwise_recompute", "diffeoforge_modern_blockwise_recompute_varifold_analytical"]}}
           }
         }
       ]
@@ -335,7 +365,14 @@
             "mode": {"const": "blockwise"},
             "query_tile_size": {"type": "integer", "minimum": 1},
             "source_tile_size": {"type": "integer", "minimum": 1},
-            "autograd_strategy": {"enum": ["standard", "recompute"]}
+            "autograd_strategy": {"enum": ["standard", "recompute"]},
+            "varifold_backward": {"const": "analytical"}
+          },
+          "dependentSchemas": {
+            "varifold_backward": {
+              "required": ["autograd_strategy"],
+              "properties": {"autograd_strategy": {"const": "recompute"}}
+            }
           }
         }
       ]

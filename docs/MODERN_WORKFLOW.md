@@ -43,6 +43,32 @@ The geometry-scaled values produced by `modern-init` are visibly labelled
 exploratory. They are starting values, not biologically or numerically
 validated presets.
 
+### Analytical Varifold backward on CPU
+
+Modern can opt into a recomputed analytical derivative for Varifold surface
+tiles. Set `varifold_backward: analytical` in
+`runtime.pairwise_evaluation` alongside `mode: blockwise`,
+`autograd_strategy: recompute` and the explicit tile sizes. The workflow
+requires `runtime.device: cpu` and `model.attachment.type: varifold`.
+
+Analytical runs record the execution plan and the distinct
+`diffeoforge_modern_blockwise_recompute_varifold_analytical` engine ID in the
+workflow, bundle and workload evidence. Checkpoint continuation and recovery
+retain the saved backward choice. The derivatives can differ in the last bits
+between implementations, so an exact resume requires the same choice.
+
+In the public CPU feasibility study, 24 fresh one-thread processes ran matched
+three-cycle optimizers on 1,280- and 5,120-face synthetic surfaces. Median
+optimizer time fell by 20–33% across the tested momenta-only and full-block
+conditions. Peak process working set fell by 3–21%. Both arms used the same
+steps, work counts and stop decisions. The largest bidirectional reconstruction
+p95 between arms was 2.43e-13 model units. These short, capped workloads
+establish numerical and operational feasibility for the tested conditions.
+
+Use `modern-optimizer-benchmark` with the reviewed YAML to measure the complete
+optimizer on a declared workload. The objective-only studies compare the
+standard and checkpointed recompute modes.
+
 The direct CLI workflow remains a VTK contract. The guided desktop can first
 read triangular PLY, OBJ, or STL surfaces for landmarking and reviewed GPA,
 preserve byte-identical raw copies, and point this workflow at the resulting

@@ -43,12 +43,34 @@
             "mode": {"const": "blockwise"},
             "query_tile_size": {"type": "integer", "minimum": 1},
             "source_tile_size": {"type": "integer", "minimum": 1},
-            "autograd_strategy": {"enum": ["standard", "recompute"]}
+            "autograd_strategy": {"enum": ["standard", "recompute"]},
+            "varifold_backward": {"const": "analytical"}
+          },
+          "dependentSchemas": {
+            "varifold_backward": {
+              "required": ["autograd_strategy"],
+              "properties": {"autograd_strategy": {"const": "recompute"}}
+            }
           }
         }
       ]
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "configuration": {"required": ["pairwise_evaluation"], "properties": {"pairwise_evaluation": {"required": ["varifold_backward"]}}}
+        }
+      },
+      "then": {
+        "properties": {
+          "configuration": {"required": ["device"], "properties": {"device": {"const": "cpu"}, "attachment_type": {"const": "varifold"}}},
+          "software": {"required": ["engine_implementation"]}
+        }
+      }
+    }
+  ],
   "properties": {
     "optimizer_design_version": {"const": "0.1"},
     "design_id": {"const": "full_factorial_subject_cycle"},

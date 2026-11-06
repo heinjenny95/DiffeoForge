@@ -127,6 +127,7 @@ class GaussianTilePlan:
     query_rows: int
     source_rows: int
     autograd_strategy: TileAutogradStrategy = "standard"
+    varifold_backward: Literal["analytical"] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -144,12 +145,32 @@ class GaussianTilePlan:
             "autograd_strategy",
             _validate_tile_autograd_strategy(self.autograd_strategy),
         )
+        if self.varifold_backward is not None:
+            if (
+                not isinstance(self.varifold_backward, str)
+                or self.varifold_backward != "analytical"
+            ):
+                raise ValueError("varifold_backward must be 'analytical' or None")
+            if self.autograd_strategy != "recompute":
+                raise ValueError("analytical Varifold backward requires recompute")
 
     def maximum_xyz_difference_tensor_bytes(self, *, bytes_per_float: int = 8) -> int:
         """Return the exact declared tile bound ``query × source × 3 × bytes``."""
 
         element_bytes = _validate_tile_size("bytes_per_float", bytes_per_float)
         return self.query_rows * self.source_rows * 3 * element_bytes
+
+
+def _validate_varifold_backward(
+    plan: GaussianTilePlan | None,
+    attachment_type: SurfaceAttachmentType,
+    *inputs: torch.Tensor,
+) -> None:
+    if isinstance(plan, GaussianTilePlan) and plan.varifold_backward == "analytical":
+        if attachment_type != "varifold":
+            raise ValueError("analytical Varifold backward requires Varifold attachment")
+        if any(isinstance(value, torch.Tensor) and value.device.type != "cpu" for value in inputs):
+            raise ValueError("analytical Varifold backward requires CPU tensors")
 
 
 @dataclass(frozen=True)
@@ -185,6 +206,9 @@ class PreparedSurfaceAttachmentTarget:
             self.gaussian_tile_plan, GaussianTilePlan
         ):
             raise TypeError("gaussian_tile_plan must be a GaussianTilePlan or None")
+        _validate_varifold_backward(
+            self.gaussian_tile_plan, self.attachment_type, self.target_vertices,
+        )
         _validate_float_matrix("centers", self.centers, columns=3)
         _validate_float_matrix("normals", self.normals, columns=3)
         _validate_compatible("centers", self.centers, self.target_vertices)
@@ -1194,6 +1218,68 @@ def current_squared_distance_blockwise(
     return self_a + self_b - 2.0 * cross
 
 
+class _RecomputedVarifoldTile(torch.autograd.Function):
+    """Save only centers, areas and unit normals for one Varifold tile."""
+
+    @staticmethod
+    def forward(
+        ctx,
+        x: torch.Tensor,
+        a: torch.Tensor,
+        u: torch.Tensor,
+        y: torch.Tensor,
+        b: torch.Tensor,
+        v: torch.Tensor,
+        width: float,
+    ) -> torch.Tensor:
+        ctx.save_for_backward(x, a, u, y, b, v)
+        ctx.width = width
+        kernel = _gaussian_matrix_raw(x, y, width)
+        return torch.sum(a * ((kernel * (u @ v.T).square()) @ b))
+
+    @staticmethod
+    def backward(ctx, out: torch.Tensor):
+        x, a, u, y, b, v = ctx.saved_tensors
+        squared = _centered_squared_distances(x, y)
+        width_squared = ctx.width * ctx.width
+        kernel = torch.exp(-torch.clamp_min(squared, 0.0) / width_squared)
+        dot = u @ v.T
+        weights = kernel * dot.square()
+        need_x, need_a, need_u, need_y, need_b, need_v, _ = ctx.needs_input_grad
+        grad_x = grad_a = grad_u = grad_y = grad_b = grad_v = None
+
+        if need_x or need_y:
+            origin = x[0].detach()
+            cx, cy = x - origin, y - origin
+            weighted = out * a * weights * b.T * (squared >= 0.0)
+            scale = 2.0 / width_squared
+            if need_x:
+                grad_x = -scale * (cx * weighted.sum(dim=1, keepdim=True) - weighted @ cy)
+            if need_y:
+                grad_y = scale * (weighted.T @ cx - cy * weighted.sum(dim=0)[:, None])
+
+        if need_a:
+            grad_a = out * (weights @ b)
+        if need_b:
+            grad_b = out * (weights.T @ a)
+        if need_u or need_v:
+            orientation_gradient = (2.0 * out) * a * (kernel * dot) * b.T
+            if need_u:
+                grad_u = orientation_gradient @ v
+            if need_v:
+                grad_v = orientation_gradient.T @ u
+
+        return grad_x, grad_a, grad_u, grad_y, grad_b, grad_v, None
+
+
+def _use_analytical_varifold(plan: GaussianTilePlan, *inputs: torch.Tensor) -> bool:
+    return (
+        plan.varifold_backward == "analytical"
+        and torch.is_grad_enabled()
+        and any(tensor.requires_grad for tensor in inputs)
+    )
+
+
 def _varifold_inner_product(
     centers_a: torch.Tensor,
     normals_a: torch.Tensor,
@@ -1228,6 +1314,30 @@ def varifold_squared_distance(
     return self_a + self_b - 2.0 * cross
 
 
+def _analytical_varifold_inner_product(
+    x: torch.Tensor,
+    a: torch.Tensor,
+    u: torch.Tensor,
+    y: torch.Tensor,
+    b: torch.Tensor,
+    v: torch.Tensor,
+    width: float,
+    plan: GaussianTilePlan,
+) -> torch.Tensor:
+    result = x.new_zeros(())
+    for start in range(0, x.shape[0], plan.query_rows):
+        query = slice(start, start + plan.query_rows)
+        query_result = x.new_zeros(())
+        for start_b in range(0, y.shape[0], plan.source_rows):
+            source = slice(start_b, start_b + plan.source_rows)
+            query_result = query_result + _RecomputedVarifoldTile.apply(
+                x[query], a[query], u[query], y[source], b[source], v[source], width
+            )
+        # The original recompute arm sums each query tile before updating result.
+        result = result + query_result
+    return result
+
+
 def _varifold_inner_product_blockwise(
     centers_a: torch.Tensor,
     normals_a: torch.Tensor,
@@ -1240,6 +1350,10 @@ def _varifold_inner_product_blockwise(
     areas_b = torch.linalg.vector_norm(normals_b, dim=1, keepdim=True)
     unit_a = normals_a / areas_a
     unit_b = normals_b / areas_b
+    if _use_analytical_varifold(plan, centers_a, normals_a, centers_b, normals_b):
+        return _analytical_varifold_inner_product(
+            centers_a, areas_a, unit_a, centers_b, areas_b, unit_b, kernel_width, plan,
+        )
     result = torch.zeros((), dtype=centers_a.dtype, device=centers_a.device)
 
     def evaluate(
@@ -1315,6 +1429,27 @@ def _varifold_inner_product_blockwise(
     return result
 
 
+def _analytical_varifold_self_inner_product(
+    x: torch.Tensor,
+    a: torch.Tensor,
+    u: torch.Tensor,
+    width: float,
+    size: int,
+) -> torch.Tensor:
+    result = x.new_zeros(())
+    for start in range(0, x.shape[0], size):
+        query = slice(start, start + size)
+        result = result + _RecomputedVarifoldTile.apply(
+            x[query], a[query], u[query], x[query], a[query], u[query], width
+        )
+        for start_b in range(start + size, x.shape[0], size):
+            source = slice(start_b, start_b + size)
+            result = result + 2.0 * _RecomputedVarifoldTile.apply(
+                x[query], a[query], u[query], x[source], a[source], u[source], width
+            )
+    return result
+
+
 def _varifold_self_inner_product_blockwise(
     centers: torch.Tensor,
     normals: torch.Tensor,
@@ -1334,6 +1469,10 @@ def _varifold_self_inner_product_blockwise(
         )
     areas = torch.linalg.vector_norm(normals, dim=1, keepdim=True)
     units = normals / areas
+    if _use_analytical_varifold(plan, centers, normals):
+        return _analytical_varifold_self_inner_product(
+            centers, areas, units, kernel_width, plan.query_rows,
+        )
     result = torch.zeros((), dtype=centers.dtype, device=centers.device)
     tile_rows = plan.query_rows
 
@@ -1428,11 +1567,15 @@ def varifold_squared_distance_blockwise(
     query_tile_size: int,
     source_tile_size: int,
     autograd_strategy: TileAutogradStrategy = "standard",
+    varifold_backward: Literal["analytical"] | None = None,
 ) -> torch.Tensor:
     """Return the exact Varifold distance without full face-pair matrices."""
 
     width = _validate_width(kernel_width)
-    plan = GaussianTilePlan(query_tile_size, source_tile_size, autograd_strategy)
+    plan = GaussianTilePlan(
+        query_tile_size, source_tile_size, autograd_strategy, varifold_backward,
+    )
+    _validate_varifold_backward(plan, "varifold", vertices_a, vertices_b)
     centers_a, normals_a = _surface_geometry(vertices_a, triangles_a)
     centers_b, normals_b = _surface_geometry(
         vertices_b,
@@ -1475,6 +1618,7 @@ def prepare_surface_attachment_target(
         raise TypeError("target_vertices must be a torch.Tensor")
     if target_vertices.requires_grad:
         raise ValueError("prepared target vertices must not require gradients")
+    _validate_varifold_backward(gaussian_tile_plan, attachment_type, target_vertices)
 
     with torch.no_grad():
         centers, normals = _surface_geometry(target_vertices, target_triangles)

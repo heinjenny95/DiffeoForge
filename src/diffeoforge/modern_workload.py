@@ -708,6 +708,11 @@ def render_modern_workload_html(report: dict[str, Any]) -> str:
             f"{float(effective_sobolev_width):g})"
         )
     )
+    varifold_backward_item = (
+        "<li>Varifold backward: " + html.escape(pairwise["varifold_backward"]) + "</li>"
+        if "varifold_backward" in pairwise
+        else ""
+    )
     reviewed_items = "".join(
         f"<li>{label}: {value}</li>"
         for label, value in (
@@ -743,6 +748,7 @@ def render_modern_workload_html(report: dict[str, Any]) -> str:
             ),
         )
     )
+    reviewed_items += varifold_backward_item
     operation_items = implementation_item + "".join(
         f"<li>{label}: {value}</li>"
         for label, value in (

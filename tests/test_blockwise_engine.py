@@ -624,3 +624,85 @@ def test_recompute_strategy_is_strict_and_opt_in() -> None:
             source_tile_size=2,
             autograd_strategy="automatic",
         )
+
+
+
+@pytest.mark.parametrize("source_rows", [2, 3])
+def test_analytical_varifold_preserves_value_gradient_and_hessian_vector(source_rows: int) -> None:
+    source, triangles = _tetrahedron()
+    target = source.clone()
+    target[0, 0] += 0.16
+    target[3, 2] += 0.04
+
+    def evaluate(backward):
+        a = source.clone().requires_grad_(True)
+        b = target.clone().requires_grad_(True)
+        value = varifold_squared_distance_blockwise(
+            a,
+            triangles,
+            b,
+            triangles,
+            0.75,
+            query_tile_size=2,
+            source_tile_size=source_rows,
+            autograd_strategy="recompute",
+            varifold_backward=backward,
+        )
+        gradients = torch.autograd.grad(value, (a, b), create_graph=True)
+        probe = (gradients[0] * torch.cos(a.detach())).sum()
+        probe += (gradients[1] * torch.sin(b.detach())).sum()
+        return value, gradients, torch.autograd.grad(probe, (a, b))
+
+    baseline = evaluate(None)
+    candidate = evaluate("analytical")
+    assert torch.equal(candidate[0], baseline[0])
+    for actual, expected in zip(candidate[1:], baseline[1:], strict=True):
+        for actual_tensor, expected_tensor in zip(actual, expected, strict=True):
+            torch.testing.assert_close(actual_tensor, expected_tensor, rtol=3e-11, atol=3e-12)
+
+
+def test_analytical_varifold_tile_passes_first_and_second_derivative_checks() -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    generator = torch.Generator().manual_seed(424058)
+    values = tuple(
+        torch.randn((rows, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+        for rows in (2, 2, 3, 3)
+    )
+    plan = GaussianTilePlan(2, 2, "recompute", varifold_backward="analytical")
+
+    def function(*inputs: torch.Tensor) -> torch.Tensor:
+        return dense_module._varifold_inner_product_blockwise(*inputs, 0.9, plan)
+
+    options = {"eps": 1e-6, "atol": 2e-6, "rtol": 2e-5}
+    assert torch.autograd.gradcheck(function, values, **options)
+    assert torch.autograd.gradgradcheck(function, values, **options)
+
+
+def test_analytical_varifold_bypasses_checkpoints_and_rejects_non_cpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    def unexpected_checkpoint(*args, **kwargs):
+        pytest.fail("Analytical Varifold backward must not call torch checkpoint")
+
+    monkeypatch.setattr(dense_module, "checkpoint", unexpected_checkpoint)
+    source, triangles = _tetrahedron()
+    target = source.clone()
+    target[3, 2] += 0.04
+    source.requires_grad_()
+    options = {
+        "query_tile_size": 2,
+        "source_tile_size": 2,
+        "autograd_strategy": "recompute",
+        "varifold_backward": "analytical",
+    }
+    value = varifold_squared_distance_blockwise(
+        source, triangles, target, triangles, 0.75, **options,
+    )
+    torch.autograd.grad(value, source)
+    with pytest.raises(ValueError, match="requires CPU tensors"):
+        varifold_squared_distance_blockwise(
+            source.to("meta"), triangles, target, triangles, 0.75, **options,
+        )

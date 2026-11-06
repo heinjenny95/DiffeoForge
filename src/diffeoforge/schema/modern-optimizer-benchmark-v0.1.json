@@ -63,7 +63,14 @@
             "mode": {"const": "blockwise"},
             "query_tile_size": {"type": "integer", "minimum": 1},
             "source_tile_size": {"type": "integer", "minimum": 1},
-            "autograd_strategy": {"enum": ["standard", "recompute"]}
+            "autograd_strategy": {"enum": ["standard", "recompute"]},
+            "varifold_backward": {"const": "analytical"}
+          },
+          "dependentSchemas": {
+            "varifold_backward": {
+              "required": ["autograd_strategy"],
+              "properties": {"autograd_strategy": {"const": "recompute"}}
+            }
           }
         }
       ]
@@ -229,6 +236,21 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "configuration": {"required": ["pairwise_evaluation"], "properties": {"pairwise_evaluation": {"required": ["varifold_backward"]}}}
+        }
+      },
+      "then": {
+        "properties": {
+          "configuration": {"required": ["device"], "properties": {"device": {"const": "cpu"}}},
+          "environment": {"required": ["device", "engine_implementation"], "properties": {"device": {"const": "cpu"}}}
+        }
+      }
+    }
+  ],
   "properties": {
     "benchmark_version": {"enum": ["0.1", "0.2"]},
     "benchmark_id": {"const": "production_multi_cycle_optimizer"},

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ pytest.importorskip("numpy")
 pytest.importorskip("torch")
 
 from diffeoforge.cli import main  # noqa: E402
+from diffeoforge.config import ConfigurationError  # noqa: E402
 from diffeoforge.modern_bundle import verify_modern_atlas_bundle  # noqa: E402
 from diffeoforge.modern_continuation import (  # noqa: E402
     CONFIG_NAME,
@@ -274,8 +276,9 @@ def test_relative_objective_run_continues_with_serialized_baselines(
     assert verified["bundle"]["optimizer"]["settings"]["relative_objective_tolerance"] == 0.0001
 
 
+@pytest.mark.parametrize("analytical", [False, True])
 def test_lbfgs_continuation_is_bit_exact_with_uninterrupted_run(
-    tmp_path: Path,
+    tmp_path: Path, analytical: bool
 ) -> None:
     parent_config = initialize_modern_workflow(
         MESH_DIRECTORY,
@@ -290,6 +293,15 @@ def test_lbfgs_continuation_is_bit_exact_with_uninterrupted_run(
         threads=1,
     )
     config = yaml.safe_load(parent_config.read_text(encoding="utf-8"))
+    if analytical:
+        config["model"]["attachment"]["type"] = "varifold"
+        config["runtime"]["pairwise_evaluation"] = {
+            "mode": "blockwise",
+            "query_tile_size": 128,
+            "source_tile_size": 128,
+            "autograd_strategy": "recompute",
+            "varifold_backward": "analytical",
+        }
     config["optimization"]["block_order"] = ["momenta"]
     config["optimization"]["direction_update"] = "lbfgs"
     config["optimization"]["gradient_tolerance"] = 0.0
@@ -315,6 +327,15 @@ def test_lbfgs_continuation_is_bit_exact_with_uninterrupted_run(
     )
     plan_root = tmp_path / "lbfgs-continuation"
     create_modern_continuation(parent, plan_root, max_cycles=2, threads=1)
+    if analytical:
+        altered_root = tmp_path / "changed-backward-plan"
+        shutil.copytree(plan_root, altered_root)
+        altered_path = altered_root / CONFIG_NAME
+        altered = yaml.safe_load(altered_path.read_text(encoding="utf-8"))
+        assert altered["runtime"]["pairwise_evaluation"].pop("varifold_backward") == "analytical"
+        altered_path.write_text(yaml.safe_dump(altered), encoding="utf-8")
+        with pytest.raises(ConfigurationError, match="Resume runtime differs"):
+            run_modern_workflow(altered_path, destination=tmp_path / "rejected-successor")
     successor = run_modern_workflow(
         plan_root / CONFIG_NAME,
         destination=tmp_path / "lbfgs-successor-run",

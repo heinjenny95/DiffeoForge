@@ -142,6 +142,15 @@ def validate_modern_workflow_config(config: Mapping[str, Any]) -> None:
         MeshQualitySettings.from_mapping(config["quality_control"])
     except (TypeError, ValueError) as error:
         raise ConfigurationError(f"Invalid quality_control settings: {error}") from error
+    pairwise = pairwise_evaluation_from_config(config)
+    if pairwise.varifold_backward == "analytical" and (
+        config["runtime"]["device"] != "cpu"
+        or config["model"]["attachment"]["type"] != "varifold"
+    ):
+        raise ConfigurationError(
+            "Analytical Varifold backward requires runtime.device=cpu "
+            "and model.attachment.type=varifold"
+        )
     optimizer = config["optimization"]
     direction_update = optimizer.get("direction_update", "steepest")
     momenta_updates = optimizer.get("momenta_updates_per_cycle", 1)
@@ -2019,6 +2028,19 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
         "implementation_version"
     ):
         raise ModernWorkflowError("Nested atlas bundle engine implementation differs")
+    bundle_engine = bundle_manifest["engine"]
+    expected_pairwise = pairwise_evaluation_from_config(effective)
+    bundle_pairwise = bundle_engine.get("pairwise_evaluation")
+    try:
+        nested_pairwise = (
+            PairwiseEvaluationPlan()
+            if bundle_pairwise is None
+            else PairwiseEvaluationPlan.from_mapping(bundle_pairwise)
+        )
+    except (TypeError, ValueError) as error:
+        raise ModernWorkflowError(f"Invalid nested atlas bundle pairwise plan: {error}") from error
+    if bundle_engine["id"] != expected_pairwise.engine_id or nested_pairwise != expected_pairwise:
+        raise ModernWorkflowError("Nested atlas bundle pairwise execution provenance differs")
     if sha256_file(bundle / BUNDLE_MANIFEST_NAME) != manifest["result_bundle"]["manifest_sha256"]:
         raise ModernWorkflowError("Nested atlas bundle manifest SHA-256 differs")
     if len(bundle_manifest["subjects"]) != len(manifest["input"]["subjects"]):

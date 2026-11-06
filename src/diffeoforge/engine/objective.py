@@ -14,6 +14,7 @@ from diffeoforge.engine.dense import (
     GaussianTilePlan,
     PreparedSurfaceAttachmentTarget,
     ShootingTrajectory,
+    _validate_varifold_backward,
     current_squared_distance,
     current_squared_distance_blockwise,
     deformation_energy,
@@ -94,6 +95,14 @@ def subject_objective(
     variance = _positive_scalar("noise_variance", noise_variance)
     if attachment_type not in {"current", "varifold"}:
         raise ValueError("attachment_type must be 'current' or 'varifold'")
+    _validate_varifold_backward(
+        gaussian_tile_plan,
+        attachment_type,
+        template_vertices,
+        target_vertices,
+        control_points,
+        momenta,
+    )
     trajectory = shoot(
         control_points,
         momenta,
@@ -142,6 +151,9 @@ def subject_objective(
             if attachment_type == "current"
             else varifold_squared_distance_blockwise
         )
+        backward_options = {}
+        if gaussian_tile_plan.varifold_backward is not None:
+            backward_options["varifold_backward"] = gaussian_tile_plan.varifold_backward
         residual = blockwise_distance_function(
             template_path[-1],
             template_triangles,
@@ -151,6 +163,7 @@ def subject_objective(
             query_tile_size=gaussian_tile_plan.query_rows,
             source_tile_size=gaussian_tile_plan.source_rows,
             autograd_strategy=gaussian_tile_plan.autograd_strategy,
+            **backward_options,
         )
     attachment = -residual / variance
     regularity = -deformation_energy(
