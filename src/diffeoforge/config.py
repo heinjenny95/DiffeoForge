@@ -139,7 +139,12 @@ def _pilot_cohort_template(
     return original.resolve()
 
 
-def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> InputSummary:
+def validate_input_paths(
+    config: Mapping[str, Any],
+    config_path: Path | str,
+    *,
+    minimum_subject_count: int = 2,
+) -> InputSummary:
     """Resolve the template and subject glob without parsing mesh geometry yet."""
 
     source_path = Path(config_path)
@@ -219,8 +224,9 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
         and config["optimization"]["freeze_template"]
         and config["optimization"]["freeze_control_points"]
     )
-    if len(subjects) < 2 and not fixed_probe:
-        raise ConfigurationError("Atlas estimation requires at least two subject meshes.")
+    if len(subjects) < minimum_subject_count and not fixed_probe:
+        minimum = "two" if minimum_subject_count == 2 else str(minimum_subject_count)
+        raise ConfigurationError(f"Atlas estimation requires at least {minimum} subject meshes.")
     if len(set(subjects)) != len(subjects):
         raise ConfigurationError("Subject file selection contains duplicate paths.")
     names = [path.name.casefold() for path in subjects]

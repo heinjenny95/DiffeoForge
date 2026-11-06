@@ -821,6 +821,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the versioned machine-readable discovery report.",
     )
 
+    modern_fixed_run_parser = subparsers.add_parser(
+        "modern-fixed-reference-run",
+        help="Fit each surface independently against one fixed template and control lattice.",
+    )
+    modern_fixed_run_parser.add_argument("config", type=Path)
+    modern_fixed_run_parser.add_argument("--output", type=Path, required=True)
+
+    modern_fixed_verify_parser = subparsers.add_parser(
+        "modern-fixed-reference-verify",
+        help="Verify an independent Modern fixed-reference run and its evidence.",
+    )
+    modern_fixed_verify_parser.add_argument("directory", type=Path)
+
     modern_plan_parser = subparsers.add_parser(
         "modern-plan",
         help=(
@@ -3501,6 +3514,50 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         print(f"PCA metadata analysis verified: {artifact.artifact_directory}")
         print("Source PCA, metadata join, figures, tables, and hashes match.")
+        return 0
+
+    if args.command in {"modern-fixed-reference-run", "modern-fixed-reference-verify"}:
+        try:
+            from diffeoforge.modern_fixed_reference import (
+                run_modern_fixed_reference,
+                verify_modern_fixed_reference,
+            )
+
+            if args.command == "modern-fixed-reference-run":
+                def show_fixed_progress(label, index, count, record):
+                    print(
+                        f"Subject {index}/{count} {label}: cycle {record.cycle}, "
+                        f"block {record.block}",
+                        flush=True,
+                    )
+
+                directory = run_modern_fixed_reference(
+                    args.config, destination=args.output, progress_callback=show_fixed_progress
+                )
+            else:
+                directory = args.directory
+            manifest = verify_modern_fixed_reference(directory)
+        except KeyboardInterrupt:
+            print("Modern fixed-reference command interrupted.", file=sys.stderr)
+            return 130
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(f"Modern fixed-reference run verified: {directory}")
+        for subject in manifest["subjects"]:
+            optimizer = subject["optimizer"]
+            print(
+                f"{subject['label']}: {optimizer['cycles_completed']} cycles "
+                f"({optimizer['termination_reason']})"
+            )
         return 0
 
     if args.command == "modern-plan":

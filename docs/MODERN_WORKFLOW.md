@@ -43,6 +43,36 @@ The geometry-scaled values produced by `modern-init` are visibly labelled
 exploratory. They are starting values, not biologically or numerically
 validated presets.
 
+### Independent fixed-reference registration on CPU
+
+Use this experimental command when the template and control points are already
+chosen and each target needs its own line search, objective history and cycle
+budget. A run can contain one target or a sorted cohort of targets.
+
+```powershell
+diffeoforge modern-fixed-reference-run fixed-reference.yaml --output independent-fits
+diffeoforge modern-fixed-reference-verify independent-fits
+```
+
+Start with a reviewed Modern workflow YAML. Use prealigned triangular VTK
+inputs, disable Procrustes, and declare a CPU float64 runtime. Set
+`initialization.control_points.method: file` with the control point count
+and TXT path. Set `initialization.momenta: zeros`,
+`optimization.block_order: [momenta]`, and a positive
+`optimization.max_cycles`. Use one momenta update per cycle and one subject
+batch worker. The CLI output argument selects the new run directory.
+
+Each target starts with zero momenta and gets up to the declared cycle limit.
+The run contains the frozen inputs, effective settings, per-target momenta,
+reconstruction, optimizer history and work counters. A cycle cap and numerical
+convergence are recorded as distinct outcomes. Publication is atomic, and a
+cooperative cancellation before publication leaves the requested destination
+absent. This experimental format provides fixed-reference endpoints only.
+The atlas workflow handles joint estimation and PCA. The atlas recipe's
+`checkpoint_interval_cycles` and `checkpoint_retention` settings apply to
+that workflow. This independent format publishes endpoints and histories
+without checkpoints. Recovery is a separate future feature.
+
 ### Analytical Varifold backward on CPU
 
 Modern can opt into a recomputed analytical derivative for Varifold surface

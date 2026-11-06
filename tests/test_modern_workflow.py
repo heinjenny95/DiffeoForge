@@ -114,6 +114,81 @@ def _write_config(path: Path, **kwargs) -> Path:
     return path
 
 
+def _write_fixed_reference_config(path: Path, pattern: str) -> Path:
+    config = _configuration()
+    config["input"]["subject_pattern"] = pattern
+    template = read_vtk_polydata(MESH_DIRECTORY / "template.vtk")
+    controls = path.with_suffix(".txt")
+    np.savetxt(controls, template.vertices[:9])
+    config["initialization"]["control_points"] = {
+        "method": "file",
+        "count": 9,
+        "path": controls.name,
+    }
+    config["optimization"]["block_order"] = ["momenta"]
+    config["optimization"]["max_cycles"] = 2
+    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    return path
+
+
+def test_fixed_reference_cli_matches_isolated_subject_and_rejects_tampering(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from diffeoforge.modern_fixed_reference import verify_modern_fixed_reference
+
+    configs = (
+        _write_fixed_reference_config(tmp_path / "single.yaml", "subject-02.vtk"),
+        _write_fixed_reference_config(tmp_path / "cohort.yaml", "subject-0[12].vtk"),
+    )
+    runs = [tmp_path / config.stem for config in configs]
+    for config, run in zip(configs, runs, strict=True):
+        assert main(["modern-fixed-reference-run", str(config), "--output", str(run)]) == 0
+        assert main(["modern-fixed-reference-verify", str(run)]) == 0
+    assert "Subject 1/1 subject-02.vtk" in capsys.readouterr().out
+
+    single, cohort = (verify_modern_fixed_reference(run) for run in runs)
+    assert [subject["label"] for subject in single["subjects"]] == ["subject-02.vtk"]
+    assert [subject["label"] for subject in cohort["subjects"]] == [
+        "subject-01.vtk", "subject-02.vtk"
+    ]
+    first = single["subjects"][0]
+    second = cohort["subjects"][1]
+    assert first["optimizer"] == second["optimizer"]
+    assert first["optimizer"]["cycles_completed"] == 2
+    for key in ("reconstruction_path", "momenta_path", "history_path"):
+        assert (runs[0] / first[key]).read_bytes() == (runs[1] / second[key]).read_bytes()
+
+    reconstruction = runs[1] / second["reconstruction_path"]
+    reconstruction.write_bytes(reconstruction.read_bytes() + b"\n")
+    assert main(["modern-fixed-reference-verify", str(runs[1])]) == 2
+    assert "ERROR" in capsys.readouterr().err
+
+
+def test_fixed_reference_cooperative_cancellation_and_atlas_singleton_guard(
+    tmp_path: Path,
+) -> None:
+    from diffeoforge.modern_fixed_reference import (
+        ModernFixedReferenceCancelled,
+        run_modern_fixed_reference,
+    )
+
+    config = _write_fixed_reference_config(tmp_path / "single.yaml", "subject-02.vtk")
+    with pytest.raises(ConfigurationError, match="at least two"):
+        workflow.run_modern_workflow(config, destination=tmp_path / "atlas")
+
+    observed = []
+    destination = tmp_path / "cancelled"
+    with pytest.raises(ModernFixedReferenceCancelled):
+        run_modern_fixed_reference(
+            config,
+            destination=destination,
+            progress_callback=lambda *event: observed.append(event),
+            cancel_requested=lambda: bool(observed),
+        )
+    assert observed[0][:3] == ("subject-02.vtk", 1, 1)
+    assert not destination.exists()
+
+
 def _analytical_varifold_configuration() -> dict:
     config = _configuration()
     config["schema_version"] = "0.3"

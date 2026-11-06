@@ -1058,6 +1058,39 @@ def _alignment_evidence(
     return tuple(aligned_vertices), tuple(aligned_paths), manifest
 
 
+def modern_optimizer_arguments(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Map a validated Modern recipe to the shared numerical optimizer settings."""
+
+    optimizer = config["optimization"]
+    return {
+        "max_cycles": optimizer["max_cycles"],
+        "block_order": optimizer["block_order"],
+        "momenta_updates_per_cycle": optimizer.get("momenta_updates_per_cycle", 1),
+        "momenta_step_size": optimizer["momenta_step_size"],
+        "template_step_size": optimizer["template_step_size"],
+        "control_points_step_size": optimizer["control_points_step_size"],
+        "backtracking_factor": optimizer["backtracking_factor"],
+        "armijo_constant": optimizer["armijo_constant"],
+        "gradient_tolerance": optimizer["gradient_tolerance"],
+        "minimum_step_size": optimizer["minimum_step_size"],
+        "max_line_search_iterations": optimizer["max_line_search_iterations"],
+        "step_initialization": optimizer.get("step_initialization", "fixed"),
+        "direction_update": optimizer.get("direction_update", "steepest"),
+        "lbfgs_history_size": optimizer.get("lbfgs_history_size", 10),
+        "lbfgs_curvature_tolerance": optimizer.get("lbfgs_curvature_tolerance", 1e-12),
+        "lbfgs_initial_step_size": optimizer.get("lbfgs_initial_step_size", 1.0),
+        "line_search_condition": optimizer.get("line_search_condition", "armijo"),
+        "strong_wolfe_curvature_constant": optimizer.get("strong_wolfe_curvature_constant", 0.9),
+        "strong_wolfe_maximum_step_size": optimizer.get("strong_wolfe_maximum_step_size", 10.0),
+        "relative_objective_tolerance": optimizer.get("relative_objective_tolerance"),
+        "subject_batch_size": optimizer.get("subject_batch_size"),
+        "subject_batch_workers": optimizer.get("subject_batch_workers", 1),
+        "shared_step_scaling": optimizer.get("shared_step_scaling", "none"),
+        "template_gradient": optimizer.get("template_gradient", "euclidean"),
+        "sobolev_kernel_width_ratio": optimizer.get("sobolev_kernel_width_ratio", 1.0),
+    }
+
+
 def run_modern_workflow(
     config_path: Path | str,
     *,
@@ -1557,45 +1590,13 @@ def run_modern_workflow(
                     shooting_integrator=deformation["shooting_integrator"],
                     flow_integrator=deformation["flow_integrator"],
                     gaussian_tile_plan=pairwise_evaluation.gaussian_tile_plan,
-                    max_cycles=optimizer["max_cycles"],
-                    block_order=optimizer["block_order"],
-                    momenta_updates_per_cycle=optimizer.get(
-                        "momenta_updates_per_cycle", 1
-                    ),
-                    momenta_step_size=optimizer["momenta_step_size"],
-                    template_step_size=optimizer["template_step_size"],
-                    control_points_step_size=optimizer["control_points_step_size"],
-                    backtracking_factor=optimizer["backtracking_factor"],
-                    armijo_constant=optimizer["armijo_constant"],
-                    gradient_tolerance=optimizer["gradient_tolerance"],
-                    minimum_step_size=optimizer["minimum_step_size"],
-                    max_line_search_iterations=optimizer["max_line_search_iterations"],
-                    step_initialization=optimizer.get("step_initialization", "fixed"),
-                    direction_update=optimizer.get("direction_update", "steepest"),
-                    lbfgs_history_size=optimizer.get("lbfgs_history_size", 10),
-                    lbfgs_curvature_tolerance=optimizer.get("lbfgs_curvature_tolerance", 1e-12),
-                    lbfgs_initial_step_size=optimizer.get("lbfgs_initial_step_size", 1.0),
-                    line_search_condition=optimizer.get("line_search_condition", "armijo"),
-                    strong_wolfe_curvature_constant=optimizer.get(
-                        "strong_wolfe_curvature_constant", 0.9
-                    ),
-                    strong_wolfe_maximum_step_size=optimizer.get(
-                        "strong_wolfe_maximum_step_size", 10.0
-                    ),
-                    relative_objective_tolerance=optimizer.get("relative_objective_tolerance"),
-                    subject_batch_size=optimizer.get("subject_batch_size"),
-                    subject_batch_workers=optimizer.get("subject_batch_workers", 1),
-                    shared_step_scaling=optimizer.get("shared_step_scaling", "none"),
-                    template_gradient=optimizer.get("template_gradient", "euclidean"),
-                    sobolev_kernel_width_ratio=optimizer.get(
-                        "sobolev_kernel_width_ratio", 1.0
-                    ),
                     resume_state=optimizer_resume_state,
                     progress_callback=(
                         observe_optimizer if progress_callback is not None else None
                     ),
                     checkpoint_callback=write_checkpoint,
                     cancel_requested=cancel_requested,
+                    **modern_optimizer_arguments(config),
                 )
             except AtlasOptimizationCancelled as error:
                 raise ModernWorkflowCancelled(
