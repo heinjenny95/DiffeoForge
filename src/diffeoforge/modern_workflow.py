@@ -67,6 +67,7 @@ from diffeoforge.mesh_quality import (
 from diffeoforge.mesh_quality_report import (
     build_mesh_quality_report,
     mesh_quality_csv_rows,
+    mesh_quality_reports_match,
 )
 from diffeoforge.modern_bundle import (
     MANIFEST_NAME as BUNDLE_MANIFEST_NAME,
@@ -1952,7 +1953,7 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
         )
     except (ConfigurationError, KeyError, TypeError, ValueError) as error:
         raise ModernWorkflowError(f"Invalid input mesh-quality evidence: {error}") from error
-    if quality_report != expected_quality:
+    if not mesh_quality_reports_match(quality_report, expected_quality):
         raise ModernWorkflowError(
             "Input mesh-quality JSON differs from recomputed geometry evidence"
         )
@@ -1966,10 +1967,8 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
             quality_rows = list(csv.reader(handle))
     except (OSError, UnicodeError, csv.Error) as error:
         raise ModernWorkflowError(f"Invalid input mesh-quality CSV: {error}") from error
-    if quality_rows != mesh_quality_csv_rows(expected_quality):
-        raise ModernWorkflowError(
-            "Input mesh-quality CSV differs from recomputed geometry evidence"
-        )
+    if quality_rows != mesh_quality_csv_rows(quality_report):
+        raise ModernWorkflowError("Input mesh-quality CSV differs from validated JSON evidence")
 
     control = manifest["initialization"]["control_points"]
     if control["method"] == "farthest_template_vertices":

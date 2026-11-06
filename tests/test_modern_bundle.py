@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import math
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -600,24 +601,46 @@ def test_verifier_rejects_manifest_path_traversal(
         verify_modern_atlas_bundle(bundle)
 
 
-def test_verifier_recomputes_mesh_quality_instead_of_trusting_report(
+@pytest.mark.parametrize("tampered_field", ("report_path", "csv_path"))
+def test_verifier_recomputes_mesh_quality_and_binds_saved_rows(
     tmp_path: Path,
     optimized: tuple,
+    monkeypatch: pytest.MonkeyPatch,
+    tampered_field: str,
 ) -> None:
     bundle = _write_bundle(tmp_path / "bundle", optimized)
+    build_report = bundle_module.build_mesh_quality_report
+
+    def recompute_with_roundoff(*args, **kwargs):
+        report = build_report(*args, **kwargs)
+        angles = report["meshes"][0]["metrics"]["minimum_angle_degrees"]
+        for key in ("median", "q95", "maximum"):
+            angles[key] = math.nextafter(math.nextafter(angles[key], math.inf), math.inf)
+        return report
+
+    monkeypatch.setattr(bundle_module, "build_mesh_quality_report", recompute_with_roundoff)
+    verify_modern_atlas_bundle(bundle)
+
     manifest_path = bundle / MANIFEST_NAME
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    quality_path = bundle / manifest["quality"]["report_path"]
-    quality = json.loads(quality_path.read_text(encoding="utf-8"))
-    quality["meshes"][0]["metrics"]["boundary_edges"] += 1
-    quality_path.write_text(
-        json.dumps(quality, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    quality_path = bundle / manifest["quality"][tampered_field]
+    if tampered_field == "report_path":
+        quality = json.loads(quality_path.read_text(encoding="utf-8"))
+        quality["meshes"][0]["metrics"]["boundary_edges"] += 1
+        quality_path.write_text(json.dumps(quality) + "\n", encoding="utf-8")
+        error = "JSON differs from recomputed geometry"
+    else:
+        rows = _csv(quality_path)
+        index = rows[0].index("median_angle_degrees")
+        angle = float(rows[1][index])
+        rows[1][index] = format(math.nextafter(math.nextafter(angle, math.inf), math.inf), ".17g")
+        with quality_path.open("w", encoding="utf-8", newline="") as handle:
+            csv.writer(handle).writerows(rows)
+        error = "CSV differs from validated JSON"
     artifact = next(
         record
         for record in manifest["artifacts"]
-        if record["path"] == manifest["quality"]["report_path"]
+        if record["path"] == manifest["quality"][tampered_field]
     )
     artifact["bytes"] = quality_path.stat().st_size
     artifact["sha256"] = sha256_file(quality_path)
@@ -630,7 +653,7 @@ def test_verifier_recomputes_mesh_quality_instead_of_trusting_report(
         encoding="ascii",
     )
 
-    with pytest.raises(ModernBundleError, match="recomputed geometry"):
+    with pytest.raises(ModernBundleError, match=error):
         verify_modern_atlas_bundle(bundle)
 
 

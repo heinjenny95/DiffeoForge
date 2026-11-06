@@ -38,6 +38,7 @@ from diffeoforge.mesh_quality import MeshQualitySettings
 from diffeoforge.mesh_quality_report import (
     build_mesh_quality_report,
     mesh_quality_csv_rows,
+    mesh_quality_reports_match,
 )
 
 BUNDLE_VERSION = "0.1"
@@ -1073,7 +1074,7 @@ def verify_modern_atlas_bundle(directory: Path | str) -> dict:
         )
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
         raise ModernBundleError(f"Invalid mesh-quality evidence: {error}") from error
-    if quality_report != expected_quality:
+    if not mesh_quality_reports_match(quality_report, expected_quality):
         raise ModernBundleError("Mesh-quality JSON differs from recomputed geometry evidence")
     if quality_record["assessed_meshes"] != len(quality_report["meshes"]):
         raise ModernBundleError("Mesh-quality assessed mesh count differs")
@@ -1087,8 +1088,8 @@ def verify_modern_atlas_bundle(directory: Path | str) -> dict:
             quality_rows = list(csv.reader(handle))
     except (OSError, UnicodeError, csv.Error) as error:
         raise ModernBundleError(f"Invalid mesh-quality CSV: {error}") from error
-    if quality_rows != mesh_quality_csv_rows(expected_quality):
-        raise ModernBundleError("Mesh-quality CSV differs from recomputed geometry evidence")
+    if quality_rows != mesh_quality_csv_rows(quality_report):
+        raise ModernBundleError("Mesh-quality CSV differs from validated JSON evidence")
     plots = manifest["pca"]["plots"]
     subject_labels = [record["label"] for record in manifest["subjects"]]
     _verify_static_svg(_resolve_artifact(root, plots["scree_path"]))

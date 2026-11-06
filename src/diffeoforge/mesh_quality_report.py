@@ -95,6 +95,41 @@ def build_mesh_quality_report(
     }
 
 
+def mesh_quality_reports_match(saved: dict[str, Any], recomputed: dict[str, Any]) -> bool:
+    """Compare recomputed evidence, allowing platform roundoff in descriptive angles."""
+
+    def matches(left: Any, right: Any, path: tuple[str | int, ...]) -> bool:
+        if type(left) is not type(right):
+            return False
+        if isinstance(right, dict):
+            return left.keys() == right.keys() and all(
+                matches(left[key], value, (*path, key)) for key, value in right.items()
+            )
+        if isinstance(right, list):
+            return len(left) == len(right) and all(
+                matches(left[index], value, (*path, index)) for index, value in enumerate(right)
+            )
+        if left == right:
+            return True
+        if (
+            isinstance(right, float)
+            and len(path) == 5
+            and path[0] == "meshes"
+            and isinstance(path[1], int)
+            and path[2:4] == ("metrics", "minimum_angle_degrees")
+            and path[4] in {"q05", "median", "mean", "q95", "maximum"}
+            and 0.0 <= left <= 180.0
+            and 0.0 <= right <= 180.0
+        ):
+            # Platform libm can round acos differently. Keep the actual minimum used
+            # for gate enforcement exact and limit descriptive angles to two float steps.
+            adjacent = math.nextafter(right, left)
+            return left == adjacent or left == math.nextafter(adjacent, left)
+        return False
+
+    return matches(saved, recomputed, ())
+
+
 def _number(value: object) -> str:
     if value is None:
         return ""
