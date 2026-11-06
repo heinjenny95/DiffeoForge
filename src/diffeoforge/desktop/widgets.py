@@ -629,10 +629,13 @@ class _TemplatePreviewWorker(QRunnable):
 
 
 class _PilotAtlasHandoffWorker(QRunnable):
-    def __init__(self, config_path: Path, *, early_review: bool = False) -> None:
+    def __init__(
+        self, config_path: Path, *, early_review: bool = False, initial_fit_review: bool = False,
+    ) -> None:
         super().__init__()
         self.config_path = config_path
         self.early_review = early_review
+        self.initial_fit_review = initial_fit_review
         self.signals = _WorkerSignals()
 
     @Slot()
@@ -640,11 +643,12 @@ class _PilotAtlasHandoffWorker(QRunnable):
         try:
             from diffeoforge.reference_atlas_handoff import (
                 choose_early_review,
+                choose_initial_fit_screen,
                 upgrade_saved_pilot_config,
-                with_initial_fit_screen,
             )
 
-            path = with_initial_fit_screen(upgrade_saved_pilot_config(self.config_path))
+            path = upgrade_saved_pilot_config(self.config_path)
+            path = choose_initial_fit_screen(path, enabled=self.initial_fit_review)
             path = choose_early_review(path, enabled=self.early_review)
             result = load_existing_reference_project(path)
         except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
@@ -2371,6 +2375,15 @@ class DiffeoForgeWindow(QMainWindow):
             "Create a separate configuration that preserves compatible pilot fields, fits "
             "the remaining specimens on the common basis, then runs the joint atlas."
         )
+        self.initial_fit_review_check = QCheckBox(
+            "Pause before joint fitting if starting fits need review"
+        )
+        self.initial_fit_review_check.setToolTip(
+            "Off by default. Turn on to check initialized specimens for missing or extra "
+            "surface and review substantial findings before the joint atlas starts."
+        )
+        self.initial_fit_review_check.hide()
+        calibration_layout.addWidget(self.initial_fit_review_check)
         self.early_atlas_review_check = QCheckBox(
             "Pause after 10 joint iterations for an optional early anatomical check"
         )
@@ -8110,6 +8123,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _sync_ready_state(self) -> None:
         self.review_early_atlas_button.setEnabled(self._worker is None)
         self.prepare_preserved_atlas_button.setEnabled(self._worker is None)
+        self.initial_fit_review_check.setEnabled(self._worker is None)
         self.early_atlas_review_check.setEnabled(self._worker is None)
         for button in (
             self.run_more_iterations_button, self.result_more_iterations_button,
@@ -10059,6 +10073,8 @@ class DiffeoForgeWindow(QMainWindow):
             and self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
         )
         self.prepare_preserved_atlas_button.setEnabled(self._worker is None)
+        self.initial_fit_review_check.setVisible(not self.prepare_preserved_atlas_button.isHidden())
+        self.initial_fit_review_check.setEnabled(self._worker is None)
         self.early_atlas_review_check.setVisible(not self.prepare_preserved_atlas_button.isHidden())
         self.early_atlas_review_check.setEnabled(self._worker is None)
         reference = self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
@@ -10447,6 +10463,7 @@ class DiffeoForgeWindow(QMainWindow):
         worker = _PilotAtlasHandoffWorker(
             self._reference_calibrated_config_path,
             early_review=self.early_atlas_review_check.isChecked(),
+            initial_fit_review=self.initial_fit_review_check.isChecked(),
         )
         worker.signals.succeeded.connect(self._preserved_atlas_ready)
         worker.signals.failed.connect(self._preserved_atlas_failed)
@@ -11135,13 +11152,20 @@ class DiffeoForgeWindow(QMainWindow):
             from diffeoforge.config import load_config
             from diffeoforge.reference_atlas_handoff import early_review_enabled, initialization
 
-            early = early_review_enabled(initialization(load_config(request.config_path)))
+            plan = initialization(load_config(request.config_path))
+            early = early_review_enabled(plan)
             self.run_title_label.setText("Initialize and compute atlas")
+            initial_step = (
+                "Check the starting fits and pause for substantial findings. "
+                if plan.get("initial_fit_screen") else ""
+            )
+            joint_step = (
+                "Pause after 10 joint iterations for the optional anatomical check. "
+                if early else "Run the joint optimizer to its configured stop. "
+            )
             self.run_subtitle_label.setText(
-                "Preserve the pilot fields, initialize other specimens on the same fixed basis, "
-                + ("then pause after 10 joint iterations for the optional anatomical check."
-                   if early else "then continue to the configured optimizer stop. "
-                   "The finished atlas requires its own anatomical review.")
+                "Preserve the pilot fields and initialize other specimens on the same fixed basis. "
+                + initial_step + joint_step + "Review the finished atlas for anatomical quality."
             )
         self.run_progress_bar.setRange(0, 1)
         self.run_progress_bar.setValue(0)

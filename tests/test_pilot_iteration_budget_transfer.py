@@ -53,7 +53,9 @@ def test_kept_approved_fit_transfers_continued_budget_to_config_manifest_and_nat
         f"<max-iterations>{expected}</max-iterations>"
         in (run / "engine/optimization_parameters.xml").read_text()
     )
-    adapter = ast.parse((run / "engine/sitecustomize.py").read_text())
+    adapter_text = (run / "engine/sitecustomize.py").read_text()
+    assert "_DF_INITIAL_SCREEN_VERSION =" not in adapter_text
+    adapter = ast.parse(adapter_text)
     plan = next(
         ast.literal_eval(node.value)
         for node in ast.walk(adapter)
@@ -80,20 +82,32 @@ def test_kept_approved_fit_transfers_continued_budget_to_config_manifest_and_nat
 
 
 @pytest.mark.parametrize("tamper", [False, True])
+@pytest.mark.parametrize("historical", ["budget-v1", "screen-on-v194"])
 def test_legacy_pending_finish_keeps_exact_config_and_rejects_other_changes(
     tmp_path,
     monkeypatch,
     tamper,
+    historical,
 ):
+    from diffeoforge import reference_atlas_handoff as handoff
+
     continued, identifier, calls, protected = ready(tmp_path, monkeypatch)
     current = iteration_budget.recommend_pilot_iteration_budget
-    monkeypatch.setattr(
-        iteration_budget,
-        "recommend_pilot_iteration_budget",
-        lambda cap, rows, selected, events, **kw: iteration_budget.recommend_iteration_budget(
-            cap, rows, selected.values()
-        ),
-    )
+    configure = handoff.configure_preserved_pilot
+    if historical == "budget-v1":
+        monkeypatch.setattr(
+            iteration_budget,
+            "recommend_pilot_iteration_budget",
+            lambda cap, rows, selected, events, **kw: iteration_budget.recommend_iteration_budget(
+                cap, rows, selected.values()
+            ),
+        )
+    else:
+        def configure_with_screen(config, **kwargs):
+            configure(config, **kwargs)
+            handoff.initialization(config)["initial_fit_screen"] = handoff.INITIAL_SCREEN_VERSION
+
+        monkeypatch.setattr(handoff, "configure_preserved_pilot", configure_with_screen)
     report = study._write_calibration_report
     monkeypatch.setattr(
         study,
@@ -109,7 +123,10 @@ def test_legacy_pending_finish_keeps_exact_config_and_rejects_other_changes(
         config["project"]["parameter_provenance"]["recommendation"]["calibration_result"][
             "iteration_budget_recommendation"
         ]["version"]
-        == "1"
+        == ("1" if historical == "budget-v1" else "2")
+    )
+    assert bool(handoff.initialization(config).get("initial_fit_screen")) == (
+        historical == "screen-on-v194"
     )
     if tamper:
         import yaml
@@ -117,6 +134,7 @@ def test_legacy_pending_finish_keeps_exact_config_and_rejects_other_changes(
         config["optimization"]["initial_step_size"] *= 2
         path.write_text(yaml.safe_dump(config), encoding="utf-8")
     monkeypatch.setattr(iteration_budget, "recommend_pilot_iteration_budget", current)
+    monkeypatch.setattr(handoff, "configure_preserved_pilot", configure)
     monkeypatch.setattr(study, "_write_calibration_report", report)
     dispatched = list(calls)
     if tamper:

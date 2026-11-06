@@ -114,7 +114,6 @@ def configure_preserved_pilot(config, *, root, seed, config_directory):
         "individual_max_iterations": int(config["optimization"]["max_iterations"]),
         "early_review_iteration": 10,
         "early_review_enabled": False,
-        "initial_fit_screen": INITIAL_SCREEN_VERSION,
         "completed_initialization_indices": [],
         "early_review_approved": False,
         "limitation": "Pilot rows initialize the common joint model; each other specimen "
@@ -211,15 +210,27 @@ def choose_early_review(config_path, *, enabled):
     return _write_linked_atlas_config(config, target)
 
 
-def with_initial_fit_screen(config_path):
-    """Use a previously finished pilot for a new screened atlas, without changing its files."""
+def choose_initial_fit_screen(config_path, *, enabled):
+    """Record the starting-fit review choice for a new atlas in a linked configuration."""
+    if type(enabled) is not bool:
+        raise ConfigurationError("Starting-fit review must be an explicit boolean choice.")
     path = Path(config_path).resolve()
     config = load_config(path)
     plan = initialization(config)
-    if not plan or plan["method"] != METHOD or plan.get("initial_fit_screen"):
+    if not plan or plan["method"] != METHOD:
+        if enabled:
+            raise ConfigurationError("Starting-fit review requires a saved pilot atlas setup.")
         return path
-    plan["initial_fit_screen"] = INITIAL_SCREEN_VERSION
-    return _write_linked_atlas_config(config, path.with_name(f"{path.stem}-fit-screen.yaml"))
+    if bool(plan.get("initial_fit_screen")) == enabled:
+        return path
+    if plan.get("initial_fit_screen_binding"):
+        raise ConfigurationError("The starting-fit review choice is already bound to a run.")
+    if enabled:
+        plan["initial_fit_screen"] = INITIAL_SCREEN_VERSION
+    else:
+        plan.pop("initial_fit_screen")
+    suffix = "fit-screen" if enabled else "no-fit-screen"
+    return _write_linked_atlas_config(config, path.with_name(f"{path.stem}-{suffix}.yaml"))
 
 
 def _write_linked_atlas_config(config, target):

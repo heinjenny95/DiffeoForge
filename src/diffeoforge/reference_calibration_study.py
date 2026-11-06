@@ -2956,7 +2956,21 @@ def _final_configuration(
     final_path.parent.mkdir(parents=True, exist_ok=True)
     if final_path.exists():
         existing = yaml.safe_load(final_path.read_text(encoding="utf-8"))
-        if existing != config:
+        from diffeoforge.reference_atlas_handoff import INITIAL_SCREEN_VERSION, initialization
+
+        def matches_saved_contract(candidate):
+            if existing == candidate:
+                return True
+            # v194 saved the starting-fit screen on by default. An exact
+            # retry must preserve that file and its original execution choice.
+            screened = copy.deepcopy(candidate)
+            plan = initialization(screened)
+            if plan is None:
+                return False
+            plan["initial_fit_screen"] = INITIAL_SCREEN_VERSION
+            return existing == screened
+
+        if not matches_saved_contract(config):
             # A finish retry may have an immutable v1 configuration written by
             # an earlier runtime. Preserve that exact contract, never upgrade it
             # in place or turn the saved researcher decision into a dead end.

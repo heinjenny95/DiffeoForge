@@ -656,6 +656,7 @@ def test_optional_early_atlas_choice_queues_only_explicit_continuation(
 
     window = review_window
     assert not window.early_atlas_review_check.isChecked()
+    assert not window.initial_fit_review_check.isChecked()
     run = window._result_review.run_directory
     (run / "output").mkdir(exist_ok=True)
     (run / "output" / EARLY_CHECK).write_text("{}", encoding="utf-8")
@@ -677,3 +678,23 @@ def test_optional_early_atlas_choice_queues_only_explicit_continuation(
     if queued:
         queued[0].run()
         assert choices == [(run, {"enabled": False})]
+
+
+def test_starting_fit_checkbox_is_bound_when_preparing_the_atlas(review_window, monkeypatch):
+    from types import SimpleNamespace
+
+    window = review_window
+    config_path = window._result_review.run_directory / "saved-pilot.yaml"
+    monkeypatch.setattr(window, "_reference_calibrated_config_path", config_path)
+    queued = []
+    monkeypatch.setattr(window, "_thread_pool", SimpleNamespace(start=queued.append))
+    for checked in (False, True):
+        assert not window.initial_fit_review_check.isChecked()
+        window.initial_fit_review_check.setChecked(checked)
+        window._prepare_preserved_atlas()
+        worker = queued[-1]
+        assert worker.config_path == config_path
+        assert worker.initial_fit_review is checked
+        assert worker.early_review is False
+        window._worker = None
+    assert len(queued) == 2

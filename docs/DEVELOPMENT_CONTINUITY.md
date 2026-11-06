@@ -1,5 +1,16 @@
 # Development continuity — dev192 installed and verified
 
+## dev195 — make the starting-fit review opt-in
+
+New pilot finalizations prepare an uninterrupted joint run by default. The
+starting-fit screen is available as an unchecked option beside **Prepare atlas
+with saved pilot fits**. Selecting it creates a linked configuration that can
+pause before the first joint iteration for substantial findings. Clearing it
+when preparing from a saved dev194 pilot also creates a linked configuration
+if necessary. Step 4 states the bound choice before execution. Previously
+written contracts, including an interrupted pilot finalization retry, keep
+their original settings.
+
 ## dev194 — inspect local starting-fit discrepancies before joint optimization
 
 New preserved-pilot atlas preparations screen the initialized surfaces outside

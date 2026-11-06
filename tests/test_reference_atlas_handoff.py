@@ -27,6 +27,7 @@ from diffeoforge.reference_atlas_handoff import (
     REVIEW_CHOICE,
     adapter_source,
     choose_early_review,
+    choose_initial_fit_screen,
     configure_preserved_pilot,
     configure_resume,
     early_review_enabled,
@@ -35,7 +36,6 @@ from diffeoforge.reference_atlas_handoff import (
     record_early_review,
     record_early_review_choice,
     verify_early_check_files,
-    with_initial_fit_screen,
 )
 from diffeoforge.reference_checkpoint_schedule import new_run_config, render_adapter
 from diffeoforge.reference_pca import read_deformetrica_momenta
@@ -168,7 +168,8 @@ def test_missing_incomplete_rejected_or_stale_review_never_resumes(early):
 def test_new_handoff_defaults_off_and_linked_opt_in_preserves_source(preserved):
     config, path, _, _, _ = preserved
     assert early_review_enabled(initialization(config)) is False
-    assert initialization(config)["initial_fit_screen"] == INITIAL_SCREEN_VERSION
+    assert "initial_fit_screen" not in initialization(config)
+    assert "_DF_INITIAL_SCREEN_VERSION =" not in adapter_source(new_run_config(config))
     target = path.with_name("optional.yaml")
     target.write_text(yaml.safe_dump(config), encoding="utf-8")
     original = target.read_bytes()
@@ -183,22 +184,32 @@ def test_new_handoff_defaults_off_and_linked_opt_in_preserves_source(preserved):
         choose_early_review(target, enabled=0)
 
 
-def test_old_saved_pilot_gets_screen_only_in_new_linked_config(preserved):
+def test_starting_fit_review_opt_in_and_legacy_opt_out_are_linked(preserved):
     config, path, _, _, _ = preserved
-    initialization(config).pop("initial_fit_screen")
     target = path.with_name("saved-pilot.yaml")
     target.write_text(yaml.safe_dump(config), encoding="utf-8")
     original = target.read_bytes()
-    linked = with_initial_fit_screen(target)
+    assert choose_initial_fit_screen(target, enabled=False) == target
+    linked = choose_initial_fit_screen(target, enabled=True)
     assert linked != target and target.read_bytes() == original
-    assert initialization(load_config(linked))["initial_fit_screen"] == INITIAL_SCREEN_VERSION
-    assert with_initial_fit_screen(linked) == linked
+    opted_in = load_config(linked)
+    assert initialization(opted_in)["initial_fit_screen"] == INITIAL_SCREEN_VERSION
+    assert "_DF_INITIAL_SCREEN_VERSION =" in adapter_source(new_run_config(opted_in))
+    assert choose_initial_fit_screen(linked, enabled=True) == linked
+    screened = linked.read_bytes()
+    off = choose_initial_fit_screen(linked, enabled=False)
+    assert off != linked and linked.read_bytes() == screened
+    assert load_config(off) == config
+    assert choose_initial_fit_screen(linked, enabled=False) == off
+    with pytest.raises(ConfigurationError, match="boolean"):
+        choose_initial_fit_screen(target, enabled=1)
 
 
 def test_flagged_initial_fit_requires_its_own_review_and_keeps_pilot_gate(early):
     config, run, old = early
     output = run / "output"
     plan = initialization(config)
+    plan["initial_fit_screen"] = INITIAL_SCREEN_VERSION
     plan["early_review_enabled"] = True
     (output / "atlas-initialized-state.p").write_bytes(
         (output / "deformetrica-state.p").read_bytes()
@@ -453,7 +464,6 @@ def test_disabled_early_check_runs_native_optimizer_without_review_exports(
     plan.update(subject_labels=["a", "b"], pilot_indices=[0, 1],
                 completed_initialization_indices=[0, 1] if already_initialized else [],
                 early_review_enabled=False, early_review_approved=False)
-    plan.pop("initial_fit_screen")
     support = ModuleType("deformetrica.support")
     support.utilities = SimpleNamespace()
     monkeypatch.setitem(sys.modules, "deformetrica.support", support)
