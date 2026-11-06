@@ -142,6 +142,24 @@
       },
       "then": {"required": ["work"]},
       "else": {"not": {"required": ["work"]}},
+      "allOf": [
+        {
+          "if": {
+            "properties": {"settings": {"required": ["reuse_cycle_boundary_gradient"]}}
+          },
+          "then": {
+            "required": ["convergence_plot_path"],
+            "properties": {
+              "settings": {
+                "required": ["reuse_next_block_gradient"],
+                "properties": {"block_order": {"const": ["momenta", "template", "control_points"]}}
+              },
+              "work": {"required": ["reused_cycle_boundary_gradients"]}
+            }
+          },
+          "else": {"properties": {"work": {"not": {"required": ["reused_cycle_boundary_gradients"]}}}}
+        }
+      ],
       "properties": {
         "settings": {
           "type": "object",
@@ -179,7 +197,8 @@
             "shared_step_scaling": {"enum": ["none", "inverse_subject_count"]},
             "template_gradient": {"enum": ["euclidean", "sobolev"]},
             "sobolev_kernel_width_ratio": {"type": "number", "exclusiveMinimum": 0},
-            "reuse_next_block_gradient": {"const": true}
+            "reuse_next_block_gradient": {"const": true},
+            "reuse_cycle_boundary_gradient": {"const": true}
           }
         },
         "termination_reason": {"enum": ["gradient_tolerance", "relative_objective_tolerance", "max_cycles", "line_search_failed"]},
@@ -200,7 +219,8 @@
             "candidate_gradient_evaluations": {"type": "integer", "minimum": 0},
             "paired_gradient_evaluations": {"type": "integer", "minimum": 0},
             "paired_gradient_fallbacks": {"type": "integer", "minimum": 0},
-            "reused_block_gradients": {"type": "integer", "minimum": 0}
+            "reused_block_gradients": {"type": "integer", "minimum": 0},
+            "reused_cycle_boundary_gradients": {"type": "integer", "minimum": 0}
           }
         },
         "history_path": {"type": "string", "minLength": 1},

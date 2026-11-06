@@ -531,11 +531,20 @@ def test_multiblock_lbfgs_uses_separate_deterministic_curvature_histories() -> N
         )
 
 
-@pytest.mark.parametrize("template_gradient", ["euclidean", "sobolev"])
-@pytest.mark.parametrize("reuse_next_block_gradient", [False, True])
+@pytest.mark.parametrize(
+    ("template_gradient", "reuse_next_block_gradient", "reuse_cycle_boundary_gradient"),
+    [
+        ("euclidean", False, False),
+        ("sobolev", False, False),
+        ("euclidean", True, False),
+        ("sobolev", True, False),
+        ("sobolev", True, True),
+    ],
+)
 def test_multiblock_lbfgs_resume_reproduces_uninterrupted_trajectory_exactly(
     template_gradient: str,
     reuse_next_block_gradient: bool,
+    reuse_cycle_boundary_gradient: bool,
 ) -> None:
     arguments, keywords = (
         _analytical_varifold_problem() if reuse_next_block_gradient else _problem()
@@ -547,6 +556,7 @@ def test_multiblock_lbfgs_resume_reproduces_uninterrupted_trajectory_exactly(
         "lbfgs_history_size": 3,
         "template_gradient": template_gradient,
         "reuse_next_block_gradient": reuse_next_block_gradient,
+        "reuse_cycle_boundary_gradient": reuse_cycle_boundary_gradient,
     }
     uninterrupted = optimize_atlas(
         *arguments,
@@ -594,8 +604,21 @@ def test_multiblock_lbfgs_resume_reproduces_uninterrupted_trajectory_exactly(
     assert torch.equal(resumed.template_vertices, uninterrupted.template_vertices)
     assert torch.equal(resumed.control_points, uninterrupted.control_points)
     assert torch.equal(resumed.momenta, uninterrupted.momenta)
-    assert first.reused_block_gradients + resumed.reused_block_gradients == (
+    recomputed_boundary = int(reuse_cycle_boundary_gradient)
+    assert first.reused_block_gradients + resumed.reused_block_gradients + recomputed_boundary == (
         uninterrupted.reused_block_gradients
+    )
+    assert (
+        first.reused_cycle_boundary_gradients
+        + resumed.reused_cycle_boundary_gradients
+        + recomputed_boundary
+        == uninterrupted.reused_cycle_boundary_gradients
+    )
+    assert first.objective_evaluations + resumed.objective_evaluations == (
+        uninterrupted.objective_evaluations + recomputed_boundary
+    )
+    assert first.gradient_evaluations + resumed.gradient_evaluations == (
+        uninterrupted.gradient_evaluations + recomputed_boundary
     )
 
 
@@ -1014,6 +1037,86 @@ def test_paired_gradient_reuse_preserves_exact_decisions_and_counts(
     )
 
 
+@pytest.mark.parametrize(
+    ("overrides", "reason", "cycles", "control_status", "boundary_hits"),
+    [
+        pytest.param({}, "max_cycles", 2, "accepted", 1, id="cap"),
+        pytest.param(
+            {"max_cycles": 3, "relative_objective_tolerance": 0.8},
+            "relative_objective_tolerance",
+            2,
+            "accepted",
+            1,
+            id="relative-stop",
+        ),
+        pytest.param(
+            {"gradient_tolerance": 1.0}, "max_cycles", 2, "stationary", 0, id="stationary"
+        ),
+        pytest.param(
+            {
+                "momenta_step_size": 0.001,
+                "template_step_size": 0.0001,
+                "control_points_step_size": 10_000.0,
+                "max_line_search_iterations": 1,
+            },
+            "line_search_failed",
+            0,
+            "failed",
+            0,
+            id="rejected-terminal-search",
+        ),
+    ],
+)
+def test_cycle_boundary_gradient_reuse_preserves_results_and_terminal_work(
+    overrides: dict,
+    reason: str,
+    cycles: int,
+    control_status: str,
+    boundary_hits: int,
+) -> None:
+    arguments, keywords = _analytical_varifold_problem()
+    settings = keywords | {"max_cycles": 2, "reuse_next_block_gradient": True} | overrides
+    ordinary = optimize_atlas(*arguments, **settings)
+    reused = optimize_atlas(*arguments, **settings, reuse_cycle_boundary_gradient=True)
+
+    assert not ordinary.settings.reuse_cycle_boundary_gradient
+    assert ordinary.reused_cycle_boundary_gradients == 0
+    assert reused.settings.reuse_cycle_boundary_gradient
+    assert reused.history == ordinary.history
+    assert reused.termination_reason == ordinary.termination_reason == reason
+    assert reused.cycles_completed == ordinary.cycles_completed == cycles
+    assert reused.history[-1].block == "control_points"
+    assert reused.history[-1].status == control_status
+    assert [record.status for record in reused.history[1:3]] == ["accepted", "accepted"]
+    assert torch.equal(reused.template_vertices, ordinary.template_vertices)
+    assert torch.equal(reused.control_points, ordinary.control_points)
+    assert torch.equal(reused.momenta, ordinary.momenta)
+    assert reused.total_line_search_evaluations == ordinary.total_line_search_evaluations
+    assert reused.candidate_gradient_evaluations == ordinary.candidate_gradient_evaluations
+    assert reused.reused_cycle_boundary_gradients == boundary_hits
+    assert reused.reused_block_gradients == ordinary.reused_block_gradients + boundary_hits
+    assert (
+        reused.paired_gradient_evaluations == ordinary.paired_gradient_evaluations + boundary_hits
+    )
+    assert reused.objective_evaluations == ordinary.objective_evaluations - boundary_hits
+    assert reused.gradient_evaluations == ordinary.gradient_evaluations - boundary_hits
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"reuse_next_block_gradient": False},
+        {"block_order": ("momenta", "control_points", "template")},
+        {"block_order": ("momenta", "template")},
+    ],
+)
+def test_cycle_boundary_gradient_reuse_requires_the_exact_joint_schedule(overrides: dict) -> None:
+    arguments, keywords = _analytical_varifold_problem()
+    settings = keywords | {"reuse_next_block_gradient": True} | overrides
+    with pytest.raises(ValueError, match="reuse_cycle_boundary_gradient requires"):
+        optimize_atlas(*arguments, **settings, reuse_cycle_boundary_gradient=True)
+
+
 @pytest.mark.parametrize("unavailable", ["missing", "nonfinite", "value_error"])
 def test_unavailable_paired_gradient_falls_back_to_ordinary_block_gradient(
     monkeypatch, unavailable: str
@@ -1052,16 +1155,18 @@ def test_unavailable_paired_gradient_falls_back_to_ordinary_block_gradient(
     assert paired.gradient_evaluations == separate.gradient_evaluations - 1 + fallbacks
 
 
-@pytest.mark.parametrize("cancel_at", ["paired_backward", "before_reuse"])
+@pytest.mark.parametrize("cancel_at", ["paired_backward", "before_reuse", "cycle_boundary"])
 def test_paired_gradient_path_preserves_cancellation_boundaries(monkeypatch, cancel_at: str):
     arguments, keywords = _analytical_varifold_problem()
     original_grad = torch.autograd.grad
     requested = False
     progress = []
     checkpoints = []
+    backward_arities = []
 
     def cancel_after_pair(*args, **kwargs):
         nonlocal requested
+        backward_arities.append(2 if kwargs.get("allow_unused") else 1)
         gradients = original_grad(*args, **kwargs)
         if kwargs.get("allow_unused") and cancel_at == "paired_backward":
             requested = True
@@ -1073,19 +1178,35 @@ def test_paired_gradient_path_preserves_cancellation_boundaries(monkeypatch, can
         if record.status == "accepted" and cancel_at == "before_reuse":
             requested = True
 
+    def checkpoint(state) -> None:
+        nonlocal requested
+        checkpoints.append(state)
+        if cancel_at == "cycle_boundary":
+            requested = True
+
     monkeypatch.setattr(torch.autograd, "grad", cancel_after_pair)
     with pytest.raises(engine.AtlasOptimizationCancelled, match="cancellation requested"):
         optimize_atlas(
             *arguments,
             **keywords,
             reuse_next_block_gradient=True,
+            reuse_cycle_boundary_gradient=cancel_at == "cycle_boundary",
             progress_callback=observe,
-            checkpoint_callback=checkpoints.append,
+            checkpoint_callback=checkpoint,
             cancel_requested=lambda: requested,
         )
 
-    assert progress == (["initial"] if cancel_at == "paired_backward" else ["initial", "accepted"])
-    assert not checkpoints
+    if cancel_at == "cycle_boundary":
+        assert progress == ["initial", "accepted", "accepted", "accepted"]
+        assert backward_arities == [1, 2, 2, 2]
+        (state,) = checkpoints
+        assert state.record.cycle == 1
+        assert state.reusable_gradient is None
+    else:
+        assert progress == (
+            ["initial"] if cancel_at == "paired_backward" else ["initial", "accepted"]
+        )
+        assert not checkpoints
 
 
 @pytest.mark.parametrize(

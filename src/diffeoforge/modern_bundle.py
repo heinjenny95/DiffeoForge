@@ -599,6 +599,9 @@ def write_modern_atlas_bundle(
         reuse_enabled = result.settings.reuse_next_block_gradient
         if not reuse_enabled:
             optimizer_manifest.pop("reuse_next_block_gradient")
+        boundary_reuse_enabled = result.settings.reuse_cycle_boundary_gradient
+        if not boundary_reuse_enabled:
+            optimizer_manifest.pop("reuse_cycle_boundary_gradient")
         manifest = {
             "bundle_version": BUNDLE_VERSION,
             "created_at": timestamp.strip(),
@@ -629,6 +632,12 @@ def write_modern_atlas_bundle(
                             "paired_gradient_evaluations": result.paired_gradient_evaluations,
                             "paired_gradient_fallbacks": result.paired_gradient_fallbacks,
                             "reused_block_gradients": result.reused_block_gradients,
+                            **(
+                                {"reused_cycle_boundary_gradients": (
+                                    result.reused_cycle_boundary_gradients
+                                )}
+                                if boundary_reuse_enabled else {}
+                            ),
                         }
                     }
                     if reuse_enabled else {}
@@ -811,6 +820,17 @@ def _verify_optimizer_svg(path: Path, history_path: Path, optimizer: dict) -> No
             raise ModernBundleError(
                 "Optimizer convergence SVG objective components differ from history"
             )
+    if optimizer["settings"].get("reuse_cycle_boundary_gradient", False):
+        work = optimizer["work"]
+        accepted_edges = [
+            before["cycle"] != after["cycle"]
+            for before, after in zip(rows[1:], rows[2:], strict=False)
+            if before["status"] == "accepted"
+        ]
+        boundary = work["reused_cycle_boundary_gradients"]
+        within = work["reused_block_gradients"] - boundary
+        if boundary > accepted_edges.count(True) or within > accepted_edges.count(False):
+            raise ModernBundleError("Cycle-boundary gradient reuse differs from optimizer history")
     gradient_rows = [
         (index, row) for index, row in enumerate(rows) if row["gradient_norm"]
     ]
@@ -854,7 +874,7 @@ def _verify_optimizer_svg(path: Path, history_path: Path, optimizer: dict) -> No
 def _gradient_reuse_work_is_consistent(
     work: dict, decisions: int, line_search_evaluations: int
 ) -> bool:
-    """Check aggregate work for an unbatched run with within-cycle reuse."""
+    """Check aggregate work for an unbatched run with gradient reuse."""
 
     paired = work["paired_gradient_evaluations"]
     retries = work["paired_gradient_fallbacks"]
@@ -925,7 +945,8 @@ def verify_modern_atlas_bundle(directory: Path | str) -> dict:
         settings = optimizer_record["settings"]
         engine = manifest["engine"]
         blocks = settings["block_order"]
-        decisions = optimizer_record["cycles_completed"] * len(blocks)
+        cycles = optimizer_record["cycles_completed"]
+        decisions = cycles * len(blocks)
         failed_block = optimizer_record["failed_block"]
         if failed_block is not None:
             if failed_block not in blocks:
@@ -945,6 +966,18 @@ def verify_modern_atlas_bundle(directory: Path | str) -> dict:
             )
         ):
             raise ModernBundleError("Invalid next-block gradient reuse evidence")
+        if settings.get("reuse_cycle_boundary_gradient", False):
+            work = optimizer_record["work"]
+            boundary = work["reused_cycle_boundary_gradients"]
+            within = work["reused_block_gradients"] - boundary
+            started_cycles = cycles + int(failed_block is not None)
+            failed = optimizer_record["termination_reason"] == "line_search_failed"
+            if (
+                (failed_block is not None) != failed
+                or not 0 <= boundary <= max(0, started_cycles - 1)
+                or not 0 <= within <= decisions - started_cycles
+            ):
+                raise ModernBundleError("Invalid cycle-boundary gradient reuse evidence")
     convergence_plot_value = optimizer_record.get("convergence_plot_path")
     if convergence_plot_value is not None:
         _verify_optimizer_svg(

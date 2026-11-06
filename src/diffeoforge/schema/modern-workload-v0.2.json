@@ -186,6 +186,8 @@
         "momenta_updates_per_cycle": {"type": "integer", "minimum": 1, "maximum": 100},
         "max_line_search_iterations": {"type": "integer", "minimum": 1},
         "reuse_next_block_gradient": {"const": true},
+        "reuse_cycle_boundary_gradient": {"const": true},
+        "line_search_condition": {"const": "armijo"},
         "subject_batch_size": {"type": ["integer", "null"], "minimum": 1},
         "subject_batch_workers": {"type": "integer", "minimum": 1, "maximum": 64},
         "threads": {"type": "integer", "minimum": 1},
@@ -291,6 +293,20 @@
         "parameter_blocks": {"type": "integer", "minimum": 1, "maximum": 3},
         "block_decisions_per_cycle": {"type": "integer", "minimum": 1, "maximum": 102},
         "objective_gradient_evaluation_upper_bound": {"type": "integer", "minimum": 1},
+        "cycle_boundary_gradient_reuse": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "within_cycle_paired_attempt_upper_bound",
+            "cycle_boundary_paired_attempt_upper_bound",
+            "cycle_boundary_cache_hit_upper_bound"
+          ],
+          "properties": {
+            "within_cycle_paired_attempt_upper_bound": {"type": "integer", "minimum": 0},
+            "cycle_boundary_paired_attempt_upper_bound": {"type": "integer", "minimum": 0},
+            "cycle_boundary_cache_hit_upper_bound": {"type": "integer", "minimum": 0}
+          }
+        },
         "objective_forward_gaussian_pair_elements_upper_bound": {
           "type": "integer", "minimum": 1
         },

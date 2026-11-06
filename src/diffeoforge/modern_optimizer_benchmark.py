@@ -57,6 +57,7 @@ _REUSE_WORK_FIELDS = (
     "paired_gradient_fallbacks",
     "reused_block_gradients",
 )
+_CYCLE_BOUNDARY_REUSE_FIELD = "reused_cycle_boundary_gradients"
 REPORT_JSON_NAME = "optimizer-benchmark.json"
 REPORT_CSV_NAME = "samples.csv"
 REPORT_HTML_NAME = "optimizer-benchmark.html"
@@ -234,6 +235,8 @@ def _optimizer_keywords(config: dict[str, Any], max_cycles: int) -> dict[str, An
         )
     if optimizer.get("reuse_next_block_gradient", False):
         keywords["reuse_next_block_gradient"] = True
+    if optimizer.get("reuse_cycle_boundary_gradient", False):
+        keywords["reuse_cycle_boundary_gradient"] = True
     return keywords
 
 
@@ -303,6 +306,10 @@ def _result_sample(result: AtlasOptimizationResult) -> dict[str, Any]:
         **(
             {field: getattr(result, field) for field in _REUSE_WORK_FIELDS}
             if result.settings.reuse_next_block_gradient else {}
+        ),
+        **(
+            {_CYCLE_BOUNDARY_REUSE_FIELD: result.reused_cycle_boundary_gradients}
+            if result.settings.reuse_cycle_boundary_gradient else {}
         ),
         "line_search_candidates_without_gradient": without_gradient,
         "final_objective": final.objective,
@@ -556,7 +563,7 @@ def _consistency(samples: list[dict[str, Any]]) -> dict[str, Any]:
     exact = all(
         all(
             sample.get(field) == reference.get(field)
-            for field in (*exact_fields, *_REUSE_WORK_FIELDS)
+            for field in (*exact_fields, *_REUSE_WORK_FIELDS, _CYCLE_BOUNDARY_REUSE_FIELD)
         )
         for sample in samples[1:]
     )
@@ -708,7 +715,17 @@ def _validate_report(report: dict[str, Any]) -> None:
             f"Optimizer benchmark schema validation failed at {location}: {error.message}"
         ) from error
     samples = report["samples"]
-    if len(samples) != report["configuration"]["repeats"]:
+    configuration = report["configuration"]
+    boundary_enabled = configuration.get("reuse_cycle_boundary_gradient", False)
+    if boundary_enabled and (
+        benchmark_version != BENCHMARK_VERSION
+        or not configuration.get("reuse_next_block_gradient", False)
+        or configuration["block_order"] != ["momenta", "template", "control_points"]
+        or configuration.get("subject_batch_workers", 1) != 1
+        or configuration.get("template_gradient", "euclidean") != "euclidean"
+    ):
+        raise ModernOptimizerBenchmarkError("Cycle-boundary gradient reuse scope is inconsistent")
+    if len(samples) != configuration["repeats"]:
         raise ModernOptimizerBenchmarkError("Sample count differs from configured repeats")
     if [sample["repeat"] for sample in samples] != list(range(1, len(samples) + 1)):
         raise ModernOptimizerBenchmarkError("Repeat numbers must be contiguous and one-based")
@@ -745,6 +762,27 @@ def _validate_report(report: dict[str, Any]) -> None:
             )
         if history is not None:
             _validate_sample_history(report, sample, history)
+        if boundary_enabled != (_CYCLE_BOUNDARY_REUSE_FIELD in sample):
+            raise ModernOptimizerBenchmarkError(
+                "Cycle-boundary gradient reuse work is missing or unexpected"
+            )
+        if boundary_enabled:
+            assert history is not None  # Required for the current report version.
+            transitions = tuple(
+                (before, after)
+                for before, after in zip(history[1:], history[2:], strict=False)
+                if before["status"] == "accepted"
+            )
+            boundary_starts = sum(
+                before["cycle"] != after["cycle"] for before, after in transitions
+            )
+            within_cycle_starts = len(transitions) - boundary_starts
+            boundary_hits = sample[_CYCLE_BOUNDARY_REUSE_FIELD]
+            within_cycle_hits = sample.get("reused_block_gradients", 0) - boundary_hits
+            if boundary_hits > boundary_starts or not 0 <= within_cycle_hits <= within_cycle_starts:
+                raise ModernOptimizerBenchmarkError(
+                    "Cycle-boundary gradient reuse counts are inconsistent"
+                )
         expected_delta = max(0, sample["sampled_peak_rss_bytes"] - sample["rss_before_bytes"])
         if sample["sampled_rss_delta_bytes"] != expected_delta:
             raise ModernOptimizerBenchmarkError("Sampled RSS delta is inconsistent")
@@ -971,6 +1009,10 @@ def collect_modern_optimizer_benchmark(
                 if optimizer.get("reuse_next_block_gradient", False) else {}
             ),
             **(
+                {"reuse_cycle_boundary_gradient": True}
+                if optimizer.get("reuse_cycle_boundary_gradient", False) else {}
+            ),
+            **(
                 {
                     "step_initialization": optimizer.get("step_initialization", "fixed"),
                     "direction_update": optimizer["direction_update"],
@@ -1082,12 +1124,20 @@ def _csv_text(value: Any) -> str:
     return "" if value is None else str(value)
 
 
+def _report_columns(report: dict[str, Any]) -> tuple[str, ...]:
+    if report["configuration"].get("reuse_cycle_boundary_gradient", False):
+        return (*REPORT_COLUMNS, _CYCLE_BOUNDARY_REUSE_FIELD)
+    return REPORT_COLUMNS
+
+
 def render_modern_optimizer_benchmark_html(report: dict[str, Any]) -> str:
     """Render one escaped, self-contained review page."""
 
     source = report["source_config"]
     config = report["configuration"]
     summary = report["summary"]
+    boundary_enabled = config.get("reuse_cycle_boundary_gradient", False)
+    reuse_header = "<th>Cycle-boundary gradient reuses</th>" if boundary_enabled else ""
     rows = "".join(
         "<tr>"
         f"<td>{sample['repeat']}</td>"
@@ -1100,7 +1150,8 @@ def render_modern_optimizer_benchmark_html(report: dict[str, Any]) -> str:
         f"<td>{sample['gradient_evaluations']}</td>"
         f"<td>{sample['line_search_candidates_without_gradient']}</td>"
         f"<td>{sample['final_objective']:.12g}</td>"
-        "</tr>"
+        + (f"<td>{sample[_CYCLE_BOUNDARY_REUSE_FIELD]}</td>" if boundary_enabled else "")
+        + "</tr>"
         for sample in report["samples"]
     )
     warnings = "".join(f"<li>{html.escape(value)}</li>" for value in report["warnings"])
@@ -1172,7 +1223,7 @@ tile: {tile}</li>{implementation_html}
 <h2>Per-repeat observations</h2>
 <table><thead><tr><th>Repeat</th><th>Cache ms</th><th>Optimizer ms</th><th>Peak RSS</th>
 <th>Termination</th><th>Cycles</th><th>Objectives</th><th>Gradients</th>
-<th>Line-search candidates without gradient</th><th>Final objective</th></tr></thead>
+<th>Line-search candidates without gradient</th><th>Final objective</th>{reuse_header}</tr></thead>
 <tbody>{rows}</tbody></table>
 <h2>Warnings</h2><ul>{warnings}</ul>
 <p>Machine-readable values: <code>{REPORT_JSON_NAME}</code>; raw rows:
@@ -1194,13 +1245,14 @@ def verify_modern_optimizer_benchmark_report(directory: Path | str) -> dict[str,
     if not isinstance(report, dict):
         raise ModernOptimizerBenchmarkError("Optimizer benchmark must be a JSON object")
     _validate_report(report)
+    columns = _report_columns(report)
     with (root / REPORT_CSV_NAME).open(encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
-        if tuple(reader.fieldnames or ()) != REPORT_COLUMNS:
+        if tuple(reader.fieldnames or ()) != columns:
             raise ModernOptimizerBenchmarkError("Optimizer benchmark CSV columns differ")
         rows = list(reader)
     expected_rows = [
-        {column: _csv_text(sample[column]) for column in REPORT_COLUMNS}
+        {column: _csv_text(sample[column]) for column in columns}
         for sample in report["samples"]
     ]
     if rows != expected_rows:
@@ -1245,9 +1297,10 @@ def write_modern_optimizer_benchmark_report(
             handle.write("\n")
         with (temporary / REPORT_CSV_NAME).open("x", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, lineterminator="\n")
-            writer.writerow(REPORT_COLUMNS)
+            columns = _report_columns(report)
+            writer.writerow(columns)
             for sample in report["samples"]:
-                writer.writerow(sample[column] for column in REPORT_COLUMNS)
+                writer.writerow(sample[column] for column in columns)
         (temporary / REPORT_HTML_NAME).write_text(
             render_modern_optimizer_benchmark_html(report),
             encoding="utf-8",

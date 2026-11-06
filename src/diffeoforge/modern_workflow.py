@@ -182,6 +182,14 @@ def validate_modern_workflow_config(config: Mapping[str, Any]) -> None:
             "optimization.reuse_next_block_gradient requires CPU analytical Varifold, "
             "unbatched Armijo, multiple blocks and one visit per block"
         )
+    if optimizer.get("reuse_cycle_boundary_gradient", False) and (
+        not optimizer.get("reuse_next_block_gradient", False)
+        or tuple(optimizer["block_order"]) != ("momenta", "template", "control_points")
+    ):
+        raise ConfigurationError(
+            "optimization.reuse_cycle_boundary_gradient requires "
+            "reuse_next_block_gradient and block_order=[momenta, template, control_points]"
+        )
     if line_search_condition == "strong_wolfe" and direction_update != "lbfgs":
         raise ConfigurationError(
             "optimization.line_search_condition=strong_wolfe currently requires "
@@ -1102,6 +1110,10 @@ def modern_optimizer_arguments(config: Mapping[str, Any]) -> dict[str, Any]:
         **(
             {"reuse_next_block_gradient": True}
             if optimizer.get("reuse_next_block_gradient", False) else {}
+        ),
+        **(
+            {"reuse_cycle_boundary_gradient": True}
+            if optimizer.get("reuse_cycle_boundary_gradient", False) else {}
         ),
     }
 
@@ -2057,8 +2069,10 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
         raise ModernWorkflowError(f"Invalid nested atlas bundle pairwise plan: {error}") from error
     if bundle_engine["id"] != expected_pairwise.engine_id or nested_pairwise != expected_pairwise:
         raise ModernWorkflowError("Nested atlas bundle pairwise execution provenance differs")
-    if bundle_manifest["optimizer"]["settings"].get("reuse_next_block_gradient", False) != (
-        effective["optimization"].get("reuse_next_block_gradient", False)
+    if any(
+        bundle_manifest["optimizer"]["settings"].get(flag, False)
+        != effective["optimization"].get(flag, False)
+        for flag in ("reuse_next_block_gradient", "reuse_cycle_boundary_gradient")
     ):
         raise ModernWorkflowError("Nested atlas bundle gradient-reuse setting differs")
     if sha256_file(bundle / BUNDLE_MANIFEST_NAME) != manifest["result_bundle"]["manifest_sha256"]:

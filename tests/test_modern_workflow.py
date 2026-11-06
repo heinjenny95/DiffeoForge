@@ -385,8 +385,10 @@ def _payload_bytes(directory: Path) -> dict[str, bytes]:
 
 
 def test_next_block_gradient_reuse_records_unchanged_joint_fit_and_less_work(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from diffeoforge.modern_bundle import ModernBundleError
+    from diffeoforge.modern_continuation import CONFIG_NAME, create_modern_continuation
     from diffeoforge.modern_workload import collect_modern_workload
 
     config = _analytical_varifold_configuration()
@@ -396,33 +398,118 @@ def test_next_block_gradient_reuse_records_unchanged_joint_fit_and_less_work(
         template_gradient="sobolev",
     )
     results = []
-    for enabled in (False, True):
-        recipe = tmp_path / f"reuse-{enabled}.yaml"
-        config["optimization"]["reuse_next_block_gradient"] = enabled
+    for name in ("baseline", "within", "boundary"):
+        recipe = tmp_path / f"{name}.yaml"
+        config["optimization"]["reuse_next_block_gradient"] = name != "baseline"
+        if name != "baseline":
+            config["optimization"]["reuse_cycle_boundary_gradient"] = name == "boundary"
         recipe.write_text(yaml.safe_dump(config), encoding="utf-8")
         run = workflow.run_modern_workflow(
-            recipe, destination=tmp_path / f"run-{enabled}", created_at=FIXED_TIME
+            recipe, destination=tmp_path / f"run-{name}", created_at=FIXED_TIME
         )
         manifest = workflow.verify_modern_workflow(run)
         bundle_path = run / manifest["result_bundle"]["path"]
         bundle = workflow.verify_modern_atlas_bundle(bundle_path)
         results.append((bundle_path, bundle["optimizer"]))
 
-    (baseline_path, baseline), (candidate_path, candidate) = results
+    (baseline_path, baseline), (within_path, within), (candidate_path, candidate) = results
     assert "work" not in baseline
     assert "reuse_next_block_gradient" not in baseline["settings"]
-    assert candidate["settings"]["reuse_next_block_gradient"] is True
+    assert "reuse_cycle_boundary_gradient" not in baseline["settings"]
+    assert "reuse_cycle_boundary_gradient" not in within["settings"]
+    assert "reused_cycle_boundary_gradients" not in within["work"]
+    assert within["settings"]["reuse_next_block_gradient"] is True
+    assert candidate["settings"]["reuse_cycle_boundary_gradient"] is True
     work = candidate["work"]
-    assert work["reused_block_gradients"] == work["paired_gradient_evaluations"] == 4
+    assert work["reused_block_gradients"] == work["paired_gradient_evaluations"] == 5
+    assert work["reused_cycle_boundary_gradients"] == 1
     assert work["paired_gradient_fallbacks"] == 0
+    assert work["objective_evaluations"] == within["work"]["objective_evaluations"] - 1
+    assert work["gradient_evaluations"] == within["work"]["gradient_evaluations"] - 1
     assert (baseline_path / baseline["history_path"]).read_bytes() == (
-        candidate_path / candidate["history_path"]
-    ).read_bytes()
-    plan = collect_modern_workload(recipe)
+        within_path / within["history_path"]
+    ).read_bytes() == (candidate_path / candidate["history_path"]).read_bytes()
+    checkpoint_path = run / manifest["optimizer_checkpoints"][-1]["path"]
+    assert workflow.load_modern_checkpoint_resume_state(checkpoint_path).reusable_gradient is None
+    plan_root = create_modern_continuation(run, tmp_path / "continuation", max_cycles=1)
+    successor = workflow.run_modern_workflow(
+        plan_root / CONFIG_NAME, destination=tmp_path / "successor", created_at=FIXED_TIME
+    )
+    verified_successor = workflow.verify_modern_workflow(successor)
+    successor_bundle = workflow.verify_modern_atlas_bundle(
+        successor / verified_successor["result_bundle"]["path"]
+    )
+    assert successor_bundle["optimizer"]["settings"]["reuse_cycle_boundary_gradient"] is True
+    assert successor_bundle["optimizer"]["work"]["reused_cycle_boundary_gradients"] == 0
+
+    plan = collect_modern_workload(tmp_path / "within.yaml")
     assert plan["configuration"]["reuse_next_block_gradient"] is True
     assert plan["optimizer_bound"]["objective_gradient_evaluation_upper_bound"] >= (
-        work["objective_evaluations"]
+        within["work"]["objective_evaluations"]
     )
+
+    standalone_verify = workflow.verify_modern_atlas_bundle
+    manifest_path = candidate_path / "bundle-manifest.json"
+    sidecar_path = manifest_path.with_suffix(".sha256")
+    original_manifest, original_sidecar = manifest_path.read_bytes(), sidecar_path.read_bytes()
+    for bad_value, match in (
+        (None, "reused_cycle_boundary_gradients"),
+        (0, "cycle-boundary"),
+        (2, "cycle-boundary"),
+    ):
+        malformed = copy.deepcopy(bundle)
+        work_record = malformed["optimizer"]["work"]
+        if bad_value is None:
+            work_record.pop("reused_cycle_boundary_gradients")
+        else:
+            work_record["reused_cycle_boundary_gradients"] = bad_value
+        manifest_path.write_text(json.dumps(malformed), encoding="utf-8")
+        sidecar_path.write_text(
+            f"{sha256_file(manifest_path)}  {manifest_path.name}\n", encoding="ascii"
+        )
+        with pytest.raises(ModernBundleError, match=match):
+            standalone_verify(candidate_path)
+    manifest_path.write_bytes(original_manifest)
+    sidecar_path.write_bytes(original_sidecar)
+
+    bundle["optimizer"]["settings"].pop("reuse_cycle_boundary_gradient")
+    bundle["optimizer"]["work"].pop("reused_cycle_boundary_gradients")
+    monkeypatch.setattr(workflow, "verify_modern_atlas_bundle", lambda _: bundle)
+    with pytest.raises(workflow.ModernWorkflowError, match="gradient-reuse setting differs"):
+        workflow.verify_modern_workflow(run)
+
+
+@pytest.mark.parametrize("updates", [
+    {"reuse_next_block_gradient": False},
+    {"block_order": ["template", "momenta", "control_points"]},
+    {"block_order": ["momenta", "template"]},
+    {"reuse_cycle_boundary_gradient": "true"},
+])
+def test_cycle_boundary_gradient_reuse_requires_an_eligible_schedule(updates: dict) -> None:
+    config = _analytical_varifold_configuration()
+    config["optimization"].update(
+        block_order=["momenta", "template", "control_points"],
+        reuse_next_block_gradient=True,
+        reuse_cycle_boundary_gradient=True,
+    )
+    config["optimization"].update(updates)
+    with pytest.raises(ConfigurationError, match="reuse_cycle_boundary_gradient"):
+        workflow.validate_modern_workflow_config(config)
+
+
+def test_resume_preserves_the_cycle_boundary_gradient_reuse_setting() -> None:
+    source = _analytical_varifold_configuration()
+    source["optimization"].update(
+        block_order=["momenta", "template", "control_points"],
+        reuse_next_block_gradient=True,
+        reuse_cycle_boundary_gradient=True,
+    )
+    continued = copy.deepcopy(source)
+    continued["optimization"]["max_cycles"] = 2
+    workflow._validate_resume_semantics(continued, source)
+    continued["optimization"]["reuse_cycle_boundary_gradient"] = False
+    with pytest.raises(ConfigurationError, match="Resume optimizer settings differ"):
+        workflow._validate_resume_semantics(continued, source)
 
 
 def _write_landmarks(path: Path, *, reverse_one_subject: bool = False) -> Path:

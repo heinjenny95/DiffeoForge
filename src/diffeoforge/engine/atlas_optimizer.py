@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from numbers import Integral, Real
 from typing import Literal
 
@@ -139,6 +139,7 @@ class AtlasOptimizerSettings:
     template_gradient: AtlasTemplateGradient = "euclidean"
     sobolev_kernel_width_ratio: float = 1.0
     reuse_next_block_gradient: bool = False
+    reuse_cycle_boundary_gradient: bool = False
 
 
 @dataclass(frozen=True)
@@ -161,6 +162,7 @@ class AtlasOptimizationResult:
     reused_block_gradients: int = 0
     paired_gradient_evaluations: int = 0
     paired_gradient_fallbacks: int = 0
+    reused_cycle_boundary_gradients: int = 0
 
 
 @dataclass(frozen=True)
@@ -456,6 +458,7 @@ def optimize_atlas(
     template_gradient: AtlasTemplateGradient = "euclidean",
     sobolev_kernel_width_ratio: float = 1.0,
     reuse_next_block_gradient: bool = False,
+    reuse_cycle_boundary_gradient: bool = False,
     resume_state: AtlasOptimizerResumeState | None = None,
     progress_callback: AtlasProgressCallback | None = None,
     checkpoint_callback: AtlasCheckpointCallback | None = None,
@@ -468,9 +471,9 @@ def optimize_atlas(
     reuse the last accepted step as the next declared line-search start; that
     state is deterministic and recorded in the accepted history. When enabled,
     the accepted Armijo candidate's backward can also compute the next block's
-    raw gradient for the same state inside the cycle. This is a
-    correctness prototype, not a claim of Deformetrica optimizer-trajectory
-    equivalence or production convergence.
+    raw gradient for the same state inside the cycle. Boundary reuse can also
+    carry that gradient from an accepted control-point step to the next
+    momentum visit. The cache is detached and confined to the current run.
     """
 
     cycles = _integer("max_cycles", max_cycles, minimum=0)
@@ -484,6 +487,8 @@ def optimize_atlas(
         raise TypeError("cancel_requested must be callable or None")
     if not isinstance(reuse_next_block_gradient, bool):
         raise TypeError("reuse_next_block_gradient must be bool")
+    if not isinstance(reuse_cycle_boundary_gradient, bool):
+        raise TypeError("reuse_cycle_boundary_gradient must be bool")
 
     def check_cancellation() -> None:
         if cancel_requested is None:
@@ -600,6 +605,13 @@ def optimize_atlas(
         raise ValueError(
             "reuse_next_block_gradient requires CPU analytical Varifold backward"
         )
+    if reuse_cycle_boundary_gradient and (
+        not reuse_next_block_gradient or order != ("momenta", "template", "control_points")
+    ):
+        raise ValueError(
+            "reuse_cycle_boundary_gradient requires reuse_next_block_gradient and "
+            "the momenta, template, control_points schedule"
+        )
     if shared_step_scaling not in ("none", "inverse_subject_count"):
         raise ValueError("shared_step_scaling must be none or inverse_subject_count")
     if template_gradient not in ("euclidean", "sobolev"):
@@ -645,6 +657,7 @@ def optimize_atlas(
         template_gradient=template_gradient,
         sobolev_kernel_width_ratio=sobolev_width_ratio,
         reuse_next_block_gradient=reuse_next_block_gradient,
+        reuse_cycle_boundary_gradient=reuse_cycle_boundary_gradient,
     )
     for name, value in (
         ("initial_template_vertices", initial_template_vertices),
@@ -1135,6 +1148,17 @@ def optimize_atlas(
             gradient_norm=torch.linalg.vector_norm(normalized_resume_gradient),
         )
     lbfgs_histories = normalized_resume_histories
+    next_gradient_cache: tuple[_State, AtlasParameterBlock, torch.Tensor] | None = None
+    reused_cycle_boundary_gradients = 0
+
+    def meets_relative_stop(objective: float) -> bool:
+        if objective_change_tolerance is None:
+            return False
+        latest_change = abs(objective - previous_cycle_objective)
+        cumulative_change = abs(objective - initial_cycle_objective)
+        return cumulative_change > 0.0 and latest_change < (
+            objective_change_tolerance * cumulative_change
+        )
 
     def emit_cycle_checkpoint(
         record: AtlasOptimizationRecord,
@@ -1197,6 +1221,7 @@ def optimize_atlas(
             reused_block_gradients=reused_block_gradients,
             paired_gradient_evaluations=paired_gradient_evaluations,
             paired_gradient_fallbacks=paired_gradient_fallbacks,
+            reused_cycle_boundary_gradients=reused_cycle_boundary_gradients,
         )
 
     if resume_state is not None and resume_state.completed_cycle_termination_reason is not None:
@@ -1209,7 +1234,6 @@ def optimize_atlas(
 
     for cycle in range(1, cycles + 1):
         stationary_blocks = 0
-        next_gradient_cache: tuple[_State, AtlasParameterBlock, torch.Tensor] | None = None
         for visit_index, block in enumerate(schedule):
             lbfgs_history = lbfgs_histories[block]
             cached_gradient = next_gradient_cache
@@ -1230,8 +1254,18 @@ def optimize_atlas(
                 and cached_gradient[1] == block
             ):
                 check_cancellation()
-                reused_block_gradients += 1
                 evaluated = finish_gradient(current, block, cached_gradient[2])
+                if evaluated is None and visit_index == 0:
+                    # An unusable optional boundary gradient still permits the
+                    # ordinary first-block evaluation at this accepted state.
+                    pending = evaluate_objective(
+                        current.template_vertices, current.control_points, current.momenta, block
+                    )
+                    evaluated = None if pending is None else evaluate_gradient(pending)
+                else:
+                    reused_block_gradients += 1
+                    if visit_index == 0:
+                        reused_cycle_boundary_gradients += 1
             else:
                 pending = evaluate_objective(
                     current.template_vertices,
@@ -1273,11 +1307,16 @@ def optimize_atlas(
             directional_derivative = torch.sum(evaluated.gradient * direction)
             accepted: _BlockEvaluation | None = None
             evaluations = 0
-            next_block = (
-                schedule[visit_index + 1]
-                if reuse_next_block_gradient and visit_index + 1 < len(schedule)
-                else None
+            follows_boundary = (
+                reuse_cycle_boundary_gradient
+                and visit_index + 1 == len(schedule)
+                and cycle < cycles
             )
+            next_block = None
+            if follows_boundary:
+                next_block = schedule[0]
+            elif reuse_next_block_gradient and visit_index + 1 < len(schedule):
+                next_block = schedule[visit_index + 1]
             current_value = {
                 "template": current.template_vertices,
                 "control_points": current.control_points,
@@ -1345,6 +1384,12 @@ def optimize_atlas(
                     if candidate_pending is not None:
                         required = current.objective + armijo * step_size * directional_derivative
                         if bool(candidate_pending.state.objective >= required):
+                            # The final candidate can establish a complete-cycle stop
+                            # before there is a need for its optional derivative.
+                            if follows_boundary and meets_relative_stop(
+                                float(candidate_pending.state.objective)
+                            ):
+                                candidate_pending = replace(candidate_pending, next_variable=None)
                             try:
                                 candidate_gradient_evaluations += 1
                                 candidate = evaluate_gradient(candidate_pending)
@@ -1413,13 +1458,8 @@ def optimize_atlas(
         completed_reason: AtlasCompletedCycleTerminationReason | None = None
         if stationary_blocks == len(schedule):
             completed_reason = "gradient_tolerance"
-        elif objective_change_tolerance is not None:
-            latest_change = abs(current_cycle_objective - previous_cycle_objective)
-            cumulative_change = abs(current_cycle_objective - initial_cycle_objective)
-            if cumulative_change > 0.0 and latest_change < (
-                objective_change_tolerance * cumulative_change
-            ):
-                completed_reason = "relative_objective_tolerance"
+        elif meets_relative_stop(current_cycle_objective):
+            completed_reason = "relative_objective_tolerance"
         emit_cycle_checkpoint(
             history[-1],
             prior_cycle_objective=previous_cycle_objective,

@@ -243,6 +243,50 @@ def test_subject_batched_scope_records_gradient_recomputation_objectives(
         _validate_report(report)
 
 
+def test_cycle_boundary_reuse_benchmark_records_and_verifies_consumed_edges(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.modern_optimizer_benchmark as module
+
+    config = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
+    for key in ("directory", "template"):
+        config["input"][key] = str(EXAMPLE.parent / config["input"][key])
+    config["model"]["attachment"]["type"] = "varifold"
+    config["runtime"]["pairwise_evaluation"] = {
+        "mode": "blockwise", "query_tile_size": 64, "source_tile_size": 64,
+        "autograd_strategy": "recompute", "varifold_backward": "analytical",
+    }
+    config["optimization"].update(
+        reuse_next_block_gradient=True, reuse_cycle_boundary_gradient=True,
+    )
+    path = tmp_path / "cycle-boundary.yaml"
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    sample = _sample()
+    sample.update(
+        objective_evaluations=10, gradient_evaluations=7, paired_gradient_evaluations=5,
+        paired_gradient_fallbacks=0, reused_block_gradients=5, reused_cycle_boundary_gradients=1,
+    )
+    monkeypatch.setattr(module, "_run_fresh_sample", lambda *_args: sample)
+
+    assert module._optimizer_keywords(config, 2)["reuse_cycle_boundary_gradient"] is True
+    report = collect_modern_optimizer_benchmark(
+        path, subject_count=2, max_cycles=2, repeats=1, created_at=FIXED_TIME,
+    )
+    assert report["configuration"]["reuse_cycle_boundary_gradient"] is True
+    output = write_modern_optimizer_benchmark_report(report, tmp_path / "report")
+    assert verify_modern_optimizer_benchmark_report(output) == report
+    assert "Cycle-boundary gradient reuses" in (output / REPORT_HTML_NAME).read_text()
+    with (output / REPORT_CSV_NAME).open(encoding="utf-8", newline="") as stream:
+        assert next(csv.DictReader(stream))["reused_cycle_boundary_gradients"] == "1"
+
+    report["samples"][0]["reused_cycle_boundary_gradients"] = 2
+    with pytest.raises(ModernOptimizerBenchmarkError, match="reuse counts are inconsistent"):
+        _validate_report(report)
+    report["configuration"].pop("reuse_cycle_boundary_gradient")
+    with pytest.raises(ModernOptimizerBenchmarkError, match="work is missing or unexpected"):
+        _validate_report(report)
+
+
 def test_legacy_report_without_engine_revision_remains_valid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -132,8 +132,8 @@ parameters. A rejected trial never supplies a gradient to a later block.
 The next template update applies its configured Sobolev transform when
 it consumes the raw gradient.
 
-The optimizer resets the cache at every cycle boundary. The effective
-configuration binds this setting for checkpoint recovery and exact
+By default the cache lasts through the current cycle. The effective
+configuration binds the reuse settings for checkpoint recovery and exact
 continuation. The atlas bundle reports physical objective and backward
 evaluations, the number of line-search candidates that requested gradients,
 paired evaluations, retries and consumed gradients. Workload plans include
@@ -148,6 +148,29 @@ forwards and 40 backwards, down from 65 and 60. The median paired optimizer
 wall time fell 18.3% and median paired process CPU time fell 19.0%. Sampled
 peak working set differed by less than 0.4% in each pair. These repeats
 measure the compute change on this fixture.
+
+### Reuse gradients across CPU cycles
+
+Add `optimization.reuse_cycle_boundary_gradient: true` to a recipe that
+already enables within-cycle reuse and uses the ordered blocks
+`momenta`, `template`, `control_points`. When an accepted control-point
+update leaves another cycle to run, its backward pass also computes the raw
+momentum gradient for the next cycle. The optimizer checks cancellation
+before consuming that gradient. At a tolerance stop or cycle cap it
+computes only the gradient needed for the current update.
+
+The atlas bundle and optimizer benchmark count consumed boundary gradients
+separately within the total reused gradients. The effective configuration
+binds the opt-in to its checkpoints. A resumed process computes its first
+gradient from the saved parameters and counts that work. The checkpoint
+format and cycle allowance follow the original recipe.
+
+In the six-subject public CPU training check, both settings reached the
+same tolerance at cycle 12 with identical decisions and reconstruction
+bytes. Boundary reuse reduced objective and gradient evaluations from
+54 and 48 to 43 and 37. The CLI recovery from cycle five reached the
+same result under the original allowance. The check also exercised
+cooperative cancellation before publication.
 
 The direct CLI workflow remains a VTK contract. The guided desktop can first
 read triangular PLY, OBJ, or STL surfaces for landmarking and reviewed GPA,

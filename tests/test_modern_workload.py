@@ -171,6 +171,43 @@ def test_parallel_subject_batches_are_declared_in_workload_evidence(tmp_path: Pa
     assert report["configuration"]["subject_batch_workers"] == 4
 
 
+def test_cycle_boundary_reuse_workload_keeps_separate_conservative_bounds(
+    tmp_path: Path,
+) -> None:
+    path = _write_portable_config(tmp_path / "boundary.yaml")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["model"]["attachment"]["type"] = "varifold"
+    config["runtime"]["pairwise_evaluation"] = {
+        "mode": "blockwise", "query_tile_size": 64, "source_tile_size": 64,
+        "autograd_strategy": "recompute", "varifold_backward": "analytical",
+    }
+    config["optimization"].update(
+        max_cycles=3, max_line_search_iterations=4, reuse_next_block_gradient=True,
+    )
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    within_cycle = collect_modern_workload(path, host_observations=FIXED_HOST)
+    assert within_cycle["optimizer_bound"]["objective_gradient_evaluation_upper_bound"] == 70
+    assert "cycle_boundary_gradient_reuse" not in within_cycle["optimizer_bound"]
+
+    config["optimization"]["reuse_cycle_boundary_gradient"] = True
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    report = collect_modern_workload(path, host_observations=FIXED_HOST)
+    assert report["configuration"]["reuse_cycle_boundary_gradient"] is True
+    bound = report["optimizer_bound"]
+    assert bound["objective_gradient_evaluation_upper_bound"] == 78
+    assert bound["cycle_boundary_gradient_reuse"] == {
+        "within_cycle_paired_attempt_upper_bound": 24,
+        "cycle_boundary_paired_attempt_upper_bound": 8,
+        "cycle_boundary_cache_hit_upper_bound": 2,
+    }
+    assert "Cycle-boundary reuse permits up to 2 reused gradients and 8 paired attempts." in (
+        render_modern_workload_html(report)
+    )
+    bound["cycle_boundary_gradient_reuse"]["cycle_boundary_cache_hit_upper_bound"] += 1
+    with pytest.raises(ModernWorkloadError, match="reuse scope or bound is inconsistent"):
+        write_modern_workload_report(report, tmp_path / "tampered")
+
+
 def test_sobolev_template_gradient_is_explicit_and_counted_in_workload(
     tmp_path: Path,
 ) -> None:
