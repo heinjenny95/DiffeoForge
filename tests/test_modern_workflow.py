@@ -3,6 +3,9 @@ from __future__ import annotations
 import copy
 import csv
 import json
+import os
+import subprocess
+import sys
 from itertools import pairwise
 from pathlib import Path
 
@@ -187,6 +190,138 @@ def test_fixed_reference_cooperative_cancellation_and_atlas_singleton_guard(
         )
     assert observed[0][:3] == ("subject-02.vtk", 1, 1)
     assert not destination.exists()
+
+
+def test_fixed_reference_segment_continues_exactly_in_fresh_processes(tmp_path: Path) -> None:
+    from diffeoforge.modern_fixed_reference import (
+        ModernFixedReferenceCancelled,
+        continue_modern_fixed_reference,
+        verify_modern_fixed_reference,
+    )
+
+    config_path = _write_fixed_reference_config(tmp_path / "single.yaml", "subject-02.vtk")
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["optimization"].update(
+        max_cycles=6,
+        direction_update="lbfgs",
+        step_initialization="previous_accepted",
+        subject_batch_size=1,
+    )
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    full_path = tmp_path / "full"
+    segment_path = tmp_path / "segment"
+    continued_path = tmp_path / "continued"
+    env = dict(os.environ, CUDA_VISIBLE_DEVICES="-1", OMP_NUM_THREADS="1", MKL_NUM_THREADS="1")
+
+    def cli(*args: str) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "diffeoforge", *args],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    cli("modern-fixed-reference-run", str(config_path), "--output", str(full_path))
+    cli("modern-fixed-reference-run", str(config_path), "--segment-cycles", "3",
+        "--output", str(segment_path))
+    parent_before = _payload_bytes(segment_path)
+    observed = []
+    with pytest.raises(ModernFixedReferenceCancelled):
+        continue_modern_fixed_reference(
+            segment_path,
+            destination=tmp_path / "cancelled",
+            progress_callback=lambda _label, _index, _count, record: observed.append(record.cycle),
+            cancel_requested=lambda: bool(observed),
+        )
+    assert observed == [4]
+    assert not (tmp_path / "cancelled").exists()
+    assert not list(tmp_path.glob(".cancelled.tmp-*"))
+    assert _payload_bytes(segment_path) == parent_before
+    cli("modern-fixed-reference-continue", str(segment_path), "--output", str(continued_path))
+    assert _payload_bytes(segment_path) == parent_before
+    relocated = segment_path.rename(tmp_path / "relocated-segment")
+    cli("modern-fixed-reference-verify", str(continued_path))
+
+    full, continued = (
+        verify_modern_fixed_reference(path) for path in (full_path, continued_path)
+    )
+    assert full["fixed_reference_version"] == "0.1"
+    assert "continuation" not in full
+    assert continued["fixed_reference_version"] == "0.2"
+    continuation = continued["continuation"]
+    assert continuation["resumed_from_cycle"] == continuation["remaining_cycle_cap"] == 3
+    assert continuation["resume_validation"] == {
+        "objective_evaluations": 2, "gradient_evaluations": 1,
+    }
+    assert continued["optimization"]["max_cycles_per_subject"] == 6
+    before, after = full["subjects"][0], continued["subjects"][0]
+    for key in ("reconstruction_path", "momenta_path", "history_path"):
+        assert (full_path / before[key]).read_bytes() == (continued_path / after[key]).read_bytes()
+    old_work, work = before["optimizer"], after["optimizer"]
+    assert work["cycles_completed"] == old_work["cycles_completed"] == 6
+    assert work["termination_reason"] == old_work["termination_reason"] == "max_cycles"
+    assert work["total_line_search_evaluations"] == old_work["total_line_search_evaluations"]
+    assert work["candidate_gradient_evaluations"] == old_work["candidate_gradient_evaluations"]
+    assert work["objective_evaluations"] == old_work["objective_evaluations"] + 2
+    assert work["gradient_evaluations"] == old_work["gradient_evaluations"] + 1
+
+    parent = verify_modern_fixed_reference(relocated)
+    control_path = parent["input"]["control_points"]["path"]
+    changed_controls = relocated / control_path
+    controls = np.loadtxt(changed_controls)
+    controls[0, 0] += 0.1
+    np.savetxt(changed_controls, controls)
+    control_artifact = next(row for row in parent["artifacts"] if row["path"] == control_path)
+    control_artifact.update(bytes=changed_controls.stat().st_size,
+                            sha256=sha256_file(changed_controls))
+    manifest_path = relocated / "fixed-reference-manifest.json"
+    manifest_path.write_text(json.dumps(parent), encoding="utf-8")
+    manifest_path.with_suffix(".sha256").write_text(
+        f"{sha256_file(manifest_path)}  {manifest_path.name}\n", encoding="ascii", newline="\n",
+    )
+    assert main(["modern-fixed-reference-verify", str(relocated)]) == 2
+
+    embedded = continued_path / continuation["parent_path"]
+    embedded_subject = verify_modern_fixed_reference(embedded)["subjects"][0]
+    sealed_momenta = embedded / embedded_subject["momenta_path"]
+    sealed_momenta.write_bytes(sealed_momenta.read_bytes() + b"\n")
+    assert main(["modern-fixed-reference-verify", str(continued_path)]) == 2
+
+
+def test_fixed_reference_rejects_invalid_or_terminal_segments(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from diffeoforge.modern_fixed_reference import verify_modern_fixed_reference
+
+    single = _write_fixed_reference_config(tmp_path / "single.yaml", "subject-02.vtk")
+    cohort = _write_fixed_reference_config(tmp_path / "cohort.yaml", "subject-0[12].vtk")
+    for config, cycles in ((single, "0"), (single, "2"), (cohort, "1")):
+        output = tmp_path / "rejected"
+        assert main([
+            "modern-fixed-reference-run", str(config), "--segment-cycles", cycles,
+            "--output", str(output),
+        ]) == 2
+        assert not output.exists()
+
+    config = yaml.safe_load(single.read_text(encoding="utf-8"))
+    config["optimization"]["gradient_tolerance"] = 1e20
+    single.write_text(yaml.safe_dump(config), encoding="utf-8")
+    segment, successor = tmp_path / "terminal", tmp_path / "unstarted"
+    assert main([
+        "modern-fixed-reference-run", str(single), "--segment-cycles", "1",
+        "--output", str(segment),
+    ]) == 0
+    manifest = verify_modern_fixed_reference(segment)
+    assert manifest["subjects"][0]["optimizer"]["converged"]
+    assert manifest["continuation"]["checkpoint_path"] is None
+    assert main([
+        "modern-fixed-reference-continue", str(segment), "--output", str(successor),
+    ]) == 2
+    assert "converged" in capsys.readouterr().err.lower()
+    assert not successor.exists()
 
 
 def _analytical_varifold_configuration() -> dict:

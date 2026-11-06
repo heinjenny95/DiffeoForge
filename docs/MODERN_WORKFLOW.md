@@ -70,8 +70,30 @@ cooperative cancellation before publication leaves the requested destination
 absent. This experimental format provides fixed-reference endpoints only.
 The atlas workflow handles joint estimation and PCA. The atlas recipe's
 `checkpoint_interval_cycles` and `checkpoint_retention` settings apply to
-that workflow. This independent format publishes endpoints and histories
-without checkpoints. Recovery is a separate future feature.
+that workflow.
+
+#### Planned continuation for one target
+
+For a recipe that selects one target, seal a planned segment and continue
+from its complete-cycle checkpoint. For example, with
+`optimization.max_cycles: 100`, a segment of 35 cycles leaves at most 65
+cycles for the successor. Each stage can reach the original convergence
+criterion early.
+
+```powershell
+diffeoforge modern-fixed-reference-run fixed-reference.yaml --segment-cycles 35 --output segment
+diffeoforge modern-fixed-reference-continue segment --output continued
+diffeoforge modern-fixed-reference-verify continued
+```
+
+The successor verifies the frozen recipe, inputs, runtime, and checkpoint.
+It embeds the sealed parent and preserves the complete decision history
+within the recorded deterministic CPU runtime. The optimizer counters show
+the work in each stage, including the objective and gradient recomputed when
+restoring the state. A converged first segment is already terminal. The
+original command without `--segment-cycles` publishes ordinary endpoint
+evidence. Planned continuation requires a successfully sealed segment and
+covers a single target and one continuation.
 
 ### Analytical Varifold backward on CPU
 

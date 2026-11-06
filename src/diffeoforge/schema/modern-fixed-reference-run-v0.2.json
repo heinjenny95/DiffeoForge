@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/modern-fixed-reference-run-v0.2.json",
+  "title": "DiffeoForge planned singleton fixed-reference segment or successor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fixed_reference_version", "created_at", "project", "engine", "config",
+    "input", "optimization", "subjects", "artifacts", "scientific_boundary", "continuation"
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "segment_cycle_cap", "checkpoint_path", "checkpoint_manifest_sha256"],
+      "properties": {
+        "phase": {"const": "segment"},
+        "segment_cycle_cap": {"type": "integer", "minimum": 1},
+        "checkpoint_path": {"enum": [null, "continuation/checkpoint"]},
+        "checkpoint_manifest_sha256": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]}
+      }
+    },
+    "successor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase", "segment_cycle_cap", "parent_path", "parent_manifest_sha256", "resumed_from_cycle",
+        "remaining_cycle_cap", "suffix_history_path", "suffix_optimizer", "resume_validation"
+      ],
+      "properties": {
+        "phase": {"const": "successor"},
+        "segment_cycle_cap": {"type": "integer", "minimum": 1},
+        "parent_path": {"const": "continuation/parent"},
+        "parent_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "resumed_from_cycle": {"type": "integer", "minimum": 1},
+        "remaining_cycle_cap": {"type": "integer", "minimum": 1},
+        "suffix_history_path": {"const": "continuation/suffix-history.json"},
+        "suffix_optimizer": {"$ref": "modern-fixed-reference-run-v0.1.json#/$defs/optimizer"},
+        "resume_validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["objective_evaluations", "gradient_evaluations"],
+          "properties": {
+            "objective_evaluations": {"enum": [1, 2]},
+            "gradient_evaluations": {"const": 1}
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "fixed_reference_version": {"const": "0.2"},
+    "created_at": {"$ref": "modern-fixed-reference-run-v0.1.json#/properties/created_at"},
+    "project": {"$ref": "modern-fixed-reference-run-v0.1.json#/properties/project"},
+    "engine": {"$ref": "modern-fixed-reference-run-v0.1.json#/properties/engine"},
+    "config": {"$ref": "modern-fixed-reference-run-v0.1.json#/properties/config"},
+    "input": {"$ref": "modern-fixed-reference-run-v0.1.json#/properties/input"},
+    "optimization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "max_cycles_per_subject", "initial_momenta", "checkpoint_policy"],
+      "properties": {
+        "mode": {"const": "independent_momenta"},
+        "max_cycles_per_subject": {"type": "integer", "minimum": 2},
+        "initial_momenta": {"enum": ["zeros", "checkpoint"]},
+        "checkpoint_policy": {"enum": ["terminal_segment", "sealed_parent"]}
+      }
+    },
+    "subjects": {
+      "type": "array", "minItems": 1, "maxItems": 1,
+      "items": {"$ref": "modern-fixed-reference-run-v0.1.json#/$defs/result"}
+    },
+    "artifacts": {"$ref": "modern-fixed-reference-run-v0.1.json#/properties/artifacts"},
+    "scientific_boundary": {"$ref": "modern-fixed-reference-run-v0.1.json#/properties/scientific_boundary"},
+    "continuation": {"oneOf": [{"$ref": "#/$defs/segment"}, {"$ref": "#/$defs/successor"}]}
+  }
+}

@@ -827,6 +827,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     modern_fixed_run_parser.add_argument("config", type=Path)
     modern_fixed_run_parser.add_argument("--output", type=Path, required=True)
+    modern_fixed_run_parser.add_argument(
+        "--segment-cycles",
+        type=int,
+        help="Seal the first part of the original cycle budget for one target.",
+    )
+
+    modern_fixed_continue_parser = subparsers.add_parser(
+        "modern-fixed-reference-continue",
+        help="Continue a sealed singleton fit within its remaining cycle budget.",
+    )
+    modern_fixed_continue_parser.add_argument("segment_directory", type=Path)
+    modern_fixed_continue_parser.add_argument("--output", type=Path, required=True)
 
     modern_fixed_verify_parser = subparsers.add_parser(
         "modern-fixed-reference-verify",
@@ -3516,23 +3528,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("Source PCA, metadata join, figures, tables, and hashes match.")
         return 0
 
-    if args.command in {"modern-fixed-reference-run", "modern-fixed-reference-verify"}:
+    if args.command in {
+        "modern-fixed-reference-run",
+        "modern-fixed-reference-continue",
+        "modern-fixed-reference-verify",
+    }:
         try:
             from diffeoforge.modern_fixed_reference import (
+                continue_modern_fixed_reference,
                 run_modern_fixed_reference,
                 verify_modern_fixed_reference,
             )
 
-            if args.command == "modern-fixed-reference-run":
-                def show_fixed_progress(label, index, count, record):
-                    print(
-                        f"Subject {index}/{count} {label}: cycle {record.cycle}, "
-                        f"block {record.block}",
-                        flush=True,
-                    )
+            def show_fixed_progress(label, index, count, record):
+                print(
+                    f"Subject {index}/{count} {label}: cycle {record.cycle}, "
+                    f"block {record.block}",
+                    flush=True,
+                )
 
+            if args.command == "modern-fixed-reference-run":
                 directory = run_modern_fixed_reference(
-                    args.config, destination=args.output, progress_callback=show_fixed_progress
+                    args.config,
+                    destination=args.output,
+                    progress_callback=show_fixed_progress,
+                    segment_cycles=args.segment_cycles,
+                )
+            elif args.command == "modern-fixed-reference-continue":
+                directory = continue_modern_fixed_reference(
+                    args.segment_directory,
+                    destination=args.output,
+                    progress_callback=show_fixed_progress,
                 )
             else:
                 directory = args.directory
@@ -3558,6 +3584,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{subject['label']}: {optimizer['cycles_completed']} cycles "
                 f"({optimizer['termination_reason']})"
             )
+        continuation = manifest.get("continuation")
+        if continuation is not None and continuation["phase"] == "segment":
+            if continuation["checkpoint_path"] is not None:
+                print("Sealed segment can continue within the original cycle budget.")
         return 0
 
     if args.command == "modern-plan":
