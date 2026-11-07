@@ -673,6 +673,18 @@ def optimize_atlas(
         if reuse_next_block_gradient and value.device.type != "cpu":
             raise ValueError("reuse_next_block_gradient requires CPU tensors")
 
+    caller_thread_autograd = (
+        initial_template_vertices.is_cuda
+        and initial_template_vertices.dtype == torch.float64
+        and torch.version.cuda is not None
+        and attachment_type == "varifold"
+        and isinstance(gaussian_tile_plan, GaussianTilePlan)
+        and gaussian_tile_plan.autograd_strategy == "recompute"
+        and gaussian_tile_plan.varifold_backward is None
+        and direction_update == "lbfgs"
+        and line_search_condition == "armijo"
+    )
+
     target_sequence = tuple(targets)
     effective_initial_step_sizes = dict(step_sizes)
     if shared_step_scaling == "inverse_subject_count":
@@ -967,7 +979,13 @@ def optimize_atlas(
         elif pending.next_variable is None:
             with torch.enable_grad():
                 gradient_evaluations += 1
-                (gradient,) = torch.autograd.grad(pending.total, pending.variable)
+                if caller_thread_autograd:
+                    # Keep this CUDA backward on the caller to avoid a second
+                    # set of thread-local library resources.
+                    with torch.autograd.grad_mode.set_multithreading_enabled(False):
+                        (gradient,) = torch.autograd.grad(pending.total, pending.variable)
+                else:
+                    (gradient,) = torch.autograd.grad(pending.total, pending.variable)
         else:
             try:
                 with torch.enable_grad():
