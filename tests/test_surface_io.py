@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import struct
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,7 @@ from diffeoforge.desktop.project_setup import (
     ProjectSetupRequest,
     create_project,
 )
-from diffeoforge.mesh import read_vtk_polydata, sha256_file
+from diffeoforge.mesh import inspect_vtk, read_vtk_polydata, sha256_file, write_vtk_polydata
 from diffeoforge.preprocessing import (
     prepare_landmark_aligned_inputs,
     preview_landmark_alignment,
@@ -215,6 +216,37 @@ def test_supported_surface_readers_preserve_triangle_geometry(
     assert preview.sha256 == loaded.metadata.sha256
     assert preview.point_count == 4
     assert preview.triangle_count == 4
+
+
+@pytest.mark.parametrize("surface_loader", (False, True))
+def test_vtk_loader_binds_geometry_to_one_snapshot(tmp_path, monkeypatch, surface_loader):
+    source = write_vtk_polydata(tmp_path / "mesh.vtk", VERTICES, TRIANGLES)
+    metadata = inspect_vtk(source)
+    raw = source.read_bytes()
+    replacement = raw.replace(b"\n1 0 0\n", b"\n2 0 0\n").replace(b"\n3 0 2 1\n", b"\n3 0 1 2\n")
+    assert replacement != raw and len(replacement) == len(raw)
+
+    original_open = Path.open
+    reads = 0
+
+    def replacing_open(path, mode="r", *args, **kwargs):
+        nonlocal reads
+        if path == source and mode == "rb":
+            reads += 1
+            return BytesIO(raw if reads == 1 else replacement)
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", replacing_open)
+    if surface_loader:
+        loaded = load_surface_mesh(source)
+        assert loaded.metadata.sha256 == metadata.sha256
+        assert loaded.metadata.bounds == metadata.bounds
+        geometry = loaded.geometry
+    else:
+        geometry = read_vtk_polydata(source)
+    assert geometry.vertices == VERTICES
+    assert geometry.triangles == TRIANGLES
+    assert reads == 1
 
 
 @pytest.mark.parametrize("suffix", (".obj", ".ply"))

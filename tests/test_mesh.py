@@ -97,34 +97,46 @@ POLYGONS 1 5
         inspect_vtk(mesh)
 
 
-def test_binary_vtk51_split_cell_arrays_are_inspected(tmp_path: Path) -> None:
-    mesh = tmp_path / "vtk51.vtk"
-    points = struct.pack(">12d", 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
-    offsets = struct.pack(">5q", 0, 3, 6, 9, 12)
-    connectivity = struct.pack(">12q", 0, 2, 1, 0, 1, 3, 1, 2, 3, 2, 0, 3)
-    mesh.write_bytes(
-        b"# vtk DataFile Version 5.1\n"
-        b"tetrahedron\n"
-        b"BINARY\n"
-        b"DATASET POLYDATA\n"
-        b"POINTS 4 double\n"
-        + points
-        + b"\nPOLYGONS 5 12\n"
-        + b"OFFSETS vtktypeint64\n"
-        + offsets
-        + b"\nCONNECTIVITY vtktypeint64\n"
-        + connectivity
-        + b"\n"
+@pytest.mark.parametrize(
+    ("version", "encoding"), (("3.0", "BINARY"), ("5.1", "ASCII"), ("5.1", "BINARY")),
+)
+def test_vtk_cell_array_encodings_are_inspected(tmp_path: Path, version, encoding) -> None:
+    mesh = tmp_path / "tetrahedron.vtk"
+    header = (
+        f"# vtk DataFile Version {version}\ntetrahedron\n{encoding}\n"
+        "DATASET POLYDATA\nPOINTS 4 double\n"
+    ).encode("ascii")
+    points = (
+        struct.pack(">12d", 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+        if encoding == "BINARY"
+        else b"0 0 0\n1 0 0\n0 1 0\n0 0 1"
     )
+    if version == "3.0":
+        polygons = b"POLYGONS 4 16\n" + struct.pack(
+            ">16i", 3, 0, 2, 1, 3, 0, 1, 3, 3, 1, 2, 3, 3, 2, 0, 3,
+        )
+    else:
+        offsets = (struct.pack(">5q", 0, 3, 6, 9, 12) if encoding == "BINARY" else b"0 3 6 9 12")
+        indices = (
+            struct.pack(">12q", 0, 2, 1, 0, 1, 3, 1, 2, 3, 2, 0, 3)
+            if encoding == "BINARY"
+            else b"0 2 1 0 1 3 1 2 3 2 0 3"
+        )
+        polygons = (
+            b"POLYGONS 5 12\nOFFSETS vtktypeint64\n" + offsets
+            + b"\nCONNECTIVITY vtktypeint64\n" + indices
+        )
+    mesh.write_bytes(header + points + b"\n" + polygons + b"\n")
 
     metadata = inspect_vtk(mesh)
     geometry = read_vtk_polydata(mesh)
 
-    assert metadata.vtk_version == "5.1"
-    assert metadata.encoding == "BINARY"
+    assert metadata.vtk_version == version
+    assert metadata.encoding == encoding
     assert metadata.points == 4
     assert metadata.cells == 4
     assert metadata.triangular is True
+    assert geometry.vertices[1] == (1.0, 0.0, 0.0)
     assert geometry.triangles == ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3))
 
 

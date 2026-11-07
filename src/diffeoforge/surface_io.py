@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Literal, NamedTuple
 
 from diffeoforge.config import ConfigurationError
-from diffeoforge.mesh import TriangleMesh, inspect_vtk, read_vtk_polydata
+from diffeoforge.mesh import TriangleMesh, _read_vtk_polydata_bytes
 
 SUPPORTED_SURFACE_EXTENSIONS = (".vtk", ".ply", ".obj", ".stl")
 SurfaceFormat = Literal["legacy_vtk", "ply", "obj", "stl"]
@@ -568,26 +568,33 @@ def load_surface_mesh(path: Path | str) -> LoadedSurfaceMesh:
         raise ConfigurationError(f"Surface mesh is empty: {source}")
 
     if suffix == ".vtk":
-        vtk_metadata = inspect_vtk(source)
-        geometry = read_vtk_polydata(source)
+        vtk_metadata, geometry = _read_vtk_polydata_bytes(raw, source)
         source_format: SurfaceFormat = "legacy_vtk"
         encoding = vtk_metadata.encoding.casefold()
         topology_note = "legacy VTK PolyData vertices and triangular polygons"
-    elif suffix == ".obj":
-        geometry, encoding, topology_note = _read_obj(raw, source)
-        source_format = "obj"
-    elif suffix == ".ply":
-        geometry, encoding, topology_note = _read_ply(raw, source)
-        source_format = "ply"
+        bounds = vtk_metadata.bounds
+        extents = vtk_metadata.bounding_box_extents
+        diagonal = vtk_metadata.bounding_box_diagonal
+        if not math.isfinite(diagonal):
+            raise ConfigurationError(f"Surface mesh has a degenerate bounding box: {source}")
+        content_hash = vtk_metadata.sha256
     else:
-        geometry, encoding, topology_note = _read_stl(raw, source)
-        source_format = "stl"
+        if suffix == ".obj":
+            geometry, encoding, topology_note = _read_obj(raw, source)
+            source_format = "obj"
+        elif suffix == ".ply":
+            geometry, encoding, topology_note = _read_ply(raw, source)
+            source_format = "ply"
+        else:
+            geometry, encoding, topology_note = _read_stl(raw, source)
+            source_format = "stl"
+        bounds, extents, diagonal = _bounds(geometry.vertices, source)
+        content_hash = hashlib.sha256(raw).hexdigest()
 
-    bounds, extents, diagonal = _bounds(geometry.vertices, source)
     metadata = SurfaceMeshMetadata(
         path=str(source),
         bytes=len(raw),
-        sha256=hashlib.sha256(raw).hexdigest(),
+        sha256=content_hash,
         source_format=source_format,
         encoding=encoding,
         points=len(geometry.vertices),
