@@ -168,6 +168,44 @@ def test_fixed_reference_cli_matches_isolated_subject_and_rejects_tampering(
     assert "ERROR" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("when", ["after_admission", "after_fit"])
+def test_fixed_reference_rejects_changed_staged_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, when: str
+) -> None:
+    from diffeoforge import modern_fixed_reference as fixed
+
+    config = _write_fixed_reference_config(tmp_path / "single.yaml", "subject-02.vtk")
+    target_path = "input/subjects/subject-0001.vtk"
+    replacement = (MESH_DIRECTORY / "subject-01.vtk").read_bytes()
+    original_checked_mesh = fixed._checked_mesh
+    original_fit = fixed._fit_subject
+    fit_calls = []
+
+    def checked_mesh(root, path, settings):
+        result = original_checked_mesh(root, path, settings)
+        if when == "after_admission" and path == target_path:
+            (root / target_path).write_bytes(replacement)
+        return result
+
+    def fit(root, *args, **kwargs):
+        fit_calls.append(root)
+        result = original_fit(root, *args, **kwargs)
+        if when == "after_fit":
+            (root / target_path).write_bytes(replacement)
+        return result
+
+    monkeypatch.setattr(fixed, "_checked_mesh", checked_mesh)
+    monkeypatch.setattr(fixed, "_fit_subject", fit)
+    destination = tmp_path / "fixed"
+    with pytest.raises(
+        fixed.ModernFixedReferenceError, match="Staged fixed-reference mesh changed"
+    ):
+        fixed.run_modern_fixed_reference(config, destination=destination)
+    assert len(fit_calls) == int(when == "after_fit")
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".fixed.tmp-*"))
+
+
 def test_fixed_reference_cooperative_cancellation_and_atlas_singleton_guard(
     tmp_path: Path,
 ) -> None:

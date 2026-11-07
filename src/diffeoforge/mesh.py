@@ -481,8 +481,8 @@ def _read_vtk_polydata_bytes(raw: bytes, path: Path) -> tuple[MeshMetadata, Tria
     return metadata, geometry
 
 
-def read_vtk_polydata(path: Path | str) -> TriangleMesh:
-    """Return vertices and triangle connectivity from supported legacy VTK PolyData."""
+def read_vtk_polydata_with_metadata(path: Path | str) -> tuple[MeshMetadata, TriangleMesh]:
+    """Read legacy VTK PolyData metadata and geometry from one byte snapshot."""
     mesh_path = Path(path).resolve()
     try:
         before = mesh_path.stat()
@@ -494,7 +494,12 @@ def read_vtk_polydata(path: Path | str) -> TriangleMesh:
         after.st_size, after.st_mtime_ns
     ):
         raise ConfigurationError(f"VTK mesh changed during inspection: {mesh_path}")
-    _, geometry = _read_vtk_polydata_bytes(raw, mesh_path)
+    return _read_vtk_polydata_bytes(raw, mesh_path)
+
+
+def read_vtk_polydata(path: Path | str) -> TriangleMesh:
+    """Return vertices and triangle connectivity from supported legacy VTK PolyData."""
+    _, geometry = read_vtk_polydata_with_metadata(path)
     return geometry
 
 

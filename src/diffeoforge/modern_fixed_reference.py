@@ -31,7 +31,13 @@ from diffeoforge.engine.atlas_optimizer import (
     optimize_atlas,
 )
 from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
-from diffeoforge.mesh import TriangleMesh, read_vtk_polydata, sha256_file, write_vtk_polydata
+from diffeoforge.mesh import (
+    TriangleMesh,
+    read_vtk_polydata,
+    read_vtk_polydata_with_metadata,
+    sha256_file,
+    write_vtk_polydata,
+)
 from diffeoforge.mesh_quality import (
     MeshQualitySettings,
     assess_triangle_mesh,
@@ -195,13 +201,13 @@ def _check_label(label: str) -> None:
         raise ModernFixedReferenceError(f"Unsafe fixed-reference subject label: {label!r}")
 
 
-def _checked_mesh(root: Path, path: str, settings: MeshQualitySettings) -> TriangleMesh:
-    mesh = read_vtk_polydata(root / path)
+def _checked_mesh(root: Path, path: str, settings: MeshQualitySettings) -> tuple[TriangleMesh, str]:
+    metadata, mesh = read_vtk_polydata_with_metadata(root / path)
     quality = assess_triangle_mesh(mesh.vertices, mesh.triangles)
     if quality.zero_area_faces:
         raise ModernFixedReferenceError(f"Zero-area triangles in {path}")
     enforce_mesh_quality(path, quality, settings)
-    return mesh
+    return mesh, metadata.sha256
 
 
 def _check_deformation(
@@ -544,7 +550,8 @@ def _run_fixed_reference(
         _write_json_exclusive(temporary / _EFFECTIVE_CONFIG, config)
         _copy_exclusive(template_source, temporary / _TEMPLATE)
         _copy_exclusive(control_source, temporary / _CONTROLS)
-        template = _checked_mesh(temporary, _TEMPLATE, settings)
+        template, template_sha256 = _checked_mesh(temporary, _TEMPLATE, settings)
+        input_mesh_hashes = {_TEMPLATE: template_sha256}
         initialization = config["initialization"]["control_points"]
         control_values = _read_control_point_rows(temporary / _CONTROLS, initialization["count"])
         input_subjects = []
@@ -552,7 +559,7 @@ def _run_fixed_reference(
             _check_cancel(cancel_requested)
             path = _target_path(index)
             _copy_exclusive(subject, temporary / path)
-            mesh = _checked_mesh(temporary, path, settings)
+            mesh, input_mesh_hashes[path] = _checked_mesh(temporary, path, settings)
             input_subjects.append({"label": label, **_mesh_record(path, mesh)})
 
         result_subjects = []
@@ -616,11 +623,15 @@ def _run_fixed_reference(
                             )
                         progress_callback(label, index, len(subjects), event)
 
+                path = record["path"]
+                metadata, mesh = read_vtk_polydata_with_metadata(temporary / path)
+                if metadata.sha256 != input_mesh_hashes[path]:
+                    raise ModernFixedReferenceError(f"Staged fixed-reference mesh changed: {path}")
                 result, suffix = _fit_subject(
                     temporary,
                     index,
                     label,
-                    read_vtk_polydata(temporary / record["path"]),
+                    mesh,
                     template_tensor,
                     triangle_tensor,
                     controls,
@@ -639,6 +650,11 @@ def _run_fixed_reference(
             for path in temporary.rglob("*")
             if path.is_file() and path.relative_to(temporary).as_posix() not in _PRIVATE_ONLY
         )
+        artifacts = [_artifact(temporary, path) for path in paths]
+        for artifact in artifacts:
+            path = artifact["path"]
+            if path in input_mesh_hashes and artifact["sha256"] != input_mesh_hashes[path]:
+                raise ModernFixedReferenceError(f"Staged fixed-reference mesh changed: {path}")
         manifest = {
             "fixed_reference_version": FORMAT_VERSION if phase is None else CONTINUATION_VERSION,
             "created_at": timestamp,
@@ -653,7 +669,7 @@ def _run_fixed_reference(
             },
             "optimization": _optimizer_policy(config, phase),
             "subjects": result_subjects,
-            "artifacts": [_artifact(temporary, path) for path in paths],
+            "artifacts": artifacts,
             "scientific_boundary": SCIENTIFIC_BOUNDARY if phase is None else _CONTINUATION_BOUNDARY,
         }
         if phase is not None:
@@ -1195,17 +1211,17 @@ def _verify_modern_fixed_reference(
         raise ModernFixedReferenceError("Fixed-reference controls differ from configuration")
     controls = _read_control_point_rows(root / _CONTROLS, count)
     settings = MeshQualitySettings.from_mapping(config["quality_control"])
-    template = _checked_mesh(root, _TEMPLATE, settings)
+    template, _ = _checked_mesh(root, _TEMPLATE, settings)
     if inputs["template"] != _mesh_record(_TEMPLATE, template):
         raise ModernFixedReferenceError("Fixed-reference template evidence differs")
     for input_record, subject in zip(inputs["subjects"], subjects, strict=True):
         _check_cancel(cancel_requested)
         label, target = input_record["label"], input_record["path"]
-        mesh = _checked_mesh(root, target, settings)
+        mesh, _ = _checked_mesh(root, target, settings)
         if input_record != {"label": label, **_mesh_record(target, mesh)}:
             raise ModernFixedReferenceError(f"Fixed-reference target evidence differs for {label}")
         path = subject["reconstruction_path"]
-        fitted = _checked_mesh(root, path, settings)
+        fitted, _ = _checked_mesh(root, path, settings)
         _check_deformation(label, template, fitted, settings)
         momenta = _read_momenta_rows(root / subject["momenta_path"], (label,), count)
         history = _read_json(root / subject["history_path"])
