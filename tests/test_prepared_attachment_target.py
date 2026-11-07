@@ -141,7 +141,10 @@ def test_subject_objective_rejects_a_prepared_target_from_another_tensor() -> No
         )
 
 
-def test_prepared_target_rejects_in_place_target_mutation() -> None:
+@pytest.mark.parametrize(
+    "tensor_name", ["target_vertices", "centers", "normals", "self_inner_product"]
+)
+def test_prepared_target_rejects_in_place_tensor_mutation(tensor_name: str) -> None:
     source, triangles = _tetrahedron()
     target, target_triangles = _tetrahedron((0.1, 0.0, 0.0))
     prepared_target = engine.prepare_surface_attachment_target(
@@ -149,7 +152,7 @@ def test_prepared_target_rejects_in_place_target_mutation() -> None:
         target_triangles,
         0.7,
     )
-    target.add_(0.01)
+    getattr(prepared_target, tensor_name).add_(0.01)
 
     with pytest.raises(RuntimeError, match="stale"):
         engine.surface_squared_distance_to_prepared_target(
@@ -157,6 +160,35 @@ def test_prepared_target_rejects_in_place_target_mutation() -> None:
             triangles,
             prepared_target,
         )
+
+
+@pytest.mark.parametrize(
+    "tensor_name", ["target_vertices", "centers", "normals", "self_inner_product"]
+)
+def test_prepared_target_rejects_enabled_gradients(tensor_name: str) -> None:
+    source, triangles = _tetrahedron()
+    target, target_triangles = _tetrahedron((0.1, 0.0, 0.0))
+    prepared_target = engine.prepare_surface_attachment_target(target, target_triangles, 0.7)
+    getattr(prepared_target, tensor_name).requires_grad_(True)
+
+    with pytest.raises(RuntimeError, match="stale"):
+        engine.surface_squared_distance_to_prepared_target(source, triangles, prepared_target)
+
+
+def test_prepared_target_tracks_cached_tensors_created_in_inference_mode() -> None:
+    source, triangles = _tetrahedron()
+    target, target_triangles = _tetrahedron((0.1, 0.0, 0.0))
+    expected = engine.current_squared_distance(source, triangles, target, target_triangles, 0.7)
+    with torch.inference_mode():
+        prepared_target = engine.prepare_surface_attachment_target(target, target_triangles, 0.7)
+        observed = engine.surface_squared_distance_to_prepared_target(
+            source, triangles, prepared_target
+        )
+    torch.testing.assert_close(observed, expected, rtol=0.0, atol=0.0)
+
+    prepared_target.self_inner_product.add_(0.01)
+    with pytest.raises(RuntimeError, match="stale"):
+        engine.surface_squared_distance_to_prepared_target(source, triangles, prepared_target)
 
 
 def test_atlas_optimizer_accepts_prepared_targets_without_repreparing(

@@ -193,6 +193,9 @@ class PreparedSurfaceAttachmentTarget:
     self_inner_product: torch.Tensor = field(repr=False)
     _vertices_version: int = field(init=False, repr=False)
     _triangles_version: int = field(init=False, repr=False)
+    _centers_version: int = field(init=False, repr=False)
+    _normals_version: int = field(init=False, repr=False)
+    _self_inner_product_version: int = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         _validate_float_matrix("target_vertices", self.target_vertices, columns=3)
@@ -230,22 +233,29 @@ class PreparedSurfaceAttachmentTarget:
             raise ValueError("self_inner_product must not require gradients")
         if not bool(torch.isfinite(self.self_inner_product)):
             raise ValueError("self_inner_product must be finite")
-        object.__setattr__(self, "centers", self.centers.detach().clone())
-        object.__setattr__(self, "normals", self.normals.detach().clone())
-        object.__setattr__(
-            self,
-            "self_inner_product",
-            self.self_inner_product.detach().clone(),
-        )
+        # Keep cache copies version-tracked even when preparation runs in inference mode.
+        with torch.inference_mode(False):
+            object.__setattr__(self, "centers", self.centers.detach().clone())
+            object.__setattr__(self, "normals", self.normals.detach().clone())
+            object.__setattr__(
+                self,
+                "self_inner_product",
+                self.self_inner_product.detach().clone(),
+            )
         object.__setattr__(self, "_vertices_version", int(self.target_vertices._version))
         object.__setattr__(self, "_triangles_version", int(self.target_triangles._version))
+        object.__setattr__(self, "_centers_version", int(self.centers._version))
+        object.__setattr__(self, "_normals_version", int(self.normals._version))
+        object.__setattr__(
+            self, "_self_inner_product_version", int(self.self_inner_product._version)
+        )
 
     def validate_target(
         self,
         target_vertices: torch.Tensor,
         target_triangles: torch.Tensor,
     ) -> None:
-        """Reject a cache used with different or mutated target tensors."""
+        """Reject mismatched target tensors or stale cache data."""
 
         if (
             target_vertices is not self.target_vertices
@@ -257,6 +267,13 @@ class PreparedSurfaceAttachmentTarget:
         if (
             int(self.target_vertices._version) != self._vertices_version
             or int(self.target_triangles._version) != self._triangles_version
+            or int(self.centers._version) != self._centers_version
+            or int(self.normals._version) != self._normals_version
+            or int(self.self_inner_product._version) != self._self_inner_product_version
+            or self.target_vertices.requires_grad
+            or self.centers.requires_grad
+            or self.normals.requires_grad
+            or self.self_inner_product.requires_grad
         ):
             raise RuntimeError("prepared attachment target is stale because its tensors changed")
 
