@@ -2,16 +2,32 @@ name: Windows freeze evidence
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Requested packaging evidence target"
+        type: choice
+        options: [windows, macos-probe, macos, macos-verify]
+        default: windows
+      source_run:
+        description: "Mac candidate workflow run ID (verification only)"
+        type: string
+        default: ""
+      verify_architecture:
+        description: "Candidate architecture for independent verification"
+        type: choice
+        options: [all, Intel, AppleSilicon]
+        default: all
 
 permissions:
   contents: read
 
 concurrency:
-  group: windows-freeze-evidence-${{ github.ref }}
+  group: windows-freeze-evidence-${{ inputs.target || 'windows' }}-${{ inputs.verify_architecture || 'all' }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   freeze-evidence:
+    if: ${{ inputs.target == 'windows' || inputs.target == '' }}
     runs-on: windows-latest
     timeout-minutes: 60
     env:
@@ -190,4 +206,123 @@ jobs:
           path: ${{ env.FREEZE_EVIDENCE_UPLOAD }}
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
+
+  macos-independent-install:
+    if: ${{ inputs.target == 'macos-verify' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 65
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.verify_architecture == 'Intel' && '[{"os":"macos-15-intel","artifact_os":"macos-15-intel"},{"os":"macos-26-intel","artifact_os":"macos-15-intel"}]' || inputs.verify_architecture == 'AppleSilicon' && '[{"os":"macos-15","artifact_os":"macos-15"},{"os":"macos-26","artifact_os":"macos-15"}]' || '[{"os":"macos-15-intel","artifact_os":"macos-15-intel"},{"os":"macos-15","artifact_os":"macos-15"},{"os":"macos-26-intel","artifact_os":"macos-15-intel"},{"os":"macos-26","artifact_os":"macos-15"}]') }}
+    env:
+      OMP_NUM_THREADS: "1"
+      MPLBACKEND: Agg
+      CMAKE_BUILD_PARALLEL_LEVEL: "2"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install external verification tools only
+        run: python -m pip install -e '.[analysis]'
+      - name: Fetch the exact already-built candidate
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source_run }}
+          pattern: DiffeoForge-v193-${{ matrix.artifact_os }}-[0-9a-f]*
+          path: ${{ runner.temp }}/mac-candidate
+          merge-multiple: true
+      - name: Independently install and compute from downloaded DMG
+        run: python -B distribution/macos/verify-downloaded-package.py '${{ runner.temp }}/mac-candidate' '${{ runner.temp }}/Independent Mac Käfer'
+      - name: Keep public qualification evidence only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: macos-independent-install-${{ matrix.os }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/Independent Mac Käfer/independent-verification.json
+            ${{ runner.temp }}/Independent Mac Käfer/public-workflows/runs/*/logs/deformetrica.log
+          if-no-files-found: warn
+          retention-days: 2
+
+  macos-reference-probe:
+    if: ${{ inputs.target == 'macos-probe' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-15]
+    env:
+      OMP_NUM_THREADS: "1"
+      QT_QPA_PLATFORM: offscreen
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install qualification tools
+        run: python -m pip install -e '.[analysis]'
+      - name: Native reference setup and actual public-mesh execution
+        run: python -B distribution/macos/reference-probe.py '${{ runner.temp }}/DiffeoForge Native Käfer'
+      - name: Upload public engineering evidence only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: macos-reference-probe-${{ matrix.os }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/DiffeoForge Native Käfer/mac-reference-probe.json
+            ${{ runner.temp }}/DiffeoForge Native Käfer/native-imports.txt
+            ${{ runner.temp }}/DiffeoForge Native Käfer/runs/*/logs/deformetrica.log
+          if-no-files-found: warn
+          retention-days: 2
+
+  macos-package:
+    if: ${{ inputs.target == 'macos' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-15]
+    env:
+      OMP_NUM_THREADS: "1"
+      QT_QPA_PLATFORM: offscreen
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install v193 desktop builder and test tools
+        run: |
+          python -m venv "$RUNNER_TEMP/mac-builder"
+          echo "$RUNNER_TEMP/mac-builder/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/mac-builder/bin/python" -m pip install -e '.[desktop,dev]' -r distribution/macos/desktop-requirements.txt
+          "$RUNNER_TEMP/mac-builder/bin/python" -m pip check
+      - name: Check native pilot and UI software paths
+        run: |
+          pytest -q tests/test_pilot_iteration_budget.py tests/test_pilot_iteration_budget_transfer.py tests/test_reference_calibration_dialog.py tests/test_desktop_worker_controller.py
+      - name: Qualify native Intel-compatible reference runtime
+        run: python -B distribution/macos/reference-probe.py '${{ runner.temp }}/DiffeoForge Native Käfer'
+      - name: Build and qualify installable v193 package
+        run: python -B distribution/macos/build-package.py '${{ runner.temp }}/DiffeoForge Native Käfer' '${{ runner.temp }}/DiffeoForge Mac Build'
+      # Owner explicitly permitted temporary Mac v193 package artifacts on
+      # 2026-11-05 for local retrieval, followed by deletion. No release/tag.
+      - name: Temporary owner-authorized Mac package transfer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: DiffeoForge-v193-${{ matrix.os }}-${{ github.sha }}
+          path: ${{ runner.temp }}/DiffeoForge Mac Build/delivery/*
+          if-no-files-found: error
+          retention-days: 1
           compression-level: 0

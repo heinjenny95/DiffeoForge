@@ -78,6 +78,16 @@ The verifier regenerates the manifest while preserving only its completion
 timestamp and requires the sidecar, state, events, copied inputs, exact report
 prefix, and all raw artifacts to agree.
 
+## Public CC0 execution evidence
+
+The committed v0.6 reference evidence freezes three subject prefixes and three
+square tile shapes, paired across both autograd strategies, before execution.
+Its eighteen conditions each contain five measured fresh processes and one
+warm-up. All 62 files and eighteen raw v0.4 reports verify after a repeated
+read-only open. The completion manifest explicitly records that no analysis
+was performed. This exercises the full matrix orchestration and integrity
+boundary; the miniature geometry is not representative target-scale evidence.
+
 ## Compatibility and scientific boundary
 
 The single-tile `modern-benchmark-study` service, state, progress v0.1, manifest
@@ -88,6 +98,6 @@ fallback.
 Completion does not show that one tile or strategy is faster, uses less peak
 memory, is a safe preset, or makes a 300-subject atlas feasible. Sampled RSS is
 not guaranteed peak memory, and objective/gradient timing is not full-workflow
-runtime. Representative design freezing and the prospective analysis plan
-remain later gates in
+runtime. Representative target-scale design freezing and a prospective
+analysis plan remain later gates in
 [ADR 0004](decisions/0004-prospective-multi-tile-matrix.md).

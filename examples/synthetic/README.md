@@ -9,6 +9,13 @@ icosphere base topology, then receive different deterministic smooth scaling,
 bending, twisting, bulging, and translation transforms. Coordinates are
 unitless.
 
+For the [short Reference walkthrough](../../docs/PUBLIC_REFERENCE_WALKTHROUGH.md),
+`landmarks.csv` contains four known corresponding mesh vertices per surface,
+labeled `a` to `d` (zero-based vertex indices 0, 40, 80, 100). These are artificial
+generator correspondences, not anatomical landmarks. Coordinates exactly match
+the committed VTK files; a regression test checks their identity and successful
+GPA preview. This table is also dedicated to the public domain under CC0 1.0.
+
 Regenerate the committed files from the repository root:
 
 ```bash

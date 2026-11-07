@@ -30,9 +30,35 @@ files succeed. It is never overwritten by default. `--force` replaces only a
 directory with exactly the two recognized generated report files; unrelated
 user directories are rejected.
 
+The reviewed configuration names the spatial scales explicitly:
+
+- **attachment surface-matching width** is the observation scale used by the
+  Current or Varifold surface comparison;
+- **deformation kernel width** is the spatial coupling scale of the
+  diffeomorphic deformation; and
+- **template update gradient** is either the raw Euclidean gradient or the
+  optional Sobolev-smoothed gradient. For Sobolev updates the report records
+  both the configured ratio and the effective smoothing width
+  `deformation kernel width * ratio`.
+
+The execution line is taken from the bound configuration and therefore says
+CPU or CUDA rather than describing every plan as CPU.
+
 The command reads the reviewed configuration and selected VTK metadata. It
 does not construct PyTorch tensors, evaluate the atlas objective, or start the
 optimizer.
+
+The earlier desktop input preflight uses a deliberately simpler cohort-level
+screen before configuration exists. It reports the combined face and file
+volume and estimates the dominant template-to-target attachment scale as
+`template faces * sum(target faces)`. Thus one high-resolution mesh is not
+rejected by a fixed per-file triangle limit, while a small cohort of very dense
+meshes can still trigger an advisory workload warning. The largest individual
+mesh remains useful context, but is not the verdict. This estimate is neither
+a runtime prediction nor a recommendation to reduce every specimen to a fixed
+face count; scientific surface resolution must be chosen and validated for the
+study. Blockwise execution reduces the largest temporary pairwise tile, not
+the total logical interactions described below.
 
 ## Exact all-pairs operation model
 
@@ -58,15 +84,17 @@ forms orientation-similarity values with the same logical pair dimensions.
 
 The current implementation makes these additional Gaussian calls per subject:
 
-- shooting: `2 * C^2` per Euler step or `6 * C^2` per RK2 step;
+- shooting: `2 * C^2` per Euler step or `4 * C^2` per RK2 step;
 - template flow: `Vt * C` per Euler step or `2 * Vt * C` per Heun step;
 - `deformetrica_heun`: one final extrapolation containing `4 * C^2`;
 - deformation energy: one `C^2` call.
 
-The six RK2 shooting calls include two calculations currently performed before
-the RK2 helper plus four inside it. This is a model of observable code, not an
-idealized algorithm; an implementation change must update the versioned model
-and instrumentation test.
+RK2 evaluates its first and midpoint stages once each: one Gaussian convolution
+and one analytical Gaussian x-gradient per stage. Earlier implementation 0.2
+computed the first stage before the RK2 helper and then repeated it inside the
+helper. Implementation 0.3 reuses the already evaluated tensors; the workload
+model and instrumented all-integrator test require the resulting four calls.
+This remains a model of observable code, not an idealized algorithm.
 
 The optimizer performs one initial objective/gradient evaluation. In the worst
 configured line-search case its evaluation bound is
@@ -82,45 +110,69 @@ operations into seconds. This optimizer bound excludes final reconstruction
 and PCA-endpoint flows, PCA SVD, mesh-quality verification, reporting, and file
 I/O; the report states that exclusion as a warning.
 
+For a Sobolev template gradient, each evaluated template-block gradient adds
+one Gaussian convolution over all template vertices. The report therefore
+records separately:
+
+- the objective-forward pair-element upper bound;
+- the number of possible Sobolev template-gradient evaluations;
+- `template_points²` pair elements per Sobolev evaluation;
+- the Sobolev pair-element upper bound; and
+- their sum as the total optimizer pair-element upper bound.
+
+Euclidean runs record zero Sobolev work. This distinction changes planning
+evidence only; it does not modify the optimization mathematics.
+
 ## Logical pairs versus execution tiles
 
 The report records two deliberately different maxima:
 
 - `largest_logical_pair` is the largest complete all-pairs problem reached by
   one operation; and
-- `largest_execution_tile` is the largest pairwise matrix actually
-  materialized at once by the configured plan.
+- `largest_execution_tile` is the largest pairwise matrix dimension evaluated
+  at once by the configured plan.
 
 For dense mode these dimensions are equal. For blockwise mode the execution
 rows and columns are exactly `min(logical_rows, query_tile_size)` and
 `min(logical_columns, source_tile_size)` for every candidate operation, with
 the largest resulting tile reported. The model therefore preserves the total
-logical work while exposing the configured bound on one XYZ-difference tile.
-It does not infer a tile size, switch algorithms, or treat fewer materialized
-rows as fewer mathematical interactions.
+logical work while exposing the configured execution dimensions. It does not
+infer a tile size, switch algorithms, or treat fewer evaluated rows as fewer
+mathematical interactions.
 
-## Known tensor payloads
+## Conservative tensor-payload equivalents
 
-The report calculates exact byte counts for selected visible payloads:
+The report calculates exact byte counts for selected visible tensors and
+versioned dense-equivalent payloads:
 
 - initial float64 vertices, control points, and momenta plus int64 triangle
   connectivity passed to the engine;
 - subject trajectories and flowed-template paths retained by one objective;
 - the largest logical all-pairs float64 matrix dimension; and
-- the exact largest single dense or blockwise
-  `tile_rows * tile_columns * 3 * 8` XYZ-difference tensor.
+- the conservative dense-equivalent
+  `tile_rows * tile_columns * 3 * 8` XYZ-difference payload for the largest
+  dense or blockwise execution dimensions.
 
-Their arithmetic subtotal is useful for catching obviously impossible plans,
+The versioned v0.2 JSON field names retain
+`float64_xyz_difference_tensor_bytes` for backward compatibility. Since the
+centered matrix-kernel optimization, ordinary Gaussian forward evaluation does
+not materialize a `rows × columns × 3` difference tensor: it constructs
+rank-2 distance/kernel matrices from centered norms and matrix multiplication.
+The XYZ values are therefore conservative dense-equivalent planning numbers,
+not observed allocations. Analytical Gaussian x-gradients still need explicit
+differences.
+
+Their arithmetic subtotal remains useful as stable conservative accounting,
 but it is **not peak RAM**. PyTorch autograd saves intermediates and standard
 blockwise backward can retain graphs from multiple tiles until the gradient
-completes; kernel construction creates additional matrices; the allocator can
+completes; kernel construction creates rank-2 matrices; the allocator can
 retain blocks; Python/NumPy objects, reports, operating-system memory, and
 threaded numerical libraries add overhead. Some allocations have different
 lifetimes.
 
 The report records detected physical memory and output-filesystem free space.
-If a known payload alone exceeds physical memory, it emits a warning. Passing
-that comparison is not evidence that the run fits.
+If a conservative equivalent alone exceeds physical memory, it emits a
+warning. Passing that comparison is not evidence that the run fits.
 
 ## PCA and output bound
 
@@ -137,9 +189,10 @@ running an expensive atlas only to fail during final bundle creation.
 ## Evidence and maintenance rule
 
 Tests cover every supported combination of Current/Varifold, Euler/RK2
-shooting, and Euler/Heun/Deformetrica-Heun flow. They wrap the real
-`gaussian_kernel`, count every observed logical pair dimension during an actual
-objective forward, and require exact equality with the planning formula.
+shooting, and Euler/Heun/Deformetrica-Heun flow. They instrument both centered
+matrix-kernel and explicit analytical-gradient paths, count every observed
+logical pair dimension during an actual objective forward, and require exact
+equality with the planning formula.
 Separate blockwise tests bind the configured tile plan to the reported engine
 and require the execution dimensions and byte arithmetic to remain exact.
 
@@ -147,17 +200,24 @@ The JSON is validated against the bundled strict schema
 `modern-workload-v0.2.json`. Additional semantic validation rejects inconsistent
 inventory counts, pair and tile arithmetic, payload subtotals, or optimizer
 bounds. Configuration and input SHA-256 values tie the plan to reviewed bytes.
+New reports record the active Modern engine implementation (through `1.8`) and
+bind the four-call RK2 formula; legacy reports without that optional provenance
+use the earlier six-call formula when semantically checked. Engine 1.6 reports
+also expose and account for the selected Euclidean or Sobolev template-gradient
+mode. Existing workload 0.2 reports without those additive fields remain valid.
 Live host observations can change over time; operation counts remain
 deterministic for fixed configuration and mesh dimensions.
 
 ## Scientific boundary
 
-This plan describes the configured exact dense or blockwise CPU/float64
-implementation. It is not a benchmark, a wall-time forecast, a peak-RAM
-estimate, evidence that 300 specimens are feasible, a GPU model, or a
-Deformetrica resource model. A blockwise tile bound is one visible allocation,
-not a bound on total live autograd memory. Measured scaling experiments on
-representative simplified meshes remain a separate prospective gate.
+This plan describes the configured exact dense or blockwise float64
+implementation and records whether execution is bound to CPU or CUDA. It is
+not a benchmark, a wall-time forecast, a peak-RAM estimate, evidence that 300
+specimens are feasible, a device-performance model, or a Deformetrica resource
+model. A blockwise tile record is a conservative
+dense-equivalent payload, not proof of an allocation and not a bound on total
+live autograd memory. Measured scaling experiments on representative simplified
+meshes remain a separate prospective gate.
 `modern-benchmark` provides the first narrow objective/gradient measurement
 protocol; it does not convert this plan into a runtime predictor. See
 [modern benchmark protocol](MODERN_BENCHMARK.md).

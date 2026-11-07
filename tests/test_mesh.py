@@ -51,6 +51,33 @@ def test_ascii_vtk_geometry_is_inspected(tmp_path: Path) -> None:
     assert geometry.triangles == ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3))
 
 
+def test_metadata_reuse_is_content_bound_and_does_not_reparse_geometry(tmp_path, monkeypatch):
+    from diffeoforge import mesh
+
+    path = write_tetrahedron(tmp_path / "warm.vtk")
+    first = inspect_vtk(path)
+    monkeypatch.setattr(mesh, "_inspect_vtk_uncached",
+                        lambda *_args: pytest.fail("Unchanged mesh reparsed"))
+    assert inspect_vtk(path) == first
+    copied = tmp_path / "identical.vtk"
+    copied.write_bytes(path.read_bytes())
+    assert inspect_vtk(copied).path == str(copied.resolve())
+    assert inspect_vtk(copied).sha256 == first.sha256
+
+
+def test_changed_bytes_with_preserved_size_and_mtime_are_not_trusted(tmp_path):
+    import os
+
+    path = write_tetrahedron(tmp_path / "changed.vtk")
+    first = inspect_vtk(path)
+    before = path.stat()
+    path.write_bytes(path.read_bytes().replace(b"1 0 0", b"2 0 0", 1))
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    second = inspect_vtk(path)
+    assert first.sha256 != second.sha256
+    assert second.bounds[1] == 2
+
+
 def test_non_triangular_polygons_are_rejected(tmp_path: Path) -> None:
     mesh = tmp_path / "quad.vtk"
     mesh.write_text(
@@ -70,34 +97,46 @@ POLYGONS 1 5
         inspect_vtk(mesh)
 
 
-def test_binary_vtk51_split_cell_arrays_are_inspected(tmp_path: Path) -> None:
-    mesh = tmp_path / "vtk51.vtk"
-    points = struct.pack(">12d", 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
-    offsets = struct.pack(">5q", 0, 3, 6, 9, 12)
-    connectivity = struct.pack(">12q", 0, 2, 1, 0, 1, 3, 1, 2, 3, 2, 0, 3)
-    mesh.write_bytes(
-        b"# vtk DataFile Version 5.1\n"
-        b"tetrahedron\n"
-        b"BINARY\n"
-        b"DATASET POLYDATA\n"
-        b"POINTS 4 double\n"
-        + points
-        + b"\nPOLYGONS 5 12\n"
-        + b"OFFSETS vtktypeint64\n"
-        + offsets
-        + b"\nCONNECTIVITY vtktypeint64\n"
-        + connectivity
-        + b"\n"
+@pytest.mark.parametrize(
+    ("version", "encoding"), (("3.0", "BINARY"), ("5.1", "ASCII"), ("5.1", "BINARY")),
+)
+def test_vtk_cell_array_encodings_are_inspected(tmp_path: Path, version, encoding) -> None:
+    mesh = tmp_path / "tetrahedron.vtk"
+    header = (
+        f"# vtk DataFile Version {version}\ntetrahedron\n{encoding}\n"
+        "DATASET POLYDATA\nPOINTS 4 double\n"
+    ).encode("ascii")
+    points = (
+        struct.pack(">12d", 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+        if encoding == "BINARY"
+        else b"0 0 0\n1 0 0\n0 1 0\n0 0 1"
     )
+    if version == "3.0":
+        polygons = b"POLYGONS 4 16\n" + struct.pack(
+            ">16i", 3, 0, 2, 1, 3, 0, 1, 3, 3, 1, 2, 3, 3, 2, 0, 3,
+        )
+    else:
+        offsets = (struct.pack(">5q", 0, 3, 6, 9, 12) if encoding == "BINARY" else b"0 3 6 9 12")
+        indices = (
+            struct.pack(">12q", 0, 2, 1, 0, 1, 3, 1, 2, 3, 2, 0, 3)
+            if encoding == "BINARY"
+            else b"0 2 1 0 1 3 1 2 3 2 0 3"
+        )
+        polygons = (
+            b"POLYGONS 5 12\nOFFSETS vtktypeint64\n" + offsets
+            + b"\nCONNECTIVITY vtktypeint64\n" + indices
+        )
+    mesh.write_bytes(header + points + b"\n" + polygons + b"\n")
 
     metadata = inspect_vtk(mesh)
     geometry = read_vtk_polydata(mesh)
 
-    assert metadata.vtk_version == "5.1"
-    assert metadata.encoding == "BINARY"
+    assert metadata.vtk_version == version
+    assert metadata.encoding == encoding
     assert metadata.points == 4
     assert metadata.cells == 4
     assert metadata.triangular is True
+    assert geometry.vertices[1] == (1.0, 0.0, 0.0)
     assert geometry.triangles == ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3))
 
 

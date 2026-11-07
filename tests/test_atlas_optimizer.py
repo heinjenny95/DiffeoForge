@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import runpy
+from dataclasses import replace
 from itertools import pairwise
 from pathlib import Path
 
@@ -21,10 +22,7 @@ REFERENCE_FIXTURE = (
     / "deformetrica-4.3.0-objective.json"
 )
 SMOKE_FIXTURE = (
-    Path(__file__).parents[1]
-    / "reference"
-    / "modern-engine-v0.4"
-    / "cc0-full-atlas-smoke.json"
+    Path(__file__).parents[1] / "reference" / "modern-engine-v0.4" / "cc0-full-atlas-smoke.json"
 )
 
 
@@ -57,6 +55,19 @@ def _problem(
     return arguments, keywords
 
 
+def _analytical_varifold_problem(
+    *, subjects: int = 2, identical: bool = False
+) -> tuple[tuple, dict]:
+    arguments, keywords = _problem(subjects=subjects, identical=identical)
+    return arguments, {
+        **keywords,
+        "attachment_type": "varifold",
+        "gaussian_tile_plan": engine.GaussianTilePlan(
+            2, 2, autograd_strategy="recompute", varifold_backward="analytical"
+        ),
+    }
+
+
 def test_every_accepted_block_monotonically_improves_the_objective() -> None:
     arguments, keywords = _problem()
 
@@ -80,9 +91,7 @@ def test_every_accepted_block_monotonically_improves_the_objective() -> None:
         "control_points",
     ]
     assert all(record.status == "accepted" for record in result.history[1:])
-    assert all(
-        later.objective > earlier.objective for earlier, later in pairwise(result.history)
-    )
+    assert all(later.objective > earlier.objective for earlier, later in pairwise(result.history))
     assert all(
         record.objective == pytest.approx(record.attachment + record.regularity)
         for record in result.history
@@ -90,9 +99,655 @@ def test_every_accepted_block_monotonically_improves_the_objective() -> None:
     assert result.total_line_search_evaluations == sum(
         record.line_search_evaluations for record in result.history
     )
+    decisions = len(result.history) - 1
+    accepted = sum(record.status == "accepted" for record in result.history)
+    assert result.objective_evaluations == decisions + result.total_line_search_evaluations
+    assert result.gradient_evaluations == decisions + accepted
+    assert result.candidate_gradient_evaluations == accepted
     assert result.settings.max_cycles == 2
     assert result.settings.block_order == ("momenta", "template", "control_points")
+    assert result.settings.momenta_updates_per_cycle == 1
     assert result.settings.momenta_step_size == 0.1
+    assert result.settings.step_initialization == "fixed"
+    assert result.settings.direction_update == "steepest"
+    assert result.settings.lbfgs_history_size == 10
+    assert result.settings.lbfgs_initial_step_size == 1.0
+    assert result.settings.relative_objective_tolerance is None
+    assert result.settings.shared_step_scaling == "none"
+    assert result.settings.template_gradient == "euclidean"
+    assert result.settings.sobolev_kernel_width_ratio == 1.0
+
+
+def test_explicit_euclidean_template_gradient_preserves_default_results_exactly() -> None:
+    arguments, keywords = _problem(subjects=1)
+
+    implicit = optimize_atlas(*arguments, **keywords, max_cycles=2)
+    explicit = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=2,
+        template_gradient="euclidean",
+        sobolev_kernel_width_ratio=2.0,
+    )
+
+    assert explicit.history == implicit.history
+    assert torch.equal(explicit.template_vertices, implicit.template_vertices)
+    assert torch.equal(explicit.control_points, implicit.control_points)
+    assert torch.equal(explicit.momenta, implicit.momenta)
+
+
+def test_sobolev_template_update_uses_deformetrica_gradient_convolution() -> None:
+    arguments, keywords = _problem(subjects=1)
+    initial_template, triangles, targets, controls, momenta = arguments
+    differentiable_template = initial_template.clone().requires_grad_(True)
+    objective = engine.atlas_objective(
+        differentiable_template,
+        triangles,
+        targets,
+        controls,
+        momenta,
+        **keywords,
+    )
+    (euclidean_gradient,) = torch.autograd.grad(objective.total, differentiable_template)
+    sobolev_gradient = engine.sobolev_template_gradient(
+        initial_template,
+        euclidean_gradient,
+        deformation_kernel_width=keywords["deformation_kernel_width"],
+        kernel_width_ratio=1.25,
+    )
+
+    result = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=1,
+        block_order=("template",),
+        gradient_tolerance=0.0,
+        template_gradient="sobolev",
+        sobolev_kernel_width_ratio=1.25,
+    )
+
+    assert result.history[-1].status == "accepted"
+    step = result.history[-1].accepted_step_size
+    assert step is not None
+    torch.testing.assert_close(
+        result.template_vertices,
+        initial_template + step * sobolev_gradient,
+        rtol=1e-13,
+        atol=1e-13,
+    )
+    assert result.settings.template_gradient == "sobolev"
+    assert result.settings.sobolev_kernel_width_ratio == 1.25
+
+
+def test_inverse_subject_count_scaling_preserves_shared_template_update() -> None:
+    arguments, keywords = _problem(subjects=1)
+    template, triangles, targets, control_points, momenta = arguments
+    repeated_targets = targets * 4
+    repeated_momenta = torch.zeros((4, *control_points.shape), dtype=DTYPE)
+    settings = {
+        "max_cycles": 1,
+        "block_order": ("template",),
+        "gradient_tolerance": 0.0,
+        "shared_step_scaling": "inverse_subject_count",
+    }
+
+    single = optimize_atlas(*arguments, **keywords, **settings)
+    repeated = optimize_atlas(
+        template,
+        triangles,
+        repeated_targets,
+        control_points,
+        repeated_momenta,
+        **keywords,
+        **settings,
+    )
+
+    assert repeated.settings.shared_step_scaling == "inverse_subject_count"
+    assert single.history[-1].status == "accepted"
+    assert repeated.history[-1].status == "accepted"
+    assert repeated.history[-1].accepted_step_size == pytest.approx(
+        single.history[-1].accepted_step_size / 4.0
+    )
+    assert torch.allclose(
+        repeated.template_vertices,
+        single.template_vertices,
+        rtol=1e-12,
+        atol=1e-12,
+    )
+
+
+def test_previous_accepted_step_avoids_repeating_rejected_candidates() -> None:
+    arguments, keywords = _problem()
+
+    fixed = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=4,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+        step_initialization="fixed",
+    )
+    reused = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=4,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+        step_initialization="previous_accepted",
+    )
+
+    assert reused.settings.step_initialization == "previous_accepted"
+    assert reused.total_line_search_evaluations < fixed.total_line_search_evaluations
+    assert all(later.objective > earlier.objective for earlier, later in pairwise(reused.history))
+    accepted_steps = [record.accepted_step_size for record in reused.history[1:]]
+    assert accepted_steps == sorted(accepted_steps, reverse=True)
+    accepted = sum(record.status == "accepted" for record in reused.history)
+    assert reused.objective_evaluations == 1 + reused.total_line_search_evaluations
+    assert reused.gradient_evaluations == 1 + accepted
+    assert reused.candidate_gradient_evaluations == accepted
+
+
+@pytest.mark.parametrize("template_gradient", ["euclidean", "sobolev"])
+def test_subject_batched_gradients_match_full_cohort_for_every_parameter_block(
+    template_gradient: str,
+) -> None:
+    arguments, keywords = _problem(subjects=2)
+    settings = {
+        "max_cycles": 1,
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "template_gradient": template_gradient,
+    }
+
+    full = optimize_atlas(*arguments, **keywords, **settings)
+    batched = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        subject_batch_size=1,
+    )
+
+    assert batched.settings.subject_batch_size == 1
+    assert batched.termination_reason == full.termination_reason
+    assert batched.converged == full.converged
+    assert batched.failed_block == full.failed_block
+    assert batched.cycles_completed == full.cycles_completed
+    assert [record.block for record in batched.history] == [
+        record.block for record in full.history
+    ]
+    assert [record.status for record in batched.history] == [
+        record.status for record in full.history
+    ]
+    assert [record.accepted_step_size for record in batched.history] == [
+        record.accepted_step_size for record in full.history
+    ]
+    for observed, expected in zip(batched.history, full.history, strict=True):
+        assert observed.objective == pytest.approx(expected.objective, rel=1e-12, abs=1e-12)
+        assert observed.attachment == pytest.approx(expected.attachment, rel=1e-12, abs=1e-12)
+        assert observed.regularity == pytest.approx(expected.regularity, rel=1e-12, abs=1e-12)
+        assert observed.residuals == pytest.approx(expected.residuals, rel=1e-12, abs=1e-12)
+        if expected.gradient_norm is not None:
+            assert observed.gradient_norm == pytest.approx(
+                expected.gradient_norm,
+                rel=1e-12,
+                abs=1e-12,
+            )
+    assert torch.allclose(batched.template_vertices, full.template_vertices, rtol=1e-12, atol=1e-12)
+    assert torch.allclose(batched.control_points, full.control_points, rtol=1e-12, atol=1e-12)
+    assert torch.allclose(batched.momenta, full.momenta, rtol=1e-12, atol=1e-12)
+    assert batched.objective_evaluations > full.objective_evaluations
+    assert batched.gradient_evaluations == full.gradient_evaluations
+
+
+def test_parallel_subject_batches_exactly_match_serial_batch_order() -> None:
+    arguments, keywords = _problem(subjects=2)
+    settings = {
+        "max_cycles": 2,
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "subject_batch_size": 1,
+    }
+
+    serial = optimize_atlas(*arguments, **keywords, **settings)
+    parallel = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        subject_batch_workers=2,
+    )
+
+    assert serial.settings.subject_batch_workers == 1
+    assert parallel.settings.subject_batch_workers == 2
+    assert parallel.history == serial.history
+    assert parallel.termination_reason == serial.termination_reason
+    assert parallel.failed_block == serial.failed_block
+    assert parallel.cycles_completed == serial.cycles_completed
+    assert parallel.objective_evaluations == serial.objective_evaluations
+    assert parallel.gradient_evaluations == serial.gradient_evaluations
+    assert parallel.candidate_gradient_evaluations == serial.candidate_gradient_evaluations
+    assert torch.equal(parallel.template_vertices, serial.template_vertices)
+    assert torch.equal(parallel.control_points, serial.control_points)
+    assert torch.equal(parallel.momenta, serial.momenta)
+
+
+def test_lbfgs_direction_is_deterministic_monotone_and_improves_after_ten_cycles() -> None:
+    arguments, keywords = _problem(subjects=1)
+
+    steepest = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=10,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+        step_initialization="previous_accepted",
+        direction_update="steepest",
+    )
+    first = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=10,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+        step_initialization="previous_accepted",
+        direction_update="lbfgs",
+        lbfgs_history_size=5,
+    )
+    second = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=10,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+        step_initialization="previous_accepted",
+        direction_update="lbfgs",
+        lbfgs_history_size=5,
+    )
+
+    assert first.settings.direction_update == "lbfgs"
+    assert first.settings.lbfgs_history_size == 5
+    assert first.history == second.history
+    assert torch.equal(first.momenta, second.momenta)
+    assert all(later.objective > earlier.objective for earlier, later in pairwise(first.history))
+    assert first.history[-1].objective > steepest.history[-1].objective
+    assert first.history[-1].gradient_norm < steepest.history[-1].gradient_norm
+
+
+def test_lbfgs_reaches_declared_tolerance_that_steepest_does_not() -> None:
+    arguments, keywords = _problem(subjects=1)
+    shared = {
+        "max_cycles": 35,
+        "block_order": ("momenta",),
+        "gradient_tolerance": 1e-4,
+        "step_initialization": "previous_accepted",
+    }
+
+    steepest = optimize_atlas(
+        *arguments,
+        **keywords,
+        **shared,
+        direction_update="steepest",
+    )
+    lbfgs = optimize_atlas(
+        *arguments,
+        **keywords,
+        **shared,
+        direction_update="lbfgs",
+        lbfgs_history_size=5,
+    )
+
+    assert steepest.converged is False
+    assert steepest.termination_reason == "max_cycles"
+    assert lbfgs.converged is True
+    assert lbfgs.termination_reason == "gradient_tolerance"
+    assert lbfgs.history[-1].status == "stationary"
+    assert lbfgs.history[-1].gradient_norm <= 1e-4
+    assert lbfgs.cycles_completed < steepest.cycles_completed
+
+
+def test_relative_objective_tolerance_matches_deformetrica_change_ratio() -> None:
+    arguments, keywords = _problem(subjects=1)
+    tolerance = 0.1
+
+    result = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=35,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+        step_initialization="previous_accepted",
+        direction_update="lbfgs",
+        lbfgs_history_size=5,
+        relative_objective_tolerance=tolerance,
+    )
+
+    assert result.converged is True
+    assert result.termination_reason == "relative_objective_tolerance"
+    assert result.cycles_completed == 5
+    objectives = [record.objective for record in result.history]
+    initial = objectives[0]
+    for previous, current in pairwise(objectives[:-1]):
+        assert abs(current - previous) >= tolerance * abs(current - initial)
+    assert abs(objectives[-1] - objectives[-2]) < tolerance * abs(objectives[-1] - initial)
+
+
+def test_lbfgs_resume_state_reproduces_an_uninterrupted_trajectory_exactly() -> None:
+    arguments, keywords = _problem(subjects=1)
+    settings = {
+        "block_order": ("momenta",),
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "lbfgs_history_size": 5,
+        "line_search_condition": "strong_wolfe",
+        "strong_wolfe_curvature_constant": 0.9,
+        "strong_wolfe_maximum_step_size": 10.0,
+        "relative_objective_tolerance": 1e-12,
+    }
+    uninterrupted = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        max_cycles=12,
+    )
+    checkpoints = []
+    first = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        max_cycles=5,
+        checkpoint_callback=checkpoints.append,
+    )
+    checkpoint = checkpoints[-1]
+    resume_state = engine.AtlasOptimizerResumeState(
+        initial_cycle_objective=checkpoint.initial_cycle_objective,
+        current_cycle_objective=checkpoint.current_cycle_objective,
+        next_step_sizes=checkpoint.next_step_sizes,
+        lbfgs_histories=checkpoint.lbfgs_histories,
+        reusable_gradient=checkpoint.reusable_gradient,
+        completed_cycle_termination_reason=checkpoint.completed_cycle_termination_reason,
+    )
+    resumed = optimize_atlas(
+        checkpoint.template_vertices,
+        arguments[1],
+        arguments[2],
+        checkpoint.control_points,
+        checkpoint.momenta,
+        **keywords,
+        **settings,
+        max_cycles=7,
+        resume_state=resume_state,
+    )
+
+    assert first.history == uninterrupted.history[:6]
+    assert resumed.history[0].objective == checkpoint.record.objective
+    uninterrupted_tail = [
+        replace(record, cycle=index) for index, record in enumerate(uninterrupted.history[6:], 1)
+    ]
+    assert uninterrupted_tail == list(resumed.history[1:])
+    assert torch.equal(resumed.template_vertices, uninterrupted.template_vertices)
+    assert torch.equal(resumed.control_points, uninterrupted.control_points)
+    assert torch.equal(resumed.momenta, uninterrupted.momenta)
+
+
+def test_multiblock_lbfgs_uses_separate_deterministic_curvature_histories() -> None:
+    arguments, keywords = _problem(subjects=2)
+    checkpoints = []
+    settings = {
+        "max_cycles": 5,
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "lbfgs_history_size": 3,
+    }
+    first = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        checkpoint_callback=checkpoints.append,
+    )
+    second = optimize_atlas(*arguments, **keywords, **settings)
+
+    assert first.history == second.history
+    assert first.termination_reason == "max_cycles"
+    assert first.failed_block is None
+    assert all(
+        current.objective >= previous.objective
+        for previous, current in pairwise(first.history)
+    )
+    histories = checkpoints[-1].lbfgs_histories
+    assert set(histories) == {"momenta", "template", "control_points"}
+    assert all(1 <= len(history) <= 3 for history in histories.values())
+    expected_shapes = {
+        "momenta": tuple(arguments[4].shape),
+        "template": tuple(arguments[0].shape),
+        "control_points": tuple(arguments[3].shape),
+    }
+    for block, history in histories.items():
+        assert all(tuple(step.shape) == expected_shapes[block] for step, _ in history)
+        assert all(
+            tuple(gradient_delta.shape) == expected_shapes[block]
+            for _, gradient_delta in history
+        )
+
+
+@pytest.mark.parametrize(
+    ("template_gradient", "reuse_next_block_gradient", "reuse_cycle_boundary_gradient"),
+    [
+        ("euclidean", False, False),
+        ("sobolev", False, False),
+        ("euclidean", True, False),
+        ("sobolev", True, False),
+        ("sobolev", True, True),
+    ],
+)
+def test_multiblock_lbfgs_resume_reproduces_uninterrupted_trajectory_exactly(
+    template_gradient: str,
+    reuse_next_block_gradient: bool,
+    reuse_cycle_boundary_gradient: bool,
+) -> None:
+    arguments, keywords = (
+        _analytical_varifold_problem() if reuse_next_block_gradient else _problem()
+    )
+    settings = {
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "lbfgs_history_size": 3,
+        "template_gradient": template_gradient,
+        "reuse_next_block_gradient": reuse_next_block_gradient,
+        "reuse_cycle_boundary_gradient": reuse_cycle_boundary_gradient,
+    }
+    uninterrupted = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        max_cycles=6,
+    )
+    checkpoints = []
+    first = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        max_cycles=3,
+        checkpoint_callback=checkpoints.append,
+    )
+    checkpoint = checkpoints[-1]
+    assert checkpoint.reusable_gradient is None
+    resumed = optimize_atlas(
+        checkpoint.template_vertices,
+        arguments[1],
+        arguments[2],
+        checkpoint.control_points,
+        checkpoint.momenta,
+        **keywords,
+        **settings,
+        max_cycles=3,
+        resume_state=engine.AtlasOptimizerResumeState(
+            initial_cycle_objective=checkpoint.initial_cycle_objective,
+            current_cycle_objective=checkpoint.current_cycle_objective,
+            next_step_sizes=checkpoint.next_step_sizes,
+            lbfgs_histories=checkpoint.lbfgs_histories,
+            reusable_gradient=checkpoint.reusable_gradient,
+            completed_cycle_termination_reason=(
+                checkpoint.completed_cycle_termination_reason
+            ),
+        ),
+    )
+
+    assert first.history == uninterrupted.history[:10]
+    uninterrupted_tail = [
+        replace(record, cycle=(index - 1) // 3 + 1)
+        for index, record in enumerate(uninterrupted.history[10:], 1)
+    ]
+    assert uninterrupted_tail == list(resumed.history[1:])
+    assert torch.equal(resumed.template_vertices, uninterrupted.template_vertices)
+    assert torch.equal(resumed.control_points, uninterrupted.control_points)
+    assert torch.equal(resumed.momenta, uninterrupted.momenta)
+    recomputed_boundary = int(reuse_cycle_boundary_gradient)
+    assert first.reused_block_gradients + resumed.reused_block_gradients + recomputed_boundary == (
+        uninterrupted.reused_block_gradients
+    )
+    assert (
+        first.reused_cycle_boundary_gradients
+        + resumed.reused_cycle_boundary_gradients
+        + recomputed_boundary
+        == uninterrupted.reused_cycle_boundary_gradients
+    )
+    assert first.objective_evaluations + resumed.objective_evaluations == (
+        uninterrupted.objective_evaluations + recomputed_boundary
+    )
+    assert first.gradient_evaluations + resumed.gradient_evaluations == (
+        uninterrupted.gradient_evaluations + recomputed_boundary
+    )
+
+
+def test_resume_state_preserves_a_completed_cycle_convergence_decision() -> None:
+    arguments, keywords = _problem(subjects=1)
+    checkpoints = []
+    settings = {
+        "block_order": ("momenta",),
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "lbfgs_history_size": 5,
+        "relative_objective_tolerance": 0.1,
+    }
+    converged = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        max_cycles=35,
+        checkpoint_callback=checkpoints.append,
+    )
+    checkpoint = checkpoints[-1]
+    assert checkpoint.completed_cycle_termination_reason == "relative_objective_tolerance"
+
+    resumed = optimize_atlas(
+        checkpoint.template_vertices,
+        arguments[1],
+        arguments[2],
+        checkpoint.control_points,
+        checkpoint.momenta,
+        **keywords,
+        **settings,
+        max_cycles=10,
+        resume_state=engine.AtlasOptimizerResumeState(
+            initial_cycle_objective=checkpoint.initial_cycle_objective,
+            current_cycle_objective=checkpoint.current_cycle_objective,
+            next_step_sizes=checkpoint.next_step_sizes,
+            lbfgs_histories=checkpoint.lbfgs_histories,
+            reusable_gradient=checkpoint.reusable_gradient,
+            completed_cycle_termination_reason=checkpoint.completed_cycle_termination_reason,
+        ),
+    )
+
+    assert resumed.converged is True
+    assert resumed.termination_reason == "relative_objective_tolerance"
+    assert resumed.cycles_completed == 0
+    assert len(resumed.history) == 1
+    assert torch.equal(resumed.momenta, converged.momenta)
+
+
+def test_strong_wolfe_lbfgs_is_repeatable_monotone_and_uses_gradient_trials() -> None:
+    arguments, keywords = _problem(subjects=1)
+    settings = {
+        "max_cycles": 12,
+        "block_order": ("momenta",),
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "lbfgs_history_size": 5,
+        "line_search_condition": "strong_wolfe",
+        "strong_wolfe_curvature_constant": 0.9,
+        "strong_wolfe_maximum_step_size": 10.0,
+    }
+
+    first = optimize_atlas(*arguments, **keywords, **settings)
+    second = optimize_atlas(*arguments, **keywords, **settings)
+
+    assert first.settings.line_search_condition == "strong_wolfe"
+    assert first.settings.strong_wolfe_curvature_constant == 0.9
+    assert first.settings.strong_wolfe_maximum_step_size == 10.0
+    assert first.history == second.history
+    assert torch.equal(first.momenta, second.momenta)
+    assert first.termination_reason == "max_cycles"
+    assert all(later.objective > earlier.objective for earlier, later in pairwise(first.history))
+    assert first.candidate_gradient_evaluations == first.total_line_search_evaluations
+    assert first.gradient_evaluations == 1 + first.total_line_search_evaluations
+    assert all(
+        record.accepted_step_size is None or record.accepted_step_size <= 10.0
+        for record in first.history
+    )
+
+
+def test_single_block_boundary_reuse_preserves_fresh_cycle_decisions_exactly() -> None:
+    arguments, keywords = _problem(subjects=1)
+    combined = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=3,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+    )
+
+    momenta = arguments[4]
+    restarted_records = []
+    restarted_objective_evaluations = 0
+    restarted_gradient_evaluations = 0
+    for _ in range(3):
+        restarted = optimize_atlas(
+            *arguments[:4],
+            momenta,
+            **keywords,
+            max_cycles=1,
+            block_order=("momenta",),
+            gradient_tolerance=0.0,
+        )
+        momenta = restarted.momenta
+        restarted_records.append(restarted.history[-1])
+        restarted_objective_evaluations += restarted.objective_evaluations
+        restarted_gradient_evaluations += restarted.gradient_evaluations
+
+    combined_records = combined.history[1:]
+    assert torch.equal(combined.momenta, momenta)
+    assert [record.status for record in combined_records] == [
+        record.status for record in restarted_records
+    ]
+    assert [record.objective for record in combined_records] == [
+        record.objective for record in restarted_records
+    ]
+    assert [record.gradient_norm for record in combined_records] == [
+        record.gradient_norm for record in restarted_records
+    ]
+    assert [record.accepted_step_size for record in combined_records] == [
+        record.accepted_step_size for record in restarted_records
+    ]
+    assert [record.line_search_evaluations for record in combined_records] == [
+        record.line_search_evaluations for record in restarted_records
+    ]
+    assert combined.objective_evaluations == restarted_objective_evaluations - 2
+    assert combined.gradient_evaluations == restarted_gradient_evaluations - 2
 
 
 def test_optimizer_is_repeatable_detached_and_does_not_mutate_inputs() -> None:
@@ -141,6 +796,51 @@ def test_progress_observer_mirrors_committed_history_without_changing_results() 
     assert torch.equal(with_progress.momenta, without_progress.momenta)
 
 
+def test_cycle_checkpoint_is_detached_complete_and_cannot_mutate_optimizer() -> None:
+    arguments, keywords = _problem()
+    observed = []
+
+    def checkpoint(value) -> None:
+        observed.append(
+            (
+                value.record,
+                value.template_vertices.clone(),
+                value.control_points.clone(),
+                value.momenta.clone(),
+                dict(value.next_step_sizes),
+            )
+        )
+        value.template_vertices.add_(1000.0)
+        value.control_points.add_(1000.0)
+        value.momenta.add_(1000.0)
+        value.next_step_sizes["momenta"] = 1000.0
+
+    with_checkpoints = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=2,
+        step_initialization="previous_accepted",
+        checkpoint_callback=checkpoint,
+    )
+    without_checkpoints = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=2,
+        step_initialization="previous_accepted",
+    )
+
+    assert [item[0].cycle for item in observed] == [1, 2]
+    assert all(item[0].block == "control_points" for item in observed)
+    assert torch.equal(observed[-1][1], without_checkpoints.template_vertices)
+    assert torch.equal(observed[-1][2], without_checkpoints.control_points)
+    assert torch.equal(observed[-1][3], without_checkpoints.momenta)
+    assert set(observed[-1][4]) == {"momenta", "template", "control_points"}
+    assert with_checkpoints.history == without_checkpoints.history
+    assert torch.equal(with_checkpoints.template_vertices, without_checkpoints.template_vertices)
+    assert torch.equal(with_checkpoints.control_points, without_checkpoints.control_points)
+    assert torch.equal(with_checkpoints.momenta, without_checkpoints.momenta)
+
+
 def test_cooperative_cancellation_stops_before_an_uncommitted_block() -> None:
     arguments, keywords = _problem()
     observed = []
@@ -169,6 +869,13 @@ def test_cancellation_callback_must_return_bool() -> None:
         optimize_atlas(*arguments, **keywords, cancel_requested=lambda: 1)
 
 
+def test_checkpoint_callback_must_be_callable() -> None:
+    arguments, keywords = _problem(subjects=1)
+
+    with pytest.raises(TypeError, match="checkpoint_callback"):
+        optimize_atlas(*arguments, **keywords, checkpoint_callback=1)
+
+
 def test_progress_observer_reports_failed_decision_not_rejected_candidates() -> None:
     arguments, keywords = _problem(subjects=1)
     observed = []
@@ -189,14 +896,22 @@ def test_progress_observer_reports_failed_decision_not_rejected_candidates() -> 
     assert result.total_line_search_evaluations == 1
 
 
-def test_identical_subject_is_stationary_for_every_block() -> None:
-    arguments, keywords = _problem(subjects=1, identical=True)
+@pytest.mark.parametrize("reuse_next_block_gradient", [False, True])
+def test_identical_subject_is_stationary_for_every_block(reuse_next_block_gradient: bool) -> None:
+    arguments, keywords = (
+        _analytical_varifold_problem(subjects=1, identical=True)
+        if reuse_next_block_gradient
+        else _problem(subjects=1, identical=True)
+    )
 
-    result = optimize_atlas(*arguments, **keywords, max_cycles=5)
+    result = optimize_atlas(
+        *arguments, **keywords, max_cycles=5, reuse_next_block_gradient=reuse_next_block_gradient
+    )
 
     assert result.termination_reason == "gradient_tolerance"
     assert result.converged is True
     assert result.cycles_completed == 1
+    assert result.paired_gradient_evaluations == result.reused_block_gradients == 0
     assert [record.status for record in result.history] == [
         "initial",
         "stationary",
@@ -220,6 +935,9 @@ def test_zero_cycles_returns_fully_evaluated_initial_state() -> None:
     assert result.history[0].status == "initial"
     assert math.isfinite(result.history[0].objective)
     assert result.total_line_search_evaluations == 0
+    assert result.objective_evaluations == 1
+    assert result.gradient_evaluations == 1
+    assert result.candidate_gradient_evaluations == 0
 
 
 def test_failed_first_block_preserves_all_initial_parameters() -> None:
@@ -243,6 +961,280 @@ def test_failed_first_block_preserves_all_initial_parameters() -> None:
     assert torch.equal(result.template_vertices, arguments[0])
     assert torch.equal(result.control_points, arguments[3])
     assert torch.equal(result.momenta, arguments[4])
+
+
+@pytest.mark.parametrize("reuse_next_block_gradient", [False, True])
+def test_rejected_atlas_candidate_does_not_request_an_unused_gradient(
+    monkeypatch,
+    reuse_next_block_gradient: bool,
+) -> None:
+    arguments, keywords = (
+        _analytical_varifold_problem(subjects=1)
+        if reuse_next_block_gradient
+        else _problem(subjects=1)
+    )
+    original_grad = torch.autograd.grad
+    calls = 0
+
+    def counted_grad(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_grad(*args, **kwargs)
+
+    monkeypatch.setattr(torch.autograd, "grad", counted_grad)
+    result = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=3,
+        momenta_step_size=10.0,
+        template_step_size=10.0,
+        control_points_step_size=10.0,
+        max_line_search_iterations=1,
+        reuse_next_block_gradient=reuse_next_block_gradient,
+    )
+
+    assert result.termination_reason == "line_search_failed"
+    assert result.total_line_search_evaluations == 1
+    assert result.objective_evaluations == 2
+    assert result.gradient_evaluations == 1
+    assert result.candidate_gradient_evaluations == 0
+    assert result.paired_gradient_evaluations == 0
+    assert result.reused_block_gradients == 0
+    assert calls == 1
+
+
+@pytest.mark.parametrize("template_gradient", ["euclidean", "sobolev"])
+def test_paired_gradient_reuse_preserves_exact_decisions_and_counts(
+    template_gradient: str,
+) -> None:
+    arguments, keywords = _analytical_varifold_problem()
+    settings = {
+        **keywords,
+        "max_cycles": 2,
+        "gradient_tolerance": 0.0,
+        "direction_update": "lbfgs",
+        "step_initialization": "previous_accepted",
+        "template_gradient": template_gradient,
+    }
+    separate = optimize_atlas(*arguments, **settings)
+    paired = optimize_atlas(*arguments, **settings, reuse_next_block_gradient=True)
+
+    assert paired.settings.reuse_next_block_gradient
+    assert paired.history == separate.history
+    assert paired.termination_reason == separate.termination_reason == "max_cycles"
+    assert torch.equal(paired.template_vertices, separate.template_vertices)
+    assert torch.equal(paired.control_points, separate.control_points)
+    assert torch.equal(paired.momenta, separate.momenta)
+    assert paired.total_line_search_evaluations == separate.total_line_search_evaluations
+    assert paired.candidate_gradient_evaluations == separate.candidate_gradient_evaluations
+    assert paired.paired_gradient_evaluations == paired.reused_block_gradients == 4
+    assert paired.paired_gradient_fallbacks == 0
+    assert paired.objective_evaluations + paired.reused_block_gradients == (
+        separate.objective_evaluations
+    )
+    assert paired.gradient_evaluations + paired.reused_block_gradients == (
+        separate.gradient_evaluations
+    )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "reason", "cycles", "control_status", "boundary_hits"),
+    [
+        pytest.param({}, "max_cycles", 2, "accepted", 1, id="cap"),
+        pytest.param(
+            {"block_order": ("momenta", "template")},
+            "max_cycles",
+            2,
+            "accepted",
+            1,
+            id="fixed-controls-cap",
+        ),
+        pytest.param(
+            {"max_cycles": 3, "relative_objective_tolerance": 0.8},
+            "relative_objective_tolerance",
+            2,
+            "accepted",
+            1,
+            id="relative-stop",
+        ),
+        pytest.param(
+            {"gradient_tolerance": 1.0}, "max_cycles", 2, "stationary", 0, id="stationary"
+        ),
+        pytest.param(
+            {
+                "momenta_step_size": 0.001,
+                "template_step_size": 0.0001,
+                "control_points_step_size": 10_000.0,
+                "max_line_search_iterations": 1,
+            },
+            "line_search_failed",
+            0,
+            "failed",
+            0,
+            id="rejected-terminal-search",
+        ),
+    ],
+)
+def test_cycle_boundary_gradient_reuse_preserves_results_and_terminal_work(
+    overrides: dict,
+    reason: str,
+    cycles: int,
+    control_status: str,
+    boundary_hits: int,
+) -> None:
+    arguments, keywords = _analytical_varifold_problem()
+    settings = keywords | {"max_cycles": 2, "reuse_next_block_gradient": True} | overrides
+    ordinary = optimize_atlas(*arguments, **settings)
+    reused = optimize_atlas(*arguments, **settings, reuse_cycle_boundary_gradient=True)
+
+    assert not ordinary.settings.reuse_cycle_boundary_gradient
+    assert ordinary.reused_cycle_boundary_gradients == 0
+    assert reused.settings.reuse_cycle_boundary_gradient
+    assert reused.history == ordinary.history
+    assert reused.termination_reason == ordinary.termination_reason == reason
+    assert reused.cycles_completed == ordinary.cycles_completed == cycles
+    terminal_block = "template" if "block_order" in overrides else "control_points"
+    assert reused.history[-1].block == terminal_block
+    assert reused.history[-1].status == control_status
+    assert [record.status for record in reused.history[1:3]] == ["accepted", "accepted"]
+    assert torch.equal(reused.template_vertices, ordinary.template_vertices)
+    assert torch.equal(reused.control_points, ordinary.control_points)
+    if terminal_block == "template":
+        assert torch.equal(reused.control_points, arguments[3])
+    assert torch.equal(reused.momenta, ordinary.momenta)
+    assert reused.total_line_search_evaluations == ordinary.total_line_search_evaluations
+    assert reused.candidate_gradient_evaluations == ordinary.candidate_gradient_evaluations
+    assert reused.reused_cycle_boundary_gradients == boundary_hits
+    assert reused.reused_block_gradients == ordinary.reused_block_gradients + boundary_hits
+    assert (
+        reused.paired_gradient_evaluations == ordinary.paired_gradient_evaluations + boundary_hits
+    )
+    assert reused.objective_evaluations == ordinary.objective_evaluations - boundary_hits
+    assert reused.gradient_evaluations == ordinary.gradient_evaluations - boundary_hits
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"reuse_next_block_gradient": False},
+        {"block_order": ("momenta", "control_points", "template")},
+        {"block_order": ("template", "momenta")},
+    ],
+)
+def test_cycle_boundary_gradient_reuse_requires_the_exact_joint_schedule(overrides: dict) -> None:
+    arguments, keywords = _analytical_varifold_problem()
+    settings = keywords | {"reuse_next_block_gradient": True} | overrides
+    with pytest.raises(ValueError, match="reuse_cycle_boundary_gradient requires"):
+        optimize_atlas(*arguments, **settings, reuse_cycle_boundary_gradient=True)
+
+
+@pytest.mark.parametrize("unavailable", ["missing", "nonfinite", "value_error"])
+def test_unavailable_paired_gradient_falls_back_to_ordinary_block_gradient(
+    monkeypatch, unavailable: str
+) -> None:
+    arguments, keywords = _analytical_varifold_problem()
+    settings = {**keywords, "max_cycles": 1, "template_gradient": "sobolev"}
+    separate = optimize_atlas(*arguments, **settings)
+    original_grad = torch.autograd.grad
+    first_pair = True
+
+    def omit_following(*args, **kwargs):
+        nonlocal first_pair
+        if kwargs.get("allow_unused") and first_pair:
+            first_pair = False
+            if unavailable == "value_error":
+                raise ValueError("optional derivative failure")
+            active, following = original_grad(*args, **kwargs)
+            if unavailable == "missing":
+                return active, None
+            return active, torch.full_like(following, float("nan"))
+        return original_grad(*args, **kwargs)
+
+    monkeypatch.setattr(torch.autograd, "grad", omit_following)
+    paired = optimize_atlas(*arguments, **settings, reuse_next_block_gradient=True)
+
+    fallbacks = int(unavailable == "value_error")
+    assert paired.history == separate.history
+    assert torch.equal(paired.template_vertices, separate.template_vertices)
+    assert torch.equal(paired.control_points, separate.control_points)
+    assert torch.equal(paired.momenta, separate.momenta)
+    assert paired.candidate_gradient_evaluations == separate.candidate_gradient_evaluations
+    assert paired.paired_gradient_evaluations == 2
+    assert paired.reused_block_gradients == 1
+    assert paired.paired_gradient_fallbacks == fallbacks
+    assert paired.objective_evaluations == separate.objective_evaluations - 1 + fallbacks
+    assert paired.gradient_evaluations == separate.gradient_evaluations - 1 + fallbacks
+
+
+@pytest.mark.parametrize("cancel_at", ["paired_backward", "before_reuse", "cycle_boundary"])
+def test_paired_gradient_path_preserves_cancellation_boundaries(monkeypatch, cancel_at: str):
+    arguments, keywords = _analytical_varifold_problem()
+    original_grad = torch.autograd.grad
+    requested = False
+    progress = []
+    checkpoints = []
+    backward_arities = []
+
+    def cancel_after_pair(*args, **kwargs):
+        nonlocal requested
+        backward_arities.append(2 if kwargs.get("allow_unused") else 1)
+        gradients = original_grad(*args, **kwargs)
+        if kwargs.get("allow_unused") and cancel_at == "paired_backward":
+            requested = True
+        return gradients
+
+    def observe(record) -> None:
+        nonlocal requested
+        progress.append(record.status)
+        if record.status == "accepted" and cancel_at == "before_reuse":
+            requested = True
+
+    def checkpoint(state) -> None:
+        nonlocal requested
+        checkpoints.append(state)
+        if cancel_at == "cycle_boundary":
+            requested = True
+
+    monkeypatch.setattr(torch.autograd, "grad", cancel_after_pair)
+    with pytest.raises(engine.AtlasOptimizationCancelled, match="cancellation requested"):
+        optimize_atlas(
+            *arguments,
+            **keywords,
+            reuse_next_block_gradient=True,
+            reuse_cycle_boundary_gradient=cancel_at == "cycle_boundary",
+            progress_callback=observe,
+            checkpoint_callback=checkpoint,
+            cancel_requested=lambda: requested,
+        )
+
+    if cancel_at == "cycle_boundary":
+        assert progress == ["initial", "accepted", "accepted", "accepted"]
+        assert backward_arities == [1, 2, 2, 2]
+        (state,) = checkpoints
+        assert state.record.cycle == 1
+        assert state.reusable_gradient is None
+    else:
+        assert progress == (
+            ["initial"] if cancel_at == "paired_backward" else ["initial", "accepted"]
+        )
+        assert not checkpoints
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"subject_batch_size": 1},
+        {"block_order": ("momenta",)},
+        {"momenta_updates_per_cycle": 2},
+        {"line_search_condition": "strong_wolfe", "direction_update": "lbfgs"},
+        {"gaussian_tile_plan": None},
+        {"attachment_type": "current"},
+    ],
+)
+def test_paired_gradient_reuse_requires_the_qualified_execution_route(overrides: dict) -> None:
+    arguments, keywords = _analytical_varifold_problem()
+    with pytest.raises(ValueError, match="reuse_next_block_gradient requires"):
+        optimize_atlas(*arguments, **{**keywords, **overrides}, reuse_next_block_gradient=True)
 
 
 def test_all_parameter_blocks_move_on_a_nontrivial_problem() -> None:
@@ -296,6 +1288,61 @@ def test_declared_block_order_is_honored() -> None:
     ]
 
 
+def test_momenta_updates_per_cycle_are_explicit_repeatable_and_resumable() -> None:
+    arguments, keywords = _problem(subjects=2)
+    settings = {
+        "max_cycles": 2,
+        "momenta_updates_per_cycle": 3,
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "lbfgs_history_size": 4,
+    }
+    checkpoints = []
+    uninterrupted = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        checkpoint_callback=checkpoints.append,
+    )
+    repeated = optimize_atlas(*arguments, **keywords, **settings)
+
+    expected_cycle = ["momenta", "momenta", "momenta", "template", "control_points"]
+    assert [record.block for record in uninterrupted.history[1:]] == expected_cycle * 2
+    assert uninterrupted.history == repeated.history
+    assert uninterrupted.settings.momenta_updates_per_cycle == 3
+    assert all(
+        current.objective >= previous.objective
+        for previous, current in pairwise(uninterrupted.history)
+    )
+
+    first_checkpoint = checkpoints[0]
+    resumed = optimize_atlas(
+        first_checkpoint.template_vertices,
+        arguments[1],
+        arguments[2],
+        first_checkpoint.control_points,
+        first_checkpoint.momenta,
+        **keywords,
+        **(settings | {"max_cycles": 1}),
+        resume_state=engine.AtlasOptimizerResumeState(
+            initial_cycle_objective=first_checkpoint.initial_cycle_objective,
+            current_cycle_objective=first_checkpoint.current_cycle_objective,
+            next_step_sizes=first_checkpoint.next_step_sizes,
+            lbfgs_histories=first_checkpoint.lbfgs_histories,
+            reusable_gradient=first_checkpoint.reusable_gradient,
+            completed_cycle_termination_reason=(
+                first_checkpoint.completed_cycle_termination_reason
+            ),
+        ),
+    )
+    expected_tail = [replace(record, cycle=1) for record in uninterrupted.history[6:]]
+    assert expected_tail == list(resumed.history[1:])
+    assert torch.equal(resumed.template_vertices, uninterrupted.template_vertices)
+    assert torch.equal(resumed.control_points, uninterrupted.control_points)
+    assert torch.equal(resumed.momenta, uninterrupted.momenta)
+
+
 def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
     arguments, keywords = _problem(subjects=1)
 
@@ -323,6 +1370,39 @@ def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
         (
             {"block_order": ("momenta", "template", "template")},
             "block_order",
+        ),
+        ({"step_initialization": "automatic"}, "step_initialization"),
+        ({"direction_update": "automatic"}, "direction_update"),
+        ({"line_search_condition": "automatic"}, "line_search_condition"),
+        ({"line_search_condition": "strong_wolfe"}, "requires direction_update=lbfgs"),
+        ({"lbfgs_history_size": 0}, "lbfgs_history_size"),
+        ({"lbfgs_curvature_tolerance": -1.0}, "lbfgs_curvature_tolerance"),
+        ({"lbfgs_initial_step_size": 0.0}, "lbfgs_initial_step_size"),
+        ({"strong_wolfe_curvature_constant": 0.0}, "strong_wolfe_curvature_constant"),
+        (
+            {"strong_wolfe_maximum_step_size": 0.5},
+            "strong_wolfe_maximum_step_size",
+        ),
+        ({"relative_objective_tolerance": 0.0}, "relative_objective_tolerance"),
+        ({"relative_objective_tolerance": 1.0}, "relative_objective_tolerance"),
+        ({"subject_batch_size": 0}, "subject_batch_size"),
+        ({"subject_batch_size": True}, "subject_batch_size"),
+        ({"subject_batch_workers": 0}, "subject_batch_workers"),
+        ({"subject_batch_workers": True}, "subject_batch_workers"),
+        (
+            {"subject_batch_size": 1, "subject_batch_workers": 65},
+            "subject_batch_workers",
+        ),
+        ({"subject_batch_workers": 2}, "requires subject_batch_size"),
+        ({"shared_step_scaling": "automatic"}, "shared_step_scaling"),
+        ({"template_gradient": "automatic"}, "template_gradient"),
+        ({"sobolev_kernel_width_ratio": 0.0}, "sobolev_kernel_width_ratio"),
+        ({"sobolev_kernel_width_ratio": True}, "sobolev_kernel_width_ratio"),
+        ({"momenta_updates_per_cycle": 0}, "momenta_updates_per_cycle"),
+        ({"momenta_updates_per_cycle": True}, "momenta_updates_per_cycle"),
+        (
+            {"block_order": ("template",), "momenta_updates_per_cycle": 2},
+            "momenta_updates_per_cycle",
         ),
     ],
 )
@@ -383,9 +1463,7 @@ def test_committed_cc0_full_atlas_smoke_matches_versioned_evidence() -> None:
         ):
             assert actual_record[name] == expected_record[name]
         for name in ("objective", "attachment", "regularity", "gradient_norm"):
-            assert actual_record[name] == pytest.approx(
-                expected_record[name], rel=1e-9, abs=1e-11
-            )
+            assert actual_record[name] == pytest.approx(expected_record[name], rel=1e-9, abs=1e-11)
         assert actual_record["residuals"] == pytest.approx(
             expected_record["residuals"], rel=1e-9, abs=1e-11
         )

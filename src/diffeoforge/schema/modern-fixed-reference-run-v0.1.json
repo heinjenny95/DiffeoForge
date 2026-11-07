@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge independent fixed-reference momenta job",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fixed_reference_version", "created_at", "project", "engine", "config",
+    "input", "optimization", "subjects", "artifacts", "scientific_boundary"
+  ],
+  "$defs": {
+    "nonempty": {"type": "string", "minLength": 1},
+    "positiveInteger": {"type": "integer", "minimum": 1},
+    "nonnegativeInteger": {"type": "integer", "minimum": 0},
+    "mesh": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "points", "triangles"],
+      "properties": {
+        "path": {"$ref": "#/$defs/nonempty"},
+        "points": {"$ref": "#/$defs/positiveInteger"},
+        "triangles": {"$ref": "#/$defs/positiveInteger"}
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "path", "points", "triangles"],
+      "properties": {
+        "label": {"$ref": "#/$defs/nonempty"},
+        "path": {"$ref": "#/$defs/nonempty"},
+        "points": {"$ref": "#/$defs/positiveInteger"},
+        "triangles": {"$ref": "#/$defs/positiveInteger"}
+      }
+    },
+    "optimizer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cycles_completed", "termination_reason", "converged", "total_line_search_evaluations",
+        "objective_evaluations", "gradient_evaluations", "candidate_gradient_evaluations"
+      ],
+      "properties": {
+        "cycles_completed": {"$ref": "#/$defs/positiveInteger"},
+        "termination_reason": {"enum": ["max_cycles", "gradient_tolerance", "relative_objective_tolerance"]},
+        "converged": {"type": "boolean"},
+        "total_line_search_evaluations": {"$ref": "#/$defs/nonnegativeInteger"},
+        "objective_evaluations": {"$ref": "#/$defs/positiveInteger"},
+        "gradient_evaluations": {"$ref": "#/$defs/positiveInteger"},
+        "candidate_gradient_evaluations": {"$ref": "#/$defs/nonnegativeInteger"}
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "reconstruction_path", "momenta_path", "history_path", "optimizer"],
+      "properties": {
+        "label": {"$ref": "#/$defs/nonempty"},
+        "reconstruction_path": {"$ref": "#/$defs/nonempty"},
+        "momenta_path": {"$ref": "#/$defs/nonempty"},
+        "history_path": {"$ref": "#/$defs/nonempty"},
+        "optimizer": {"$ref": "#/$defs/optimizer"}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/nonempty"},
+        "bytes": {"$ref": "#/$defs/positiveInteger"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  },
+  "properties": {
+    "fixed_reference_version": {"const": "0.1"},
+    "created_at": {"$ref": "#/$defs/nonempty"},
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {"name": {"$ref": "#/$defs/nonempty"}}
+    },
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "implementation_version", "diffeoforge", "pytorch", "numpy", "device",
+        "dtype", "deterministic_algorithms", "threads", "random_seed", "pairwise_evaluation"
+      ],
+      "properties": {
+        "id": {"$ref": "#/$defs/nonempty"},
+        "implementation_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+        "diffeoforge": {"$ref": "#/$defs/nonempty"},
+        "pytorch": {"$ref": "#/$defs/nonempty"},
+        "numpy": {"$ref": "#/$defs/nonempty"},
+        "device": {"const": "cpu"},
+        "dtype": {"const": "float64"},
+        "deterministic_algorithms": {"const": true},
+        "threads": {"$ref": "#/$defs/positiveInteger"},
+        "random_seed": {"$ref": "#/$defs/nonnegativeInteger"},
+        "pairwise_evaluation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "query_tile_size", "source_tile_size"],
+          "properties": {
+            "mode": {"enum": ["dense", "blockwise"]},
+            "query_tile_size": {"type": ["integer", "null"], "minimum": 1},
+            "source_tile_size": {"type": ["integer", "null"], "minimum": 1},
+            "autograd_strategy": {"enum": ["standard", "recompute"]},
+            "varifold_backward": {"const": "analytical"}
+          }
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_path", "effective_path"],
+      "properties": {
+        "source_path": {"const": "config/source.yaml"},
+        "effective_path": {"const": "config/effective-config.json"}
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["units", "template", "control_points", "subjects"],
+      "properties": {
+        "units": {"$ref": "#/$defs/nonempty"},
+        "template": {"$ref": "#/$defs/mesh"},
+        "control_points": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "count"],
+          "properties": {
+            "path": {"const": "input/control-points.txt"},
+            "count": {"$ref": "#/$defs/positiveInteger"}
+          }
+        },
+        "subjects": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/target"}}
+      }
+    },
+    "optimization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "max_cycles_per_subject", "initial_momenta", "checkpoint_policy"],
+      "properties": {
+        "mode": {"const": "independent_momenta"},
+        "max_cycles_per_subject": {"$ref": "#/$defs/positiveInteger"},
+        "initial_momenta": {"const": "zeros"},
+        "checkpoint_policy": {"const": "none"}
+      }
+    },
+    "subjects": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/result"}},
+    "artifacts": {"type": "array", "minItems": 8, "items": {"$ref": "#/$defs/artifact"}},
+    "scientific_boundary": {"$ref": "#/$defs/nonempty"}
+  }
+}

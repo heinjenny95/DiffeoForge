@@ -68,6 +68,7 @@ def _bundle(tmp_path: Path) -> tuple[Path, str]:
         "DiffeoForgeWorker.exe",
         "DiffeoForgeReferenceWorker.exe",
         "DiffeoForgeReferencePreparationWorker.exe",
+        "DiffeoForgeReferenceExecutionWorker.exe",
     ):
         (root / name).write_bytes(name.encode("ascii"))
     (internal / "schema.json").write_text('{"schema": true}\n', encoding="utf-8")
@@ -140,13 +141,13 @@ def _write_dependency_evidence(
     freeze = json.loads((bundle / FREEZE_EVIDENCE_NAME).read_text(encoding="utf-8"))
     packages = [_package(name, version) for name, version in sorted(VERSIONS.items())]
     evidence = {
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "status": (
             "distribution_metadata_inventory_not_license_or_redistribution_approval"
         ),
         "target": "windows-x86_64-cpu",
         "source": {
-            "freeze_evidence_schema_version": "0.3",
+            "freeze_evidence_schema_version": "0.4",
             "freeze_evidence_sha256": freeze_sha256,
             "source_commit_sha": SOURCE_COMMIT,
             "bundle_inventory_sha256": freeze["bundle"]["inventory_sha256"],

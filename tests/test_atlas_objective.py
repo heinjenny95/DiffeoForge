@@ -140,9 +140,22 @@ def test_machine_readable_objective_reference_harness_passes(reference: dict) ->
     assert report["overall_pass"] is True
     assert report["fixture"]["baseline"] == reference["baseline"]
     assert len(report["comparisons"]) == 20
+    # Use the fixture's pre-existing declared acceptance bound, not a particular
+    # x86 observation (2e-14). Apple Silicon observed 2.22e-14 with unchanged math.
+    assert report["tolerance"] == reference["tolerance"]
     assert max(
         comparison["max_absolute_error"] for comparison in report["comparisons"].values()
-    ) < 2e-14
+    ) < reference["tolerance"]["absolute"]
+
+
+def test_objective_reference_harness_rejects_material_difference(reference: dict, tmp_path: Path):
+    from diffeoforge.engine.reference import compare_reference_fixture
+
+    altered = json.loads(json.dumps(reference))
+    altered["expected"]["subject"]["varifold"]["total"] += 1e-6
+    path = tmp_path / "altered-reference.json"
+    path.write_text(json.dumps(altered), encoding="utf-8")
+    assert compare_reference_fixture(path)["overall_pass"] is False
 
 
 def test_legacy_flow_integrator_is_explicit_and_distinct(reference: dict) -> None:

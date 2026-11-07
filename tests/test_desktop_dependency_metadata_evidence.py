@@ -71,6 +71,7 @@ def _bundle(tmp_path: Path) -> Path:
         "DiffeoForgeWorker.exe",
         "DiffeoForgeReferenceWorker.exe",
         "DiffeoForgeReferencePreparationWorker.exe",
+        "DiffeoForgeReferenceExecutionWorker.exe",
     ):
         (root / name).write_bytes(name.encode("ascii"))
     (internal / "schema.json").write_text('{"schema": true}\n', encoding="utf-8")
@@ -150,6 +151,18 @@ def _freeze_sha256(bundle: Path) -> str:
     return hashlib.sha256((bundle / MANIFEST_NAME).read_bytes()).hexdigest()
 
 
+def _rewrite_evidence(path: Path, evidence: dict) -> None:
+    payload = (
+        json.dumps(evidence, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    path.write_bytes(payload)
+    path.with_name(SIDECAR_NAME).write_text(
+        f"{hashlib.sha256(payload).hexdigest()}  {EVIDENCE_NAME}\n",
+        encoding="ascii",
+        newline="\n",
+    )
+
+
 def test_dependency_metadata_evidence_is_exact_bound_and_non_overwriting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -175,6 +188,8 @@ def test_dependency_metadata_evidence_is_exact_bound_and_non_overwriting(
     )
 
     assert evidence_path == output / EVIDENCE_NAME
+    assert evidence["schema_version"] == "0.2"
+    assert evidence["source"]["freeze_evidence_schema_version"] == "0.4"
     assert evidence["status"].endswith("not_license_or_redistribution_approval")
     assert evidence["source"]["freeze_evidence_sha256"] == freeze_sha256
     assert evidence["package_count"] == len(VERSIONS)
@@ -201,6 +216,38 @@ def test_dependency_metadata_evidence_is_exact_bound_and_non_overwriting(
             expected_freeze_evidence_sha256=freeze_sha256,
             output_directory=output,
         )
+
+
+def test_dependency_metadata_verifier_retains_v01_compatibility(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle = _bundle(tmp_path / "bundle")
+    distributions = _fake_distributions(tmp_path / "metadata")
+    monkeypatch.setattr(
+        dependency_evidence.importlib.metadata,
+        "distribution",
+        lambda name: distributions[name],
+    )
+    output = tmp_path / "evidence"
+    output.mkdir()
+    freeze_sha256 = _freeze_sha256(bundle)
+    evidence_path = create_desktop_dependency_metadata_evidence(
+        bundle,
+        expected_freeze_evidence_sha256=freeze_sha256,
+        output_directory=output,
+    )
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    evidence["schema_version"] = "0.1"
+    evidence["source"]["freeze_evidence_schema_version"] = "0.3"
+    _rewrite_evidence(evidence_path, evidence)
+
+    verified = verify_desktop_dependency_metadata_evidence(
+        evidence_path,
+        expected_freeze_evidence_sha256=freeze_sha256,
+    )
+
+    assert verified["schema_version"] == "0.1"
+    assert verified["source"]["freeze_evidence_schema_version"] == "0.3"
 
 
 def test_dependency_metadata_evidence_rejects_wrong_source_version_and_tampering(

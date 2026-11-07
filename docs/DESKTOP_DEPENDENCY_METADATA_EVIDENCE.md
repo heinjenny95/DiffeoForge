@@ -4,11 +4,11 @@ Status: **deterministic review input, not a license inventory, SBOM, approval,
 or release artifact**
 
 The Windows freeze records the exact installed Python distribution names and
-versions used by the builder. `desktop-dependency-metadata-evidence-v0.1`
+versions used by the builder. `desktop-dependency-metadata-evidence-v0.2`
 turns that package map into a separately hash-bound review input without
 claiming to interpret license compatibility or redistribution rights.
 
-Creation accepts a verified schema-v0.3 bundle and requires the independently
+Creation accepts a verified schema-v0.4 bundle and requires the independently
 recorded SHA-256 of its complete `freeze-evidence.json`. It fails closed if the
 manifest differs, the exact bundle inventory no longer verifies, an installed
 distribution is absent, its normalized name or version differs from the freeze
