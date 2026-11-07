@@ -6,6 +6,7 @@ import runpy
 from dataclasses import replace
 from itertools import pairwise
 from pathlib import Path
+from threading import get_ident
 
 import pytest
 
@@ -301,6 +302,12 @@ def test_subject_batched_gradients_match_full_cohort_for_every_parameter_block(
 
 def test_parallel_subject_batches_exactly_match_serial_batch_order() -> None:
     arguments, keywords = _problem(subjects=2)
+    caller = get_ident()
+
+    def keep_running() -> bool:
+        assert get_ident() == caller
+        return False
+
     settings = {
         "max_cycles": 2,
         "gradient_tolerance": 0.0,
@@ -315,6 +322,7 @@ def test_parallel_subject_batches_exactly_match_serial_batch_order() -> None:
         **keywords,
         **settings,
         subject_batch_workers=2,
+        cancel_requested=keep_running,
     )
 
     assert serial.settings.subject_batch_workers == 1
@@ -860,6 +868,37 @@ def test_cooperative_cancellation_stops_before_an_uncommitted_block() -> None:
         )
 
     assert [record.status for record in observed] == ["initial"]
+
+
+@pytest.mark.parametrize("batch_size", [None, 1, 2])
+def test_serial_cancellation_stops_between_subjects(monkeypatch, batch_size: int | None) -> None:
+    from diffeoforge.engine import objective
+
+    arguments, keywords = _problem(subjects=2)
+    completed = []
+    progress = []
+    checkpoints = []
+    original = objective.subject_objective
+
+    def evaluate_subject(*args, **kwargs):
+        result = original(*args, **kwargs)
+        completed.append(result)
+        return result
+
+    monkeypatch.setattr(objective, "subject_objective", evaluate_subject)
+    with pytest.raises(engine.AtlasOptimizationCancelled, match="cancellation requested"):
+        optimize_atlas(
+            *arguments,
+            **keywords,
+            max_cycles=1,
+            subject_batch_size=batch_size,
+            cancel_requested=lambda: bool(completed),
+            progress_callback=progress.append,
+            checkpoint_callback=checkpoints.append,
+        )
+
+    assert len(completed) == 1
+    assert progress == checkpoints == []
 
 
 def test_cancellation_callback_must_return_bool() -> None:

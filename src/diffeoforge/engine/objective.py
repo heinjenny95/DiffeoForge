@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from numbers import Real
 from typing import Literal
@@ -198,9 +198,12 @@ def atlas_objective(
     flow_integrator: FlowIntegrator = "deformetrica_heun",
     gaussian_tile_plan: GaussianTilePlan | None = None,
     prepared_targets: Sequence[PreparedSurfaceAttachmentTarget] | None = None,
+    check_cancellation: Callable[[], None] | None = None,
 ) -> AtlasObjective:
-    """Sum the objective over subjects without hidden averaging or reordering."""
+    """Sum subjects in order, optionally checking cancellation between contributions."""
 
+    if check_cancellation is not None and not callable(check_cancellation):
+        raise TypeError("check_cancellation must be callable or None")
     if not isinstance(momenta, torch.Tensor):
         raise TypeError("momenta must be a torch.Tensor")
     if momenta.ndim != 3 or momenta.shape[2] != 3:
@@ -221,26 +224,30 @@ def atlas_objective(
                 "prepared_targets and targets must contain the same number of subjects"
             )
 
-    subjects = tuple(
-        subject_objective(
-            template_vertices,
-            template_triangles,
-            target_vertices,
-            target_triangles,
-            control_points,
-            momenta[index],
-            deformation_kernel_width=deformation_kernel_width,
-            attachment_kernel_width=attachment_kernel_width,
-            noise_variance=noise_variance,
-            number_of_time_points=number_of_time_points,
-            attachment_type=attachment_type,
-            shooting_integrator=shooting_integrator,
-            flow_integrator=flow_integrator,
-            gaussian_tile_plan=gaussian_tile_plan,
-            prepared_target=prepared_target_sequence[index],
+    subject_results = []
+    for index, (target_vertices, target_triangles) in enumerate(target_sequence):
+        if index and check_cancellation is not None:
+            check_cancellation()
+        subject_results.append(
+            subject_objective(
+                template_vertices,
+                template_triangles,
+                target_vertices,
+                target_triangles,
+                control_points,
+                momenta[index],
+                deformation_kernel_width=deformation_kernel_width,
+                attachment_kernel_width=attachment_kernel_width,
+                noise_variance=noise_variance,
+                number_of_time_points=number_of_time_points,
+                attachment_type=attachment_type,
+                shooting_integrator=shooting_integrator,
+                flow_integrator=flow_integrator,
+                gaussian_tile_plan=gaussian_tile_plan,
+                prepared_target=prepared_target_sequence[index],
+            )
         )
-        for index, (target_vertices, target_triangles) in enumerate(target_sequence)
-    )
+    subjects = tuple(subject_results)
     residuals = torch.stack([subject.residual for subject in subjects])
     attachment = torch.stack([subject.attachment for subject in subjects]).sum()
     regularity = torch.stack([subject.regularity for subject in subjects]).sum()

@@ -766,12 +766,20 @@ def optimize_atlas(
         )
 
     batch_slices = subject_slices()
+    parallel_batches = normalized_subject_batch_workers > 1 and len(batch_slices) > 1
+    if cancel_requested is not None and not parallel_batches:
+        objective_keywords["check_cancellation"] = check_cancellation
 
     def ordered_batch_map(function: Callable[[slice], object]) -> list[object]:
         """Evaluate independent subject batches and retain their declared order."""
 
-        if normalized_subject_batch_workers == 1 or len(batch_slices) == 1:
-            return [function(subject_slice) for subject_slice in batch_slices]
+        if not parallel_batches:
+            results = []
+            for subject_slice in batch_slices:
+                if results and cancel_requested is not None:
+                    check_cancellation()
+                results.append(function(subject_slice))
+            return results
         with ThreadPoolExecutor(
             max_workers=min(normalized_subject_batch_workers, len(batch_slices)),
             thread_name_prefix="diffeoforge-atlas-batch",
