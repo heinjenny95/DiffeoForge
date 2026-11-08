@@ -287,7 +287,10 @@ def test_recovery_carries_measured_regions_and_rejects_changed_source_receipts(
     monkeypatch.setattr(
         result_report,
         "collect_run_report",
-        lambda _: SimpleNamespace(inventory=[dict(path=name, sha256=sha256_file(output / name))]),
+        lambda _: SimpleNamespace(
+            manifest=dict(effective_config=dict(project={}, model=dict(object_id="surface"))),
+            inventory=[dict(path=name, sha256=sha256_file(output / name))],
+        ),
     )
     # The real region sampling and distance worker execute; the run receipts are synthetic.
     baseline = capture(child, candidate.candidate_id, target.filename)
@@ -310,3 +313,46 @@ def test_recovery_carries_measured_regions_and_rejects_changed_source_receipts(
     original_result.write_bytes(original_result.read_bytes() + b"\n")
     with pytest.raises(ValueError, match="evidence changed|settings changed"):
         study.load_reference_calibration_study(follow.study_directory)
+
+
+def test_joint_regional_feedback_measures_the_named_checked_endpoint(tmp_path, monkeypatch):
+    from diffeoforge import result_report
+    from diffeoforge.mesh import sha256_file, write_vtk_polydata
+    from diffeoforge.pilot_recovery import capture
+
+    vertices, faces = cube()
+    output = tmp_path / "run" / "output"
+    output.mkdir(parents=True)
+    rows, subjects, inventory = {}, [], []
+    for offset, name in enumerate(("a.vtk", "b.vtk"), start=1):
+        original = tmp_path / name
+        native = output / f"Fixture__Reconstruction__surface__subject_{name}.vtk"
+        checked = tmp_path / f"checked-{name}"
+        for path, shift in ((original, 0), (native, offset + 2), (checked, offset)):
+            write_vtk_polydata(path, vertices + [offset * 10 + shift, 0, 0], faces)
+        subjects.append(dict(filename=name, copy=name, sha256=sha256_file(original)))
+        inventory.append(dict(path=native.name, sha256=sha256_file(native)))
+        rows[name] = dict(cohort_quality=dict(evaluation=dict(endpoint=dict(
+            path=str(checked), sha256=sha256_file(checked)))))
+
+    manifest = dict(inputs=dict(subjects=subjects))
+    (tmp_path / study.STUDY_MANIFEST).write_text("{}", encoding="utf-8")
+    candidate = SimpleNamespace(candidate_id="joint",
+                                metrics=dict(attachment_comparison=dict(subjects=rows)))
+    snapshot = SimpleNamespace(study_directory=tmp_path, candidates=[candidate])
+    monkeypatch.setattr(study, "calibration_candidate_run_directory", lambda _: output.parent)
+    monkeypatch.setattr(study, "_verify_manifest", lambda _: manifest)
+    monkeypatch.setattr(study, "_candidate_review_binding", lambda _: "fixture")
+    monkeypatch.setattr(result_report, "collect_run_report",
+                        lambda _: SimpleNamespace(inventory=inventory))
+
+    def measure(original, fitted, marks):
+        np.testing.assert_allclose(fitted.vertices, np.asarray(original.vertices) + [2, 0, 0])
+        return marks
+
+    monkeypatch.setattr(regions, "measure", measure)
+    marks = [patch(subjects[1]["sha256"])]
+    assert capture(snapshot, "joint", "b.vtk", regions=marks)["baseline"] == marks
+    (tmp_path / "checked-a.vtk").write_text("changed", encoding="utf-8")
+    with pytest.raises(ValueError, match="evaluated reconstruction changed"):
+        capture(snapshot, "joint", "b.vtk", regions=marks)

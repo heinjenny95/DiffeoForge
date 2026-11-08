@@ -1,5 +1,13 @@
 # Development continuity — dev192 installed and verified
 
+## dev197 — reopen marked joint pilot results
+
+Regional feedback on a saved joint pilot measures the checked reconstruction
+for the named specimen. The same endpoint hash checks still apply to the
+cohort. This restores next-step preparation after a joint review with marked
+regions, using its existing fits and visual decisions. The Windows private-alpha
+build adds this repair to the dev196 runtime snapshot.
+
 ## dev196 — size the pilot from measured form coverage
 
 New automatic pilot plans keep adding the farthest uncovered surface form until
