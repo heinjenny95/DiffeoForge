@@ -4,6 +4,7 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import pytest
 from test_reference_attachment_comparison import _detail
 from test_reference_calibration import _recommendation
@@ -249,6 +250,35 @@ def test_coverage_skips_duplicate_extreme_but_retains_new_direction_and_manual_c
     assert result["recommended_count"] == 3
     required = coverage_suggestion(recommendation, required=("long.vtk", "long-copy.vtk"))
     assert {"long.vtk", "long-copy.vtk"} <= {r["filename"] for r in required["selected"]}
+
+
+def test_coverage_checks_every_remaining_form_after_mandatory_subjects(monkeypatch):
+    recommendation = _recommendation()
+    subjects = recommendation.observations[1:]
+    monkeypatch.setattr(
+        "diffeoforge.reference_calibration._descriptor_matrix",
+        lambda observations: np.array([-10, 0, 0.01, 0.02, 10], dtype=float)[:, None],
+    )
+    mandatory = (subjects[1].filename, subjects[2].filename)
+    suggestion = coverage_suggestion(recommendation, required=mandatory)
+    selected = {row["filename"] for row in suggestion["selected"]}
+    assert {subjects[0].filename, subjects[-1].filename, *mandatory} <= selected
+    assert not suggestion["budget_limited"]
+    limited = coverage_suggestion(recommendation, required=mandatory, budget=2)
+    assert limited["recommended_count"] == 2
+    assert limited["budget_limited"]
+    assert limited["maximum_uncovered_distance"] > limited["redundancy_threshold"]
+
+
+def test_modest_descriptor_distances_need_only_two_pilot_checks(monkeypatch):
+    recommendation = _recommendation()
+    monkeypatch.setattr(
+        "diffeoforge.reference_calibration._descriptor_matrix",
+        lambda observations: np.eye(len(observations)) * 0.25,
+    )
+    suggestion = coverage_suggestion(recommendation)
+    assert suggestion["recommended_count"] == 2
+    assert not suggestion["budget_limited"]
 
 
 def test_guided_dialog_opens_inert_and_tie_prepares_only_the_next_pair(tmp_path, monkeypatch):

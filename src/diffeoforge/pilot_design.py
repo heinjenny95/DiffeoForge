@@ -16,12 +16,14 @@ from diffeoforge.template_shape import VERSION as LOCAL_VERSION
 from diffeoforge.template_shape import distance_matrix, local_shape_descriptor
 
 VERSION = "adaptive-pilot-design-v1"
-# Coverage heuristics, not anatomical accuracy or validated sample-size limits.
+COVERAGE_VERSION = "adaptive-pilot-coverage-v2"
+# Coverage tolerances in descriptor space, not anatomical distance thresholds.
 REDUNDANCY_FRACTION = 0.20
-DEFAULT_BUDGET = 6
+MIN_SURFACE_SHAPE_RADIUS = 0.75
 
 
-def coverage_suggestion(recommendation, *, required=(), declarations=(), budget=DEFAULT_BUDGET):
+def coverage_suggestion(recommendation, *, required=(), declarations=(), budget=None):
+    """Choose the first deterministic prefix that covers the cohort or a stated budget."""
     from diffeoforge.reference_calibration import (
         _descriptor_matrix,
         select_representative_pilot_subjects,
@@ -41,18 +43,18 @@ def coverage_suggestion(recommendation, *, required=(), declarations=(), budget=
     matrix = _descriptor_matrix(observations)
     distances = np.linalg.norm(matrix[:, None] - matrix[None, :], axis=2)
     diameter = float(distances.max())
-    threshold = diameter * REDUNDANCY_FRACTION
+    radius_floor = MIN_SURFACE_SHAPE_RADIUS if observations[0].shape_descriptor else 1e-10
+    threshold = max(diameter * REDUNDANCY_FRACTION, radius_floor)
     mandatory = sum(s.selection_role.startswith("researcher-") for s in order)
-    maximum = min(n, max(budget, mandatory, 2))
+    minimum = max(2, mandatory)
+    maximum = n if budget is None else min(n, max(budget, minimum))
+    nearest_distance = np.full(n, np.inf)
     chosen = []
-    for subject in order:
-        if len(chosen) >= maximum:
-            break
-        if len(chosen) >= max(2, mandatory) and subject.descriptor_distance <= max(
-            threshold, 1e-10
-        ):
+    for subject in order[:maximum]:
+        if len(chosen) >= minimum and nearest_distance.max() <= threshold:
             break
         chosen.append(subject)
+        np.minimum(nearest_distance, distances[:, subject.source_subject_index], out=nearest_distance)
     selected = [s.source_subject_index for s in chosen]
     omitted = []
     for subject in order[len(chosen) :]:
@@ -64,20 +66,22 @@ def coverage_suggestion(recommendation, *, required=(), declarations=(), budget=
                 represented_by=observations[nearest].filename,
                 distance=float(distances[index, nearest]),
                 reason="similar to selected form"
-                if distances[index, nearest] <= max(threshold, 1e-10)
+                if distances[index, nearest] <= threshold
                 else "additional diversity remains beyond the suggested budget",
             )
         )
     return dict(
-        version=VERSION,
+        version=COVERAGE_VERSION,
         recommended_count=len(chosen),
         available_subjects=n,
         selected=[s.as_manifest() for s in chosen],
         omitted=omitted,
-        maximum_uncovered_distance=float(distances[:, selected].min(axis=1).max()),
+        maximum_uncovered_distance=float(nearest_distance.max()),
+        descriptor_diameter=diameter,
+        redundancy_radius_floor=radius_floor,
         redundancy_threshold=threshold,
         budget=maximum,
-        budget_limited=any(r["distance"] > max(threshold, 1e-10) for r in omitted),
+        budget_limited=bool(nearest_distance.max() > threshold),
         limitation="Descriptor coverage is provisional; local details and all later fits need QC. "
         "At least two pilot targets retain a separate cross-check even for very similar forms.",
     )
