@@ -1,6 +1,6 @@
 # Development continuity — dev192 installed and verified
 
-## Source follow-up — size the pilot from measured form coverage
+## dev196 — size the pilot from measured form coverage
 
 New automatic pilot plans keep adding the farthest uncovered surface form until
 every subject is within the descriptor radius of a selected form. There is no
@@ -15,6 +15,10 @@ Plan details show the achieved descriptor coverage. A smaller manual plan
 identifies the coverage shortfall before the first fit. Descriptor distances
 are a geometry heuristic and visual fit review remains necessary. Saved
 plans, their approvals and their existing execution contracts are unchanged.
+
+The Windows private-alpha build uses the installed dev195 source baseline plus
+the pilot coverage change and dev196 version stamp. Other development changes
+are outside this runtime snapshot.
 
 ## dev195 — make the starting-fit review opt-in
 
