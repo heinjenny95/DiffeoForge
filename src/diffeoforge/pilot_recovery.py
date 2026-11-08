@@ -150,7 +150,7 @@ def capture(snapshot, identifier, target, *, regions=None):
         raise ValueError("Region feedback reconstruction bytes changed")
     from diffeoforge.regional_evaluation import endpoint
 
-    evaluated = endpoint(candidate)
+    evaluated = endpoint(candidate, subject=target)
     fitted_hash = rows[0]["sha256"]
     if evaluated:
         fitted_path, fitted_hash = Path(evaluated["path"]), evaluated["sha256"]
