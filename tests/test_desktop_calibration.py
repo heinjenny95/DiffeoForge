@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 ROOT = Path(__file__).parents[1]
@@ -103,6 +104,39 @@ def test_desktop_builds_and_binds_transparent_calibration_plan(
     assert window._reference_calibration_plan is None
     assert window.export_reference_calibration_button.isEnabled() is False
     assert "rebuild" in window.reference_calibration_status.text()
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_accepts_automatic_coverage_above_twenty_without_fitting(monkeypatch, tmp_path):
+    application, window, queued = _prepared_window(monkeypatch, tmp_path)
+    example = ROOT / "examples" / "synthetic" / "meshes"
+    meshes = tmp_path / "diverse"
+    meshes.mkdir()
+    (meshes / "template.vtk").write_bytes((example / "template.vtk").read_bytes())
+    surface = next(example.glob("subject-*.vtk")).read_bytes()
+    for index in range(22):
+        (meshes / f"subject-{index:02d}.vtk").write_bytes(surface)
+    monkeypatch.setattr(
+        "diffeoforge.reference_calibration._descriptor_matrix",
+        lambda observations: np.eye(len(observations)),
+    )
+    window.mesh_edit.setText(str(meshes))
+    window.analyze_reference_parameters_button.click()
+    assert len(queued) == 1
+    queued[0].run()
+    application.processEvents()
+    window.build_reference_calibration_button.click()
+    application.processEvents()
+
+    plan = window._reference_calibration_plan
+    assert plan.pilot_subject_count == window.reference_pilot_subject_count_spin.value() == 22
+    assert plan.design_suggestion["recommended_count"] == 22
+    assert not plan.design_suggestion["budget_limited"]
+    assert [row["filename"] for row in plan.design_suggestion["selected"]] == [
+        row.filename for row in plan.selected_pilot_subjects
+    ]
+    assert len(queued) == 1
     window.close()
     application.processEvents()
 

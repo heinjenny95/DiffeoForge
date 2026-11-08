@@ -1,5 +1,21 @@
 # Development continuity — dev192 installed and verified
 
+## Source follow-up — size the pilot from measured form coverage
+
+New automatic pilot plans keep adding the farthest uncovered surface form until
+every subject is within the descriptor radius of a selected form. There is no
+default six-subject cap. The desktop count can reach the cohort size. The radius
+is 20% of the cohort descriptor diameter, with a 0.75 floor in normalized
+surface-descriptor units to avoid over-selecting similar forms. At least two
+subjects are retained for a cross-check. Required subjects and declared strata
+remain binding. The stop checks all remaining distances, including when a
+nearby medoid follows mandatory subjects.
+
+Plan details show the achieved descriptor coverage. A smaller manual plan
+identifies the coverage shortfall before the first fit. Descriptor distances
+are a geometry heuristic and visual fit review remains necessary. Saved
+plans, their approvals and their existing execution contracts are unchanged.
+
 ## dev195 — make the starting-fit review opt-in
 
 New pilot finalizations prepare an uninterrupted joint run by default. The

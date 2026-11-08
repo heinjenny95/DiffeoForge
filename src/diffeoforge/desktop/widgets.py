@@ -4864,6 +4864,11 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_pilot_subject_count_spin,
         )
         self.reference_pilot_auto_count = QCheckBox("Recommend size from form diversity")
+        self.reference_pilot_auto_count.setToolTip(
+            "Use as many subjects as the measured shape coverage calls for. "
+            "Each extra subject adds fit and review work. Turn off the recommendation "
+            "to choose a smaller pilot explicitly."
+        )
         self.reference_pilot_auto_count.setChecked(True)
         self.reference_pilot_auto_count.toggled.connect(self._reference_calibration_inputs_changed)
         self.reference_pilot_auto_count.toggled.connect(
@@ -6153,14 +6158,17 @@ class DiffeoForgeWindow(QMainWindow):
                 required=self.reference_pilot_subject_picker.selected_filenames,
                 declarations=self._reference_pilot_subject_declarations,
             )
-            if self.reference_pilot_auto_count.isChecked():
-                self.reference_pilot_subject_count_spin.blockSignals(True)
-                self.reference_pilot_subject_count_spin.setValue(suggestion["recommended_count"])
-                self.reference_pilot_subject_count_spin.blockSignals(False)
+            automatic_count = self.reference_pilot_auto_count.isChecked()
+            count_spin = self.reference_pilot_subject_count_spin
+            signals_were_blocked = count_spin.blockSignals(True)
+            count_spin.setMaximum(recommendation.subject_count)
+            if automatic_count:
+                count_spin.setValue(suggestion["recommended_count"])
+            count_spin.blockSignals(signals_were_blocked)
             plan = build_reference_calibration_plan(
                 recommendation,
                 coordinate_unit=str(self.units_combo.currentData() or "unitless"),
-                requested_pilot_subject_count=(self.reference_pilot_subject_count_spin.value()),
+                requested_pilot_subject_count=count_spin.value(),
                 smallest_relevant_feature=self._current_reference_feature_scale(),
                 pilot_subject_declarations=self._reference_pilot_subject_declarations,
                 required_subject_filenames=self.reference_pilot_subject_picker.selected_filenames,
@@ -6170,7 +6178,7 @@ class DiffeoForgeWindow(QMainWindow):
             from diffeoforge.reference_sequential_fit import _fingerprint
 
             suggestion["accepted_count"] = plan.pilot_subject_count
-            suggestion["automatic_count_accepted"] = self.reference_pilot_auto_count.isChecked()
+            suggestion["automatic_count_accepted"] = automatic_count
             accepted_template = getattr(self, "_template_suggestion_accepted", None)
             if accepted_template and accepted_template["sha256"] == recommendation.template_sha256:
                 suggestion["template_recommendation"] = accepted_template
@@ -6197,10 +6205,15 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_calibration_summary_label.setText(
             f"Pilot: {plan.pilot_subject_count} of {plan.subject_count} targets. "
             "Start with two method trials on one specimen; review before more work."
-            + (f" Suggested count: {suggestion['recommended_count']}; manual count retained."
-               if not self.reference_pilot_auto_count.isChecked() else "")
-            + (" Additional diversity remains; consider adding a specimen."
-               if suggestion["budget_limited"] else "")
+            + (
+                " Size based on measured form coverage."
+                if automatic_count else
+                f" Suggested count: {suggestion['recommended_count']}; manual count retained."
+            )
+            + (
+                " Some forms remain outside the suggested coverage at this manual size."
+                if plan.pilot_subject_count < suggestion["recommended_count"] else ""
+            )
         )
         self.reference_calibration_status.setObjectName("statusSuccess")
         self.reference_calibration_status.setStyleSheet("")
@@ -6209,7 +6222,10 @@ class DiffeoForgeWindow(QMainWindow):
             for r in suggestion["omitted"]
         )
         self.reference_calibration_status.setText(
-            plan.summary_text() + "\n\nCoverage suggestion (heuristic):\n" + coverage_text
+            plan.summary_text() + "\n\nCoverage suggestion (heuristic):\n"
+            f"Maximum remaining descriptor distance {suggestion['maximum_uncovered_distance']:.3g} "
+            f"at a coverage radius of {suggestion['redundancy_threshold']:.3g}.\n"
+            + coverage_text
             + "\n" + suggestion["limitation"]
         )
         self._update_reference_guidance_controls()
@@ -6373,6 +6389,7 @@ class DiffeoForgeWindow(QMainWindow):
             [item.filename for item in recommendation.observations[1:]],
             cohort_key=tuple(str(path) for path in current_paths),
         )
+        self.reference_pilot_subject_count_spin.setMaximum(recommendation.subject_count)
         self.reference_parameter_profile_combo.blockSignals(True)
         self.reference_parameter_profile_combo.setCurrentIndex(
             self.reference_parameter_profile_combo.findData("data_assisted")
