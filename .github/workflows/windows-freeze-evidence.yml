@@ -235,9 +235,8 @@ jobs:
         with:
           github-token: ${{ github.token }}
           run-id: ${{ inputs.source_run }}
-          pattern: DiffeoForge-v193-${{ matrix.artifact_os }}-[0-9a-f]*
+          name: DiffeoForge-v197-${{ matrix.artifact_os }}-${{ github.sha }}
           path: ${{ runner.temp }}/mac-candidate
-          merge-multiple: true
       - name: Independently install and compute from downloaded DMG
         run: python -B distribution/macos/verify-downloaded-package.py '${{ runner.temp }}/mac-candidate' '${{ runner.temp }}/Independent Mac Käfer'
       - name: Keep public qualification evidence only
@@ -303,7 +302,7 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
-      - name: Install v193 desktop builder and test tools
+      - name: Install v197 desktop builder and test tools
         run: |
           python -m venv "$RUNNER_TEMP/mac-builder"
           echo "$RUNNER_TEMP/mac-builder/bin" >> "$GITHUB_PATH"
@@ -311,17 +310,23 @@ jobs:
           "$RUNNER_TEMP/mac-builder/bin/python" -m pip check
       - name: Check native pilot and UI software paths
         run: |
-          pytest -q tests/test_pilot_iteration_budget.py tests/test_pilot_iteration_budget_transfer.py tests/test_reference_calibration_dialog.py tests/test_desktop_worker_controller.py
+          pytest -q tests/test_pilot_iteration_budget.py tests/test_pilot_iteration_budget_transfer.py \
+            tests/test_reference_calibration_dialog.py tests/test_desktop_worker_controller.py \
+            tests/test_macos_packaging.py \
+            tests/test_pilot_region_feedback.py::test_joint_regional_feedback_measures_the_named_checked_endpoint \
+            tests/test_guided_pilot.py::test_coverage_skips_duplicate_extreme_but_retains_new_direction_and_manual_choice \
+            tests/test_guided_pilot.py::test_coverage_checks_every_remaining_form_after_mandatory_subjects \
+            tests/test_desktop_calibration.py::test_desktop_accepts_automatic_coverage_above_twenty_without_fitting
       - name: Qualify native Intel-compatible reference runtime
         run: python -B distribution/macos/reference-probe.py '${{ runner.temp }}/DiffeoForge Native Käfer'
-      - name: Build and qualify installable v193 package
+      - name: Build and qualify installable v197 package
         run: python -B distribution/macos/build-package.py '${{ runner.temp }}/DiffeoForge Native Käfer' '${{ runner.temp }}/DiffeoForge Mac Build'
-      # Owner explicitly permitted temporary Mac v193 package artifacts on
-      # 2026-11-05 for local retrieval, followed by deletion. No release/tag.
+      # Transfer only the candidate and its verification files. Clean up the
+      # temporary candidate after independent qualification and local retrieval.
       - name: Temporary owner-authorized Mac package transfer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: DiffeoForge-v193-${{ matrix.os }}-${{ github.sha }}
+          name: DiffeoForge-v197-${{ matrix.os }}-${{ github.sha }}
           path: ${{ runner.temp }}/DiffeoForge Mac Build/delivery/*
           if-no-files-found: error
           retention-days: 1

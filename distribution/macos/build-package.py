@@ -1,4 +1,4 @@
-"""Build, relocate and qualify a v193 Mac test package on a native Mac runner."""
+"""Build, relocate and qualify the v197 Mac test package on a native Mac runner."""
 from __future__ import annotations
 
 import argparse
@@ -20,7 +20,7 @@ from diffeoforge.desktop.reference_execution_controller import ReferenceExecutio
 from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
 from diffeoforge.runs import execute_run, prepare_resume_run, prepare_run
 
-BASELINE = "54fb9ffc454f3f19a10943aeac25203037f22e32"
+BASELINE = "6efc9725691416ea75e44df0bb07e6255611c5b8"
 MACHO_MAGICS = {b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xca\xfe\xba\xbe",
                 b"\xbe\xba\xfe\xca", b"\xca\xfe\xba\xbf", b"\xbf\xba\xfe\xca"}
 
@@ -105,10 +105,12 @@ def main():
     parser.add_argument("native_root", type=Path)
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
-    assert platform.system() == "Darwin" and __version__ == "0.0.0.dev193"
+    assert platform.system() == "Darwin" and __version__ == "0.0.0.dev197"
     repository = Path(__file__).resolve().parents[2]
-    run(["git", "diff", "--exit-code", BASELINE, "HEAD", "--", "src", "pyproject.toml"],
+    run(["git", "diff", "--exit-code", BASELINE, "--", "src", "pyproject.toml"],
         cwd=repository)
+    build_commit = run(["git", "rev-parse", "HEAD"], cwd=repository,
+                       capture_output=True, text=True).stdout.strip()
     native_root = args.native_root.resolve()
     proof = json.loads((native_root / "mac-reference-probe.json").read_text())
     assert proof["status"] == "passed" and not proof["private_inputs_used"]
@@ -146,7 +148,11 @@ def main():
                 signed.append(str(path.relative_to(app)))
     run(["codesign", "--force", "--deep", "--sign", "-", app], capture_output=True)
     run(["codesign", "--verify", "--deep", "--strict", app], capture_output=True)
-    run([executable, "--version"], env=env)
+    reported_version = run([executable, "--version"], env=env, capture_output=True,
+                           text=True).stdout.split()[-1]
+    assert reported_version == __version__
+    info = plistlib.loads((contents / "Info.plist").read_bytes())
+    assert info["CFBundleShortVersionString"] == "0.0.197" and info["CFBundleVersion"] == "197"
     run([executable, "--smoke"], env=env)
     run([executable, "--smoke-media"], env=env)
     before = inventory(app)
@@ -173,8 +179,8 @@ def main():
     architecture = "AppleSilicon" if platform.machine() == "arm64" else "Intel"
     output = root / "delivery"
     output.mkdir()
-    package = output / f"DiffeoForge-v193-macOS-{architecture}.dmg"
-    run(["hdiutil", "create", "-volname", f"DiffeoForge v193 {architecture}", "-srcfolder",
+    package = output / f"DiffeoForge-v197-macOS-{architecture}.dmg"
+    run(["hdiutil", "create", "-volname", f"DiffeoForge v197 {architecture}", "-srcfolder",
          staging, "-ov", "-format", "UDZO", package], capture_output=True)
     run(["hdiutil", "verify", package], capture_output=True)
     # Mount, copy out of the image into a second path and run the actual copied app.
@@ -198,7 +204,7 @@ def main():
     (output / (package.name + ".sha256")).write_text(f"{package_hash}  {package.name}\n")
     evidence = dict(status="macos_test_package_verified", version=__version__,
                     application_feature_baseline=BASELINE,
-                    build_commit=os.environ.get("GITHUB_SHA"),
+                    build_commit=build_commit,
                     host_architecture=platform.machine(), reference_architecture="x86_64",
                     native_reference_probe=proof, checks=checks, cocoa_smoke=True,
                     relocated_installed_copy_verified=True, application_inventory_unchanged=True,

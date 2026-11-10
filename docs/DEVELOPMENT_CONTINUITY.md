@@ -1,5 +1,11 @@
 # Development continuity — dev192 installed and verified
 
+## dev197 — macOS colleague packages
+
+Intel and Apple Silicon packages reuse the verified Windows v197 application
+source. Independent macOS 15 and 26 runner checks passed for both downloaded
+images. See [package provenance and scope](MACOS_V197_PACKAGING.md).
+
 ## dev197 — reopen marked joint pilot results
 
 Regional feedback on a saved joint pilot measures the checked reconstruction

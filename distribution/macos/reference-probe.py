@@ -60,7 +60,7 @@ def avoid_clang_version_header_collision(prefix):
     patched = patched.replace(
         "set_bin_folder()",
         "import hashlib\nset_bin_folder(os.path.join(os.path.expanduser('~'), '.cache', "
-        "'diffeoforge-mac-v193-' + hashlib.sha256(os.path.realpath(__file__).encode())"
+        "'diffeoforge-mac-v197-' + hashlib.sha256(os.path.realpath(__file__).encode())"
         ".hexdigest()[:16]))",
     )
     source.write_text(patched)
@@ -70,7 +70,7 @@ def avoid_clang_version_header_collision(prefix):
     }
     return dict(before_sha256=before, after_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                 metadata_rename="version -> package-version.txt",
-                cache_isolation="installation-path-bound macOS v193 cache",
+                cache_isolation="installation-path-bound macOS v197 cache",
                 mathematical_files=len(mathematical), mathematical_bytes_unchanged=True)
 
 
