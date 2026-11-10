@@ -77,11 +77,15 @@ def main():
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
     assert platform.system() == "Darwin"
+    repository = Path(__file__).resolve().parents[2]
+    build_commit = run(["git", "rev-parse", "HEAD"], cwd=repository,
+                       capture_output=True, text=True).stdout.strip()
     candidate, output = args.candidate.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     proof = json.loads((candidate / "verification.json").read_text())
     assert proof["status"] == "macos_test_package_verified"
-    assert proof["version"] == "0.0.0.dev193"
+    assert proof["version"] == "0.0.0.dev197"
+    assert proof["build_commit"] == build_commit
     assert proof["host_architecture"] == platform.machine()
     package = candidate / proof["package"]["name"]
     assert package.is_file() and package.stat().st_size == proof["package"]["bytes"]
@@ -103,6 +107,7 @@ def main():
     )
     checker = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(checker)
+    assert proof["application_feature_baseline"] == checker.BASELINE
     assert checker.inventory(installed) == proof["application_files"]
     if platform.machine() == "arm64":
         run(["/usr/sbin/softwareupdate", "--install-rosetta", "--agree-to-license"])
@@ -116,19 +121,20 @@ def main():
     env.pop("QT_QPA_PLATFORM", None)
     binary = installed / "Contents/MacOS/DiffeoForge"
     run(["codesign", "--verify", "--deep", "--strict", installed], capture_output=True)
-    run([binary, "--version"], capture_output=True, env=env)
+    version = run([binary, "--version"], capture_output=True, text=True, env=env).stdout.split()[-1]
+    assert version == proof["version"]
     run([binary, "--smoke"], env=env)
     run([binary, "--smoke-media"], env=env)
     native = installed / "Contents/Resources/ReferenceRuntime/bin/deformetrica"
     worker = installed / "Contents/MacOS/DiffeoForgeReferenceExecutionWorker"
-    results = checker.reference_check(Path(__file__).resolve().parents[2],
-                                      output / "public-workflows", native, worker)
+    results = checker.reference_check(repository, output / "public-workflows", native, worker)
     results["in_flight_cancellation"] = live_cancellation(
-        checker, Path(__file__).resolve().parents[2], output / "cancellation-check", native, worker
+        checker, repository, output / "cancellation-check", native, worker
     )
     assert checker.inventory(installed) == proof["application_files"]
     run(["codesign", "--verify", "--deep", "--strict", installed], capture_output=True)
     final = dict(status="downloaded_package_independently_verified", version=proof["version"],
+                 application_feature_baseline=checker.BASELINE, build_commit=build_commit,
                  host_architecture=platform.machine(), macos_version=platform.mac_ver()[0],
                  source_package=proof["package"],
                  original_build_prefix_available=False, original_keops_cache_used=False,

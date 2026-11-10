@@ -1,10 +1,11 @@
-DiffeoForge v193 - macOS colleague test build
+DiffeoForge v197 - macOS colleague test build
 
 Requires macOS 15 or newer. Choose AppleSilicon for M-series Macs or Intel for Intel Macs. These packages
-contain the v193 application code, supervised workers and an isolated Deformetrica
+contain the v197 application code, supervised workers and an isolated Deformetrica
 4.3.0 / Python 3.8 / Torch 1.6 CPU environment. On Apple Silicon the reference
 environment uses Rosetta 2. The application interface itself uses the selected
 native architecture. GPU/MPS and the optional Modern engine are not included.
+The Rosetta 2 reference runtime on Apple Silicon is supported through macOS 27.
 
 INSTALL
 1. Open the DMG and drag DiffeoForge.app to Applications.
@@ -39,4 +40,4 @@ be slower than an NVIDIA-accelerated Windows run. Numerical completion and anato
 approval remain separate.
 
 The archive includes package hashes, source/build identity and third-party notices.
-This is a development test package, not a signed public release.
+This package is intended for colleague testing.
