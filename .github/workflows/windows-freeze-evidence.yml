@@ -220,6 +220,8 @@ jobs:
       matrix:
         include: ${{ fromJSON(inputs.verify_architecture == 'Intel' && '[{"os":"macos-15-intel","artifact_os":"macos-15-intel"},{"os":"macos-26-intel","artifact_os":"macos-15-intel"}]' || inputs.verify_architecture == 'AppleSilicon' && '[{"os":"macos-15","artifact_os":"macos-15"},{"os":"macos-26","artifact_os":"macos-15"}]' || '[{"os":"macos-15-intel","artifact_os":"macos-15-intel"},{"os":"macos-15","artifact_os":"macos-15"},{"os":"macos-26-intel","artifact_os":"macos-15-intel"},{"os":"macos-26","artifact_os":"macos-15"}]') }}
     env:
+      PIP_DEFAULT_TIMEOUT: "90"
+      PIP_RETRIES: "6"
       OMP_NUM_THREADS: "1"
       MPLBACKEND: Agg
       CMAKE_BUILD_PARALLEL_LEVEL: "2"
@@ -292,6 +294,8 @@ jobs:
       matrix:
         os: [macos-15-intel, macos-15]
     env:
+      PIP_DEFAULT_TIMEOUT: "90"
+      PIP_RETRIES: "6"
       OMP_NUM_THREADS: "1"
       QT_QPA_PLATFORM: offscreen
       MPLBACKEND: Agg
