@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from math import sqrt
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +17,7 @@ from diffeoforge.template_shape import VERSION as LOCAL_VERSION
 from diffeoforge.template_shape import distance_matrix, local_shape_descriptor
 
 VERSION = "adaptive-pilot-design-v1"
-COVERAGE_VERSION = "adaptive-pilot-coverage-v2"
+COVERAGE_VERSION = "adaptive-pilot-coverage-v3"
 # Coverage tolerances in descriptor space, not anatomical distance thresholds.
 REDUNDANCY_FRACTION = 0.20
 MIN_SURFACE_SHAPE_RADIUS = 0.75
@@ -47,7 +48,11 @@ def coverage_suggestion(recommendation, *, required=(), declarations=(), budget=
     threshold = max(diameter * REDUNDANCY_FRACTION, radius_floor)
     mandatory = sum(s.selection_role.startswith("researcher-") for s in order)
     minimum = max(2, mandatory)
-    maximum = n if budget is None else min(n, max(budget, minimum))
+    if budget is None:
+        # Fit and review effort grows with each target. Let the automatic budget
+        # grow slowly with the cohort and leave larger selections to the researcher.
+        budget = max(4, min(12, round(sqrt(n))))
+    maximum = min(n, max(budget, minimum))
     nearest_distance = np.full(n, np.inf)
     chosen = []
     for subject in order[:maximum]:
@@ -67,7 +72,7 @@ def coverage_suggestion(recommendation, *, required=(), declarations=(), budget=
                 distance=float(distances[index, nearest]),
                 reason="similar to selected form"
                 if distances[index, nearest] <= threshold
-                else "additional diversity remains beyond the suggested budget",
+                else "outside the coverage radius at the suggested size",
             )
         )
     return dict(

@@ -125,6 +125,13 @@ equally weighted feature families are used to select:
 1. the descriptor medoid;
 2. successive farthest-first descriptor extremes.
 
+When **Recommend size from form diversity** is enabled, selection can stop
+once all subjects are within the descriptor radius. The automatic budget is
+the rounded square root of the cohort size, limited to 4–12 slots and to the
+available subjects. Required subjects and declared strata take priority and
+can raise that budget. The plan reports any forms outside the radius at the
+suggested count. Turn off the recommendation to set the pilot size manually.
+
 Filename ordering resolves exact ties. The same bytes and settings therefore
 produce the same selection and fingerprint. Vertex/triangle count and absolute
 size no longer drive this selection; sampling scale still informs parameter

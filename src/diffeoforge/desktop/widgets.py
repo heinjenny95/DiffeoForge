@@ -4865,9 +4865,8 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.reference_pilot_auto_count = QCheckBox("Recommend size from form diversity")
         self.reference_pilot_auto_count.setToolTip(
-            "Use as many subjects as the measured shape coverage calls for. "
-            "Each extra subject adds fit and review work. Turn off the recommendation "
-            "to choose a smaller pilot explicitly."
+            "Suggest a pilot from measured form diversity within an automatic budget. "
+            "Turn off the recommendation to set the number of pilot subjects yourself."
         )
         self.reference_pilot_auto_count.setChecked(True)
         self.reference_pilot_auto_count.toggled.connect(self._reference_calibration_inputs_changed)
@@ -6211,6 +6210,11 @@ class DiffeoForgeWindow(QMainWindow):
                 f" Suggested count: {suggestion['recommended_count']}; manual count retained."
             )
             + (
+                " Some forms are outside the automatic coverage radius. "
+                "Increase the pilot size manually to cover more."
+                if automatic_count and suggestion["budget_limited"] else ""
+            )
+            + (
                 " Some forms remain outside the suggested coverage at this manual size."
                 if plan.pilot_subject_count < suggestion["recommended_count"] else ""
             )
@@ -6222,7 +6226,8 @@ class DiffeoForgeWindow(QMainWindow):
             for r in suggestion["omitted"]
         )
         self.reference_calibration_status.setText(
-            plan.summary_text() + "\n\nCoverage suggestion (heuristic):\n"
+            plan.summary_text() + "\n\nAutomatic coverage suggestion (heuristic):\n"
+            f"Suggested {suggestion['recommended_count']} subjects with a budget of {suggestion['budget']}. "
             f"Maximum remaining descriptor distance {suggestion['maximum_uncovered_distance']:.3g} "
             f"at a coverage radius of {suggestion['redundancy_threshold']:.3g}.\n"
             + coverage_text

@@ -281,6 +281,32 @@ def test_modest_descriptor_distances_need_only_two_pilot_checks(monkeypatch):
     assert not suggestion["budget_limited"]
 
 
+def test_coverage_limits_diverse_cohort_but_retains_all_required_forms(monkeypatch):
+    recommendation = _recommendation()
+    template = recommendation.observations[0]
+    observations = tuple(
+        replace(template, filename=f"subject-{index:02d}.vtk", sha256=f"{index + 1:064x}")
+        for index in range(71)
+    )
+    recommendation = replace(
+        recommendation, observations=(template, *observations), subject_count=71, mesh_count=72,
+    )
+    monkeypatch.setattr(
+        "diffeoforge.reference_calibration._descriptor_matrix",
+        lambda observations: np.eye(len(observations)),
+    )
+    suggestion = coverage_suggestion(recommendation)
+    assert suggestion["recommended_count"] == suggestion["budget"] == 8
+    assert suggestion["budget_limited"]
+    assert len(suggestion["omitted"]) == 63
+
+    mandatory = tuple(observation.filename for observation in observations[-13:])
+    suggestion = coverage_suggestion(recommendation, required=mandatory)
+    assert suggestion["recommended_count"] == suggestion["budget"] == len(mandatory)
+    assert {row["filename"] for row in suggestion["selected"]} == set(mandatory)
+    assert suggestion["budget_limited"]
+
+
 def test_guided_dialog_opens_inert_and_tie_prepares_only_the_next_pair(tmp_path, monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from pilot_view_helpers import wait_pilot_view

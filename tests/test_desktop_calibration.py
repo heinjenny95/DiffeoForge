@@ -108,7 +108,7 @@ def test_desktop_builds_and_binds_transparent_calibration_plan(
     application.processEvents()
 
 
-def test_desktop_accepts_automatic_coverage_above_twenty_without_fitting(monkeypatch, tmp_path):
+def test_desktop_limits_automatic_pilot_and_accepts_larger_manual_count(monkeypatch, tmp_path):
     application, window, queued = _prepared_window(monkeypatch, tmp_path)
     example = ROOT / "examples" / "synthetic" / "meshes"
     meshes = tmp_path / "diverse"
@@ -130,12 +130,30 @@ def test_desktop_accepts_automatic_coverage_above_twenty_without_fitting(monkeyp
     application.processEvents()
 
     plan = window._reference_calibration_plan
-    assert plan.pilot_subject_count == window.reference_pilot_subject_count_spin.value() == 22
-    assert plan.design_suggestion["recommended_count"] == 22
-    assert not plan.design_suggestion["budget_limited"]
-    assert [row["filename"] for row in plan.design_suggestion["selected"]] == [
+    assert plan.pilot_subject_count == window.reference_pilot_subject_count_spin.value() == 5
+    suggestion = plan.design_suggestion
+    assert suggestion["recommended_count"] == suggestion["budget"] == 5
+    assert suggestion["budget_limited"]
+    assert suggestion["maximum_uncovered_distance"] > suggestion["redundancy_threshold"]
+    assert len(suggestion["omitted"]) == 17
+    assert [row["filename"] for row in suggestion["selected"]] == [
         row.filename for row in plan.selected_pilot_subjects
     ]
+    status = (
+        window.reference_calibration_summary_label.text()
+        + window.reference_calibration_status.text()
+    )
+    assert "outside the automatic coverage radius" in status
+
+    window.reference_pilot_auto_count.setChecked(False)
+    window.reference_pilot_subject_count_spin.setValue(21)
+    window.build_reference_calibration_button.click()
+    application.processEvents()
+
+    manual_plan = window._reference_calibration_plan
+    assert manual_plan.pilot_subject_count == window.reference_pilot_subject_count_spin.value() == 21
+    assert manual_plan.design_suggestion["accepted_count"] == 21
+    assert manual_plan.design_suggestion["automatic_count_accepted"] is False
     assert len(queued) == 1
     window.close()
     application.processEvents()
