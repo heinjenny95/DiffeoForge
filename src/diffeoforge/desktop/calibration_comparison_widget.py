@@ -13,7 +13,7 @@ from PySide6.QtGui import (
     QPaintEvent,
     QWheelEvent,
 )
-from PySide6.QtWidgets import QCheckBox, QWidget
+from PySide6.QtWidgets import QCheckBox, QSizePolicy, QVBoxLayout, QWidget
 
 from diffeoforge.desktop.display_proxy import DEFAULT_DISPLAY_FACES
 from diffeoforge.desktop.landmark_3d_widget import camera_rotation
@@ -28,11 +28,15 @@ class CalibrationComparisonCanvas3D(QWidget):
     originalDetailRequested = Signal()
     cameraChanged = Signal(object)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, *, show_inspection_hints: bool = True
+    ) -> None:
         super().__init__(parent)
+        self._show_inspection_hints = show_inspection_hints
         self._original: MeshPreviewModel | None = None
         self._reconstruction: MeshPreviewModel | None = None
         self._original_vertices = np.empty((0, 3), dtype=np.float64)
+        self._original_triangles = np.empty((0, 3), dtype=np.int64)
         self._reconstruction_vertices = np.empty((0, 3), dtype=np.float64)
         self._reconstruction_triangles = np.empty((0, 3), dtype=np.int64)
         self._original_edges = np.empty((0, 2), dtype=np.int64)
@@ -48,16 +52,24 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._scale = 1.0
         self._yaw = -0.55
         self._pitch = 0.30
+        self._base_orientation: tuple | None = None
         self._zoom = 1.0
         self._pan = (0.0, 0.0)
         self._show_original = True
         self._show_reconstruction = True
+        self._original_wireframe = True
         self._last_position: QPointF | None = None
         self._drag_button: Qt.MouseButton | None = None
         self._interacting = False
         self._linked_navigation = False
         self.original_detail = QCheckBox("Load original detail (optional, slower)", self)
-        self.original_detail.move(12, 38)
+        self.original_detail.setObjectName("comparisonOriginalDetail")
+        self.original_detail.setEnabled(False)
+        self.original_detail.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        controls = QVBoxLayout(self)
+        controls.setContentsMargins(12, 38, 0, 0)
+        controls.addWidget(self.original_detail, alignment=Qt.AlignmentFlag.AlignLeft)
+        controls.addStretch()
         self.original_detail.setToolTip(
             "You can approve or reject the displayed preview. Load original detail "
             "only when you need to inspect features that simplification may hide."
@@ -94,6 +106,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         self.original_detail.setChecked(False)
         self.original_detail.setEnabled(True)
         self._original_vertices = np.asarray(original.vertices, dtype=np.float64)
+        self._original_triangles = np.asarray(original.triangles, dtype=np.int64)
         self._reconstruction_vertices = np.asarray(
             reconstruction.vertices,
             dtype=np.float64,
@@ -122,6 +135,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._original = self._reconstruction = None
         self.original_detail.setEnabled(False)
         self._original_vertices = np.empty((0, 3), dtype=np.float64)
+        self._original_triangles = np.empty((0, 3), dtype=np.int64)
         self._reconstruction_vertices = np.empty((0, 3), dtype=np.float64)
         self._reconstruction_triangles = np.empty((0, 3), dtype=np.int64)
         self._original_edges = np.empty((0, 2), dtype=np.int64)
@@ -137,10 +151,12 @@ class CalibrationComparisonCanvas3D(QWidget):
             self.height(),
             self._yaw,
             self._pitch,
+            self._base_orientation,
             self._zoom,
             self._pan,
             self._show_original,
             self._show_reconstruction,
+            self._original_wireframe,
             self.original_detail.isChecked(),
             self._interacting or self._wheel_timer.isActive() or self._linked_navigation,
         )
@@ -195,19 +211,21 @@ class CalibrationComparisonCanvas3D(QWidget):
         self.update()
 
     def camera_state(self) -> tuple:
-        return (
+        state = (
             self._yaw,
             self._pitch,
             self._zoom,
             self._pan,
             self._interacting or self._wheel_timer.isActive(),
         )
+        return state if self._base_orientation is None else (*state, self._base_orientation)
 
     def _emit_camera(self) -> None:
         self.cameraChanged.emit(self.camera_state())
 
     def set_linked_camera(self, state: tuple) -> None:
-        self._yaw, self._pitch, self._zoom, self._pan, self._linked_navigation = state
+        self._yaw, self._pitch, self._zoom, self._pan, self._linked_navigation = state[:5]
+        self._base_orientation = state[5] if len(state) > 5 else None
         self.update()
 
     def set_comparison_extent(self, center: np.ndarray, scale: float) -> None:
@@ -232,9 +250,14 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._show_reconstruction = bool(visible)
         self.update()
 
+    def set_original_wireframe(self, wireframe: bool) -> None:
+        self._original_wireframe = bool(wireframe)
+        self.update()
+
     def reset_view(self) -> None:
         self._yaw = -0.55
         self._pitch = 0.30
+        self._base_orientation = None
         self._zoom = 1.0
         self._pan = (0.0, 0.0)
         self._emit_camera()
@@ -255,13 +278,27 @@ class CalibrationComparisonCanvas3D(QWidget):
         if preset not in orientations:
             raise ValueError(f"Unknown comparison view preset: {preset!r}")
         self._yaw, self._pitch = orientations[preset]
+        self._base_orientation = None
         self._zoom = 1.0
         self._pan = (0.0, 0.0)
         self._emit_camera()
         self.update()
 
-    def _project(self, vertices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def set_base_orientation(self, orientation: tuple) -> None:
+        """Set a verified camera basis, with subsequent drags in its camera frame."""
+        self._base_orientation = orientation
+        self._yaw = self._pitch = 0.0
+        self._zoom = 1.0
+        self._pan = (0.0, 0.0)
+        self._emit_camera()
+        self.update()
+
+    def _view_rotation(self) -> np.ndarray:
         rotation = camera_rotation(self._yaw, self._pitch)
+        return rotation if self._base_orientation is None else rotation @ self._base_orientation
+
+    def _project(self, vertices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        rotation = self._view_rotation()
         camera = ((vertices - self._center) / self._scale) @ rotation.T
         viewport = max(1.0, min(float(self.width()), float(self.height())) - 72.0)
         factor = 0.9 * viewport * self._zoom
@@ -342,7 +379,10 @@ class CalibrationComparisonCanvas3D(QWidget):
             return
         key = self._frame_key()
         layers = []
-        original_vertices, original_edges = self._original_vertices, self._original_edges
+        original_vertices = self._original_vertices
+        original_indices = (
+            self._original_edges if self._original_wireframe else self._original_triangles
+        )
         reconstruction_vertices, reconstruction_triangles = (
             self._reconstruction_vertices,
             self._reconstruction_triangles,
@@ -351,11 +391,14 @@ class CalibrationComparisonCanvas3D(QWidget):
             original_proxy = self._original.display_proxy
             reconstruction_proxy = self._reconstruction.display_proxy
             if original_proxy is not None:
-                original_vertices, original_edges = original_proxy.vertices, original_proxy.edges
+                original_vertices = original_proxy.vertices
+                original_indices = (
+                    original_proxy.edges if self._original_wireframe else original_proxy.triangles
+                )
             elif self._original.triangle_count > DEFAULT_DISPLAY_FACES:
-                original_vertices, original_edges = (
-                    np.empty((0, 3)),
-                    np.empty((0, 2), dtype=np.int64),
+                original_vertices = np.empty((0, 3))
+                original_indices = np.empty(
+                    (0, 2 if self._original_wireframe else 3), dtype=np.int64
                 )
             if reconstruction_proxy is not None:
                 reconstruction_vertices, reconstruction_triangles = (
@@ -374,7 +417,10 @@ class CalibrationComparisonCanvas3D(QWidget):
         if self._show_original:
             layers.append(
                 SurfaceLayer(
-                    original_vertices, original_edges, wireframe=True, color=(193, 87, 42, 150)
+                    original_vertices,
+                    original_indices,
+                    wireframe=self._original_wireframe,
+                    color=(193, 87, 42, 150 if self._original_wireframe else 255),
                 )
             )
         scene = SurfaceScene(
@@ -382,7 +428,7 @@ class CalibrationComparisonCanvas3D(QWidget):
             self.height(),
             self._center,
             self._scale,
-            camera_rotation(self._yaw, self._pitch),
+            self._view_rotation(),
             self._zoom,
             self._pan,
             tuple(layers),
@@ -410,22 +456,25 @@ class CalibrationComparisonCanvas3D(QWidget):
         if presented is None:
             painter.fillRect(0, 0, self.width(), 34, QColor("#fff3d6"))
             painter.setPen(QColor("#705419"))
-            painter.drawText(
-                12,
-                23,
-                self._frames.error
-                or (
+            if scene.navigation:
+                message = (
                     "Navigation preview — QC decisions are disabled during movement."
-                    if scene.navigation
-                    else "Preview unavailable — retry or load optional full detail."
-                    if not has_geometry
-                    else "Rendering selected display resolution in background…"
-                ),
-            )
-        elif not self._show_original or not self._show_reconstruction:
+                    if self._show_inspection_hints else "Navigation preview."
+                )
+            elif not has_geometry:
+                message = (
+                    "Preview unavailable — retry or load optional full detail."
+                    if self._show_inspection_hints else "Preview unavailable."
+                )
+            else:
+                message = "Rendering selected display resolution in background…"
+            painter.drawText(12, 23, self._frames.error or message)
+        elif self._show_inspection_hints and not (
+            self._show_original and self._show_reconstruction
+        ):
             painter.setPen(QColor("#705419"))
             painter.drawText(12, 23, "Show both layers before confirming the QC inspection.")
-        elif not self.full_resolution_ready:
+        elif self._show_inspection_hints and not self.full_resolution_ready:
             painter.setPen(QColor("#705419"))
             painter.drawText(
                 12,

@@ -11,6 +11,13 @@ entrypoint_platform = os.environ.get("DIFFEOFORGE_BUILD_ENTRYPOINT_PLATFORM", "w
 if entrypoint_platform not in {"windows", "macos"}:
     raise RuntimeError("Unsupported frozen entrypoint platform")
 entrypoints = repository / "distribution" / entrypoint_platform
+asset_directory = source / "diffeoforge" / "desktop" / "assets"
+asset_destination = "diffeoforge/desktop/assets"
+desktop_data = [(str(asset_directory / "app-icon.png"), asset_destination)]
+desktop_icon = None
+if entrypoint_platform == "windows":
+    desktop_icon = str(asset_directory / "app-icon.ico")
+    desktop_data.append((desktop_icon, asset_destination))
 schema_directory = source / "diffeoforge" / "schema"
 schema_data = [
     (str(path), "diffeoforge/schema")
@@ -89,7 +96,7 @@ desktop_analysis = Analysis(
     [str(entrypoints / "diffeoforge_desktop.py")],
     pathex=[str(source)],
     binaries=[],
-    datas=schema_data + third_party_data + media_metadata,
+    datas=schema_data + third_party_data + media_metadata + desktop_data,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig=matplotlib_hooks,
@@ -106,6 +113,7 @@ desktop_executable = EXE(
     [],
     exclude_binaries=True,
     name="DiffeoForge",
+    icon=desktop_icon,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

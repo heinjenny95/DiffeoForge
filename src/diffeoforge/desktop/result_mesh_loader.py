@@ -19,10 +19,13 @@ class _LoadSignals(QObject):
 
 
 class _LoadWorker(QRunnable):
-    def __init__(self, request: tuple, cache: OrderedDict) -> None:
+    def __init__(
+        self, request: tuple, cache: OrderedDict, triangle_budget: int | None = None
+    ) -> None:
         super().__init__()
         self.request = request
         self.cache = cache
+        self.triangle_budget = triangle_budget
         self.signals = _LoadSignals()
 
     @Slot()
@@ -42,7 +45,11 @@ class _LoadWorker(QRunnable):
                 identity = (path, expected)
                 model = self.cache.get(identity)
                 if model is None:
-                    model = load_mesh_preview(path)
+                    model = (
+                        load_mesh_preview(path)
+                        if self.triangle_budget is None
+                        else load_mesh_preview(path, triangle_budget=self.triangle_budget)
+                    )
                 if model.sha256 != expected:
                     raise ModernResultReviewError(
                         "Loaded mesh differs from verified artifact bytes"
@@ -74,8 +81,11 @@ class ResultMeshLoader(QObject):
     failed = Signal(object, str, str)
     activity_changed = Signal(bool)
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    def __init__(
+        self, parent: QObject | None = None, *, triangle_budget: int | None = None
+    ) -> None:
         super().__init__(parent)
+        self._triangle_budget = triangle_budget
         self._token = 0
         self._active: _LoadWorker | None = None
         self._pending: tuple | None = None
@@ -93,7 +103,7 @@ class ResultMeshLoader(QObject):
     def _start_pending(self) -> None:
         if self._active is not None or self._pending is None:
             return
-        self._active = _LoadWorker(self._pending, self._cache)
+        self._active = _LoadWorker(self._pending, self._cache, self._triangle_budget)
         self._pending = None
         self._active.signals.finished.connect(self._finished)
         self.activity_changed.emit(True)

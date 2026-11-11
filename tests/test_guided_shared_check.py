@@ -28,8 +28,10 @@ def test_shared_field_check_stays_visible_with_next_form_progress(panel):
     panel.guidance['shared_model_checks'] = {identifier: dict(available=True)}
     panel.render()
     button = next(b for b in panel.window.findChildren(QPushButton)
-                  if b.text() == 'Use suitable fit → prepare atlas-model check')
+                  if b.text() == 'Prepare atlas-model check · specimen.vtk · Test 5')
     assert button.isVisible() and button.isEnabled()
+    assert button.objectName() == "secondary"
+    assert panel.window.next_step_button.objectName() == "primary"
     button.click()
     assert panel.invoked[-1][1]['guided_action'] == (
         'adaptive_shared_check', identifier, None)
@@ -133,14 +135,18 @@ def test_local_declaration_requires_suitability_and_rejects_residual(tmp_path, m
 
 
 def test_suitable_local_fit_has_explicit_nonrunning_next_action(panel):
-    from PySide6.QtWidgets import QPushButton
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
 
     identifier = panel.candidate.candidate_id
     panel.snapshot.visual_reviews[identifier] = True
     panel.guidance["shared_model_checks"] = {identifier: dict(available=True)}
+    panel.window.next_step_button.clicked.connect(
+        lambda: ReferenceCalibrationDialog._perform_final_next_step(panel.window))
     panel.render()
-    button = next(b for b in panel.window.findChildren(QPushButton)
-                  if b.text() == "Use suitable fit → prepare atlas-model check")
+    button = panel.window.next_step_button
+    assert button.text() == "Prepare atlas-model check · specimen.vtk · Test 5"
+    assert not panel.window.content.isAncestorOf(button)
+    assert button.objectName() == "primary"
     assert button.isVisible() and button.isEnabled() and not panel.invoked
     button.click()
     assert panel.invoked == [((), dict(adaptive=False,

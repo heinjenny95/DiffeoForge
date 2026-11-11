@@ -116,3 +116,70 @@ def test_changed_continuation_checkpoint_is_rejected_before_dispatch(tmp_path, m
     with pytest.raises(ValueError, match="settings or checkpoint changed"):
         continuation.verify(prepared.study_directory, event, events)
     assert not calls
+
+
+@pytest.mark.parametrize("reopen", [False, True], ids=["direct", "resume-declared"])
+def test_dialog_selects_new_continuation_result_for_fresh_review(tmp_path, monkeypatch, reopen):
+    from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtWidgets import QApplication
+    from test_pilot_completion import _approve_preview
+
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    runner, original, identifier, calls = _fixture(tmp_path, monkeypatch)
+    _approve_preview(original, identifier)
+    before = study.load_reference_calibration_study(original.study_directory)
+    if reopen:
+        before, _ = continuation.prepare(before, identifier)
+    expected = qualification.declarations(study._load_events(before.study_directory))
+    assert len(expected) == int(reopen)
+
+    application = QApplication.instance() or QApplication([])
+    dialog = ReferenceCalibrationDialog(before.study_directory)
+    dialog.show()
+    try:
+        wait_pilot_view(dialog)
+        dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(identifier))
+        assert dialog.selection_combo.currentData() == identifier
+        assert dialog.next_step_button.isEnabled()
+        if reopen:
+            assert dialog.next_step_button.text() == "Resume saved check"
+            assert not dialog.final_finish_button.isVisible()
+        else:
+            assert dialog.next_step_button.text().startswith("Continue saved fit: +300 iterations")
+            assert dialog.final_finish_button.isVisible()
+        workers = []
+        monkeypatch.setattr(dialog._thread_pool, "start", workers.append)
+        dialog.next_step_button.click()
+        assert len(workers) == 1
+        worker = workers[0]
+        assert worker.qualification is reopen
+        assert worker.continuation == (None if reopen else (identifier, 300))
+        worker.runner = runner  # Keep the synthetic controller for the full route.
+        worker.run()
+        wait_pilot_view(dialog)
+        declarations = qualification.declarations(study._load_events(before.study_directory))
+        assert len(declarations) == 1
+        if reopen:
+            assert declarations == expected
+        declaration = declarations[0]
+        assert calls == [(Path(declaration["checkpoint_continuation"]["source_run"]), 300)]
+        continuation_id = declaration["candidate"]["candidate_id"]
+        assert dialog.selection_combo.currentData() == continuation_id
+        assert dialog.next_step_button.text() == "Review saved fit…"
+        assert dialog.snapshot.visual_reviews[identifier] is True
+        assert continuation_id not in dialog.snapshot.visual_reviews
+
+        if not reopen:
+            dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(identifier))
+            dialog._start_pilot(adaptive=False, qualification=True)
+            assert len(workers) == 2
+            workers[-1].runner = runner
+            workers[-1].run()
+            wait_pilot_view(dialog)
+            assert dialog.selection_combo.currentData() == identifier
+            assert len(calls) == 1  # Reusing the time check starts no fitting.
+    finally:
+        dialog.close()
+        application.processEvents()

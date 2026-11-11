@@ -304,8 +304,25 @@ def test_capped_dialog_requires_recorded_qc_and_explicit_provisional_finish(tmp_
     assert not dialog.continuation_iterations.isEnabled()
     assert all("+300 iterations" in b.text() for b in dialog._continuation_buttons.values())
     assert all("total)" in b.text() for b in dialog._continuation_buttons.values())
+    dialog.resize(850, 650)
+    dialog.show()
+    app.processEvents()
+    assert dialog.next_step_button.text().startswith("Continue saved fit: +300 iterations")
+    assert dialog.next_step_button.text().endswith("recommended")
+    assert dialog.next_step_button.objectName() == "primary"
+    assert dialog.final_finish_button.text() == "Finish pilot provisionally → atlas setup"
+    assert dialog.final_finish_button.objectName() == "secondary"
+    for button in (dialog.next_step_button, dialog.final_finish_button):
+        assert button.isVisible() and button.isEnabled()
+        assert not dialog.scroll.isAncestorOf(button)
+        assert dialog.rect().contains(button.geometry())
+    continued = []
+    with monkeypatch.context() as choice:
+        choice.setattr(dialog, "_start_selected_continuation", continued.append)
+        dialog.next_step_button.click()
+    assert [candidate.candidate_id for candidate in continued] == [identifier]
     monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.No)
-    dialog._advance()
+    dialog.final_finish_button.click()
     assert study.load_reference_calibration_study(done.study_directory).status == "awaiting_review"
     monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
     workers = []
@@ -317,8 +334,7 @@ def test_capped_dialog_requires_recorded_qc_and_explicit_provisional_finish(tmp_
         "run_current_stage",
         lambda *a, **k: pytest.fail("Finishing must not fit or shoot"),
     )
-    dialog.show()
-    dialog._advance()
+    dialog.final_finish_button.click()
     assert len(workers) == 1 and dialog._worker is workers[0]
     assert "Verifying saved pilot" in dialog.status.text()
     assert not dialog.advance_button.isEnabled()

@@ -158,6 +158,21 @@ def test_large_3d_glyph_hover_uses_visible_pixels_and_frontmost_specimen(qapp):
     assert canvas._pick(point) == 1
     assert canvas._pick(QPointF(0, 0)) == -1
 
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    canvas.show()
+    clicked = []
+    canvas.specimen_clicked.connect(clicked.append)
+    QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=point.toPoint())
+    assert clicked == [1]
+    QTest.mousePress(canvas, Qt.MouseButton.LeftButton, pos=point.toPoint())
+    QTest.mouseMove(canvas, point.toPoint() + QPoint(25, 0))
+    QTest.mouseMove(canvas, point.toPoint())
+    QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=point.toPoint())
+    assert clicked == [1]
+    canvas.close()
+
 
 def test_all_pca_sd_and_heatmaps_keep_individual_selection_and_hover_ids(qapp, tmp_path):
     panel = VisualizationPanel()
@@ -187,6 +202,41 @@ def test_all_pca_sd_and_heatmaps_keep_individual_selection_and_hover_ids(qapp, t
     assert panel.heat_combo.currentData() == "all"
     assert len([item for item in panel.heat_view.scene().items()
                 if hasattr(item, "pixmap")]) == 3
+    panel.close()
+
+
+def test_score_plot_opens_exact_specimen_on_click_but_not_drag(qapp, tmp_path):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QPixmap
+    from PySide6.QtTest import QTest
+
+    panel = VisualizationPanel()
+    panel.resize(950, 720)
+    panel.show()
+    qapp.processEvents()
+    panel._source_run = tmp_path / "run"
+    panel._items = [{"id": 1, "scores": [-1.0, 1.0]}, {"id": 2, "scores": [1.0, -1.0]}]
+    panel._specimen_labels = ["first.vtk", "second.vtk"]
+    pixmap = QPixmap(70, 60)
+    pixmap.fill(QColor("teal"))
+    panel._thumbnails = {1: pixmap, 2: pixmap}
+    panel._show_plot()
+    selections = []
+    panel.specimen_comparison_requested.connect(
+        lambda subject, source: selections.append((subject, source))
+    )
+    view = panel.plot_view
+    glyph = next(item for item in view.scene().items() if item.data(1) == 2)
+    position = view.mapFromScene(glyph.scenePos())
+    viewport = view.viewport()
+    QTest.mouseClick(viewport, Qt.MouseButton.LeftButton, pos=position)
+    assert selections == [("second.vtk", tmp_path / "run")]
+
+    QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=position)
+    QTest.mouseMove(viewport, position + QPoint(40, 0))
+    QTest.mouseMove(viewport, position)
+    QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=position)
+    assert len(selections) == 1
     panel.close()
 
 

@@ -70,6 +70,8 @@ from diffeoforge.reference_calibration_study import (
 )
 from diffeoforge.result_report import collect_run_report
 
+_OPTIMIZER_CHECK_PREFIXES = ("qualification-", "continue-")
+
 _FEASIBILITY_PARAMETER_LABELS = {
     "attachment_kernel_width": "surface-matching detail width",
     "deformation_kernel_width": "deformation spread width",
@@ -271,6 +273,7 @@ class _CalibrationStageWorker(QRunnable):
     ) -> None:
         super().__init__()
         self.runner = runner
+        self.previous_final_fit_ids: frozenset[str] | None = None
         self.guided_action = guided_action
         self.continuation = continuation
         self.specimen_fit = specimen_fit
@@ -1439,6 +1442,8 @@ class ReferenceCalibrationDialog(QDialog):
         self._approval_checks: dict[str, QCheckBox] = {}
         self._review_buttons: dict[str, QPushButton] = {}
         self._continuation_buttons: dict[str, QPushButton] = {}
+        self._continuation_disclosures: dict[str, InfoDisclosure] = {}
+        self._final_continuation_button: QPushButton | None = None
         self._visually_reviewed_candidates: set[str] = set()
         self._visually_approved_candidates: set[str] = set()
         self.setWindowTitle("Automatic Deformetrica pilot calibration")
@@ -1775,10 +1780,15 @@ class ReferenceCalibrationDialog(QDialog):
         self.close_button = close
         self.next_step_button = QPushButton()
         self._guided_footer_action = None
+        self._guided_footer_goal = None
         self._guided_review_target = None
+        self.final_finish_button = QPushButton("Finish pilot provisionally → atlas setup")
+        self.final_finish_button.clicked.connect(self._advance)
+        self.final_finish_button.hide()
         self.next_step_button.clicked.connect(self._perform_final_next_step)
         self.next_step_button.hide()
         _set_action_emphasis(self.next_step_button, True)
+        _set_action_emphasis(self.final_finish_button, False)
         _set_action_emphasis(self.cancel_button, False)
         _set_action_emphasis(self.review_next_button, False)
         _set_action_emphasis(self.start_button, True)
@@ -1802,6 +1812,7 @@ class ReferenceCalibrationDialog(QDialog):
         main_actions.addWidget(self.cancel_button)
         main_actions.addStretch()
         main_actions.addWidget(self.next_step_button)
+        main_actions.addWidget(self.final_finish_button)
         main_actions.addWidget(self.start_button)
         main_actions.addWidget(self.advance_button)
         main_actions.addWidget(close)
@@ -1879,6 +1890,8 @@ class ReferenceCalibrationDialog(QDialog):
         self._approval_checks = {}
         self._review_buttons = {}
         self._continuation_buttons = {}
+        self._continuation_disclosures = {}
+        self._final_continuation_button = None
 
     def _update_continuation_labels(self) -> None:
         for letter, button in self._continuation_buttons.items():
@@ -1919,8 +1932,9 @@ class ReferenceCalibrationDialog(QDialog):
                 self.pilot_tools.setEnabled(False)
                 for control in (self.start_button, self.advance_button,
                                 self.review_next_button, self.keep_previous_button,
-                                self.next_step_button, self.selection_combo,
-                                self.find_fit_button, self.collect_evidence_button,
+                                self.next_step_button, self.final_finish_button,
+                                self.selection_combo, self.find_fit_button,
+                                self.collect_evidence_button,
                                 self.advanced_mode, self.afk_mode):
                     control.setEnabled(False)
                 self.status.setText("Verifying saved evidence in background…")
@@ -1942,8 +1956,10 @@ class ReferenceCalibrationDialog(QDialog):
         self._density_hidden_visibility = {}
         self.finer_resolution_button.hide()
         self.next_step_button.hide()
+        self.final_finish_button.hide()
         self.final_check_summary.hide()
         self._guided_footer_action = None
+        self._guided_footer_goal = None
         self._guided_review_target = None
         self.status.show()
         self._assessment = None
@@ -2316,8 +2332,8 @@ class ReferenceCalibrationDialog(QDialog):
                 question="Is this saved fit ready for the full-cohort atlas?",
                 explanation="Check the unchanged saved state on three time grids. "
                 "No optimization runs. Existing verified integration checks are reused.",
-                action="Review the joint fit, check its time resolution, then finish. "
-                "An iteration-limited fit requires an explicit provisional finish.",
+                action="Review the joint fit and check its time resolution. If it reached "
+                "its iteration limit, continue an available checkpoint or finish provisionally.",
                 caution="Engineering checks do not establish "
                 "biological validity or a global optimum.",
             )
@@ -2490,7 +2506,8 @@ class ReferenceCalibrationDialog(QDialog):
                 self.progress.setFormat(f"{decided} of {total} screening options decided")
         elif stage.order == 4:
             checks = [
-                c for c in self._snapshot.candidates if c.candidate_id.startswith("qualification-")
+                c for c in self._snapshot.candidates
+                if c.candidate_id.startswith(_OPTIMIZER_CHECK_PREFIXES)
             ]
             self.progress.setRange(0, max(1, len(checks)))
             self.progress.setValue(sum(c.status == "completed" for c in checks))
@@ -2532,7 +2549,7 @@ class ReferenceCalibrationDialog(QDialog):
             if (
                 stage.order == 4
                 and candidate.status == "pending"
-                and not (candidate.candidate_id.startswith("qualification-"))
+                and not candidate.candidate_id.startswith(_OPTIMIZER_CHECK_PREFIXES)
             ):
                 continue  # Historical refit grid is not part of the new check.
             target_layout = (
@@ -2715,7 +2732,8 @@ class ReferenceCalibrationDialog(QDialog):
             self.status.setText(f"Next: {self.start_button.text()}.")
         if stage and stage.order == 4:
             pending = any(
-                c.candidate_id.startswith("qualification-") and c.status != "completed"
+                c.candidate_id.startswith(_OPTIMIZER_CHECK_PREFIXES)
+                and c.status not in {"completed", "superseded"}
                 for c in self._snapshot.candidates
             )
             label = (
@@ -2792,7 +2810,7 @@ class ReferenceCalibrationDialog(QDialog):
         row = next((r for r in self._assessment.candidates if r.candidate_id == selected), None) \
             if self._assessment else None
         pending_checks = [c for c in self._snapshot.candidates
-                          if c.candidate_id.startswith("qualification-")
+                          if c.candidate_id.startswith(_OPTIMIZER_CHECK_PREFIXES)
                           and c.status not in {"completed", "superseded"}]
         pending = bool(pending_checks)
         # The assessment already verified the receipt and provisional gates.
@@ -2834,22 +2852,44 @@ class ReferenceCalibrationDialog(QDialog):
                 metrics=candidate.metrics or {}, timepoints=timepoints,
                 eligible=bool(row and row.eligible), provisional=provisional,
             ))
-        self.next_step_button.setText(step.label)
+        continuation = next(
+            (button for button in self._continuation_buttons.values()
+             if button.property("continuationCandidateId") == selected and button.isEnabled()),
+            None,
+        )
+        promote_continuation = (
+            not running and step.action == "finish" and provisional and continuation is not None
+        )
+        self._final_continuation_button = continuation if promote_continuation else None
+        for identifier, disclosure in self._continuation_disclosures.items():
+            disclosure.setVisible(not (promote_continuation and identifier == selected))
+        self.final_finish_button.setVisible(promote_continuation)
+        self.final_finish_button.setEnabled(promote_continuation)
+        self.final_finish_button.setText(step.label)
+        self.final_finish_button.setToolTip(self.advance_button.toolTip())
+        self.next_step_button.setText(continuation.text() + " · recommended"
+                                     if promote_continuation else step.label)
+        self.next_step_button.setToolTip(continuation.toolTip() if promote_continuation else "")
         self.next_step_button.show()
         self.next_step_button.setEnabled(not running and step.action != "choose")
+        _set_action_emphasis(self.next_step_button, self.next_step_button.isEnabled())
         for button in (self.start_button, self.advance_button, self.review_next_button,
                        self.use_provisional_button, self.qualification_button):
             button.hide()
         self.finer_model_button.setEnabled(not running and candidate is not None)
         if not running:
-            self.progress.setFormat({
+            self.progress.setFormat("Iteration limit reached" if promote_continuation else {
                 "choose": "Choose saved fit", "review": "Review saved fit",
                 "check": "Ready to check time resolution",
                 "finer": "Time resolution needs refinement",
                 "adopt": "Ready to use finer saved evaluation",
                 "finish": "Pilot ready to finish", "details": "Check needs attention",
             }[step.action])
-            self.status.setText(step.message)
+            self.status.setText(
+                "Continue the saved checkpoint to test for convergence, or finish provisionally "
+                "with the iteration-limit warning."
+                if promote_continuation else step.message
+            )
             self.status.setObjectName("statusWarning" if step.warning else "status")
             self.status.style().unpolish(self.status)
             self.status.style().polish(self.status)
@@ -2865,7 +2905,12 @@ class ReferenceCalibrationDialog(QDialog):
                 if action == "common_review":
                     self._open_common_saved_fit(identifier)
                 else:
-                    self._start_pilot(adaptive=False, guided_action=(action, identifier, None))
+                    self._start_pilot(adaptive=False, guided_action=(
+                        action, identifier, getattr(self, "_guided_footer_goal", None)))
+            return
+        continuation = getattr(self, "_final_continuation_button", None)
+        if continuation is not None:
+            continuation.click()
             return
         step = getattr(self, "_final_next_step", None)
         if step is None:
@@ -3291,7 +3336,9 @@ class ReferenceCalibrationDialog(QDialog):
                          and self._snapshot.current_stage.order == 1)
             )
             if self._snapshot.current_stage.order == 4:
-                layout.addWidget(InfoDisclosure("Optional optimizer continuation", continuation))
+                disclosure = InfoDisclosure("Optional optimizer continuation", continuation)
+                self._continuation_disclosures[candidate.candidate_id] = disclosure
+                layout.addWidget(disclosure)
             else:
                 review_controls.addWidget(continuation)
             review_controls.addWidget(approval)
@@ -3837,6 +3884,11 @@ class ReferenceCalibrationDialog(QDialog):
                 if key in {c.candidate_id for c in self._snapshot.candidates}
             },
         )
+        if self._snapshot.current_stage and self._snapshot.current_stage.order == 4:
+            worker.previous_final_fit_ids = frozenset(
+                candidate.candidate_id for candidate in self._snapshot.candidates
+                if candidate.status == "completed"
+            )
         worker.signals.event.connect(self._event)
         worker.signals.succeeded.connect(self._succeeded)
         worker.signals.failed.connect(self._failed)
@@ -3858,6 +3910,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.qualification_button.setEnabled(False)
         self.finer_model_button.setEnabled(False)
         self.next_step_button.setEnabled(False)
+        self.final_finish_button.setEnabled(False)
         self.status.show()
         self.selection_combo.setEnabled(False)
         self.start_button.setEnabled(False)
@@ -4147,6 +4200,7 @@ class ReferenceCalibrationDialog(QDialog):
     @Slot(object)
     def _succeeded(self, snapshot: ReferenceCalibrationStudySnapshot) -> None:
         finishing = getattr(self._worker, "finish_candidate_id", None) is not None
+        previous_final_fit_ids = getattr(self._worker, "previous_final_fit_ids", None)
         self._pending_continue_stage = bool(
             getattr(self._worker, "provisional_override_id", None)
             and snapshot.status != "completed"
@@ -4158,19 +4212,18 @@ class ReferenceCalibrationDialog(QDialog):
             # Parent's existing finished handler applies parameters, never runs an atlas.
             self.accept()
             return
-        self._render(snapshot)
-        if snapshot.current_stage and snapshot.current_stage.order == 4:
-            latest = next(
-                (
-                    c
-                    for c in reversed(snapshot.candidates)
-                    if c.candidate_id.startswith(("qualification-", "resolution-"))
-                    and c.status == "completed"
-                ),
+        if (previous_final_fit_ids is not None
+                and snapshot.current_stage and snapshot.current_stage.order == 4):
+            self._pending_view_selection = next(
+                (candidate.candidate_id for candidate in reversed(snapshot.candidates)
+                 if candidate.status == "completed"
+                 and candidate.candidate_id not in previous_final_fit_ids
+                 and candidate.candidate_id.startswith(
+                     (*_OPTIMIZER_CHECK_PREFIXES, "resolution-")
+                 )),
                 None,
             )
-            if latest:
-                self._pending_view_selection = latest.candidate_id
+        self._render(snapshot)
         self._notify_review_ready()
         if self._fit_search_stop_text:
             self.status.setText(self._fit_search_stop_text)

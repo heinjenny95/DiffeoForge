@@ -19,6 +19,7 @@ from diffeoforge.desktop.mesh_view import preset_views
 from diffeoforge.mesh import sha256_file, write_vtk_polydata
 from diffeoforge.pca_media import _record, _render_media, verify_media
 from diffeoforge.reference_pca_deformations import DEFAULT_RESULT_DIRECTORY
+from diffeoforge.reference_pca_samples import observed_axis_endpoints
 
 
 def seal(root, run, sources, pca):
@@ -69,21 +70,26 @@ def synthetic_media(tmp_path):
                 endpoints.append(
                     {**_record(path), "role": "axis", "component": pc, "direction": direction}
                 )
-    (sample_root / "samples.json").write_text(
-        json.dumps(
-            {
-                "return_code": 0,
-                "components": [1, 2, 3],
-                "anchor_tolerance": 1e-10,
-            }
-        )
-    )
     pca = SimpleNamespace(
         scores=np.array([[-1.0, 2.0, 3.0], [1.0, -2.0, -3.0]]),
+        explained_variance=np.array([1.0, 4.0, 9.0]),
         explained_variance_ratio=np.array([0.6, 0.3, 0.1]),
         sample_labels=("A", "B"),
         number_of_components=3,
     )
+    observed_endpoints = observed_axis_endpoints(pca, [1, 2, 3])
+    for item in observed_endpoints:
+        values = mean.copy()
+        values[3, item["pc"] - 1] += item["sd"] * 0.1
+        write_vtk_polydata(
+            sample_root / f"output/Shooting_{item['output_index']}__endpoint.vtk", values, faces
+        )
+    (sample_root / "samples.json").write_text(json.dumps({
+        "return_code": 0,
+        "components": [1, 2, 3],
+        "anchor_tolerance": 1e-10,
+        "observed_endpoints": observed_endpoints,
+    }))
     for index, label in enumerate(pca.sample_labels):
         path = run / f"Atlas__Reconstruction__shape__subject_{label}.vtk"
         write_vtk_polydata(path, mean * (1 + 0.1 * index), faces)
@@ -133,6 +139,7 @@ def test_every_medium_rerenders_without_native_execution_or_changed_scores(tmp_p
     for relative in (
         "PCA-Gallery/thumbnails/1.png",
         "PCA-Gallery/figures/PC1-SD.png",
+        "PCA-Gallery/figures/PC1-observed.png",
         "PCA-Gallery/figures/PC1-plus-displacement.png",
         "PCA-Gallery/figures/PC1-plus-normal-displacement.png",
         "PCA-Gallery/videos/PC1-six-views.mp4",
@@ -148,6 +155,7 @@ def test_every_medium_rerenders_without_native_execution_or_changed_scores(tmp_p
     np.testing.assert_array_equal(rendering["views"][0][1], preset_views()[2][1][2])
     assert len(rendering["views"]) == 6
     with zipfile.ZipFile(target / "PCA-Gallery.zip") as archive:
+        assert "PCA-Gallery/figures/PC1-observed.pdf" in archive.namelist()
         assert not any(
             name.endswith((".vtk", ".npy", ".npz", ".log")) for name in archive.namelist()
         )

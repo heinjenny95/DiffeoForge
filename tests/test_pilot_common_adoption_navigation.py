@@ -12,7 +12,7 @@ from diffeoforge import reference_guided_pilot as guided
 
 
 def test_approved_candidate_pins_adoption_and_preserves_individual_reviews(tmp_path, monkeypatch):
-    from PySide6.QtWidgets import QLabel
+    from PySide6.QtWidgets import QLabel, QPushButton
 
     local, root, _ = rejected_capacity(tmp_path, monkeypatch)
     approved = approve(root, "guided-varifold")
@@ -23,7 +23,11 @@ def test_approved_candidate_pins_adoption_and_preserves_individual_reviews(tmp_p
     app, dialog = dialog_for(approved, monkeypatch)
     try:
         assert dialog.next_step_button.isVisible() and dialog.next_step_button.isEnabled()
-        assert dialog.next_step_button.text() == "Use approved common settings → check next form"
+        assert dialog.next_step_button.text() == (
+            "Use approved common settings → check next form · " + guided.record(approved)["target"])
+        assert not dialog.scroll.isAncestorOf(dialog.next_step_button)
+        assert [button for button in dialog.findChildren(QPushButton, "primary")
+                if button.isVisible()] == [dialog.next_step_button]
         assert dialog._guided_footer_action == (
             approved.study_directory, "adaptive_adopt_common_model", "guided-varifold")
         labels = dialog.content.findChildren(QLabel)
@@ -71,6 +75,13 @@ def test_exhausted_family_keeps_review_and_saved_fit_choice_without_repeat(tmp_p
     from test_pilot_common_candidate import compared
     from test_pilot_region_feedback import reject
 
+    from diffeoforge import pilot_multiscale_choice
+
+    # This fixture exercises exhaustion of the ordinary detail/weight family.
+    # It supplies no verified retained field for a separate broad/detail test.
+    monkeypatch.setattr(
+        pilot_multiscale_choice, "choice", lambda _snapshot, _value, _target, previous: previous,
+    )
     _, current, _ = rejected_capacity(tmp_path, monkeypatch, outcome="same")
     ledger = deepcopy(progress.marker(current))
     for kind in ("detail", "weight"):

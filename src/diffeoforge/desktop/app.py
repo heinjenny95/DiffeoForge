@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from diffeoforge import __version__
 
@@ -41,6 +42,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         return 0
     try:
+        from PySide6.QtGui import QIcon
         from PySide6.QtWidgets import QApplication
 
         from diffeoforge.desktop.widgets import DiffeoForgeWindow as Window
@@ -60,8 +62,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     application.setApplicationName("DiffeoForge Desktop")
     application.setApplicationVersion(__version__)
     application.setOrganizationName("DiffeoForge")
+    icon = QIcon(str(Path(__file__).with_name("assets") / "app-icon.png"))
+    if args.smoke and icon.isNull():
+        if sys.stderr is not None:
+            print("DiffeoForge application icon could not be loaded.", file=sys.stderr)
+        return 1
+    application.setWindowIcon(icon)
 
     window = Window(recording_allowed=not args.smoke)
+    window.setWindowIcon(icon)
     if args.smoke:
         window.show()
         application.processEvents()

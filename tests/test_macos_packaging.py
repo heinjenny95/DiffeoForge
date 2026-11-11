@@ -81,3 +81,29 @@ def test_mac_qualification_uses_the_real_native_launch_request_contract(tmp_path
     assert request.launcher_type == "native"
     assert request.launcher_engine is None and request.launcher_image is None
     assert request.destination == tmp_path / "new-run"
+
+
+def test_mac_packaging_binds_runner_sha_and_clean_source(tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location("mac_package_check", ROOT / "build-package.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    commit = "a" * 40
+    status = ""
+
+    def read_git(command, **kwargs):
+        assert kwargs["cwd"] == tmp_path
+        return SimpleNamespace(stdout=commit + "\n" if command[1] == "rev-parse" else status)
+
+    monkeypatch.setattr(module, "run", read_git)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.delenv("GITHUB_SHA", raising=False)
+    with pytest.raises(RuntimeError, match="GITHUB_SHA"):
+        module.checked_source_commit(tmp_path)
+    monkeypatch.setenv("GITHUB_SHA", "b" * 40)
+    with pytest.raises(RuntimeError, match="GITHUB_SHA"):
+        module.checked_source_commit(tmp_path)
+    monkeypatch.setenv("GITHUB_SHA", commit)
+    assert module.checked_source_commit(tmp_path) == commit
+    status = " M src/diffeoforge/__init__.py\n"
+    with pytest.raises(RuntimeError, match="clean source checkout"):
+        module.checked_source_commit(tmp_path)

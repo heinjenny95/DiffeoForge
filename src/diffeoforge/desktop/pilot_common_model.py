@@ -3,30 +3,45 @@ from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 
+_PINNED_RECOVERY = {
+    "candidate_refine", "accepted_warm", "broad_detail", "detail_pending",
+    "basis", "capacity", "fresh_capacity", "continue",
+}
 
-def pin_recovery(window, snapshot, choice):
+
+def pin_action(window, snapshot, label, action, identifier, tooltip, *, goal=None):
+    if window._guided_footer_action:
+        return False
+    from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
+
+    button = window.next_step_button
+    button.setText(label)
+    button.show()
+    button.setEnabled(True)
+    button.setToolTip(tooltip)
+    window._guided_footer_action = (snapshot.study_directory, action, identifier)
+    window._guided_footer_goal = goal
+    _set_action_emphasis(button, True)
+    return True
+
+
+def pin_recovery(window, snapshot, choice, *, current_target=None):
     """Keep the candidate's next preparation outside scrolling repair/history tools."""
-    if (not choice or choice.get("mode") not in
-            {"candidate_refine", "accepted_warm", "broad_detail", "detail_pending"}
+    if (not choice or choice.get("mode") not in _PINNED_RECOVERY
             or not choice.get("available") or window._guided_footer_action
             or len(snapshot.candidates) != 1):
         return
-    from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
-
     identifier = snapshot.candidates[0].candidate_id
-    window.next_step_button.setText(choice["label"])
-    window.next_step_button.setVisible(True)
-    window.next_step_button.setEnabled(True)
-    window.next_step_button.setToolTip("Prepare this separate common-setting test. "
-        "Existing fits and approvals stay saved; fitting starts only with Run.")
-    window._guided_footer_action = (
-        snapshot.study_directory,
+    pin_action(
+        window, snapshot, choice["label"],
         "adaptive_multiscale_detail" if choice["mode"] == "detail_pending"
-        else "adaptive_common_continue", identifier)
-    _set_action_emphasis(window.next_step_button, True)
+        else "adaptive_common_continue", identifier,
+        "Prepare this common-model test. Fitting starts when you choose Run.",
+        goal=choice.get("target") if choice.get("target") != current_target else None,
+    )
 
 
-def pin_revision(window, snapshot, guidance):
+def pin_revision(window, snapshot, guidance, target):
     """Keep explicit adoption of a reviewed common candidate in the fixed footer."""
     if window._guided_footer_action or len(snapshot.candidates) != 1:
         return
@@ -34,21 +49,13 @@ def pin_revision(window, snapshot, guidance):
     if (snapshot.visual_reviews.get(identifier) is not True
             or not guidance.get("common_revision", {}).get(identifier)):
         return
-    from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
-
-    window.next_step_button.setText("Use approved common settings → check next form")
-    window.next_step_button.setVisible(True)
-    window.next_step_button.setEnabled(True)
-    window.next_step_button.setToolTip(
-        "Explicitly adopt this reviewed candidate as the common model and prepare its next "
-        "check. Your good individual fits and earlier decisions stay saved. Fitting starts "
-        "only with Run.")
-    window.status.setText(
-        "Suitable fit saved. Use these approved settings as the common model, then check "
-        "the next form.")
-    window._guided_footer_action = (
-        snapshot.study_directory, "adaptive_adopt_common_model", identifier)
-    _set_action_emphasis(window.next_step_button, True)
+    attempt = f" · {target}" if target else ""
+    pin_action(
+        window, snapshot, "Use approved common settings → check next form" + attempt,
+        "adaptive_adopt_common_model", identifier,
+        "Adopt this reviewed fit's settings and prepare the next common-model check.",
+    )
+    window.status.setText("This common fit is approved. The next check needs the same settings.")
 
 
 def dispatch(window, following, identifier, *, starting=False):
@@ -63,9 +70,6 @@ def dispatch(window, following, identifier, *, starting=False):
 
 def recovery(window, layout, identifier, choice):
     """Preparation and inspection only; native execution keeps its normal button."""
-    title = QLabel("Continue toward one common model")
-    title.setObjectName("sectionTitle")
-    layout.addWidget(title)
     reason = QLabel(choice.get("reason", "One separate common-model check is needed. "
         "Your suitable individual fits and previous common approvals remain saved."))
     reason.setWordWrap(True)
@@ -116,7 +120,7 @@ def recovery(window, layout, identifier, choice):
     pinned = getattr(window, "_guided_footer_action", None)
     action = ("adaptive_multiscale_detail" if choice["mode"] == "detail_pending"
               else "adaptive_common_continue")
-    if (choice["mode"] in {"candidate_refine", "accepted_warm", "broad_detail", "detail_pending"} and pinned
+    if (choice["mode"] in _PINNED_RECOVERY and pinned
             and pinned[1:] == (action, identifier)):
         return
     if choice["available"]:

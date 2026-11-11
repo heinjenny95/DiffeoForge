@@ -201,6 +201,8 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
                 f">> Log-likelihood = {-10 + iteration:.3E} "
                 "[ attachment = -8.000E+00 ; regularity = -2.000E+00 ]\n"
             )
+        line_callback("DiffeoForge final mesh export started: 3 specimens\n")
+        activity_callback(27.0, "Writing mesh", "output/reference_info.log")
         (request.destination / "result.json").write_text(
             '{"status":"completed"}\n', encoding="utf-8"
         )
@@ -213,7 +215,7 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
         "collect_run_report",
         lambda _path: SimpleNamespace(checks=(), result={"status": "completed"}),
     )
-    times = iter((100.0, 101.0, 110.0, 111.0, 115.0, 116.0, 121.0, 122.0, 128.0))
+    times = iter((100.0, 101.0, 110.0, 111.0, 115.0, 116.0, 121.0, 122.0, 128.0, 129.0))
     monkeypatch.setattr(execution_worker.time, "monotonic", lambda: next(times))
 
     code, events, stderr = _run(request)
@@ -232,13 +234,18 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
         "progress",
         "progress",
         "progress",
+        "activity",
         "phase",
         "phase",
         "terminal",
     )
     progress = tuple(event for event in events if event.kind == "progress")
-    activity = next(event for event in events if event.kind == "activity")
-    assert activity.payload["resources"]["process_tree"]["rss_bytes"] == 1024
+    first_activity, export_activity = (
+        event for event in events if event.kind == "activity"
+    )
+    assert first_activity.payload["resources"]["process_tree"]["rss_bytes"] == 1024
+    assert export_activity.payload["state"] == "exporting"
+    assert export_activity.payload["last_iteration"] == 3
     assert progress[-1].payload["iteration"] == 3
     assert progress[-1].payload["estimate_status"] == "observed_rate_to_iteration_cap"
     assert progress[-1].payload["eta_to_iteration_cap_seconds"] == pytest.approx(97 * 6)

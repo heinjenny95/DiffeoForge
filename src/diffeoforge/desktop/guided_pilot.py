@@ -18,16 +18,29 @@ from diffeoforge.reference_guided_pilot import record
 
 
 def render(window, prepared):
+    from diffeoforge.desktop.pilot_common_model import pin_action, pin_recovery, pin_revision
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
 
     snapshot = prepared.snapshot
     window._guided_footer_action = None
+    window._guided_footer_goal = None
     window.next_step_button.hide()
     # Let the scroll area grow its content rather than compressing recovery cards.
     window.content_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
     window.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
     info = record(snapshot)
     guidance = prepared.guidance
+    common_flow = (
+        info["phase"] == "joint"
+        or info.get("goal") in {
+            "shared_check", "form_model_check", "common_continue", "common_multiscale",
+        }
+        or bool(guidance.get("common_recovery") or guidance.get("common_revision")
+                or guidance.get("shared_model_checks"))
+        or any(row.get("common_reuse") or row.get("action") == "form_model_check"
+               for row in guidance.get("next_forms", {}).values())
+    )
+    window._guided_common_flow = common_flow
     from diffeoforge.desktop.pilot_review_target import choose as review_target
 
     review = review_target(snapshot, guidance, info)
@@ -92,9 +105,8 @@ def render(window, prepared):
     explanation = QLabel(
         f"One common configuration · {snapshot.plan.pilot_subject_count} pilot specimens."
         if info["phase"] == "joint"
-        else f"{info['target']}\n{guidance['total']} pilot forms · "
-        "a separate shared-model test; your accepted individual fits stay saved."
-        if info.get("goal") == "common_multiscale"
+        else f"{info['target']} · {guidance['total']} pilot forms"
+        if common_flow
         else f"{info['target']}\n{guidance['total']} selected pilot forms · "
         f"{guidance['checked']} checked with these settings · "
         f"{info['screen_trials_spent']} tests prepared so far."
@@ -102,8 +114,8 @@ def render(window, prepared):
     explanation.setObjectName("pilotScope")
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
-    if review:
-        target_note = QLabel(review["label"] + "\n" + review["explanation"])
+    if review and review["pending"]:
+        target_note = QLabel(review["label"] if common_flow else review["explanation"])
         target_note.setObjectName("pilotReviewTarget")
         target_note.setWordWrap(True)
         window.content_layout.addWidget(target_note)
@@ -124,14 +136,11 @@ def render(window, prepared):
                    == final_values)
         progress_note = QLabel(
             f"Accepted individual fits: {progress_summary['shapes']} / "
-            f"{progress_summary['total']}, retained unchanged. This separate common-model "
-            "candidate still needs your review and explicit adoption. Earlier common-model "
-            "decisions stay saved under their original settings."
+            f"{progress_summary['total']} · Review and adopt the new common-model candidate."
             if multiscale and not adopted else
             f"Shape review: {progress_summary['shapes']} / {progress_summary['total']} forms. "
             f"Common-model checks: {progress_summary['checked']} / "
-            f"{progress_summary['total']}. Your suitable individual fits stay saved; "
-            "a common atlas needs separate matching-model checks and joint review.")
+            f"{progress_summary['total']}.")
         progress_note.setWordWrap(True)
         window.content_layout.addWidget(progress_note)
         if progress_summary.get("common_start"):
@@ -143,30 +152,26 @@ def render(window, prepared):
                           "Accepted individual "
                           "fits and previous decisions remain saved.")
             note.setWordWrap(True)
-            window.content_layout.addWidget(note)
+            window.content_layout.addWidget(InfoDisclosure("Common control-point basis", note))
     if info.get("goal") == "shared_check":
         note = QLabel("Your suitable local fit remains saved. This separate check starts "
                       "from its saved field, template, control points and time grid and uses "
                       "the standard atlas surface objective. Its result needs a new review "
                       "before checking the remaining forms. Run starts only when you choose it.")
         note.setWordWrap(True)
-        window.content_layout.addWidget(note)
+        window.content_layout.addWidget(InfoDisclosure("How this atlas-model check starts", note))
     if info["phase"] == "joint":
         flags = snapshot.attachment_comparison.get("confirmation_freeze_settings", {})
         moving = [name for key, name in (("freeze_template", "template"),
                   ("freeze_control_points", "control points")) if flags.get(key) is False]
         conditions = QLabel(
-            "The individual checks kept template and control points fixed. "
-            + ("This joint test also estimates the shared " + " and ".join(moving) + ". "
-               if moving else "This joint test retains those fixed settings. ")
-            + ("It starts from all accepted individual deformation fields on the same "
-               "original basis; optimizer history starts anew. "
-               if snapshot.attachment_comparison.get("joint_initialization") else
-               "It starts new deformation fields; the accepted individual fields are "
-               "not its initialization. ")
-            + "The shared model can still change individual fits. "
-            "Review every form; individual suitability does not "
-            "approve this joint result.")
+            ("This joint test estimates the shared " + " and ".join(moving) + ". "
+             if moving else "This joint test keeps the template and control points fixed. ")
+            + ("It starts from all accepted individual deformation fields on the same basis. "
+               if snapshot.attachment_comparison.get("joint_initialization")
+               else "It starts new deformation fields. ")
+            + "Review every form after the joint fit."
+        )
         conditions.setWordWrap(True)
         conditions.setObjectName("jointFitConditions")
         window.content_layout.addWidget(conditions)
@@ -178,7 +183,10 @@ def render(window, prepared):
         if reason:
             description = QLabel(reason[0] + ". " + reason[1])
             description.setWordWrap(True)
-            window.content_layout.addWidget(description)
+            window.content_layout.addWidget(
+                InfoDisclosure("Why this test was prepared", description)
+                if common_flow else description
+            )
     if info["phase"] == "screen":
         why = QLabel(
             "Current uses oriented surfaces; Varifold ignores normal direction. "
@@ -221,6 +229,8 @@ def render(window, prepared):
         if len(snapshot.candidates) == 2
         else "Run prepared test · 1 trial on 1 specimen"
     )
+    if common_flow and info["phase"] != "joint" and info.get("target"):
+        window.start_button.setText(f"{window.start_button.text()} · {info['target']}")
     window.start_button.setVisible(bool(pending))
     window.start_button.setEnabled(not running and not retry_blocked)
     window.start_button.setToolTip(
@@ -254,11 +264,11 @@ def render(window, prepared):
             guidance.get("shared_model_checks", {}).values())
         else "Fit saved as suitable. Inspect or close; further refinement is optional."
         if regional_accepted
-        else "Feedback saved. Choose the next step below."
+        else "Feedback saved."
         if completed and inspected_feedback
-        else "Inspect the fit, then choose the next step below."
+        else "Result ready for review."
         if completed
-        else "Ready. Preparing this plan has started no fits."
+        else "Test prepared. Select Run when ready."
     )
     if not running and not unresolved:
         for identifier, following in next_forms.items():
@@ -282,23 +292,43 @@ def render(window, prepared):
                 break
 
     if not running and not unresolved:
-        from diffeoforge.desktop.pilot_common_model import pin_recovery, pin_revision
+        pin_recovery(
+            window, snapshot, guidance.get("common_recovery"), current_target=info.get("target"),
+        )
+        pin_revision(window, snapshot, guidance, info.get("target"))
 
-        pin_recovery(window, snapshot, guidance.get("common_recovery"))
-        pin_revision(window, snapshot, guidance)
-
-    def action(layout, label, kind, identifier, *, goal=None, available=True):
-        button = QPushButton(label, window.content)
+    def action(layout, label, kind, identifier, *, goal=None, available=True, fixed=False):
         enabled = not running and not unresolved and available
+        dispatch = kind if kind == "finish_joint" else "adaptive_" + kind
+        if fixed and enabled and pin_action(
+            window, snapshot, label, dispatch, identifier, "Prepare the next pilot step.",
+            goal=goal,
+        ):
+            return window.next_step_button
+        button = QPushButton(label, window.content)
         button.setVisible(enabled)
         button.setEnabled(enabled)
-        _set_action_emphasis(button, enabled)
+        _set_action_emphasis(button, enabled and not common_flow)
         button.clicked.connect(
-            lambda: window._start_pilot(adaptive=False, guided_action=(
-                kind if kind == "finish_joint" else "adaptive_" + kind, identifier, goal))
+            lambda: window._start_pilot(adaptive=False, guided_action=(dispatch, identifier, goal))
         )
         layout.addWidget(button)
         return button
+
+    def emphasize_common_action():
+        if not common_flow:
+            return
+        primary = (
+            window.review_next_button if review and review["pending"]
+            and not window.review_next_button.isHidden()
+            else window.next_step_button if window._guided_footer_action
+            else window.start_button
+        )
+        for button in window.content.findChildren(QPushButton, "primary"):
+            _set_action_emphasis(button, False)
+        for button in (window.review_next_button, window.next_step_button, window.start_button):
+            _set_action_emphasis(button, button is primary and not button.isHidden()
+                                 and button.isEnabled())
 
     # Candidate identity is captured by each card's callbacks, never a shared selector.
     for candidate in snapshot.candidates:
@@ -509,9 +539,10 @@ def render(window, prepared):
                 check = guidance.get("shared_model_checks", {}).get(candidate.candidate_id)
                 if check and check["available"]:
                     next_check = action(layout,
-                        "Use suitable fit → prepare atlas-model check", "shared_check",
-                        candidate.candidate_id,
-                        available=guidance.get("allowed", {}).get(candidate.candidate_id, False))
+                        f"Prepare atlas-model check · {info['target']} · Test "
+                        f"{info['screen_trials_spent']}", "shared_check", candidate.candidate_id,
+                        available=guidance.get("allowed", {}).get(candidate.candidate_id, False),
+                        fixed=True)
                     next_check.setToolTip("Keeps the saved local fit and prepares one separate "
                         "standard-objective test from its complete field. Local constraints "
                         "and approval remain with the local fit. No new fit starts here.")
@@ -519,12 +550,18 @@ def render(window, prepared):
                     reason = QLabel(check["reason"])
                     reason.setWordWrap(True)
                     layout.addWidget(reason)
-            inspect = QPushButton("Inspect " + candidate.label + " fit")
-            inspect.setAccessibleName(inspect.text())
-            inspect.setProperty("pilotCandidate", candidate.candidate_id)
-            inspect.clicked.connect(lambda _checked=False, c=candidate: window._open_candidate(c))
-            _set_action_emphasis(inspect, False)
-            layout.addWidget(inspect)
+            has_fixed_review = (
+                common_flow and review and review.get("candidate_id") == candidate.candidate_id
+            )
+            if not has_fixed_review:
+                inspect = QPushButton("Inspect " + candidate.label + " fit")
+                inspect.setAccessibleName(inspect.text())
+                inspect.setProperty("pilotCandidate", candidate.candidate_id)
+                inspect.clicked.connect(
+                    lambda _checked=False, c=candidate: window._open_candidate(c),
+                )
+                _set_action_emphasis(inspect, False)
+                layout.addWidget(inspect)
             subjects = (
                 (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
             )
@@ -611,24 +648,32 @@ def render(window, prepared):
                 remaining = remaining_forms(snapshot, candidate.candidate_id, context=guidance)
                 action(
                     layout,
-                    "Use " + candidate.label + " → check remaining forms" if remaining
-                    else "Use " + candidate.label + " → prepare joint check",
+                    ("Check remaining forms" if remaining else "Prepare joint check")
+                    + f" · {info['target']} · Test {info['screen_trials_spent']}"
+                    if common_flow else "Use " + candidate.label + (
+                        " → check remaining forms" if remaining else " → prepare joint check"
+                    ),
                     "confirm",
                     candidate.candidate_id,
                     available=not unresolved and valid,
+                    fixed=common_flow,
                 )
         window.content_layout.addWidget(card)
     if running or not completed:
+        emphasize_common_action()
         return
     approved = [c for c in completed if snapshot.visual_reviews.get(c.candidate_id) is True]
     if info["phase"] == "joint":
         action(
             window.content_layout,
-            "Use reviewed joint fit → check time resolution",
+            f"Check time resolution · joint fit Test {info['screen_trials_spent']} "
+            f"· {snapshot.plan.pilot_subject_count} forms",
             "finish_joint",
             approved[0].candidate_id if approved else None,
             available=len(approved) == 1,
+            fixed=True,
         )
+        emphasize_common_action()
         return
     if len(snapshot.candidates) == 2:
         covered = {r["filename"] for r in info["approved"]} | {info["target"]}
@@ -670,6 +715,7 @@ def render(window, prepared):
     )
     unsure.setWordWrap(True)
     window.content_layout.addWidget(InfoDisclosure("Help with visual assessment", unsure))
+    emphasize_common_action()
 
 
 def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
@@ -771,7 +817,8 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
         prepare.setText(proposed["title"] + " · prepare 1 trial on 1 specimen")
         prepare.setEnabled(proposed["available"])
         prepare.setVisible(proposed["available"])
-        _set_action_emphasis(prepare, proposed["available"])
+        _set_action_emphasis(prepare, proposed["available"] and not optional
+                             and not getattr(window, "_guided_common_flow", False))
         data = guidance.get("feedback", {}).get(identifier)
         if data and data["needs_direction"]:
             prepare.setEnabled(False)

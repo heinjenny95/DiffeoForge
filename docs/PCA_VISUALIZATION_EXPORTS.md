@@ -62,6 +62,18 @@ the mean momenta, not the arithmetic mean of reconstructed surface vertices.
 The +/-2 SD shapes are model-derived PC-axis examples, not observed specimens
 or biological limits. Preserve the fitted atlas, PCA, original exports and reviews.
 
+The PC Shapes tab plots the saved specimen scores and marks any ±2 SD example
+outside their range. The observed-range view shoots the same fitted model at the
+exact minimum and maximum saved score of that PC. Both views include the shape
+shot from mean momenta. A PC-axis shape at a specimen's score uses the mean on
+the remaining axes. The separate specimen comparison shows the original and
+reconstructed surfaces for that specimen.
+
+Version 4 visualization media include the additional native samples, score
+extrema and per-sample grid receipts. Earlier media remain readable. Preparing
+visualizations from a completed result creates a separate cache. Camera changes
+reuse its saved native samples.
+
 Verify the *effective* native integration grid and the exported physical time,
 not just an XML setting or an output filename. A local inspection of the native
 Deformetrica 4.3.0 Shooting route found that `number_of_timepoints` did not set the

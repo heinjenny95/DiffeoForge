@@ -1,5 +1,25 @@
 # Development continuity — dev192 installed and verified
 
+## dev199 — desktop guidance and result review
+
+The application uses the blue D from the DiffeoForge wordmark in its
+window, Windows executable and installer shortcuts, and macOS application bundle.
+
+The setup screen asks researchers to place corresponding anatomical landmarks
+and verify orientation, overlap and scale before fitting. The guided pilot
+keeps the active common-model action in view and places eligible continuation
+beside provisional completion in time-resolution review. A completed continuation
+selects its new result for review and retains the earlier approval on its saved
+fit. The Atlas screen keeps the current execution phase and last reported
+iteration in view.
+
+The PCA viewer distinguishes synthetic SD endpoints from the observed score
+range. The observed-range plate is prepared from existing PCA coefficients and
+uses the same viewing scale as the SD plate. PCA score plots open the exact
+original and reconstruction from the reviewed run with linked cameras. The
+Maps tab labels its fixed scales for the loaded atlas. See
+[PCA visualization exports](PCA_VISUALIZATION_EXPORTS.md).
+
 ## Desktop import with existing alignment
 
 New Deformetrica projects can import PLY, OBJ, and STL when the researcher

@@ -140,6 +140,10 @@ def themed_style(source: str, appearance: Appearance) -> str:
     foreground = contrast_text(accent)
     heading = "#edf1f5" if dark else mapping["#123b3a"]
     muted = _mix(accent, "#39454f" if dark else "#ffffff", 0.65)
+    checkbox_surface = "#202832" if dark else "#ffffff"
+    checkbox_text = "#edf1f5" if dark else "#17252a"
+    checkbox_edge = "#aab7c3" if dark else "#536170"
+    checkbox_disabled = "#b3c0cc" if dark else "#526b70"
     result += f"""
 QMainWindow, QDialog, QScrollArea, QStackedWidget, QWidget#content,
 QScrollArea > QWidget > QWidget {{ background: {"#151b22" if dark else "#f4f7f8"}; }}
@@ -154,6 +158,24 @@ QLabel#title, QLabel#sectionTitle, QLabel#reviewValue {{ color: {heading}; }}
 QLabel#conceptDifference {{ color: {heading}; }}
 QPushButton#primary:disabled {{ background: {muted}; border-color: {muted};
 color: {contrast_text(QColor(muted))}; }}
+QCheckBox#comparisonOriginalDetail {{
+    color: {checkbox_text}; background-color: {checkbox_surface};
+    border: 2px solid {checkbox_edge}; border-radius: 5px;
+    padding: 3px 7px; spacing: 7px;
+}}
+QCheckBox#comparisonOriginalDetail:focus {{ border-color: {link.name()}; }}
+QCheckBox#comparisonOriginalDetail:disabled {{ color: {checkbox_disabled}; }}
+QCheckBox#comparisonOriginalDetail::indicator {{
+    width: 12px; height: 12px;
+    border: 1px solid {checkbox_edge}; border-radius: 3px;
+    background-color: {checkbox_surface};
+}}
+QCheckBox#comparisonOriginalDetail::indicator:checked {{
+    border-color: {checkbox_text}; background-color: {checkbox_text};
+}}
+QCheckBox#comparisonOriginalDetail::indicator:checked:disabled {{
+    border-color: {checkbox_edge}; background-color: {checkbox_edge};
+}}
 """
     return result
 

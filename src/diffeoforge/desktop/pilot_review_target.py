@@ -4,9 +4,10 @@
 def choose(snapshot, guidance, info):
     reuse = next((row["common_reuse"] for row in guidance.get("next_forms", {}).values()
                   if row.get("available")
-                  and (row.get("common_reuse") or {}).get("mode") == "review"), None)
+                  and (row.get("common_reuse") or {}).get("mode") in {"review", "feedback"}),
+                 None)
     common = reuse or guidance.get("common_recovery")
-    if common and (common.get("mode") == "review" or common.get("review_reference")):
+    if common and (common.get("mode") in {"review", "feedback"} or common.get("review_reference")):
         number = common.get("test_number")
         attempt = f" · Test {number}" if number is not None else ""
         scope = ("control-point comparison" if common.get("comparison_kind") == "capacity"

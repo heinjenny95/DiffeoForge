@@ -2013,6 +2013,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.visualization_panel.cancel_requested.connect(self._cancel_visualization)
         self.visualization_panel.mesh_images_applied.connect(self.method_results_panel.set_mesh_images)
         self.visualization_panel.view_applied.connect(self._visualization_view_applied)
+        self.visualization_panel.specimen_comparison_requested.connect(
+            self._open_pca_specimen_comparison,
+        )
         self.page_stack.addWidget(self.visualization_panel)
         self._pca_auto_attempted = set()
         self._visualization_media_by_run = {}
@@ -2938,12 +2941,12 @@ class DiffeoForgeWindow(QMainWindow):
         progress_layout = QVBoxLayout(progress)
         progress_layout.setContentsMargins(24, 22, 24, 24)
         progress_layout.setSpacing(10)
-        progress_title = QLabel("Verified live events")
+        progress_title = QLabel("Progress details")
         progress_title.setObjectName("sectionTitle")
         self.run_state_label = QLabel("Ready; no worker has started.")
         self.run_state_label.setObjectName("status")
         self.run_state_label.setWordWrap(True)
-        self.run_stage_label = QLabel("Workflow stage: not started")
+        self.run_stage_label = QLabel("Atlas ready to start")
         self.run_stage_label.setObjectName("reviewValue")
         self.run_stage_label.setWordWrap(True)
         self.run_progress_bar = QProgressBar()
@@ -2959,8 +2962,6 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_event_log.setMaximumBlockCount(500)
         self.run_event_log.setMaximumHeight(220)
         progress_layout.addWidget(progress_title)
-        progress_layout.addWidget(self.run_state_label)
-        progress_layout.addWidget(self.run_stage_label)
         progress_layout.addWidget(self.run_progress_bar)
         self.run_live_optimizer_plot = LiveOptimizerPlot()
         self.run_live_optimizer_plot.hide()
@@ -3027,11 +3028,20 @@ class DiffeoForgeWindow(QMainWindow):
         footer_layout.addWidget(self.cancel_atlas_button)
         footer_layout.addWidget(self.start_atlas_button)
 
+        current_activity = QFrame()
+        current_activity.setObjectName("footer")
+        activity_layout = QVBoxLayout(current_activity)
+        activity_layout.setContentsMargins(28, 8, 28, 0)
+        activity_layout.setSpacing(3)
+        activity_layout.addWidget(self.run_stage_label)
+        activity_layout.addWidget(self.run_state_label)
+
         page = QWidget()
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.setSpacing(0)
         page_layout.addWidget(scroll, 1)
+        page_layout.addWidget(current_activity)
         page_layout.addWidget(footer)
         return page
 
@@ -4399,6 +4409,16 @@ class DiffeoForgeWindow(QMainWindow):
         self.units_field_label = QLabel("Coordinate unit *")
         self.units_field_label.setObjectName("coordinateUnitLabel")
         data_form.addRow(self.units_field_label, self.units_combo)
+
+        alignment_notice = QLabel(
+            "Accurate initial alignment is essential for reliable atlas and PCA results. "
+            "Check orientation, overlap and scale before proceeding. For GPA, you are "
+            "responsible for placing corresponding anatomical landmarks on each mesh "
+            "and verifying the alignment preview."
+        )
+        alignment_notice.setObjectName("statusWarning")
+        alignment_notice.setWordWrap(True)
+        data_form.addRow(alignment_notice)
 
         self.landmarks_edit = QLineEdit()
         self.landmarks_edit.setObjectName("landmarksEdit")
@@ -9238,6 +9258,30 @@ class DiffeoForgeWindow(QMainWindow):
             previews.addWidget(ResponsiveMediaImage(path))
         self.reference_pca_sd_previews.setProperty("media", str(media))
 
+    @Slot(str, object)
+    def _open_pca_specimen_comparison(self, subject: str, source_run: Path) -> None:
+        review = self._result_review
+        if (
+            review is None
+            or review.run_directory.resolve() != source_run.resolve()
+            or not self._registration_results_released()
+        ):
+            return
+        try:
+            review.registration_qc_item(subject)
+        except KeyError:
+            QMessageBox.information(
+                self, "Specimen comparison", "This score has no verified comparison pair.",
+            )
+            return
+
+        from diffeoforge.desktop.specimen_comparison_dialog import SpecimenComparisonDialog
+
+        dialog = SpecimenComparisonDialog(
+            review, subject, self, pca_view=self.visualization_panel.pca_view,
+        )
+        dialog.exec()
+
     @Slot()
     def _open_validation_lab(self) -> None:
         if not self._ensure_results_released():
@@ -10572,6 +10616,8 @@ class DiffeoForgeWindow(QMainWindow):
             self.close()
             return
         run, pairs, initial = prepared
+        self.run_stage_label.setText("Awaiting visual review")
+        self.run_state_label.setText("Check the specimen fits to decide whether to continue.")
         dialog = CalibrationCandidateViewerDialog(
             run / "analysis/early-review", SimpleNamespace(
                 run_directory=run, candidate_id="early-atlas-check"
@@ -11467,7 +11513,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_progress_bar.setRange(0, 7)
             self.run_progress_bar.setValue(0)
             self.run_progress_bar.setFormat("Completed stages: %v of %m")
-        self.run_stage_label.setText("Workflow stage: worker is starting")
+        self.run_stage_label.setText("Start atlas worker")
         self.run_optimizer_label.setText(
             (
                 self._reference_runtime_estimate_text(self._review)
@@ -11686,7 +11732,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_stage_label.setText({
                 "verify_request": "Check launch", "preflight": "Check inputs",
                 "prepare": "Prepare run",
-                "execute": "Export saved atlas" if export_only else "Run atlas",
+                "execute": "Export saved atlas" if export_only else "Start atlas computation",
                 "finalize": "Save output inventory", "verify_result": "Check completed result",
             }[phase])
             if phase != "execute":
@@ -11695,7 +11741,7 @@ class DiffeoForgeWindow(QMainWindow):
             else:
                 self.run_progress_bar.setRange(0, 0)
                 self.run_progress_bar.setFormat(
-                    "Writing saved meshes" if export_only else "Computing first iteration"
+                    "Writing saved meshes" if export_only else "Waiting for optimizer output"
                 )
                 self._latest_reference_resource_text = (
                     "Live resources: waiting for the first backend-process sample."
@@ -11736,12 +11782,13 @@ class DiffeoForgeWindow(QMainWindow):
             )
             if state == "exporting":
                 message = latest_message
-                self.run_stage_label.setText("Export saved atlas")
+                self.run_stage_label.setText("Export atlas meshes")
                 self.run_progress_bar.setRange(0, 0)
-                self.run_progress_bar.setFormat("Writing trajectories")
+                self.run_progress_bar.setFormat("Writing meshes and trajectories")
                 self.run_optimizer_label.setText(f"Elapsed: {self._format_duration(elapsed)}")
-            elif "DiffeoForge initialization:" in latest_message:
-                message = latest_message.split("DiffeoForge initialization:", 1)[1].strip()
+            elif "DiffeoForge initialization" in latest_message:
+                detail = latest_message.split("DiffeoForge initialization", 1)[1].lstrip(": ")
+                message = detail[:1].upper() + detail[1:]
                 self.run_stage_label.setText("Initialize full cohort")
                 self.run_progress_bar.setRange(0, 0)
                 self.run_progress_bar.setFormat("Initialize specimens on the fixed pilot basis")
@@ -11773,8 +11820,8 @@ class DiffeoForgeWindow(QMainWindow):
             else:
                 last_iteration = event.payload["last_iteration"]
                 message = (
-                    f"Iteration {last_iteration} / {event.payload['maximum_iterations']} "
-                    "· computing"
+                    f"Last logged iteration {last_iteration} of "
+                    f"{event.payload['maximum_iterations']}"
                 )
                 self.run_stage_label.setText(
                     "Optimize atlas"
@@ -12094,6 +12141,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_result_card.hide()
 
         if result.completed:
+            self.run_stage_label.setText("Atlas saved")
             self.run_state_label.setObjectName("statusSuccess")
             self.run_state_label.setText(
                 "Deformetrica completed and the result was independently verified. "
@@ -12111,6 +12159,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "Review flagged starting fits…" if initial else "Review early atlas check…"
             )
             self.review_early_atlas_button.setVisible(early)
+            self.run_stage_label.setText("Awaiting visual review" if early else "Atlas stopped")
             self.run_state_label.setObjectName("status")
             self.run_state_label.setText(
                 "Joint fitting has not started. Review the flagged starting fits before continuing."
@@ -12441,7 +12490,13 @@ class DiffeoForgeWindow(QMainWindow):
         self._update_registration_qc_summary()
         self._set_result_controls_enabled(True)
         self._sync_ready_state()
-        step = 5 if self._registration_results_released() else 4
+        released = self._registration_results_released()
+        step = 5 if released else 4
+        self.run_stage_label.setText("Atlas ready" if released else "Awaiting visual review")
+        self.run_state_label.setText(
+            "Atlas results are available."
+            if released else "Check the flagged specimen fits in Visual quality review."
+        )
         if getattr(self, "_pca_media_finalizing", False) and self._active_step in (5, 6):
             step = self._active_step
         self._pca_media_finalizing = False

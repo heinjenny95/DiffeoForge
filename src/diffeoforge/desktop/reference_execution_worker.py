@@ -278,16 +278,20 @@ def run_reference_execution_worker(
         review_wait_started = None
         review_wait_seconds = 0.0
         review_finished = False
+        export_started = False
         has_review = bool(
             config.get("project", {}).get("parameter_provenance", {}).get("pilot_review")
         )
 
         def observe_line(line: str) -> None:
             nonlocal last_iteration, review_wait_started, review_wait_seconds, review_finished
+            nonlocal export_started
             if cancel_event.is_set() or request.final_export_only:
                 # execute_run delivers and verifies the backend cancellation.
                 # Raising here would bypass that handshake on the next log line.
                 return
+            if "DiffeoForge final mesh export started:" in line:
+                export_started = True
             now = time.monotonic()
             if has_review and line.startswith("DF_PILOT_REVIEW waiting "):
                 if review_wait_started is None:
@@ -313,7 +317,7 @@ def run_reference_execution_worker(
             log_source: str | None,
         ) -> None:
             state = (
-                "exporting" if request.final_export_only or review_finished else
+                "exporting" if request.final_export_only or review_finished or export_started else
                 "computing_first_iteration"
                 if last_iteration is None
                 else "optimizing"

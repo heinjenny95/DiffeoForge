@@ -235,7 +235,7 @@ jobs:
         with:
           github-token: ${{ github.token }}
           run-id: ${{ inputs.source_run }}
-          name: DiffeoForge-v197-${{ matrix.artifact_os }}-${{ github.sha }}
+          name: DiffeoForge-v199-${{ matrix.artifact_os }}-${{ github.sha }}
           path: ${{ runner.temp }}/mac-candidate
       - name: Independently install and compute from downloaded DMG
         run: python -B distribution/macos/verify-downloaded-package.py '${{ runner.temp }}/mac-candidate' '${{ runner.temp }}/Independent Mac Käfer'
@@ -302,7 +302,7 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
-      - name: Install v197 desktop builder and test tools
+      - name: Install desktop builder and test tools
         run: |
           python -m venv "$RUNNER_TEMP/mac-builder"
           echo "$RUNNER_TEMP/mac-builder/bin" >> "$GITHUB_PATH"
@@ -312,21 +312,29 @@ jobs:
         run: |
           pytest -q tests/test_pilot_iteration_budget.py tests/test_pilot_iteration_budget_transfer.py \
             tests/test_reference_calibration_dialog.py tests/test_desktop_worker_controller.py \
-            tests/test_macos_packaging.py \
+            tests/test_macos_packaging.py tests/test_build_version.py \
+            tests/test_pilot_theme_contrast.py tests/test_specimen_comparison_dialog.py \
+            tests/test_pca_observed_shapes.py \
+            tests/test_desktop_v143_visualizations.py::test_score_plot_opens_exact_specimen_on_click_but_not_drag \
+            tests/test_guided_shared_check.py::test_suitable_local_fit_has_explicit_nonrunning_next_action \
+            tests/test_pilot_common_adoption_navigation.py::test_approved_candidate_pins_adoption_and_preserves_individual_reviews \
+            tests/test_pilot_native_continuation.py::test_dialog_selects_new_continuation_result_for_fresh_review \
             tests/test_pilot_region_feedback.py::test_joint_regional_feedback_measures_the_named_checked_endpoint \
             tests/test_guided_pilot.py::test_coverage_skips_duplicate_extreme_but_retains_new_direction_and_manual_choice \
             tests/test_guided_pilot.py::test_coverage_checks_every_remaining_form_after_mandatory_subjects \
-            tests/test_desktop_calibration.py::test_desktop_accepts_automatic_coverage_above_twenty_without_fitting
+            tests/test_guided_pilot.py::test_coverage_limits_diverse_cohort_but_retains_all_required_forms \
+            tests/test_desktop_calibration.py::test_desktop_prepares_pilot_from_existing_alignment_in_mixed_formats \
+            tests/test_desktop_calibration.py::test_desktop_limits_automatic_pilot_and_accepts_larger_manual_count
       - name: Qualify native Intel-compatible reference runtime
         run: python -B distribution/macos/reference-probe.py '${{ runner.temp }}/DiffeoForge Native Käfer'
-      - name: Build and qualify installable v197 package
+      - name: Build and qualify installable Mac package
         run: python -B distribution/macos/build-package.py '${{ runner.temp }}/DiffeoForge Native Käfer' '${{ runner.temp }}/DiffeoForge Mac Build'
       # Transfer only the candidate and its verification files. Clean up the
       # temporary candidate after independent qualification and local retrieval.
       - name: Temporary owner-authorized Mac package transfer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: DiffeoForge-v197-${{ matrix.os }}-${{ github.sha }}
+          name: DiffeoForge-v199-${{ matrix.os }}-${{ github.sha }}
           path: ${{ runner.temp }}/DiffeoForge Mac Build/delivery/*
           if-no-files-found: error
           retention-days: 1

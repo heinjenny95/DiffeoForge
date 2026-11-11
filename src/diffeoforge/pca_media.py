@@ -33,7 +33,7 @@ from diffeoforge.reference_pca_deformations import (
 )
 from diffeoforge.runs import publish_directory_exclusive
 
-MEDIA_VERSION = "3"
+MEDIA_VERSION = "4"
 
 
 class MediaCancelled(RuntimeError):
@@ -59,7 +59,7 @@ def verify_media(directory: Path, *, source_run: Path | None = None) -> dict:
     if (directory / "media.sha256").read_text().strip() != sha256_file(manifest):
         raise ValueError("PCA media manifest differs")
     data = json.loads(manifest.read_text(encoding="utf-8"))
-    if data.get("version") not in {"2", MEDIA_VERSION} or data.get("status") != "complete":
+    if data.get("version") not in {"2", "3", MEDIA_VERSION} or data.get("status") != "complete":
         raise ValueError("Unsupported or incomplete PCA media")
     if source_run is not None and Path(data["source_run"]).resolve() != source_run.resolve():
         raise ValueError("PCA media belongs to another result")
@@ -188,6 +188,7 @@ def prepare_reference_media(
             "pca_method": pca.method,
             "scores_unchanged": True,
             "native_anchors": "physical t=1; mean and +/-2 SD",
+            "observed_pc_shapes": "physical t=1 native shooting at saved score extrema",
             "movie": "17 native PC-path samples per axis; smooth display interpolation "
             "between adjacent corresponding samples, not optimizer iterations.",
             "coordinate_unit": "model coordinate units",
@@ -273,7 +274,8 @@ def _render_media(
     limits = max(limits, 1e-12)
     bounds = merge_bounds(bounds)
     components = sorted({key[0] for key in axis_values})
-    from diffeoforge.reference_pca_samples import native_axis_samples
+    from diffeoforge.analysis.pca_shape_plate import shape_plate
+    from diffeoforge.reference_pca_samples import native_axis_samples, observed_axis_endpoints
 
     anchors = {
         (pc, direction): axis_values[(pc, direction)][0]
@@ -285,7 +287,7 @@ def _render_media(
         origin = read_mesh(endpoint_root / "source/estimated-template.vtk")
         if not np.array_equal(faces(origin), topology):
             raise ValueError("PC sample source topology differs from full native anchors")
-        samples = native_axis_samples(
+        samples, observed = native_axis_samples(
             root / "native-display-samples",
             endpoint_root=endpoint_root,
             pca=pca,
@@ -324,6 +326,18 @@ def _render_media(
                     > receipt["anchor_tolerance"]
                 ):
                     raise ValueError("Saved PC-path anchor differs")
+        observed = {}
+        if "observed_endpoints" in receipt:
+            observed_endpoints = observed_axis_endpoints(pca, components)
+            if receipt["observed_endpoints"] != observed_endpoints:
+                raise ValueError("Saved observed PC sample scores differ")
+            for item in observed_endpoints:
+                mesh = read_mesh(sample_source / (
+                    f"native-display-samples/output/Shooting_{item['output_index']}__endpoint.vtk"
+                ))
+                if not np.array_equal(faces(mesh), faces(proxy)):
+                    raise ValueError("Saved observed PC sample topology differs")
+                observed[item["pc"], item["side"]] = points(mesh)
     limits = max(limits, float(np.linalg.norm(samples - mean[ids], axis=-1).max()))
     flattened = samples.reshape(-1, 3)
     sample_bounds = np.column_stack((flattened.min(axis=0), flattened.max(axis=0))).ravel()
@@ -340,6 +354,11 @@ def _render_media(
             for label, (_, direction, up) in zip(labels, VIEWS, strict=True)
         )
     primary = views[0]
+    shape_bounds = merge_bounds((
+        bounds,
+        *(np.column_stack((value.min(axis=0), value.max(axis=0))).ravel()
+          for value in observed.values()),
+    ))
     (root / "rendering.json").write_text(
         json.dumps(
             {
@@ -363,6 +382,8 @@ def _render_media(
                 "movie_fps": 12,
                 "movie_dimensions": [1260, 840],
                 "mean_shape": "native shooting of mean momenta; no intrinsic-mean claim",
+                "pc_shape_camera_bounds": shape_bounds.tolist(),
+                "observed_pc_shapes": bool(observed),
             },
             indent=2,
             allow_nan=False,
@@ -410,20 +431,33 @@ def _render_media(
 
     image_files = []
     try:
-        phase("Rendering mean and ±2 SD views")
+        phase("Rendering PC shapes and observed score ranges")
         for pc in components:
-            row = Image.new("RGB", (1260, 440), "white")
-            draw = ImageDraw.Draw(row)
-            draw.text((20, 10), f"PC{pc} · −2 SD / Mean / +2 SD", font=font, fill="#243c47")
-            for i, value in enumerate(
-                (axis_values[(pc, "minus")][0], mean[ids], axis_values[(pc, "plus")][0])
-            ):
-                frame = renderer.render(with_points(proxy, value), bounds, primary)
-                row.paste(frame, (i * 420, 65), frame)
-            name = f"PC{pc}-SD.png"
-            row.save(figures / name)
-            row.save(figures / name.replace(".png", ".pdf"), resolution=180)
-            image_files.append((f"PC{pc} · −2 SD / Mean / +2 SD", name))
+            scores = pca.scores[:, pc - 1]
+            deviation = float(np.sqrt(pca.explained_variance[pc - 1]))
+            modes = [(
+                "SD", (-2 * deviation, 0.0, 2 * deviation), ("−2 SD", "Mean", "+2 SD"),
+                (axis_values[(pc, "minus")][0], mean[ids], axis_values[(pc, "plus")][0]),
+            )]
+            if observed:
+                modes.append((
+                    "observed", (float(scores.min()), 0.0, float(scores.max())),
+                    ("Observed minimum", "Mean", "Observed maximum"),
+                    (observed[pc, "minimum"], mean[ids], observed[pc, "maximum"]),
+                ))
+            for suffix, coordinates, labels, values in modes:
+                phase(f"Rendering PC{pc} · {suffix} shapes")
+                frames = [
+                    renderer.render(with_points(proxy, value), shape_bounds, primary)
+                    for value in values
+                ]
+                row = shape_plate(
+                    pc, scores, coordinates, labels, frames, font, standard_deviation=deviation
+                )
+                name = f"PC{pc}-{suffix}.png"
+                row.save(figures / name)
+                row.save(figures / name.replace(".png", ".pdf"), resolution=180)
+                image_files.append((f"PC{pc} · {' / '.join(labels)}", name))
             for direction in ("minus", "plus"):
                 value, magnitude, signed = axis_values[(pc, direction)]
                 for kind, scalar, diverging in (

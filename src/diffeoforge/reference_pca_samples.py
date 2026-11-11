@@ -28,6 +28,23 @@ from diffeoforge.runs import _backend_process_working_directory
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 
+def observed_axis_endpoints(pca, components):
+    """Exact observed score extrema, expressed in the model's SD coordinates."""
+    endpoints = []
+    for pc in components:
+        scores = pca.scores[:, pc - 1]
+        deviation = np.sqrt(pca.explained_variance[pc - 1])
+        for side, score in (("minimum", scores.min()), ("maximum", scores.max())):
+            endpoints.append({
+                "pc": pc,
+                "side": side,
+                "score": float(score),
+                "sd": float(score / deviation),
+                "output_index": 17 * len(components) + len(endpoints),
+            })
+    return endpoints
+
+
 def native_axis_samples(
     root: Path,
     *,
@@ -56,15 +73,16 @@ def native_axis_samples(
     (root / "engine/sitecustomize.py").write_text(SITECUSTOMIZE, encoding="utf-8")
     controls = int(pca.mean.size // 3)
     deviations = np.linspace(-2, 2, 17)
-    fields = np.stack(
-        [
-            (
-                pca.mean + sd * np.sqrt(pca.explained_variance[pc - 1]) * pca.components[pc - 1]
-            ).reshape(controls, 3)
-            for pc in components
-            for sd in deviations
-        ]
-    )
+    observed = observed_axis_endpoints(pca, components)
+    coordinates = [
+        (pc, sd * np.sqrt(pca.explained_variance[pc - 1]))
+        for pc in components for sd in deviations
+    ]
+    coordinates.extend((item["pc"], item["score"]) for item in observed)
+    fields = np.stack([
+        (pca.mean + score * pca.components[pc - 1]).reshape(controls, 3)
+        for pc, score in coordinates
+    ])
     _write_momenta(root / "source/endpoint-momenta.txt", fields)
     protected = {
         str(path.relative_to(root)): sha256_file(path)
@@ -107,7 +125,9 @@ def native_axis_samples(
         if not np.array_equal(faces(mesh), topology):
             raise ValueError("PC display sample topology differs")
         values.append(points(mesh))
-    samples = np.stack(values).reshape(len(components), 17, len(values[0]), 3)
+    samples = np.stack(values[:17 * len(components)]).reshape(
+        len(components), 17, len(values[0]), 3
+    )
     tolerance = float(100 * np.finfo(dtype).eps * max(float(scale), 1e-12))
     differences = []
     for j, pc in enumerate(components):
@@ -119,7 +139,7 @@ def native_axis_samples(
     if any(sha256_file(root / path) != digest for path, digest in protected.items()):
         raise ValueError("PC display Shooting changed its declared inputs")
     receipt = {
-        "version": "1",
+        "version": "2",
         "return_code": 0,
         "samples_per_axis": 17,
         "sd_coordinates": deviations.tolist(),
@@ -131,9 +151,11 @@ def native_axis_samples(
         "native_grids": grids,
         "anchor_errors": differences,
         "anchor_tolerance": tolerance,
+        "observed_endpoints": observed,
         "boundary": "Display-only vertex subset; native PC samples, not optimizer iterations.",
     }
     (root / "samples.json").write_text(
         json.dumps(receipt, indent=2, allow_nan=False), encoding="utf-8"
     )
-    return samples
+    return samples, {(item["pc"], item["side"]): values[item["output_index"]]
+                     for item in observed}

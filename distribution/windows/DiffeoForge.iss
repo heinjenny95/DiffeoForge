@@ -57,6 +57,7 @@ LicenseFile={#LicenseFile}
 Uninstallable=yes
 UninstallDisplayName=DiffeoForge {#AppDisplayVersion} (Windows CPU x86-64)
 UninstallDisplayIcon={app}\DiffeoForge.exe
+SetupIconFile={#BundleDir}\_internal\diffeoforge\desktop\assets\app-icon.ico
 SetupLogging=yes
 UninstallLogging=yes
 ChangesAssociations=no
@@ -89,8 +90,8 @@ Source: "install-reference-runtime.ps1"; DestDir: "{app}\runtime"; Flags: ignore
 #endif
 
 [Icons]
-Name: "{group}\DiffeoForge"; Filename: "{app}\DiffeoForge.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\DiffeoForge"; Filename: "{app}\DiffeoForge.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\DiffeoForge"; Filename: "{app}\DiffeoForge.exe"; WorkingDir: "{app}"; IconFilename: "{app}\DiffeoForge.exe"
+Name: "{autodesktop}\DiffeoForge"; Filename: "{app}\DiffeoForge.exe"; WorkingDir: "{app}"; IconFilename: "{app}\DiffeoForge.exe"; Tasks: desktopicon
 
 [InstallDelete]
 Type: files; Name: "{group}\DiffeoForge Demo.lnk"

@@ -12,6 +12,8 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
+from diffeoforge import __version__
+
 PYTHON_URL = (
     "https://github.com/astral-sh/python-build-standalone/releases/download/20241002/"
     "cpython-3.8.20%2B20241002-x86_64-apple-darwin-install_only_stripped.tar.gz"
@@ -57,10 +59,11 @@ def avoid_clang_version_header_collision(prefix):
     assert patched.count("set_bin_folder()") == 1
     # Compiled native modules may retain loader paths to this runtime. Do not
     # reuse another installation's cache after a user moves or copies the app.
+    cache_prefix = f"diffeoforge-mac-{__version__}-"
     patched = patched.replace(
         "set_bin_folder()",
         "import hashlib\nset_bin_folder(os.path.join(os.path.expanduser('~'), '.cache', "
-        "'diffeoforge-mac-v197-' + hashlib.sha256(os.path.realpath(__file__).encode())"
+        f"{cache_prefix!r} + hashlib.sha256(os.path.realpath(__file__).encode())"
         ".hexdigest()[:16]))",
     )
     source.write_text(patched)
@@ -70,7 +73,7 @@ def avoid_clang_version_header_collision(prefix):
     }
     return dict(before_sha256=before, after_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                 metadata_rename="version -> package-version.txt",
-                cache_isolation="installation-path-bound macOS v197 cache",
+                cache_isolation=f"installation-path-bound macOS {__version__} cache",
                 mathematical_files=len(mathematical), mathematical_bytes_unchanged=True)
 
 
@@ -82,6 +85,11 @@ def main():
     root = args.output.resolve()
     root.mkdir(exist_ok=False, parents=True)
     repository = Path(__file__).resolve().parents[2]
+    source_commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repository, text=True
+    ).strip()
+    if os.environ.get("GITHUB_SHA", source_commit) != source_commit:
+        raise RuntimeError("The checked-out source does not match GITHUB_SHA")
     archive = root / "python.tar.gz"
     urllib.request.urlretrieve(PYTHON_URL, archive)
     assert hashlib.sha256(archive.read_bytes()).hexdigest() == PYTHON_SHA256
@@ -149,7 +157,7 @@ def main():
         outcomes[kernel] = dict(status=result["status"], return_code=return_code)
         assert return_code == 0 and result["status"] == "completed", outcomes
     proof = dict(status="passed", host_architecture=architecture,
-                 native_architecture="x86_64", source_commit=os.environ.get("GITHUB_SHA"),
+                 native_architecture="x86_64", source_commit=source_commit,
                  python_archive_sha256=PYTHON_SHA256, public_native_runs=outcomes,
                  clang_metadata_compatibility=compatibility,
                  private_inputs_used=False, windows_owner_state_accessed=False)

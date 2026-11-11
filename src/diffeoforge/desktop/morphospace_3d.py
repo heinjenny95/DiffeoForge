@@ -60,6 +60,7 @@ def load_geometry(path, expected=None, scores_expected=None):
 
 class MorphospaceCanvas(QWidget):
     hovered = Signal(str)
+    specimen_clicked = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -266,10 +267,13 @@ class MorphospaceCanvas(QWidget):
 
     def mousePressEvent(self, event):  # noqa: N802
         self.last = self.press = event.position()
+        self.dragged = False
 
     def mouseMoveEvent(self, event):  # noqa: N802
         if self.last is not None and event.buttons():
             delta = event.position() - self.last
+            if (event.position() - self.press).manhattanLength() >= 4:
+                self.dragged = True
             if event.buttons() & Qt.MouseButton.LeftButton:
                 self.yaw += delta.x() * 0.009
                 self.pitch += delta.y() * 0.009
@@ -293,10 +297,16 @@ class MorphospaceCanvas(QWidget):
         super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event):  # noqa: N802
-        if self.last is not None and (event.position() - self.press).manhattanLength() < 4:
+        clicked = (
+            self.last is not None and not self.dragged
+            and (event.position() - self.press).manhattanLength() < 4
+        )
+        self.last = None
+        if clicked:
             self.selected = self._pick(event.position())
             self.update()
-        self.last = None
+            if event.button() == Qt.MouseButton.LeftButton and self.selected >= 0:
+                self.specimen_clicked.emit(self.selected)
 
     def wheelEvent(self, event):  # noqa: N802
         self.zoom = min(15.0, max(0.15, self.zoom * 1.15 ** (event.angleDelta().y() / 120)))

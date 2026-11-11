@@ -86,14 +86,15 @@ def test_next_form_input_failure_keeps_approval_and_explains_the_blocker(panel):
     assert not panel.invoked
 
 
-def test_saved_common_review_names_and_opens_its_exact_reference_not_selected_start(panel):
+@pytest.mark.parametrize("mode", ["review", "feedback"])
+def test_saved_common_review_names_and_opens_its_exact_reference_not_selected_start(panel, mode):
     from PySide6.QtWidgets import QLabel, QPushButton
 
     from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
 
     ref = dict(directory='saved-common-result', candidate_id='guided-varifold',
                target='next-form.vtk')
-    choice = dict(mode='review', available=True, reference=ref, target='next-form.vtk',
+    choice = dict(mode=mode, available=True, reference=ref, target='next-form.vtk',
                   test_number=7, label='Review saved common-model fit · next-form.vtk')
     panel.guidance['common_recovery'] = choice
     panel.guidance['working_proposals'] = {

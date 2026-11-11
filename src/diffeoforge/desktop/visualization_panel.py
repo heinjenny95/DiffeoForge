@@ -10,6 +10,7 @@ from PySide6.QtCore import QRectF, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QGraphicsItem,
@@ -37,6 +38,7 @@ _EXPORTS = ThreadPoolExecutor(max_workers=1, thread_name_prefix="media-export")
 
 class MediaView(QGraphicsView):
     hovered = Signal(str)
+    specimen_clicked = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -47,10 +49,40 @@ class MediaView(QGraphicsView):
         self.auto_fit = True
         self.fit_width = False
         self.setMouseTracking(True)
+        self._specimen_press = None
+
+    def mousePressEvent(self, event):  # noqa: N802
+        self._specimen_press = None
+        if event.button() == Qt.MouseButton.LeftButton:
+            position = event.position().toPoint()
+            item = self.itemAt(position)
+            specimen = item.data(1) if item is not None else None
+            if isinstance(specimen, int):
+                self._specimen_press = (position, specimen)
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        pressed = self._specimen_press
+        self._specimen_press = None
+        super().mouseReleaseEvent(event)
+        if pressed is None or event.button() != Qt.MouseButton.LeftButton:
+            return
+        position, specimen = pressed
+        end = event.position().toPoint()
+        if (end - position).manhattanLength() < QApplication.startDragDistance():
+            item = self.itemAt(end)
+            if item is not None and item.data(1) == specimen:
+                self.specimen_clicked.emit(specimen)
 
     def mouseMoveEvent(self, event):  # noqa: N802
+        position = event.position().toPoint()
+        if self._specimen_press is not None and (
+            (position - self._specimen_press[0]).manhattanLength()
+            >= QApplication.startDragDistance()
+        ):
+            self._specimen_press = None
         super().mouseMoveEvent(event)
-        item = self.itemAt(event.position().toPoint())
+        item = self.itemAt(position)
         self.hovered.emit(str(item.data(0) or "") if item is not None else "")
 
     def leaveEvent(self, event):  # noqa: N802
@@ -120,6 +152,7 @@ class VisualizationPanel(QWidget):
     view_applied = Signal(object)
     mesh_images_applied = Signal(object, object, str, object)
     r_export_requested = Signal()
+    specimen_comparison_requested = Signal(str, object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -128,6 +161,8 @@ class VisualizationPanel(QWidget):
         self._zip_record = None
         self._items = []
         self._specimen_labels = []
+        self._source_run = None
+        self.pca_view = None
         self._thumbnails = {}
         self.mesh_views = MeshViewController(self)
         self.mesh_views.all_media = True
@@ -231,22 +266,24 @@ class VisualizationPanel(QWidget):
         self.hover_label.setTextFormat(Qt.TextFormat.PlainText)
         self.plot_view.parentWidget().layout().addWidget(self.hover_label)
         self.plot_view.hovered.connect(self.hover_label.setText)
+        self.plot_view.specimen_clicked.connect(self._open_specimen)
         self.sd_combo, self.sd_view = self._picture_tab("PC shapes")
+        self.sd_range_combo = QComboBox()
+        self.sd_range_combo.addItem("−2 SD / Mean / +2 SD", "SD")
+        self.sd_range_combo.addItem("Observed minimum / Mean / Observed maximum", "observed")
+        self.sd_range_combo.setEnabled(False)
+        self.sd_range_combo.currentIndexChanged.connect(self._show_pc_shapes)
+        self.sd_view.parentWidget().layout().insertWidget(1, self.sd_range_combo)
         self.heat_combo, self.heat_view = self._picture_tab("Maps")
-        heat_legend = QLabel(
-                            "Static endpoint maps relative to the mean; "
-                            "six views of the same shape. "
-                            "Distance shows movement magnitude. Signed normal: + along the mean "
-                            "surface normal, − against it, 0 no normal movement. Model units.")
-        heat_legend.setWordWrap(True)
-        self.heat_view.parentWidget().layout().insertWidget(1, heat_legend)
+        self.heat_scale = QLabel()
+        self.heat_scale.setWordWrap(True)
+        self.heat_scale.setTextFormat(Qt.TextFormat.PlainText)
+        self.heat_view.parentWidget().layout().insertWidget(1, self.heat_scale)
         self.all_heatmaps_button = QPushButton("Show all heatmaps · all PCs, signs and map types")
         self.all_heatmaps_button.setEnabled(False)
         self.all_heatmaps_button.clicked.connect(self._show_all_heatmaps)
         self.heat_view.parentWidget().layout().insertWidget(2, self.all_heatmaps_button)
-        self.sd_combo.currentIndexChanged.connect(
-            lambda: self._show_image(self.sd_combo, self.sd_view)
-        )
+        self.sd_combo.currentIndexChanged.connect(self._show_pc_shapes)
         self.heat_combo.currentIndexChanged.connect(
             lambda: self._show_image(self.heat_combo, self.heat_view)
         )
@@ -303,25 +340,23 @@ class VisualizationPanel(QWidget):
         self.morphospace = Morphospace3D()
         self.morphospace.canvas.setMinimumSize(220, 220)
         self.morphospace.ready_changed.connect(self._update_export_state)
+        self.morphospace.canvas.specimen_clicked.connect(self._open_specimen_row)
         self.tabs.addTab(self.morphospace, "3D scores")
         self._tab_changed(0)
 
     def _tab_changed(self, index):
         descriptions = (
-            "2D scores: meshes sit at saved PC scores. Nearby points are similar on "
-            "these axes; inspect their shapes.",
-            "PC shapes: mean and −2/+2 SD along one PC. Six images show different "
-            "views of the same model shape, not confidence intervals.",
+            "Click a specimen to compare its original and reconstructed mesh.",
+            "PC shapes: dots show saved specimen scores. Choose the model shapes at "
+            "±2 SD or at the observed limits of the selected PC.",
             "Maps: movement from the mean to a PC endpoint. Distance shows magnitude; "
             "signed normal movement also shows direction.",
             "Movies: PC shape change in six synchronized views. These model "
             "deformations do not show growth or optimizer progress.",
-            "3D scores: rotate PC1–PC3. Meshes stay at their saved scores in the same "
-            "PCA as the 2D view.",
+            "Drag to rotate PC1–PC3. Click a specimen to compare its fit.",
         )
         self.view_description.setText(
-            "PC1 scores: this result has only one saved axis. Meshes share one score line; "
-            "no second PC is invented."
+            "Click a specimen on PC1 to compare its original and reconstructed mesh."
             if index == 0 and self._axis_count() == 1
             else descriptions[index] if 0 <= index < 5 else ""
         )
@@ -410,14 +445,18 @@ class VisualizationPanel(QWidget):
         self.slider.setRange(0, 0)
         self.play.setText("Play")
         self.base_directory = None
+        self._source_run = None
+        self.pca_view = None
         self._zip_record = None
         self._items = []
+        self._specimen_labels = []
         self._thumbnails.clear()
         self.mesh_views.clear()
         self.export.setEnabled(False)
         self.export_current.setEnabled(False)
         self._records = {}
         self.all_heatmaps_button.setEnabled(False)
+        self.heat_scale.clear()
         self.morphospace.clear()
         for combo, view in ((self.sd_combo, self.sd_view), (self.heat_combo, self.heat_view)):
             combo.clear()
@@ -458,6 +497,7 @@ class VisualizationPanel(QWidget):
         self._records = {r["path"]: r for r in metadata["files"]}
         self._source_run = Path(metadata["source_run"])
         self._specimen_labels = metadata.get("specimen_labels", [])
+        self._update_heatmap_scale(directory)
         self._zip_record = next(
             (r for r in metadata["files"] if r["path"] == "PCA-Gallery.zip"), None
         )
@@ -477,7 +517,7 @@ class VisualizationPanel(QWidget):
         self._full_images = full_images
         for path in sorted((gallery / "figures").glob("*.png")):
             if path.stem.endswith("-SD"):
-                self.sd_combo.addItem(path.stem.replace("-SD", " · −2 SD / Mean / +2 SD"), path)
+                self.sd_combo.addItem(path.stem.removesuffix("-SD"), path)
             elif "displacement" in path.stem:
                 self.heat_combo.addItem(path.stem.replace("-", " "), path)
         for path in sorted((gallery / "videos").glob("*.mp4")):
@@ -491,7 +531,7 @@ class VisualizationPanel(QWidget):
             if previous >= 0:
                 combo.setCurrentIndex(previous)
             combo.blockSignals(False)
-        self._show_image(self.sd_combo, self.sd_view)
+        self._show_pc_shapes()
         self._show_image(self.heat_combo, self.heat_view)
         self.all_heatmaps_button.setEnabled(self.heat_combo.findData("all") >= 0)
         self._select_video()
@@ -622,6 +662,59 @@ class VisualizationPanel(QWidget):
             glyph.setToolTip(f"{label} · PC{x + 1}: {a:.6g}" + (
                 f" · PC{y + 1}: {b:.6g}" if y is not None else ""))
             glyph.setData(0, glyph.toolTip())
+            glyph.setData(1, item["id"])
+
+    def _open_specimen_row(self, row: int) -> None:
+        if 0 <= row < len(self._items):
+            self._open_specimen(self._items[row]["id"])
+
+    def _open_specimen(self, specimen_id: int) -> None:
+        if self._source_run is not None and 1 <= specimen_id <= len(self._specimen_labels):
+            self.specimen_comparison_requested.emit(
+                self._specimen_labels[specimen_id - 1], self._source_run,
+            )
+
+    def _update_heatmap_scale(self, directory: Path) -> None:
+        fallback = "Maps show displacement from the mean in model units."
+        self.pca_view = None
+        if "rendering.json" not in self._records:
+            self.heat_scale.setText(fallback)
+            return
+        try:
+            render = json.loads((directory / "rendering.json").read_text(encoding="utf-8"))
+            views = render.get("views", [])
+            self.pca_view = views[0] if views else None
+            low, high = (float(value) for value in render["displacement_range"])
+            negative, positive = (float(value) for value in render["normal_component_range"])
+        except (AttributeError, KeyError, OSError, TypeError, ValueError):
+            self.heat_scale.setText(fallback)
+            return
+        self.heat_scale.setText(
+            f"Shared scales across this atlas · Distance {low:.4g} to {high:.4g} · "
+            f"Signed normal {negative:.4g} to {positive:.4g} (model units)"
+        )
+
+    def _show_pc_shapes(self):
+        entries = []
+        for index in range(self.sd_combo.count()):
+            path = self.sd_combo.itemData(index)
+            if isinstance(path, Path):
+                component = path.stem.partition("-")[0]
+                entries.append((index, path, component))
+        observed_ready = bool(entries) and all(
+            f"PCA-Gallery/figures/{pc}-observed.png" in self._records
+            for _, _, pc in entries
+        )
+        self.sd_range_combo.setEnabled(observed_ready)
+        self.sd_range_combo.setToolTip(
+            "Select the model shape scores to display."
+            if observed_ready else "Open the reviewed result to prepare observed-limit shapes."
+        )
+        if observed_ready:
+            suffix = self.sd_range_combo.currentData()
+            for index, path, pc in entries:
+                self.sd_combo.setItemData(index, path.with_name(f"{pc}-{suffix}.png"))
+        self._show_image(self.sd_combo, self.sd_view)
 
     def _show_all_heatmaps(self):
         index = self.heat_combo.findData("all")

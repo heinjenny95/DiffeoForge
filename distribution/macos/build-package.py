@@ -1,4 +1,4 @@
-"""Build, relocate and qualify the v197 Mac test package on a native Mac runner."""
+"""Build, relocate and qualify the Mac test package on a native Mac runner."""
 from __future__ import annotations
 
 import argparse
@@ -20,7 +20,6 @@ from diffeoforge.desktop.reference_execution_controller import ReferenceExecutio
 from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
 from diffeoforge.runs import execute_run, prepare_resume_run, prepare_run
 
-BASELINE = "6efc9725691416ea75e44df0bb07e6255611c5b8"
 MACHO_MAGICS = {b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xca\xfe\xba\xbe",
                 b"\xbe\xba\xfe\xca", b"\xca\xfe\xba\xbf", b"\xbf\xba\xfe\xca"}
 
@@ -37,9 +36,39 @@ def run(command, **kwargs):
     return subprocess.run([str(value) for value in command], check=True, **kwargs)
 
 
+def checked_source_commit(repository):
+    """Return the exact clean checkout identity expected by the runner."""
+    commit = run(["git", "rev-parse", "HEAD"], cwd=repository,
+                 capture_output=True, text=True).stdout.strip()
+    runner_commit = os.environ.get("GITHUB_SHA")
+    if (
+        (runner_commit is not None and runner_commit != commit)
+        or (os.environ.get("GITHUB_ACTIONS") == "true" and runner_commit is None)
+    ):
+        raise RuntimeError("The checked-out source does not match GITHUB_SHA")
+    status = run(["git", "status", "--porcelain", "--untracked-files=all"],
+                 cwd=repository, capture_output=True, text=True).stdout
+    if status:
+        raise RuntimeError("Mac packaging and verification require a clean source checkout")
+    return commit
+
+
 def inventory(root):
     return {p.relative_to(root).as_posix(): {"bytes": p.stat().st_size, "sha256": digest(p)}
             for p in sorted(root.rglob("*")) if p.is_file() and not p.is_symlink()}
+
+
+def verify_app_icon(repository, application):
+    contents = application / "Contents"
+    source = repository / "src/diffeoforge/desktop/assets/app-icon.icns"
+    name = plistlib.loads((contents / "Info.plist").read_bytes()).get("CFBundleIconFile")
+    if name != source.name:
+        raise RuntimeError("The Mac application does not advertise the DiffeoForge icon")
+    bundled = contents / "Resources" / name
+    checksum = digest(source)
+    if not bundled.is_file() or digest(bundled) != checksum:
+        raise RuntimeError("The Mac application icon differs from the source asset")
+    return {"name": name, "sha256": checksum}
 
 
 def reference_request(path, destination, native, identifier):
@@ -105,15 +134,16 @@ def main():
     parser.add_argument("native_root", type=Path)
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
-    assert platform.system() == "Darwin" and __version__ == "0.0.0.dev197"
+    assert platform.system() == "Darwin"
+    build_number = __version__.removeprefix("0.0.0.dev")
+    assert build_number.isascii() and build_number.isdecimal()
+    label = f"v{build_number}"
     repository = Path(__file__).resolve().parents[2]
-    run(["git", "diff", "--exit-code", BASELINE, "--", "src", "pyproject.toml"],
-        cwd=repository)
-    build_commit = run(["git", "rev-parse", "HEAD"], cwd=repository,
-                       capture_output=True, text=True).stdout.strip()
+    build_commit = checked_source_commit(repository)
     native_root = args.native_root.resolve()
     proof = json.loads((native_root / "mac-reference-probe.json").read_text())
     assert proof["status"] == "passed" and not proof["private_inputs_used"]
+    assert proof["source_commit"] == build_commit
     root = args.output.resolve()
     root.mkdir(parents=True, exist_ok=False)
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen", MPLBACKEND="Agg", OMP_NUM_THREADS="1")
@@ -152,7 +182,9 @@ def main():
                            text=True).stdout.split()[-1]
     assert reported_version == __version__
     info = plistlib.loads((contents / "Info.plist").read_bytes())
-    assert info["CFBundleShortVersionString"] == "0.0.197" and info["CFBundleVersion"] == "197"
+    assert info["CFBundleShortVersionString"] == f"0.0.{build_number}"
+    assert info["CFBundleVersion"] == build_number
+    icon = verify_app_icon(repository, app)
     run([executable, "--smoke"], env=env)
     run([executable, "--smoke-media"], env=env)
     before = inventory(app)
@@ -179,8 +211,8 @@ def main():
     architecture = "AppleSilicon" if platform.machine() == "arm64" else "Intel"
     output = root / "delivery"
     output.mkdir()
-    package = output / f"DiffeoForge-v197-macOS-{architecture}.dmg"
-    run(["hdiutil", "create", "-volname", f"DiffeoForge v197 {architecture}", "-srcfolder",
+    package = output / f"DiffeoForge-{label}-macOS-{architecture}.dmg"
+    run(["hdiutil", "create", "-volname", f"DiffeoForge {label} {architecture}", "-srcfolder",
          staging, "-ov", "-format", "UDZO", package], capture_output=True)
     run(["hdiutil", "verify", package], capture_output=True)
     # Mount, copy out of the image into a second path and run the actual copied app.
@@ -199,14 +231,16 @@ def main():
     run([installed / "Contents/Resources/ReferenceRuntime/bin/deformetrica", "--help"],
         capture_output=True, env=env)
     assert inventory(installed) == inventory(app)
+    assert verify_app_icon(repository, installed) == icon
     run(["codesign", "--verify", "--deep", "--strict", installed], capture_output=True)
     package_hash = digest(package)
     (output / (package.name + ".sha256")).write_text(f"{package_hash}  {package.name}\n")
     evidence = dict(status="macos_test_package_verified", version=__version__,
-                    application_feature_baseline=BASELINE,
+                    application_feature_baseline=build_commit,
                     build_commit=build_commit,
                     host_architecture=platform.machine(), reference_architecture="x86_64",
                     native_reference_probe=proof, checks=checks, cocoa_smoke=True,
+                    application_icon=icon,
                     relocated_installed_copy_verified=True, application_inventory_unchanged=True,
                     native_macho_files_signed=len(signed), signature="ad-hoc", notarized=False,
                     colleague_interactive_acceptance=False, gpu_or_modern_engine_claim=False,
