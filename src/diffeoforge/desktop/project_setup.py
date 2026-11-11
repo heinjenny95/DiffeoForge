@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from diffeoforge.preprocessing import LandmarkAlignmentPreview
 
-from diffeoforge.config import ConfigurationError, load_config, validate_input_paths
+from diffeoforge.config import ConfigurationError, InputSummary, load_config, validate_input_paths
 from diffeoforge.initialization import (
     SUPPORTED_UNITS,
     detect_template,
@@ -96,6 +96,8 @@ class ProjectSetupRequest:
     procrustes_max_iterations: int = 100
     approved_procrustes_fingerprint: str | None = None
     overwrite_existing_configuration: bool = False
+    use_existing_alignment: bool = False
+    existing_alignment_sources: tuple[tuple[str, str], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -122,6 +124,36 @@ class ProjectSetupResult:
         return "Deformetrica 4.3 (recommended backend)"
 
 
+def verified_surface_conversion_evidence(
+    config: Mapping[str, Any], inputs: InputSummary,
+) -> Path | None:
+    """Check the recorded conversion against the full cohort used by this configuration."""
+    conversion = config.get("preprocessing", {}).get("surface_conversion")
+    directory = inputs.input_directory
+    # Pilot candidates inherit upstream provenance but run on their own staged subsets.
+    if conversion is None or directory.name != "vtk" or not directory.parent.name.startswith(
+        "converted-"
+    ):
+        return None
+
+    from diffeoforge.preprocessing import verify_existing_aligned_conversion
+
+    evidence = directory.parent / conversion["evidence_file"]
+    if (
+        evidence.is_symlink()
+        or not evidence.is_file()
+        or sha256_file(evidence) != conversion["evidence_sha256"]
+    ):
+        raise ConfigurationError("The VTK conversion report differs from the project configuration")
+    verify_existing_aligned_conversion(
+        evidence,
+        template=inputs.cohort_template or inputs.template,
+        subjects=inputs.subjects,
+        expected_fingerprint=conversion["fingerprint"],
+    )
+    return evidence
+
+
 def load_existing_reference_project(config_path: Path | str) -> ProjectSetupResult:
     """Verify and reopen one generated reference project without recreating it."""
 
@@ -139,12 +171,13 @@ def load_existing_reference_project(config_path: Path | str) -> ProjectSetupResu
     inputs = validate_input_paths(config, resolved)
     report_candidate = default_preflight_report_path(resolved)
     report_path = report_candidate if report_candidate.is_file() else None
-    evidence_candidate = inputs.input_directory / "procrustes.json"
-    if not evidence_candidate.is_file() and inputs.input_directory.name == "aligned-vtk":
-        evidence_candidate = inputs.input_directory.parent / "procrustes.json"
-    preprocessing_report_path = (
-        evidence_candidate if evidence_candidate.is_file() else None
-    )
+    preprocessing_report_path = verified_surface_conversion_evidence(config, inputs)
+    if preprocessing_report_path is None:
+        evidence_candidate = inputs.input_directory / "procrustes.json"
+        if not evidence_candidate.is_file() and inputs.input_directory.name == "aligned-vtk":
+            evidence_candidate = inputs.input_directory.parent / "procrustes.json"
+        if evidence_candidate.is_file():
+            preprocessing_report_path = evidence_candidate
     return ProjectSetupResult(
         engine=DesktopEngine.DEFORMETRICA_REFERENCE,
         config_path=resolved,
@@ -405,6 +438,12 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
             raise ConfigurationError(
                 "A Procrustes preview fingerprint requires a landmark file"
             )
+    if not isinstance(request.use_existing_alignment, bool):
+        raise ConfigurationError("use_existing_alignment must be a boolean")
+    if request.use_existing_alignment and request.landmarks_file is not None:
+        raise ConfigurationError("Choose existing alignment or landmark GPA")
+    if request.existing_alignment_sources is not None and not request.use_existing_alignment:
+        raise ConfigurationError("A source inventory requires the existing mesh alignment option")
     return ProjectSetupRequest(
         mesh_directory=Path(request.mesh_directory).expanduser().resolve(),
         project_directory=Path(request.project_directory).expanduser().resolve(),
@@ -458,6 +497,8 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         procrustes_max_iterations=request.procrustes_max_iterations,
         approved_procrustes_fingerprint=approved_fingerprint,
         overwrite_existing_configuration=request.overwrite_existing_configuration,
+        use_existing_alignment=request.use_existing_alignment,
+        existing_alignment_sources=request.existing_alignment_sources,
     )
 
 
@@ -465,6 +506,8 @@ def _create_reference_project(
     request: ProjectSetupRequest,
     approved_procrustes_preview: LandmarkAlignmentPreview | None = None,
     progress_callback: Callable[[int, int, Path], None] | None = None,
+    *,
+    convert_existing_alignment: bool = False,
 ) -> ProjectSetupResult:
     config_path = request.project_directory / "atlas.yaml"
     report_path = default_preflight_report_path(config_path)
@@ -486,6 +529,8 @@ def _create_reference_project(
     preprocessing_record: dict[str, object] | None = None
     preprocessing_report_path: Path | None = None
     effective_project_name = request.project_name
+    published_subjects: tuple[Path, ...] | None = None
+    converted = None
     if request.landmarks_file is not None:
         try:
             from diffeoforge.preprocessing import prepare_landmark_aligned_inputs
@@ -519,6 +564,7 @@ def _create_reference_project(
         input_template = aligned.template
         input_subject_pattern = "*.vtk"
         preprocessing_report_path = aligned.evidence
+        published_subjects = aligned.subjects
         preprocessing_record = {
             "procrustes": {
                 "enabled": True,
@@ -537,21 +583,31 @@ def _create_reference_project(
                 "max_iterations": request.procrustes_max_iterations,
             }
         }
-        if parameter_recommendation is not None:
-            calibration_record = parameter_recommendation.get("calibration_plan")
-            if calibration_record is not None:
-                from diffeoforge.reference_calibration import (
-                    bind_reference_calibration_plan_to_inputs,
-                    reference_calibration_plan_from_provenance,
-                )
+    elif convert_existing_alignment:
+        from diffeoforge.preprocessing import prepare_existing_aligned_inputs
 
-                rebound = bind_reference_calibration_plan_to_inputs(
-                    reference_calibration_plan_from_provenance(calibration_record),
-                    template=aligned.template,
-                    subjects=aligned.subjects,
-                )
-                parameter_recommendation = deepcopy(parameter_recommendation)
-                parameter_recommendation["calibration_plan"] = rebound.provenance
+        converted = prepare_existing_aligned_inputs(
+            request.mesh_directory,
+            project_directory=request.project_directory,
+            template=request.template,
+            subject_pattern=request.subject_pattern,
+            expected_sources=request.existing_alignment_sources,
+            progress_callback=progress_callback,
+        )
+        input_directory = converted.vtk_directory
+        input_template = converted.template
+        input_subject_pattern = "*.vtk"
+        published_subjects = converted.subjects
+        preprocessing_report_path = converted.evidence
+        preprocessing_record = {
+            "surface_conversion": {
+                "evidence_file": converted.evidence.name,
+                "evidence_sha256": sha256_file(converted.evidence),
+                "fingerprint": converted.fingerprint,
+            }
+        }
+
+    if published_subjects is not None:
         if effective_project_name is None:
             source = request.mesh_directory
             name_source = (
@@ -560,6 +616,39 @@ def _create_reference_project(
                 else source.name
             )
             effective_project_name = f"{name_source}-atlas"
+        if parameter_recommendation is not None:
+            calibration_record = parameter_recommendation.get("calibration_plan")
+            if converted is not None and (
+                parameter_recommendation.get("alignment_basis") != "declared_gpa"
+                or parameter_recommendation.get("template_filename")
+                != converted.source_paths[0].name
+                or parameter_recommendation.get("template_sha256") != converted.source_hashes[0]
+                or parameter_recommendation.get("subject_count") != len(published_subjects)
+            ):
+                raise ConfigurationError("The original meshes changed after parameter analysis")
+            if calibration_record is not None:
+                from diffeoforge.reference_calibration import (
+                    bind_reference_calibration_plan_to_inputs,
+                    reference_calibration_plan_from_provenance,
+                )
+
+                plan = reference_calibration_plan_from_provenance(calibration_record)
+                if converted is not None:
+                    source_hashes = {
+                        path.name: digest for path, digest in zip(
+                            converted.source_paths[1:], converted.source_hashes[1:], strict=True,
+                        )
+                    }
+                    if plan.template_sha256 != converted.source_hashes[0] or any(
+                        source_hashes.get(subject.filename) != subject.sha256
+                        for subject in plan.selected_pilot_subjects
+                    ):
+                        raise ConfigurationError("The original meshes changed after pilot planning")
+                rebound = bind_reference_calibration_plan_to_inputs(
+                    plan, template=input_template, subjects=published_subjects,
+                )
+                parameter_recommendation = deepcopy(parameter_recommendation)
+                parameter_recommendation["calibration_plan"] = rebound.provenance
     launcher = select_preferred_reference_launcher()
     gpu_probe = None
     if request.reference_acceleration in {"auto", "gpu"}:
@@ -656,7 +745,13 @@ def _create_reference_project(
             0,
             "Geometry-scaled starter values are exploratory and require scientific review.",
         )
-    if preprocessing_report_path is not None:
+    if converted is not None:
+        notices.insert(
+            0,
+            "The existing mesh alignment was used. VTK copies preserve the source surface "
+            "coordinates and triangle connectivity, with source and output checksums recorded.",
+        )
+    elif preprocessing_report_path is not None:
         notices.insert(
             0,
             "Homologous landmarks were validated and generalized Procrustes was applied "
@@ -926,6 +1021,7 @@ def create_project(
         raise ConfigurationError(
             f"Project directory path is not a directory: {normalized.project_directory}"
         )
+    convert_existing_alignment = False
     if normalized.landmarks_file is None:
         template = normalized.template or detect_template(normalized.mesh_directory)
         selected = tuple(
@@ -937,12 +1033,16 @@ def create_project(
             (template is not None and template.suffix.casefold() != ".vtk")
             or any(path.suffix.casefold() != ".vtk" for path in selected)
         ):
-            raise ConfigurationError(
-                "PLY, OBJ, and STL sources are accepted only through reviewed landmark "
-                "placement and generalized Procrustes preprocessing. Select or create a "
-                "landmark CSV and approve its preview; DiffeoForge will then preserve raw "
-                "copies and create canonical aligned VTK inputs."
+            convert_existing_alignment = (
+                normalized.use_existing_alignment
+                and normalized.engine is DesktopEngine.DEFORMETRICA_REFERENCE
             )
+            if not convert_existing_alignment:
+                raise ConfigurationError(
+                    "PLY, OBJ, and STL sources require an alignment choice. "
+                    "For Deformetrica, confirm the existing mesh alignment to import "
+                    "VTK copies, or review and approve a landmark GPA."
+                )
     if normalized.engine is DesktopEngine.MODERN_CPU:
         return _create_modern_project(
             normalized,
@@ -953,4 +1053,5 @@ def create_project(
         normalized,
         approved_procrustes_preview,
         progress_callback,
+        convert_existing_alignment=convert_existing_alignment,
     )

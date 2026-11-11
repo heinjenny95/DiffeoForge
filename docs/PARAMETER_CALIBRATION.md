@@ -31,8 +31,10 @@ therefore keeps three sources of information separate:
 
 ## Desktop workflow
 
-1. Import meshes that are already GPA-aligned, or complete and approve
-   DiffeoForge landmark GPA.
+1. Confirm existing alignment or complete and approve DiffeoForge landmark GPA.
+   With existing alignment, the project imports PLY, OBJ, and STL as VTK copies
+   using the supplied surface coordinates and triangle connectivity. The project
+   records source and output checksums and binds the pilot to the VTK copies.
 2. Choose the surface-detail and deformation-scale research intents.
 3. Select **Analyze aligned meshes**. This is read-only.
 4. Optionally select **Measure on 3D template** and click the two endpoints of

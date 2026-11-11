@@ -108,6 +108,125 @@ def test_desktop_builds_and_binds_transparent_calibration_plan(
     application.processEvents()
 
 
+def test_desktop_prepares_pilot_from_existing_alignment_in_mixed_formats(
+    monkeypatch, tmp_path
+):
+    import yaml
+
+    from diffeoforge.config import load_config, validate_input_paths
+    from diffeoforge.desktop.project_review import review_project
+    from diffeoforge.desktop.project_setup import create_project
+    from diffeoforge.mesh import read_vtk_polydata, sha256_file, write_vtk_polydata
+    from diffeoforge.reference_calibration import reference_calibration_plan_from_provenance
+    from diffeoforge.reference_calibration_study import create_reference_calibration_study
+    from diffeoforge.surface_io import canonical_vtk_filename, load_surface_mesh
+    from test_surface_io import TRIANGLES, _transformed, _write_obj, _write_ply, _write_stl
+
+    application, window, queued = _prepared_window(monkeypatch, tmp_path)
+    meshes = tmp_path / "mixed-meshes"
+    meshes.mkdir()
+    template = _write_stl(meshes / "template.stl", binary=True)
+    obj = _write_obj(meshes / "part.obj", _transformed(scale=0.875))
+    ply = _write_ply(meshes / "part.ridge.ply", _transformed(offset=(0.125, 0.0, 0.0)))
+    vtk = meshes / "reference.vtk"
+    write_vtk_polydata(vtk, _transformed(offset=(0.0, 0.0, 0.25)), TRIANGLES)
+    originals = (template, obj, ply, vtk)
+    original_hashes = {path: sha256_file(path) for path in originals}
+
+    window.mesh_edit.setText(str(meshes))
+    window.pattern_edit.setText("*.*")
+    window.already_gpa_check.setChecked(True)
+    window.reference_acceleration_combo.setCurrentIndex(
+        window.reference_acceleration_combo.findData("cpu")
+    )
+    window.analyze_reference_parameters_button.click()
+    assert len(queued) == 1
+    queued[0].run()
+    application.processEvents()
+
+    recommendation = window._reference_recommendation
+    assert tuple(item.filename for item in recommendation.observations) == tuple(
+        path.name for path in originals
+    )
+    picker = window.reference_pilot_subject_picker
+    picker.combo.setCurrentText(obj.name)
+    picker.add_button.click()
+    window.reference_pilot_auto_count.setChecked(False)
+    window.reference_pilot_subject_count_spin.setValue(3)
+    window.build_reference_calibration_button.click()
+    application.processEvents()
+
+    raw_plan = window._reference_calibration_plan
+    assert raw_plan.required_subject_filenames == (obj.name,)
+    request = window._request()
+    assert request.use_existing_alignment
+    assert request.landmarks_file is None
+    assert request.existing_alignment_sources == tuple(
+        (path.name, original_hashes[path]) for path in originals
+    )
+
+    project = create_project(request)
+    config = load_config(project.config_path)
+    inputs = validate_input_paths(config, project.config_path)
+    assert config["project"]["name"] == "mixed-meshes-atlas"
+    assert inputs.template.name == "template.vtk"
+    # Changing suffixes reverses the relative filesystem sort order of these two subjects.
+    assert tuple(path.name for path in inputs.subjects) == (
+        "part.ridge.vtk",
+        "part.vtk",
+        "reference.vtk",
+    )
+    effective = {path.name: path for path in (inputs.template, *inputs.subjects)}
+    for original in originals:
+        assert read_vtk_polydata(
+            effective[canonical_vtk_filename(original)]
+        ) == load_surface_mesh(original).geometry
+    assert effective[vtk.name].read_bytes() == vtk.read_bytes()
+    assert {path: sha256_file(path) for path in originals} == original_hashes
+
+    preprocessing = config["preprocessing"]
+    assert not preprocessing.get("procrustes", {}).get("enabled", False)
+    conversion = preprocessing["surface_conversion"]
+    evidence = inputs.input_directory.parent / conversion["evidence_file"]
+    assert evidence == project.preprocessing_report_path
+    assert sha256_file(evidence) == conversion["evidence_sha256"]
+
+    saved_recommendation = config["project"]["parameter_provenance"]["recommendation"]
+    assert saved_recommendation["template_sha256"] == original_hashes[template]
+    assert saved_recommendation["fingerprint"] == recommendation.fingerprint
+    rebound = reference_calibration_plan_from_provenance(
+        saved_recommendation["calibration_plan"]
+    )
+    assert rebound.fingerprint != raw_plan.fingerprint
+    assert rebound.required_subject_filenames == ("part.vtk",)
+    assert rebound.template_sha256 == sha256_file(inputs.template)
+    assert len(rebound.selected_pilot_subjects) == len(raw_plan.selected_pilot_subjects) == 3
+    for raw, converted in zip(
+        raw_plan.selected_pilot_subjects, rebound.selected_pilot_subjects, strict=True
+    ):
+        assert converted.source_subject_index == raw.source_subject_index
+        assert converted.filename == canonical_vtk_filename(raw.filename)
+        assert converted.sha256 == sha256_file(effective[converted.filename])
+
+    review = review_project(project.config_path, project.engine)
+    assert review.subject_count == 3
+    review_values = {item.label: item.value for item in review.parameters}
+    assert rebound.fingerprint[:12] in review_values["Pilot calibration"]
+    study = create_reference_calibration_study(project.config_path, tmp_path / "mixed-study")
+    assert study.plan == rebound
+
+    # A saved calibration may live below the project and point to the same input cohort.
+    config["input"].update(directory=str(inputs.input_directory), template=str(inputs.template))
+    selected = study.study_directory / "selected" / "atlas-calibrated.yaml"
+    selected.parent.mkdir()
+    selected.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    saved_review = review_project(selected, project.engine)
+    assert any(item.label == "Surface conversion" for item in saved_review.parameters)
+    assert len(queued) == 1  # Only geometry analysis ran.
+    window.close()
+    application.processEvents()
+
+
 def test_desktop_limits_automatic_pilot_and_accepts_larger_manual_count(monkeypatch, tmp_path):
     application, window, queued = _prepared_window(monkeypatch, tmp_path)
     example = ROOT / "examples" / "synthetic" / "meshes"

@@ -1089,8 +1089,21 @@
     "preprocessing": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["procrustes"],
+      "oneOf": [
+        {"required": ["procrustes"]},
+        {"required": ["surface_conversion"]}
+      ],
       "properties": {
+        "surface_conversion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["evidence_file", "evidence_sha256", "fingerprint"],
+          "properties": {
+            "evidence_file": {"const": "conversion.json", "description": "File beside the input VTK directory."},
+            "evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        },
         "procrustes": {
           "type": "object",
           "additionalProperties": false,

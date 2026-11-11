@@ -4631,13 +4631,14 @@ class DiffeoForgeWindow(QMainWindow):
         data_form.addRow(self.alignment_field_label, self.procrustes_box)
 
         self.already_gpa_check = QCheckBox(
-            "I confirm that these mesh coordinates are already GPA aligned"
+            "I confirm that these meshes are already aligned"
         )
         self.already_gpa_check.setObjectName("alreadyGpaAlignedCheck")
         self.already_gpa_check.setToolTip(
             "Use this only when translation, rotation, and the intended size treatment "
-            "have already been completed outside DiffeoForge. Geometry diagnostics can "
-            "flag suspicious dispersion but cannot prove homologous alignment."
+            "have already been completed outside DiffeoForge. PLY, OBJ, and STL "
+            "surfaces are converted to VTK when the project is created, using the "
+            "supplied coordinates."
         )
         self.already_gpa_check.toggled.connect(self._reference_recommendation_inputs_changed)
         data_form.addRow("Existing alignment", self.already_gpa_check)
@@ -5768,7 +5769,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
         if not self.already_gpa_check.isChecked():
             raise ValueError(
-                "Confirm that the meshes are already GPA aligned, or place landmarks "
+                "Confirm the existing mesh alignment, or place landmarks "
                 "and complete the DiffeoForge GPA preview first."
             )
         return "declared_gpa", None, None
@@ -7345,7 +7346,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "Final parameter values — complete the pilot calibration first"
             )
             self.reference_parameter_hint.setText(
-                "No parameter values are active. Confirm existing GPA alignment or complete "
+                "No parameter values are active. Confirm existing alignment or complete "
                 "the DiffeoForge landmark-GPA preview, then analyze the aligned meshes."
             )
             self._update_reference_effective_widths()
@@ -9455,6 +9456,17 @@ class DiffeoForgeWindow(QMainWindow):
                 recommendation_provenance["calibration_plan"] = (
                     self._reference_calibration_plan.provenance
                 )
+        use_existing_alignment = bool(
+            self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
+            and not apply_procrustes
+            and self.already_gpa_check.isChecked()
+        )
+        existing_alignment_sources = (
+            tuple((item.filename, item.sha256) for item in self._reference_recommendation.observations)
+            if use_existing_alignment and recommendation_inputs_are_current
+            and self._reference_recommendation is not None
+            else None
+        )
         return ProjectSetupRequest(
             mesh_directory=Path(self.mesh_edit.text().strip()),
             project_directory=Path(self.project_edit.text().strip()),
@@ -9464,6 +9476,8 @@ class DiffeoForgeWindow(QMainWindow):
             project_name=self.name_edit.text().strip() or None,
             subject_pattern=self.pattern_edit.text(),
             landmarks_file=(Path(landmarks) if apply_procrustes else None),
+            use_existing_alignment=use_existing_alignment,
+            existing_alignment_sources=existing_alignment_sources,
             pairwise_mode="blockwise" if blockwise else "dense",
             query_tile_size=256 if blockwise else None,
             source_tile_size=256 if blockwise else None,
@@ -9644,7 +9658,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         report = f"\nPreflight report: {result.report_path}" if result.report_path else ""
         preprocessing = (
-            f"\nProcrustes evidence: {result.preprocessing_report_path}"
+            f"\nInput preparation evidence: {result.preprocessing_report_path}"
             if result.preprocessing_report_path
             else ""
         )

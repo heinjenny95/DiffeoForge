@@ -1,5 +1,13 @@
 # Development continuity — dev192 installed and verified
 
+## Desktop import with existing alignment
+
+New Deformetrica projects can import PLY, OBJ, and STL when the researcher
+confirms that the supplied meshes are already aligned. The project publishes
+verified VTK copies using the supplied surface coordinates and connectivity
+and records the source and output checksums. The pilot retains its selected
+specimens and binds their converted files by name and checksum.
+
 ## dev198 - bound automatic pilot workload
 
 New pilot recommendations still start with the central form and add the

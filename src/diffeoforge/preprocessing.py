@@ -52,6 +52,7 @@ from diffeoforge.surface_io import (
 )
 
 PREPROCESSING_VERSION = "0.3"
+CONVERSION_VERSION = "format-only-v1"
 DEFAULT_PROCRUSTES_TOLERANCE = 1e-10
 DEFAULT_PROCRUSTES_MAX_ITERATIONS = 100
 
@@ -91,6 +92,19 @@ class AlignedInputCohort:
     landmarks: Path
     evidence: Path
     fingerprint: str
+
+
+@dataclass(frozen=True)
+class ConvertedInputCohort:
+    """Format-only VTK inputs with their ordered, immutable source identity."""
+
+    vtk_directory: Path
+    template: Path
+    subjects: tuple[Path, ...]
+    evidence: Path
+    fingerprint: str
+    source_paths: tuple[Path, ...]
+    source_hashes: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -321,6 +335,223 @@ def _canonical_hash(value: object) -> str:
         allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(rendered).hexdigest()
+
+
+def _conversion_binding(source_names, source_hashes):
+    return {
+        "conversion_version": CONVERSION_VERSION,
+        "method": "format_only",
+        "sources": [
+            {"filename": name, "sha256": digest}
+            for name, digest in zip(source_names, source_hashes, strict=True)
+        ],
+    }
+
+
+def _linked_path(path: Path) -> bool:
+    return path.is_symlink() or getattr(path, "is_junction", lambda: False)()
+
+
+def verify_existing_aligned_conversion(
+    evidence: Path | str,
+    *,
+    template: Path | str,
+    subjects: Sequence[Path | str],
+    expected_fingerprint: str | None = None,
+) -> str:
+    """Verify a format-only receipt and its effective mesh files by role and hash."""
+    evidence_path = Path(evidence).expanduser().absolute()
+    vtk_directory = evidence_path.parent / "vtk"
+    try:
+        if evidence_path.name != "conversion.json" or any(
+            _linked_path(path) for path in (evidence_path, evidence_path.parent, vtk_directory)
+        ):
+            raise ValueError("conversion evidence or geometry directory is linked or misplaced")
+        receipt = json.loads(evidence_path.read_text(encoding="utf-8"))
+        records = receipt["meshes"]
+        source_names = tuple(item["source_filename"] for item in records)
+        source_hashes = tuple(item["source_sha256"] for item in records)
+        if len(records) < 3 or any(
+            not isinstance(name, str) or Path(name).name != name
+            or not is_supported_surface_path(name)
+            or not isinstance(digest, str) or len(digest) != 64
+            or any(letter not in "0123456789abcdef" for letter in digest)
+            for name, digest in zip(source_names, source_hashes, strict=True)
+        ):
+            raise ValueError("invalid conversion source records")
+        binding = _conversion_binding(source_names, source_hashes)
+        fingerprint = _canonical_hash(binding)
+        if (
+            receipt["conversion_version"] != CONVERSION_VERSION
+            or receipt["method"] != "format_only"
+            or receipt["fingerprint"] != fingerprint
+            or evidence_path.parent.name != f"converted-{fingerprint[:16]}"
+            or (expected_fingerprint is not None and fingerprint != expected_fingerprint)
+        ):
+            raise ValueError("conversion fingerprint does not match the source records")
+        names = tuple(canonical_vtk_filename(name) for name in source_names)
+        if len({name.casefold() for name in names}) != len(names):
+            raise ValueError("duplicate canonical VTK names")
+        if (
+            Path(template).resolve() != (vtk_directory / names[0]).resolve()
+            or len(subjects) != len(names) - 1
+            or {Path(path).resolve() for path in subjects}
+            != {(vtk_directory / name).resolve() for name in names[1:]}
+            or {path.name for path in vtk_directory.iterdir()} != set(names)
+        ):
+            raise ValueError("effective conversion cohort differs from its evidence")
+        for source_name, source_hash, name, record in zip(
+            source_names, source_hashes, names, records, strict=True
+        ):
+            vtk_path = vtk_directory / name
+            if (
+                record["vtk_path"] != f"vtk/{name}"
+                or not vtk_path.is_file()
+                or _linked_path(vtk_path)
+                or vtk_path.stat().st_size != record["vtk_bytes"]
+                or sha256_file(vtk_path) != record["vtk_sha256"]
+                or (
+                    Path(source_name).suffix.casefold() == ".vtk"
+                    and source_hash != record["vtk_sha256"]
+                )
+            ):
+                raise ValueError(f"converted mesh no longer matches its evidence: {name}")
+    except (KeyError, OSError, TypeError, ValueError) as error:
+        raise ConfigurationError(
+            f"Existing mesh conversion cannot be verified: {evidence_path}: {error}"
+        ) from error
+    return fingerprint
+
+
+def prepare_existing_aligned_inputs(
+    mesh_directory: Path | str,
+    *,
+    project_directory: Path | str,
+    template: Path | str | None = None,
+    subject_pattern: str = "*.vtk",
+    expected_sources: Sequence[tuple[str, str]] | None = None,
+    progress_callback: Callable[[int, int, Path], None] | None = None,
+) -> ConvertedInputCohort:
+    """Publish verified VTKs in the supplied coordinate frame without transforming it."""
+    source_directory = Path(mesh_directory).expanduser().resolve()
+    if not source_directory.is_dir():
+        raise ConfigurationError(f"Mesh directory does not exist: {source_directory}")
+    template_path, subjects = _select_inputs(source_directory, template, subject_pattern)
+    if any(not path.is_relative_to(source_directory) for path in subjects):
+        raise ConfigurationError(
+            "Subject pattern must not select files outside the input directory."
+        )
+    source_paths = (template_path, *subjects)
+    source_hashes = tuple(sha256_file(path) for path in source_paths)
+    source_names = tuple(path.name for path in source_paths)
+    if expected_sources is not None and tuple(expected_sources) != tuple(
+        zip(source_names, source_hashes, strict=True)
+    ):
+        raise ConfigurationError("Mesh inputs changed after parameter analysis")
+    vtk_names = tuple(canonical_vtk_filename(path) for path in source_paths)
+    fingerprint = _canonical_hash(_conversion_binding(source_names, source_hashes))
+    root = Path(project_directory).expanduser().resolve() / "preprocessing"
+    if _linked_path(root):
+        raise ConfigurationError(
+            f"Refusing to publish conversion through a linked directory: {root}"
+        )
+    root.mkdir(parents=True, exist_ok=True)
+    destination = root / f"converted-{fingerprint[:16]}"
+
+    def cohort_at(directory: Path) -> ConvertedInputCohort:
+        vtk_directory = directory / "vtk"
+        template_vtk, *subject_vtks = (vtk_directory / name for name in vtk_names)
+        evidence = directory / "conversion.json"
+        verify_existing_aligned_conversion(
+            evidence, template=template_vtk, subjects=subject_vtks,
+            expected_fingerprint=fingerprint,
+        )
+        return ConvertedInputCohort(
+            vtk_directory, template_vtk, tuple(subject_vtks), evidence, fingerprint,
+            source_paths, source_hashes,
+        )
+
+    def verify_current_sources() -> None:
+        fresh_template, fresh_subjects = _select_inputs(source_directory, template, subject_pattern)
+        if (
+            (fresh_template, *fresh_subjects) != source_paths
+            or tuple(sha256_file(path) for path in source_paths) != source_hashes
+        ):
+            raise ConfigurationError("Mesh inputs changed while VTK copies were being prepared")
+
+    if destination.exists() or _linked_path(destination):
+        existing = cohort_at(destination)
+        verify_current_sources()
+        if progress_callback is not None:
+            progress_callback(
+                len(source_paths), len(source_paths), Path("Reused verified VTK copies")
+            )
+        return existing
+
+    staging = _create_alignment_staging_directory(root)
+    try:
+        vtk_directory = staging / "vtk"
+        vtk_directory.mkdir()
+        records = []
+        for index, (path, expected_hash, vtk_name) in enumerate(
+            zip(source_paths, source_hashes, vtk_names, strict=True), start=1
+        ):
+            loaded = load_surface_mesh(path)
+            metadata = loaded.metadata
+            if metadata.sha256 != expected_hash:
+                raise ConfigurationError(f"Mesh changed before VTK conversion: {path}")
+            output = vtk_directory / vtk_name
+            if metadata.source_format == "legacy_vtk":
+                shutil.copyfile(path, output)
+                if sha256_file(output) != expected_hash:
+                    raise ConfigurationError(f"VTK source changed during copying: {path}")
+            else:
+                write_vtk_polydata(output, loaded.geometry.vertices, loaded.geometry.triangles)
+                if read_surface_mesh(output) != loaded.geometry:
+                    raise ConfigurationError(
+                        f"Converted VTK geometry differs from its source: {path}"
+                    )
+            records.append({
+                "source_filename": path.name,
+                "source_sha256": expected_hash,
+                "source_bytes": metadata.bytes,
+                "source_format": metadata.source_format,
+                "source_encoding": metadata.encoding,
+                "points": metadata.points,
+                "triangles": metadata.triangles,
+                "topology_note": metadata.topology_note,
+                "vtk_path": f"vtk/{vtk_name}",
+                "vtk_sha256": sha256_file(output),
+                "vtk_bytes": output.stat().st_size,
+            })
+            del loaded
+            if progress_callback is not None:
+                progress_callback(index, len(source_paths), path)
+        receipt = {
+            "conversion_version": CONVERSION_VERSION,
+            "method": "format_only",
+            "fingerprint": fingerprint,
+            "meshes": records,
+        }
+        with (staging / "conversion.json").open("x", encoding="utf-8", newline="\n") as handle:
+            json.dump(
+                receipt, handle, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False
+            )
+            handle.write("\n")
+        verify_current_sources()
+        try:
+            replace_atomically(staging, destination)
+        except OSError:
+            if not destination.exists() and not _linked_path(destination):
+                raise
+            # A concurrent writer may have published this same immutable cohort.
+            existing = cohort_at(destination)
+            verify_current_sources()
+            return existing
+        return cohort_at(destination)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
 
 
 def preview_landmark_alignment(

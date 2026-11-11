@@ -13,7 +13,7 @@ from diffeoforge.desktop.modern_cuda_runtime import (
     ModernCudaRuntimeError,
     discover_modern_cuda_runtime,
 )
-from diffeoforge.desktop.project_setup import DesktopEngine
+from diffeoforge.desktop.project_setup import DesktopEngine, verified_surface_conversion_evidence
 from diffeoforge.desktop.reference_production_readiness import (
     ReferenceProductionReadiness,
     assess_reference_production_readiness,
@@ -111,7 +111,17 @@ def _setting(value: Any, *, none: str = "automatic maximum") -> str:
 
 
 def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
-    """Verify and summarize an optional DiffeoForge Procrustes input cohort."""
+    """Verify and summarize any recorded input preparation."""
+
+    conversion = verified_surface_conversion_evidence(
+        preflight.config, preflight.inputs,
+    )
+    if conversion is not None:
+        return (ReviewItem(
+            "Surface conversion",
+            "Existing alignment preserved in VTK",
+            "Verified VTK copies and their source checksums are recorded with the project.",
+        ),)
 
     directory = preflight.inputs.input_directory
     from diffeoforge.reference_atlas_handoff import initialization

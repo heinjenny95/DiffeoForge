@@ -441,12 +441,12 @@ def test_existing_preprocessing_rejects_changed_raw_copy(tmp_path: Path) -> None
         )
 
 
-def test_desktop_rejects_non_vtk_sources_without_reviewed_gpa(tmp_path: Path) -> None:
+def test_desktop_rejects_non_vtk_sources_without_an_alignment_choice(tmp_path: Path) -> None:
     source_directory = tmp_path / "source"
     template, _ = _write_mixed_cohort(source_directory)
     project = tmp_path / "project"
 
-    with pytest.raises(ConfigurationError, match="accepted only through reviewed"):
+    with pytest.raises(ConfigurationError, match="require an alignment choice"):
         create_project(
             ProjectSetupRequest(
                 mesh_directory=source_directory,

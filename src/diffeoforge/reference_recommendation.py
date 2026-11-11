@@ -368,7 +368,7 @@ def _recommend_from_observations(
     ]
     if alignment_basis == "declared_gpa":
         warnings.append(
-            "GPA status was declared by the user. Coordinate diagnostics can flag large "
+            "Existing alignment was declared by the user. Coordinate diagnostics can flag large "
             "translation or scale differences but cannot prove homologous alignment."
         )
     if normalized_centroid_dispersion > 0.05:
