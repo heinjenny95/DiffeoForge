@@ -1,6 +1,6 @@
 # Development continuity — dev192 installed and verified
 
-## Bound automatic pilot workload
+## dev198 - bound automatic pilot workload
 
 New pilot recommendations still start with the central form and add the
 farthest uncovered forms. The automatic budget is the rounded square root of
@@ -8,6 +8,11 @@ the cohort size, limited to 4–12 slots and to the available subjects. Coverage
 can finish before that budget. Mandatory subjects and stratum representatives
 can raise it. The plan reports when forms remain outside the descriptor radius.
 Researchers can set a larger pilot size manually.
+
+Existing pilot plans, fits and review decisions retain their saved contracts.
+The Windows private-alpha runtime uses the verified v197 Windows baseline
+with the bounded coverage recommendation and the dev198 version stamp.
+Its pinned source is 59c6c1eadf523562c1781323165007a00f0f42a5.
 
 ## dev197 — macOS colleague packages
 
