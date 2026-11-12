@@ -1,5 +1,14 @@
 # Development continuity — dev192 installed and verified
 
+## dev201 — inspect existing mesh alignment
+
+The Deformetrica setup screen opens the alignment viewer directly from
+**Existing alignment**. It overlays the selected template and subjects in
+their supplied coordinates and supports individual shaded surfaces and optional
+original detail. The researcher confirms the existing alignment separately
+before parameter guidance. The viewer supports VTK, PLY, OBJ and STL through
+the existing surface readers.
+
 ## dev200 - isolate Windows reference execution from WMI startup
 
 Windows run manifests record the local OS build and process architecture without

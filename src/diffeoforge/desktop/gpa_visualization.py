@@ -1,9 +1,12 @@
-"""Hash-bound, memory-bounded geometry for visual GPA review."""
+"""Hash-bound, memory-bounded geometry for visual alignment review."""
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -14,6 +17,7 @@ from diffeoforge.desktop.mesh_preview import (
     MeshPreviewModel,
     load_mesh_preview,
 )
+from diffeoforge.mesh import sha256_file
 from diffeoforge.preprocessing import LandmarkAlignmentPreview
 
 DEFAULT_COHORT_EDGE_BUDGET = 120_000
@@ -54,6 +58,7 @@ def _aligned_model(
         display_proxy=build_display_proxy(aligned_vertices, source.triangles),
         geometry_is_proxy=source.geometry_is_proxy,
         source_triangle_count=source.source_triangle_count,
+        source_point_count=source.source_point_count,
     )
 
 
@@ -68,7 +73,7 @@ class GpaAlignedWireframe:
     triangles: np.ndarray
     edges: np.ndarray
     landmarks: np.ndarray
-    squared_landmark_residual: float
+    squared_landmark_residual: float | None
     applied_scale: float
     source_point_count: int
     source_triangle_count: int
@@ -89,7 +94,10 @@ class GpaAlignedWireframe:
         if not (
             np.isfinite(vertices).all()
             and np.isfinite(landmarks).all()
-            and math.isfinite(self.squared_landmark_residual)
+            and (
+                self.squared_landmark_residual is None
+                or math.isfinite(self.squared_landmark_residual)
+            )
             and math.isfinite(self.applied_scale)
         ):
             raise ValueError("GPA visual data must contain only finite values")
@@ -112,7 +120,7 @@ class GpaAlignedWireframe:
 
 @dataclass(frozen=True)
 class GpaAlignmentVisual:
-    """Read-only cohort overlay bound to one numerical GPA preview."""
+    """Read-only cohort overlay bound to its input geometry."""
 
     fingerprint: str
     meshes: tuple[GpaAlignedWireframe, ...]
@@ -181,6 +189,29 @@ def load_gpa_aligned_detail(
     return _aligned_model(source, aligned)
 
 
+def load_existing_alignment_detail(mesh: GpaAlignedWireframe) -> MeshPreviewModel:
+    """Load original detail for one unchanged member of a supplied cohort."""
+    source = load_mesh_preview(mesh.path)
+    if source.sha256 != mesh.sha256 or source.path != Path(mesh.path):
+        raise MeshPreviewError(f"Mesh changed after the alignment review was loaded: {mesh.path}")
+    return source
+
+
+def build_existing_alignment_visual(
+    paths: tuple[Path, ...],
+    *,
+    cohort_edge_budget: int = DEFAULT_COHORT_EDGE_BUDGET,
+    detail_triangle_budget: int = DEFAULT_GPA_TRIANGLE_BUDGET,
+) -> GpaAlignmentVisual:
+    """Build the ordered overlay in the supplied coordinate frame, without GPA."""
+    return _build_alignment_visual(
+        paths,
+        preview=None,
+        cohort_edge_budget=cohort_edge_budget,
+        detail_triangle_budget=detail_triangle_budget,
+    )
+
+
 def build_gpa_alignment_visual(
     preview: LandmarkAlignmentPreview,
     *,
@@ -196,6 +227,30 @@ def build_gpa_alignment_visual(
 
     if not isinstance(preview, LandmarkAlignmentPreview):
         raise TypeError("preview must be a LandmarkAlignmentPreview")
+    mesh_count = len(preview.source_paths)
+    if not (
+        mesh_count
+        == len(preview.mesh_sha256)
+        == len(preview.source_metadata)
+        == len(preview.alignment.transforms)
+        == preview.alignment.aligned_landmarks.shape[0]
+    ):
+        raise MeshPreviewError("Numerical GPA preview has inconsistent cohort lengths")
+    return _build_alignment_visual(
+        preview.source_paths,
+        preview=preview,
+        cohort_edge_budget=cohort_edge_budget,
+        detail_triangle_budget=detail_triangle_budget,
+    )
+
+
+def _build_alignment_visual(
+    paths: tuple[Path, ...],
+    *,
+    preview: LandmarkAlignmentPreview | None,
+    cohort_edge_budget: int,
+    detail_triangle_budget: int,
+) -> GpaAlignmentVisual:
     if isinstance(cohort_edge_budget, bool) or not isinstance(
         cohort_edge_budget, int
     ):
@@ -208,15 +263,9 @@ def build_gpa_alignment_visual(
         or detail_triangle_budget < 1
     ):
         raise ValueError("detail_triangle_budget must be a positive integer")
-    mesh_count = len(preview.source_paths)
-    if not (
-        mesh_count
-        == len(preview.mesh_sha256)
-        == len(preview.source_metadata)
-        == len(preview.alignment.transforms)
-        == preview.alignment.aligned_landmarks.shape[0]
-    ):
-        raise MeshPreviewError("Numerical GPA preview has inconsistent cohort lengths")
+    mesh_count = len(paths)
+    if not mesh_count:
+        raise MeshPreviewError("The alignment review requires at least one surface")
     per_mesh_budget = min(
         MAX_EDGES_PER_MESH,
         max(MIN_EDGES_PER_MESH, cohort_edge_budget // mesh_count),
@@ -229,31 +278,54 @@ def build_gpa_alignment_visual(
     total_source_edges = 0
     total_source_triangles = 0
     total_displayed_edges = 0
-    for index in range(mesh_count):
-        source = _verified_source_model(
-            preview,
-            index,
-            triangle_budget=detail_triangle_budget,
-        )
-        vertices = np.asarray(source.vertices, dtype=np.float64)
-        aligned = preview.alignment.transforms[index].apply(vertices)
-        x_min, x_max, y_min, y_max, z_min, z_max = (
-            preview.source_metadata[index].bounds
-        )
-        source_bounds = np.asarray(
-            [
-                (x, y, z)
-                for x in (x_min, x_max)
-                for y in (y_min, y_max)
-                for z in (z_min, z_max)
-            ],
-            dtype=np.float64,
-        )
-        aligned_bounds = preview.alignment.transforms[index].apply(source_bounds)
-        global_minimum = np.minimum(global_minimum, np.min(aligned_bounds, axis=0))
-        global_maximum = np.maximum(global_maximum, np.max(aligned_bounds, axis=0))
+    for index, path in enumerate(paths):
+        if preview is None:
+            source = load_mesh_preview(path, triangle_budget=detail_triangle_budget)
+            aligned = np.asarray(source.vertices, dtype=np.float64)
+            minimum, maximum = np.asarray(source.bounds, dtype=np.float64).reshape(3, 2).T
+            landmarks = np.empty((0, 3), dtype=np.float64)
+            residual = None
+            scale = 1.0
+            source_format = source.path.suffix.casefold().removeprefix(".")
+            if source_format == "vtk":
+                source_format = "legacy_vtk"
+            source_points = source.source_point_count or source.point_count
+            source_triangles = source.source_triangle_count or source.triangle_count
+        else:
+            source = _verified_source_model(
+                preview,
+                index,
+                triangle_budget=detail_triangle_budget,
+            )
+            transform = preview.alignment.transforms[index]
+            metadata = preview.source_metadata[index]
+            aligned = transform.apply(np.asarray(source.vertices, dtype=np.float64))
+            x_min, x_max, y_min, y_max, z_min, z_max = metadata.bounds
+            source_bounds = np.asarray(
+                [
+                    (x, y, z)
+                    for x in (x_min, x_max)
+                    for y in (y_min, y_max)
+                    for z in (z_min, z_max)
+                ],
+                dtype=np.float64,
+            )
+            aligned_bounds = transform.apply(source_bounds)
+            minimum = np.min(aligned_bounds, axis=0)
+            maximum = np.max(aligned_bounds, axis=0)
+            landmarks = preview.alignment.aligned_landmarks[index]
+            residual = preview.alignment.residuals[index]
+            scale = transform.scale
+            source_format = metadata.source_format
+            source_points = metadata.points
+            source_triangles = metadata.triangles
+
+        if not (source.vertices and source.triangles and source.edges):
+            raise MeshPreviewError(f"Surface has no preview geometry: {source.path}")
+        global_minimum = np.minimum(global_minimum, minimum)
+        global_maximum = np.maximum(global_maximum, maximum)
         if first_detail is None:
-            first_detail = _aligned_model(source, aligned)
+            first_detail = source if preview is None else _aligned_model(source, aligned)
 
         source_edges = np.asarray(source.edges, dtype=np.int64)
         if len(source_edges) > per_mesh_budget:
@@ -269,19 +341,19 @@ def build_gpa_alignment_visual(
             GpaAlignedWireframe(
                 path=str(source.path),
                 sha256=source.sha256,
-                source_format=preview.source_metadata[index].source_format,
+                source_format=source_format,
                 vertices=aligned,
                 triangles=np.asarray(source.triangles, dtype=np.int64),
                 edges=selected_edges,
-                landmarks=preview.alignment.aligned_landmarks[index],
-                squared_landmark_residual=preview.alignment.residuals[index],
-                applied_scale=preview.alignment.transforms[index].scale,
-                source_point_count=preview.source_metadata[index].points,
-                source_triangle_count=preview.source_metadata[index].triangles,
+                landmarks=landmarks,
+                squared_landmark_residual=residual,
+                applied_scale=scale,
+                source_point_count=source_points,
+                source_triangle_count=source_triangles,
             )
         )
-        total_source_edges += preview.source_metadata[index].triangles * 3
-        total_source_triangles += preview.source_metadata[index].triangles
+        total_source_edges += source_triangles * 3
+        total_source_triangles += source_triangles
         total_displayed_edges += len(selected_edges)
 
     if first_detail is None or not (
@@ -299,11 +371,25 @@ def build_gpa_alignment_visual(
         float(global_minimum[2]),
         float(global_maximum[2]),
     )
+    if preview is None:
+        sources = [(mesh.path, mesh.sha256) for mesh in wireframes]
+        for path, expected_sha256 in sources:
+            if sha256_file(Path(path)) != expected_sha256:
+                raise MeshPreviewError(f"Mesh changed while its alignment review was loading: {path}")
+        fingerprint = hashlib.sha256(
+            json.dumps(("existing-alignment-review-v1", sources)).encode("utf-8")
+        ).hexdigest()
+        labels = ()
+        mean_landmarks = np.empty((0, 3), dtype=np.float64)
+    else:
+        fingerprint = preview.fingerprint
+        labels = preview.landmark_labels
+        mean_landmarks = preview.alignment.mean_shape
     return GpaAlignmentVisual(
-        fingerprint=preview.fingerprint,
+        fingerprint=fingerprint,
         meshes=tuple(wireframes),
-        landmark_labels=preview.landmark_labels,
-        mean_landmarks=preview.alignment.mean_shape,
+        landmark_labels=labels,
+        mean_landmarks=mean_landmarks,
         bounds=bounds,
         first_detail=first_detail,
         total_displayed_edges=total_displayed_edges,

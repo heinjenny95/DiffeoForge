@@ -1,4 +1,4 @@
-"""Guided visual inspection of one exact GPA-aligned cohort."""
+"""Visual inspection of supplied or GPA-aligned surfaces."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from diffeoforge.desktop.activity import ActivityIndicator
 from diffeoforge.desktop.gpa_visualization import (
     GpaAlignmentVisual,
+    load_existing_alignment_detail,
     load_gpa_aligned_detail,
 )
 from diffeoforge.desktop.gpa_visualization_widget import GpaAlignmentCanvas3D
@@ -27,21 +28,22 @@ from diffeoforge.preprocessing import LandmarkAlignmentPreview
 
 
 class GpaAlignmentReviewDialog(QDialog):
-    """Inspect transformed meshes before approving a GPA preview."""
+    """Inspect the cohort in its supplied or GPA-aligned frame."""
 
     previewInvalidated = Signal(str)
 
     def __init__(
         self,
-        preview: LandmarkAlignmentPreview,
+        preview: LandmarkAlignmentPreview | None,
         visual: GpaAlignmentVisual,
         parent=None,
     ) -> None:
         super().__init__(parent)
-        if preview.fingerprint != visual.fingerprint:
-            raise ValueError("Visual and numerical GPA previews have different fingerprints")
-        if len(preview.source_paths) != len(visual.meshes):
-            raise ValueError("Visual and numerical GPA previews have different cohorts")
+        if preview is not None:
+            if preview.fingerprint != visual.fingerprint:
+                raise ValueError("Visual and numerical GPA previews have different fingerprints")
+            if len(preview.source_paths) != len(visual.meshes):
+                raise ValueError("Visual and numerical GPA previews have different cohorts")
         self.preview = preview
         self.visual = visual
         self.reviewed_fingerprint: str | None = None
@@ -49,7 +51,9 @@ class GpaAlignmentReviewDialog(QDialog):
         self._detail_loader = PreviewMeshLoader(self)
         self._detail_loader.loaded.connect(self._original_loaded)
         self._detail_loader.failed.connect(self._original_failed)
-        self.setWindowTitle("Review GPA-aligned meshes")
+        self.setWindowTitle(
+            "Review GPA-aligned meshes" if preview is not None else "Review existing alignment"
+        )
         self.resize(1420, 930)
         self.setMinimumSize(1000, 720)
 
@@ -94,10 +98,6 @@ class GpaAlignmentReviewDialog(QDialog):
         )
         self.restart_sequence_button.clicked.connect(self._restart_sequence)
         self.restart_sequence_button.hide()
-        worst_button = QPushButton("Highest residual")
-        worst_button.setObjectName("secondary")
-        worst_button.setToolTip("Select the specimen with the largest squared landmark residual.")
-        worst_button.clicked.connect(self._select_highest_residual)
         self.view_combo = QComboBox()
         for label, preset in (
             ("3/4 view", "three-quarter"),
@@ -118,7 +118,12 @@ class GpaAlignmentReviewDialog(QDialog):
         controls.addWidget(self.previous_button)
         controls.addWidget(self.next_button)
         controls.addWidget(self.restart_sequence_button)
-        controls.addWidget(worst_button)
+        if preview is not None:
+            worst_button = QPushButton("Highest residual")
+            worst_button.setObjectName("secondary")
+            worst_button.setToolTip("Select the specimen with the largest squared landmark residual.")
+            worst_button.clicked.connect(self._select_highest_residual)
+            controls.addWidget(worst_button)
         controls.addWidget(QLabel("View"))
         controls.addWidget(self.view_combo)
         controls.addWidget(reset_button)
@@ -134,7 +139,7 @@ class GpaAlignmentReviewDialog(QDialog):
         self.selected_surface_check.setChecked(False)
         self.selected_surface_check.toggled.connect(self._set_selected_surface_visible)
         self.landmarks_check = QCheckBox("Show selected, cohort, and consensus landmarks")
-        self.landmarks_check.setChecked(True)
+        self.landmarks_check.setChecked(preview is not None)
         self.landmarks_check.toggled.connect(self._set_landmarks_visible)
         self.sampling_label = QLabel(
             f"Display proxies: up to {visual.detail_triangle_budget:,} faces per mesh; "
@@ -145,6 +150,7 @@ class GpaAlignmentReviewDialog(QDialog):
         display_controls.addWidget(self.cohort_overlay_check)
         display_controls.addWidget(self.selected_surface_check)
         display_controls.addWidget(self.landmarks_check)
+        self.landmarks_check.setVisible(preview is not None)
         display_controls.addStretch()
         display_controls.addWidget(self.sampling_label)
         layout.addLayout(display_controls)
@@ -155,6 +161,7 @@ class GpaAlignmentReviewDialog(QDialog):
         self.canvas = GpaAlignmentCanvas3D()
         self.canvas.set_visual(visual)
         self.canvas.set_selected_proxy(0)
+        self.canvas.set_show_landmarks(preview is not None)
         layout.addWidget(self.canvas, 1)
 
         review_status = QHBoxLayout()
@@ -171,21 +178,27 @@ class GpaAlignmentReviewDialog(QDialog):
         layout.addLayout(review_status)
 
         completion = QHBoxLayout()
-        self.review_complete_check = QCheckBox(
-            "I visually reviewed the cohort overlay and inspected relevant individual meshes"
+        close_button = QPushButton(
+            "Close without completing review" if preview is not None else "Close review"
         )
-        self.review_complete_check.setObjectName("gpaVisualReviewCompleteCheck")
-        self.review_complete_check.toggled.connect(self._update_completion_button)
-        close_button = QPushButton("Close without completing review")
         close_button.setObjectName("secondary")
         close_button.clicked.connect(self.reject)
-        self.complete_button = QPushButton("Complete visual GPA review")
-        self.complete_button.setObjectName("primary")
-        self.complete_button.setEnabled(False)
-        self.complete_button.clicked.connect(self._complete_review)
-        completion.addWidget(self.review_complete_check, 1)
-        completion.addWidget(close_button)
-        completion.addWidget(self.complete_button)
+        if preview is not None:
+            self.review_complete_check = QCheckBox(
+                "I visually reviewed the cohort overlay and inspected relevant individual meshes"
+            )
+            self.review_complete_check.setObjectName("gpaVisualReviewCompleteCheck")
+            self.review_complete_check.toggled.connect(self._update_completion_button)
+            self.complete_button = QPushButton("Complete visual GPA review")
+            self.complete_button.setObjectName("primary")
+            self.complete_button.setEnabled(False)
+            self.complete_button.clicked.connect(self._complete_review)
+            completion.addWidget(self.review_complete_check, 1)
+            completion.addWidget(close_button)
+            completion.addWidget(self.complete_button)
+        else:
+            completion.addStretch()
+            completion.addWidget(close_button)
         layout.addLayout(completion)
         self._update_mesh_status(0)
 
@@ -211,11 +224,13 @@ class GpaAlignmentReviewDialog(QDialog):
             self._detail_loader.cancel()
             self.canvas.set_selected_proxy(index)
             return
-        self.mesh_status_label.setText("Verifying and loading original aligned detail…")
+        self.mesh_status_label.setText("Verifying and loading original detail…")
         preview = self.preview
-        self._detail_loader.request_operation(
-            index, lambda: load_gpa_aligned_detail(preview, index)
-        )
+        if preview is None:
+            mesh = self.visual.meshes[index]
+            self._detail_loader.request_operation(index, lambda: load_existing_alignment_detail(mesh))
+        else:
+            self._detail_loader.request_operation(index, lambda: load_gpa_aligned_detail(preview, index))
 
     @Slot(object, object)
     def _original_loaded(self, index: object, detail: object) -> None:
@@ -233,20 +248,22 @@ class GpaAlignmentReviewDialog(QDialog):
 
     def _update_mesh_status(self, index: int) -> None:
         mesh = self.visual.meshes[index]
-        residuals = sorted(
-            (item.squared_landmark_residual for item in self.visual.meshes),
-            reverse=True,
-        )
-        rank = residuals.index(mesh.squared_landmark_residual) + 1
         self.mesh_status_label.setStyleSheet("")
-        self.mesh_status_label.setToolTip(
+        mesh_info = (
             f"{Path(mesh.path).name}  |  {mesh.source_format.upper()}  |  "
             f"{mesh.source_point_count:,} points / "
-            f"{mesh.source_triangle_count:,} triangles  |  "
-            f"squared landmark residual {mesh.squared_landmark_residual:.6g} "
-            f"(rank {rank} of {len(residuals)}, highest first)  |  "
-            f"GPA scale {mesh.applied_scale:.6g}"
+            f"{mesh.source_triangle_count:,} triangles"
         )
+        if self.preview is not None:
+            residuals = sorted(self.preview.alignment.residuals, reverse=True)
+            residual = self.preview.alignment.residuals[index]
+            rank = residuals.index(residual) + 1
+            mesh_info += (
+                f"  |  squared landmark residual {residual:.6g} "
+                f"(rank {rank} of {len(residuals)}, highest first)  |  "
+                f"GPA scale {mesh.applied_scale:.6g}"
+            )
+        self.mesh_status_label.setToolTip(mesh_info)
         self.mesh_status_label.setText(Path(mesh.path).name)
         self.inspection_progress_label.setText(
             f"Mesh {index + 1} of {len(self.visual.meshes)} · unique viewed "
@@ -268,11 +285,9 @@ class GpaAlignmentReviewDialog(QDialog):
 
     @Slot()
     def _select_highest_residual(self) -> None:
-        index = max(
-            range(len(self.visual.meshes)),
-            key=lambda item: self.visual.meshes[item].squared_landmark_residual,
-        )
-        self.mesh_combo.setCurrentIndex(index)
+        if self.preview is not None:
+            residuals = self.preview.alignment.residuals
+            self.mesh_combo.setCurrentIndex(max(range(len(residuals)), key=residuals.__getitem__))
 
     def _move_mesh(self, offset: int) -> None:
         count = self.mesh_combo.count()

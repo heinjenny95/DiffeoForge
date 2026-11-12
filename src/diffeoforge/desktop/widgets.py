@@ -60,6 +60,7 @@ from diffeoforge.desktop.feature_scale_dialog import FeatureScaleRulerDialog
 from diffeoforge.desktop.gpa_review_dialog import GpaAlignmentReviewDialog
 from diffeoforge.desktop.gpa_visualization import (
     GpaAlignmentVisual,
+    build_existing_alignment_visual,
     build_gpa_alignment_visual,
 )
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
@@ -975,6 +976,24 @@ class _ProcrustesVisualWorker(QRunnable):
         self.signals.succeeded.emit(visual)
 
 
+class _ExistingAlignmentVisualWorker(QRunnable):
+    """Load the selected surfaces in their supplied coordinate frame."""
+
+    def __init__(self, sources: tuple[tuple[Path, int, int], ...]) -> None:
+        super().__init__()
+        self.sources = sources
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            visual = build_existing_alignment_visual(tuple(path for path, _, _ in self.sources))
+        except (MeshPreviewError, OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(visual)
+
+
 class _ReferenceParameterWorker(QRunnable):
     """Analyze one aligned cohort without blocking the Qt event loop."""
 
@@ -1869,6 +1888,7 @@ class DiffeoForgeWindow(QMainWindow):
             | _TemplatePreviewWorker
             | _ProcrustesPreviewWorker
             | _ProcrustesVisualWorker
+            | _ExistingAlignmentVisualWorker
             | _SetupRestoreWorker
             | _ReferenceParameterWorker
             | _ReferenceReadinessWorker
@@ -4661,7 +4681,23 @@ class DiffeoForgeWindow(QMainWindow):
             "supplied coordinates."
         )
         self.already_gpa_check.toggled.connect(self._reference_recommendation_inputs_changed)
-        data_form.addRow("Existing alignment", self.already_gpa_check)
+        self.existing_alignment_box = QWidget()
+        existing_alignment_layout = QVBoxLayout(self.existing_alignment_box)
+        existing_alignment_layout.setContentsMargins(0, 0, 0, 0)
+        self.review_existing_alignment_button = QPushButton("Open alignment viewer…")
+        self.review_existing_alignment_button.setObjectName("secondary")
+        self.review_existing_alignment_button.setToolTip(
+            "Inspect the template and subjects together in their supplied coordinates."
+        )
+        self.review_existing_alignment_button.clicked.connect(self._open_existing_alignment_review)
+        self.existing_alignment_notice = QLabel()
+        self.existing_alignment_notice.setWordWrap(True)
+        self.existing_alignment_notice.setObjectName("statusWarning")
+        self.existing_alignment_notice.hide()
+        existing_alignment_layout.addWidget(self.review_existing_alignment_button)
+        existing_alignment_layout.addWidget(self.already_gpa_check)
+        existing_alignment_layout.addWidget(self.existing_alignment_notice)
+        data_form.addRow("Existing alignment", self.existing_alignment_box)
 
         self.reference_guidance_box = QWidget()
         guidance_layout = QVBoxLayout(self.reference_guidance_box)
@@ -5794,6 +5830,61 @@ class DiffeoForgeWindow(QMainWindow):
             )
         return "declared_gpa", None, None
 
+    def _existing_alignment_sources(self) -> tuple[tuple[Path, int, int], ...]:
+        if not self.mesh_edit.text().strip():
+            raise ValueError("Select a mesh folder first.")
+        sources = []
+        for path in self._current_surface_cohort():
+            stat = path.stat()
+            sources.append((path, stat.st_size, stat.st_mtime_ns))
+        return tuple(sources)
+
+    @Slot()
+    def _open_existing_alignment_review(self) -> None:
+        if not self.review_existing_alignment_button.isEnabled():
+            return
+        try:
+            sources = self._existing_alignment_sources()
+        except (OSError, ValueError) as error:
+            self._existing_alignment_visual_failed(str(error))
+            return
+        worker = _ExistingAlignmentVisualWorker(sources)
+        worker.signals.succeeded.connect(self._existing_alignment_visual_succeeded)
+        worker.signals.failed.connect(self._existing_alignment_visual_failed)
+        self.existing_alignment_notice.hide()
+        self._worker = worker
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _existing_alignment_visual_succeeded(self, visual: GpaAlignmentVisual) -> None:
+        worker = self._worker
+        if not isinstance(worker, _ExistingAlignmentVisualWorker):
+            return
+        try:
+            if worker.sources != self._existing_alignment_sources() or (
+                self.landmarks_edit.text().strip() and self.procrustes_apply_check.isChecked()
+            ):
+                raise ValueError("Mesh inputs changed while loading. Open the viewer again.")
+            dialog = GpaAlignmentReviewDialog(None, visual, self)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self._existing_alignment_visual_failed(str(error))
+            return
+        self._worker = None
+        self._sync_ready_state()
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
+
+    @Slot(str)
+    def _existing_alignment_visual_failed(self, message: str) -> None:
+        if isinstance(self._worker, _ExistingAlignmentVisualWorker):
+            self._worker = None
+        self.existing_alignment_notice.setText(message)
+        self.existing_alignment_notice.show()
+        self._sync_ready_state()
+
     def _reference_recommendation_matches_current_inputs(self) -> bool:
         recommendation = self._reference_recommendation
         if recommendation is None or self._reference_recommendation_paths is None:
@@ -6039,6 +6130,17 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.already_gpa_check.setEnabled(
             reference and not uses_diffeoforge_gpa and self._worker is None
+        )
+        self.review_existing_alignment_button.setVisible(reference and not uses_diffeoforge_gpa)
+        self.review_existing_alignment_button.setEnabled(
+            reference and not uses_diffeoforge_gpa
+            and bool(self.mesh_edit.text().strip()) and bool(self.pattern_edit.text().strip())
+            and self._worker is None and self._input_preflight_worker is None
+        )
+        self.review_existing_alignment_button.setText(
+            "Loading alignment viewer…"
+            if isinstance(self._worker, _ExistingAlignmentVisualWorker)
+            else "Open alignment viewer…"
         )
         alignment_ready = bool(
             self._approved_procrustes_fingerprint() is not None
@@ -7525,7 +7627,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.parameter_input_form.setRowVisible(self.optimization_effort_box, modern)
         self.parameter_input_form.setRowVisible(self.modern_device_box, modern)
         self.parameter_input_form.setRowVisible(self.modern_gradient_box, modern)
-        self.data_input_form.setRowVisible(self.already_gpa_check, not modern)
+        self.data_input_form.setRowVisible(self.existing_alignment_box, not modern)
         self.parameter_input_form.setRowVisible(self.reference_guidance_box, not modern)
         self.parameter_input_form.setRowVisible(self.reference_parameter_box, not modern)
         if modern:

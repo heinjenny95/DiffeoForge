@@ -317,3 +317,124 @@ def test_mesh_folder_selection_blocks_nonmanifold_source_before_parameter_step(
 
     window.close()
     application.processEvents()
+
+def _existing_alignment_cohort(window, tmp_path):
+    from diffeoforge.desktop.project_setup import DesktopEngine
+
+    window.engine_combo.setCurrentIndex(
+        window.engine_combo.findData(DesktopEngine.DEFORMETRICA_REFERENCE)
+    )
+    directory = tmp_path / "existing-alignment"
+    directory.mkdir()
+    template = directory / "template.vtk"
+    first_subject = directory / "subject-01.vtk"
+    second_subject = directory / "subject-02.vtk"
+    surfaces = {
+        template: ((4.0, 5.0, 6.0), (5.0, 5.0, 6.0), (4.0, 6.0, 6.0), (4.0, 5.0, 7.0)),
+        first_subject: ((6.0, 5.0, 6.0), (8.0, 5.0, 6.0), (6.0, 7.0, 6.0), (6.0, 5.0, 8.0)),
+        second_subject: ((4.0, 3.0, 6.0), (5.0, 3.0, 6.0), (4.0, 4.0, 6.0), (4.0, 3.0, 7.0)),
+    }
+    faces = ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3))
+    for path, vertices in surfaces.items():
+        write_vtk_polydata(path, vertices, faces)
+    window.mesh_edit.setText(str(directory))
+    window.template_edit.setText(str(template))
+    return surfaces
+
+
+def test_existing_alignment_opens_read_only_gpa_viewer_before_confirmation(
+    tmp_path, monkeypatch,
+):
+    application, window, _paths, _signature = _ready_window(tmp_path, monkeypatch)
+    from PySide6.QtWidgets import QDialog
+
+    from diffeoforge.desktop import widgets
+    from diffeoforge.desktop.gpa_review_dialog import GpaAlignmentReviewDialog
+
+    surfaces = _existing_alignment_cohort(window, tmp_path)
+    before = {path: path.read_bytes() for path in surfaces}
+    pool = _QueuedPool()
+    window._thread_pool = pool
+    shown = []
+
+    def no_gpa(*_args, **_kwargs):
+        pytest.fail("Reviewing existing alignment must not compute GPA")
+
+    def inspect_and_close(dialog):
+        shown.append((dialog.preview, dialog.visual))
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(widgets, "preview_landmark_alignment", no_gpa)
+    monkeypatch.setattr(GpaAlignmentReviewDialog, "exec", inspect_and_close)
+    assert not window.landmarks_edit.text()
+    assert window._input_preflight is None
+    assert not window.already_gpa_check.isChecked()
+    assert window.review_existing_alignment_button.isEnabled()
+
+    window.review_existing_alignment_button.click()
+    assert len(pool.workers) == 1
+    pool.workers[0].run()
+    application.processEvents()
+
+    ((preview, visual),) = shown
+    assert preview is None
+    assert visual.landmark_labels == ()
+    assert [Path(mesh.path) for mesh in visual.meshes] == list(surfaces)
+    for mesh in visual.meshes:
+        assert tuple(map(tuple, mesh.vertices)) == surfaces[Path(mesh.path)]
+    assert {path: path.read_bytes() for path in surfaces} == before
+    assert set(next(iter(surfaces)).parent.iterdir()) == set(surfaces)
+    assert window._input_preflight is None
+    assert window._procrustes_preview is None
+    assert not window.approve_procrustes_check.isChecked()
+    assert not window.already_gpa_check.isChecked()
+    window.close()
+    application.processEvents()
+
+
+def test_existing_alignment_discards_changed_mesh_without_reusing_preflight(
+    tmp_path, monkeypatch,
+):
+    application, window, _paths, _signature = _ready_window(tmp_path, monkeypatch)
+    from PySide6.QtWidgets import QDialog, QMessageBox
+
+    from diffeoforge.desktop.gpa_review_dialog import GpaAlignmentReviewDialog
+
+    surfaces = _existing_alignment_cohort(window, tmp_path)
+    pool = _QueuedPool()
+    window._thread_pool = pool
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_args, **_kwargs: None)
+
+    shown = []
+
+    def inspect_and_close(dialog):
+        shown.append(dialog.visual)
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(GpaAlignmentReviewDialog, "exec", inspect_and_close)
+    window.validate_meshes_button.click()
+    assert len(pool.workers) == 1
+    pool.workers.pop().run()
+    application.processEvents()
+    assert window._input_preflight is not None and window._input_preflight.ready
+    preflight_signature = window._input_preflight_signature
+    assert preflight_signature == window._current_input_preflight_signature()
+    assert window.continue_parameter_button.isEnabled()
+    window.already_gpa_check.setChecked(True)
+
+    window.review_existing_alignment_button.click()
+    assert len(pool.workers) == 1
+    changed = next(path for path in surfaces if path.name.startswith("subject"))
+    changed.write_bytes(changed.read_bytes() + b"\n")
+    pool.workers.pop().run()
+    application.processEvents()
+
+    assert shown == []
+    assert "changed" in window.existing_alignment_notice.text().lower()
+    assert window._current_input_preflight_signature() != preflight_signature
+    assert window._worker is None
+    assert not window.continue_parameter_button.isEnabled()
+    assert window.validate_meshes_button.isEnabled()
+    assert window.already_gpa_check.isChecked()
+    window.close()
+    application.processEvents()

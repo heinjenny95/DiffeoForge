@@ -8,6 +8,11 @@ not modified or decimated.
 
 ## Behaviour and safeguards
 
+- In Deformetrica setup, **Existing alignment → Open alignment viewer…**
+  opens the same 3D overlay and navigation used for GPA review. It displays the
+  selected template and subject pattern in the supplied coordinate frame.
+  Inspect the overlay and individual surfaces, then confirm the existing
+  alignment in setup if it is suitable.
 - GPA review overlays use the displayed frame's camera and viewport too (v80):
   selected, cohort and consensus landmarks and their labels update together
   with the mesh. New cohorts, selected meshes, detail modes and geometry-layer

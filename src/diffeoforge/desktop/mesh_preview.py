@@ -75,6 +75,7 @@ class MeshPreviewModel:
     display_proxy_error: str | None = None
     geometry_is_proxy: bool = False
     source_triangle_count: int | None = None
+    source_point_count: int | None = None
 
     @property
     def point_count(self) -> int:
@@ -253,6 +254,7 @@ def load_mesh_preview(
         display_proxy_error=proxy_error,
         geometry_is_proxy=reduced,
         source_triangle_count=metadata.triangles,
+        source_point_count=metadata.points,
     )
     # Geometry is immutable, content/resolution bound and shared across viewers.
     # Fresh byte hashing above is required even on hits; metadata alone is unsafe.
