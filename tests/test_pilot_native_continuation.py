@@ -183,3 +183,73 @@ def test_dialog_selects_new_continuation_result_for_fresh_review(tmp_path, monke
     finally:
         dialog.close()
         application.processEvents()
+
+
+def test_failed_continuation_can_retry_or_finish_the_reviewed_source(tmp_path, monkeypatch):
+    from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtWidgets import QApplication, QMessageBox
+    from test_pilot_completion import _approve_preview
+    from test_reference_calibration_study import _FailedController
+
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    runner, original, identifier, calls = _fixture(tmp_path, monkeypatch)
+    monkeypatch.setattr(runner, "_controller_factory", _FailedController)
+    failed = continuation.run(runner, identifier)
+    failed_id = failed.candidates[-1].candidate_id
+    assert failed.candidates[-1].status == "failed"
+    root = failed.study_directory
+    declarations = qualification.declarations(study._load_events(root))
+
+    application = QApplication.instance() or QApplication([])
+    dialog = ReferenceCalibrationDialog(root)
+    dialog.show()
+    try:
+        wait_pilot_view(dialog)
+        dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(identifier))
+        assert dialog.next_step_button.text() == "Resume saved check"
+        assert not dialog.final_retry_button.isVisible()
+        _approve_preview(original, identifier)
+        dialog._render()
+        wait_pilot_view(dialog)
+        assert dialog.selection_combo.currentData() == identifier
+        assert dialog.next_step_button.text() == "Finish pilot provisionally → atlas setup"
+        assert dialog.next_step_button.isVisible() and dialog.next_step_button.isEnabled()
+        assert dialog.final_retry_button.text() == "Retry failed continuation"
+        assert dialog.final_retry_button.isVisible() and dialog.final_retry_button.isEnabled()
+        assert dialog.final_retry_button.objectName() == "secondary"
+        assert not dialog.scroll.isAncestorOf(dialog.final_retry_button)
+        assert not dialog.final_finish_button.isVisible()
+
+        workers = []
+        monkeypatch.setattr(dialog._thread_pool, "start", workers.append)
+        dialog.final_retry_button.click()
+        assert len(workers) == 1 and workers[0].qualification
+        assert not dialog.next_step_button.isEnabled()
+        assert not dialog.final_retry_button.isEnabled()
+        workers[0].runner = runner
+        workers[0].run()
+        wait_pilot_view(dialog)
+        assert qualification.declarations(study._load_events(root)) == declarations
+        retry = next(c for c in dialog.snapshot.candidates if c.candidate_id == failed_id)
+        assert retry.status == "failed" and retry.attempts == 2
+        assert calls == [(Path(declarations[0]["checkpoint_continuation"]["source_run"]), 300)] * 2
+        assert dialog.snapshot.visual_reviews[identifier] is True
+
+        monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.No)
+        dialog.next_step_button.click()
+        assert len(workers) == 1
+        monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+        dialog.next_step_button.click()
+        assert len(workers) == 2 and workers[1].finish_candidate_id == identifier
+        workers[1].run()
+        assert dialog.snapshot.status == "completed"
+        assert dialog.snapshot.selected_candidate_ids["timepoints"] == identifier
+        assert len(calls) == 2
+        failures = [event for event in study._load_events(root)
+                    if event["event"] == "candidate_failed" and event["candidate_id"] == failed_id]
+        assert len(failures) == 2
+    finally:
+        dialog.close()
+        application.processEvents()

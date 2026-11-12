@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import sysconfig
 import threading
 import time
 from collections import deque
@@ -193,10 +194,18 @@ def _package_version(name: str) -> str | None:
 
 
 def preparation_environment() -> dict[str, object]:
+    if os.name == "nt":
+        # platform.platform() queries WMI on current Windows Python versions.
+        # Record local OS and architecture without opening a COM/WMI session
+        # in the process that will supervise the numerical backend.
+        version = ".".join(map(str, sys.getwindowsversion().platform_version))
+        platform_description = f"Windows-{version} ({sysconfig.get_platform()})"
+    else:
+        platform_description = platform.platform()
     return {
         "python": sys.version.replace("\n", " "),
         "python_executable": sys.executable,
-        "platform": platform.platform(),
+        "platform": platform_description,
         "diffeoforge": __version__,
         "packages": {
             name: _package_version(name)

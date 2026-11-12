@@ -375,8 +375,11 @@ class ReferenceExecutionController:
             try:
                 terminal = ledger.reconcile()
             except DesktopReferenceWorkerProtocolError as error:
+                status = f"exit code {exit_code}"
+                if os.name == "nt" and exit_code & 0x80000000:
+                    status = f"Windows status 0x{exit_code & 0xFFFFFFFF:08X}"
                 raise ReferenceExecutionProcessError(
-                    str(error), exit_code=exit_code, stderr=stderr
+                    f"{error} ({status})", exit_code=exit_code, stderr=stderr
                 ) from error
             outcome = str(terminal.payload["outcome"])
             expected_exit = {

@@ -16,6 +16,7 @@ from diffeoforge.config import load_config
 from diffeoforge.desktop.reference_execution_controller import (
     ReferenceExecutionController,
     ReferenceExecutionControllerError,
+    ReferenceExecutionProcessError,
     ReferenceExecutionProtocolViolation,
     ReferenceExecutionWorkerError,
     default_reference_execution_worker_command,
@@ -204,6 +205,32 @@ def test_reference_execution_controller_preserves_schema_valid_worker_failure(
 
     with pytest.raises(ReferenceExecutionWorkerError, match="failed"):
         controller.run()
+    assert controller.state == "failed"
+
+
+def test_reference_execution_controller_reports_exit_without_terminal(tmp_path):
+    request = _request(tmp_path)
+    controller = ReferenceExecutionController(
+        request, worker_command=_command([_accepted(request)], exit_code=11), cwd=ROOT
+    )
+
+    with pytest.raises(ReferenceExecutionProcessError, match="without a terminal event.*11"):
+        controller.run()
+
+    assert controller.state == "failed"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process exit status")
+def test_reference_execution_controller_preserves_windows_crash_status(tmp_path):
+    request = _request(tmp_path)
+    script = "import ctypes; ctypes.windll.kernel32.ExitProcess(0xC000070A)"
+    controller = ReferenceExecutionController(
+        request, worker_command=(sys.executable, "-c", script), cwd=ROOT
+    )
+
+    with pytest.raises(ReferenceExecutionProcessError, match="Windows status 0xC000070A"):
+        controller.run()
+
     assert controller.state == "failed"
 
 

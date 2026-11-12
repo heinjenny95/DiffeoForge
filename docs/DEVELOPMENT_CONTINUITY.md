@@ -1,5 +1,21 @@
 # Development continuity — dev192 installed and verified
 
+## dev200 - isolate Windows reference execution from WMI startup
+
+Windows run manifests record the local OS build and process architecture without
+querying WMI. The frozen Windows reference execution worker excludes setuptools
+and its runtime hook, which otherwise makes a second WMI query during startup.
+Both calls loaded endpoint inspection DLLs on the affected workstation. Crash
+dumps show a Windows certificate-store callback attempting to rearm a wait with
+an invalid handle type. The dumps do not identify which component invalidated
+the handle. Windows certificate and endpoint security settings are unchanged.
+
+A worker that exits without a terminal event reports its operating system exit
+status. After a failed optional optimizer continuation, a previously verified
+and visually approved candidate can still be selected explicitly. Retrying uses
+the existing declaration. Saved approval, time resolution, and optimizer stop
+evidence are verified independently before pilot completion.
+
 ## dev199 — desktop guidance and result review
 
 The application uses the blue D from the DiffeoForge wordmark in its

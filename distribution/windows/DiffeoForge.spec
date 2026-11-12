@@ -214,6 +214,12 @@ reference_preparation_worker_executable = EXE(
     disable_windowed_traceback=False,
 )
 
+# The Windows setuptools runtime hook queries WMI before the worker entry point.
+# Keep build-time packaging libraries out of the long-lived execution process.
+reference_execution_excludes = excluded_modules
+if entrypoint_platform == "windows":
+    reference_execution_excludes = [*excluded_modules, "setuptools", "pkg_resources"]
+
 reference_execution_worker_analysis = Analysis(
     [str(entrypoints / "diffeoforge_reference_execution_worker.py")],
     pathex=[str(source)],
@@ -223,7 +229,7 @@ reference_execution_worker_analysis = Analysis(
     hookspath=[],
     hooksconfig=matplotlib_hooks,
     runtime_hooks=[],
-    excludes=excluded_modules,
+    excludes=reference_execution_excludes,
     noarchive=False,
     optimize=0,
 )
@@ -231,6 +237,10 @@ assert_builder_only_modules_absent(
     reference_execution_worker_analysis,
     "DiffeoForgeReferenceExecutionWorker",
 )
+if entrypoint_platform == "windows" and any(
+    name == "pyi_rth_setuptools" for name, *_ in reference_execution_worker_analysis.scripts
+):
+    raise RuntimeError("Windows reference execution must not run the setuptools startup hook")
 reference_execution_worker_pyz = PYZ(reference_execution_worker_analysis.pure)
 reference_execution_worker_executable = EXE(
     reference_execution_worker_pyz,

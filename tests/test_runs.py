@@ -27,6 +27,18 @@ from diffeoforge.runs import (
 )
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows preparation metadata")
+def test_windows_preparation_environment_does_not_query_wmi(monkeypatch):
+    def unexpected_platform_probe():
+        pytest.fail("Windows preparation metadata must not call platform.platform()")
+
+    monkeypatch.setattr(runs.platform, "platform", unexpected_platform_probe)
+    version = ".".join(map(str, sys.getwindowsversion().platform_version))
+    assert runs.preparation_environment()["platform"] == (
+        f"Windows-{version} ({runs.sysconfig.get_platform()})"
+    )
+
+
 def write_tetrahedron(path: Path) -> Path:
     path.write_text(
         """# vtk DataFile Version 3.0

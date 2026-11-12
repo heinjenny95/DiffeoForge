@@ -1785,10 +1785,15 @@ class ReferenceCalibrationDialog(QDialog):
         self.final_finish_button = QPushButton("Finish pilot provisionally → atlas setup")
         self.final_finish_button.clicked.connect(self._advance)
         self.final_finish_button.hide()
+        self.final_retry_button = QPushButton("Retry failed continuation")
+        self.final_retry_button.clicked.connect(self._start)
+        self.final_retry_button.setToolTip("Retry with the original saved fit and settings.")
+        self.final_retry_button.hide()
         self.next_step_button.clicked.connect(self._perform_final_next_step)
         self.next_step_button.hide()
         _set_action_emphasis(self.next_step_button, True)
         _set_action_emphasis(self.final_finish_button, False)
+        _set_action_emphasis(self.final_retry_button, False)
         _set_action_emphasis(self.cancel_button, False)
         _set_action_emphasis(self.review_next_button, False)
         _set_action_emphasis(self.start_button, True)
@@ -1813,6 +1818,7 @@ class ReferenceCalibrationDialog(QDialog):
         main_actions.addStretch()
         main_actions.addWidget(self.next_step_button)
         main_actions.addWidget(self.final_finish_button)
+        main_actions.addWidget(self.final_retry_button)
         main_actions.addWidget(self.start_button)
         main_actions.addWidget(self.advance_button)
         main_actions.addWidget(close)
@@ -1933,6 +1939,7 @@ class ReferenceCalibrationDialog(QDialog):
                 for control in (self.start_button, self.advance_button,
                                 self.review_next_button, self.keep_previous_button,
                                 self.next_step_button, self.final_finish_button,
+                                self.final_retry_button,
                                 self.selection_combo, self.find_fit_button,
                                 self.collect_evidence_button,
                                 self.advanced_mode, self.afk_mode):
@@ -1957,6 +1964,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.finer_resolution_button.hide()
         self.next_step_button.hide()
         self.final_finish_button.hide()
+        self.final_retry_button.hide()
         self.final_check_summary.hide()
         self._guided_footer_action = None
         self._guided_footer_goal = None
@@ -2829,11 +2837,20 @@ class ReferenceCalibrationDialog(QDialog):
         if finer_evaluation and all(c.status == "pending" and c.attempts == 0
                                     for c in pending_checks):
             pending = False  # Explicit adoption retires this unstarted queued refit.
+        approved = self._snapshot.visual_reviews.get(selected) is True
+        eligible = bool(row and row.eligible)
+        can_finish_after_failure = (
+            pending and self._snapshot.status == "awaiting_review"
+            and candidate is not None and candidate.status == "completed"
+            and approved and (provisional or eligible)
+            and all(c.status == "failed" and c.candidate_id.startswith("continue-")
+                    for c in pending_checks)
+        )
         step = final_stage_next_step(
-            selected=candidate is not None,
-            approved=self._snapshot.visual_reviews.get(selected) is True,
+            selected=candidate is not None, approved=approved,
             reasons=reasons, timepoints=timepoints,
-            pending=pending, provisional=provisional, eligible=bool(row and row.eligible),
+            pending=pending and not can_finish_after_failure,
+            provisional=provisional, eligible=eligible,
             finer_evaluation=finer_evaluation,
             fixed_state=bool(candidate and (candidate.metrics or {}).get("metric_version")
                              == "fixed-state-resolution-adoption-v1"),
@@ -2850,19 +2867,25 @@ class ReferenceCalibrationDialog(QDialog):
             self.final_check_summary.setText(final_stage_check_summary(
                 approved=self._snapshot.visual_reviews.get(selected), reasons=reasons,
                 metrics=candidate.metrics or {}, timepoints=timepoints,
-                eligible=bool(row and row.eligible), provisional=provisional,
+                eligible=eligible, provisional=provisional,
             ))
         continuation = next(
             (button for button in self._continuation_buttons.values()
              if button.property("continuationCandidateId") == selected and button.isEnabled()),
             None,
         )
+        retry_failed = not running and can_finish_after_failure and step.action == "finish"
+        self.final_retry_button.setVisible(retry_failed)
+        self.final_retry_button.setEnabled(retry_failed)
         promote_continuation = (
-            not running and step.action == "finish" and provisional and continuation is not None
+            not running and not retry_failed and step.action == "finish"
+            and provisional and continuation is not None
         )
         self._final_continuation_button = continuation if promote_continuation else None
         for identifier, disclosure in self._continuation_disclosures.items():
-            disclosure.setVisible(not (promote_continuation and identifier == selected))
+            disclosure.setVisible(
+                not ((promote_continuation or retry_failed) and identifier == selected)
+            )
         self.final_finish_button.setVisible(promote_continuation)
         self.final_finish_button.setEnabled(promote_continuation)
         self.final_finish_button.setText(step.label)
@@ -2888,9 +2911,11 @@ class ReferenceCalibrationDialog(QDialog):
             self.status.setText(
                 "Continue the saved checkpoint to test for convergence, or finish provisionally "
                 "with the iteration-limit warning."
-                if promote_continuation else step.message
+                if promote_continuation
+                else "The continuation failed. Finish with this checked fit or retry."
+                if retry_failed else step.message
             )
-            self.status.setObjectName("statusWarning" if step.warning else "status")
+            self.status.setObjectName("statusWarning" if step.warning or retry_failed else "status")
             self.status.style().unpolish(self.status)
             self.status.style().polish(self.status)
 
@@ -3911,6 +3936,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.finer_model_button.setEnabled(False)
         self.next_step_button.setEnabled(False)
         self.final_finish_button.setEnabled(False)
+        self.final_retry_button.setEnabled(False)
         self.status.show()
         self.selection_combo.setEnabled(False)
         self.start_button.setEnabled(False)
