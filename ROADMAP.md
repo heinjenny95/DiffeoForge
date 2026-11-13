@@ -668,6 +668,11 @@ scientific runs remain unchanged. No Linux/macOS or HPC test systems are availab
 
 ## Milestone 2: Modern-engine feasibility
 
+- [ ] Qualify Apexmorph (formerly Modern) for surfaces with multiple small teeth
+  and long, thin projections whose lengths and prominence vary across the cohort.
+  Judge feature recovery and preservation subject by subject within declared
+  overall-shape and topology bounds. Report runtime and memory at the achieved
+  quality. See [Apexmorph research and acceptance](docs/APEXMORPH.md).
 - [x] Evaluate a focused Deformetrica dependency port
 - [x] Evaluate current PyTorch/KeOps-based libraries
 - [x] Prototype only the deterministic 3D surface-atlas path
