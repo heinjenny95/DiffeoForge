@@ -47,6 +47,7 @@ from diffeoforge.desktop.reference_calibration_presentation import (
     candidate_option_label,
     candidate_parameter_summary,
     candidate_tradeoff_assessments,
+    continuation_progress,
     final_stage_check_summary,
     final_stage_next_step,
     stage_guidance,
@@ -1748,6 +1749,13 @@ class ReferenceCalibrationDialog(QDialog):
         self.final_check_summary.setMargin(8)
         self.final_check_summary.setObjectName("card")
         self.final_check_summary.setAccessibleName("Checks for the selected saved fit")
+        self.final_check_summary.setToolTip(
+            "Surface P95 is the 95th percentile of the sampled surface distances. "
+            "The summary shows the median across specimens as a percentage of each "
+            "specimen's bounding-box diagonal. The optimizer cost estimate adds the magnitudes "
+            "of the logged attachment and regularity terms. Values in parentheses are relative "
+            "changes."
+        )
         self.final_check_summary.setSizePolicy(
             QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred,
         )
@@ -2864,11 +2872,13 @@ class ReferenceCalibrationDialog(QDialog):
         running = self._worker is not None or self._restoring_search
         self.final_check_summary.setVisible(candidate is not None and not running)
         if candidate is not None:
-            self.final_check_summary.setText(final_stage_check_summary(
+            summary = final_stage_check_summary(
                 approved=self._snapshot.visual_reviews.get(selected), reasons=reasons,
                 metrics=candidate.metrics or {}, timepoints=timepoints,
                 eligible=eligible, provisional=provisional,
-            ))
+            )
+            progress = continuation_progress(self._snapshot, candidate, self._prepared_view.fits)
+            self.final_check_summary.setText(f"{summary}\n\n{progress}" if progress else summary)
         continuation = next(
             (button for button in self._continuation_buttons.values()
              if button.property("continuationCandidateId") == selected and button.isEnabled()),
@@ -2890,8 +2900,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.final_finish_button.setEnabled(promote_continuation)
         self.final_finish_button.setText(step.label)
         self.final_finish_button.setToolTip(self.advance_button.toolTip())
-        self.next_step_button.setText(continuation.text() + " · recommended"
-                                     if promote_continuation else step.label)
+        self.next_step_button.setText(continuation.text() if promote_continuation else step.label)
         self.next_step_button.setToolTip(continuation.toolTip() if promote_continuation else "")
         self.next_step_button.show()
         self.next_step_button.setEnabled(not running and step.action != "choose")

@@ -237,7 +237,7 @@ jobs:
         with:
           github-token: ${{ github.token }}
           run-id: ${{ inputs.source_run }}
-          name: DiffeoForge-v201-${{ matrix.artifact_os }}-${{ github.sha }}
+          name: DiffeoForge-v202-${{ matrix.artifact_os }}-${{ github.sha }}
           path: ${{ runner.temp }}/mac-candidate
       - name: Independently install and compute from downloaded DMG
         run: python -B distribution/macos/verify-downloaded-package.py '${{ runner.temp }}/mac-candidate' '${{ runner.temp }}/Independent Mac Käfer'
@@ -325,6 +325,7 @@ jobs:
             tests/test_guided_shared_check.py::test_suitable_local_fit_has_explicit_nonrunning_next_action \
             tests/test_pilot_common_adoption_navigation.py::test_approved_candidate_pins_adoption_and_preserves_individual_reviews \
             tests/test_pilot_native_continuation.py::test_dialog_selects_new_continuation_result_for_fresh_review \
+            tests/test_pilot_native_continuation.py::test_dialog_compares_continuation_with_immediate_checkpoint_source \
             tests/test_pilot_region_feedback.py::test_joint_regional_feedback_measures_the_named_checked_endpoint \
             tests/test_guided_pilot.py::test_coverage_skips_duplicate_extreme_but_retains_new_direction_and_manual_choice \
             tests/test_guided_pilot.py::test_coverage_checks_every_remaining_form_after_mandatory_subjects \
@@ -340,7 +341,7 @@ jobs:
       - name: Temporary owner-authorized Mac package transfer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: DiffeoForge-v201-${{ matrix.os }}-${{ github.sha }}
+          name: DiffeoForge-v202-${{ matrix.os }}-${{ github.sha }}
           path: ${{ runner.temp }}/DiffeoForge Mac Build/delivery/*
           if-no-files-found: error
           retention-days: 1

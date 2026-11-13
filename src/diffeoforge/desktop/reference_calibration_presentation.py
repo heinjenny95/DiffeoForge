@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from statistics import median
 from typing import Literal
 
 from diffeoforge.reference_calibration import CalibrationStage
@@ -279,6 +280,84 @@ def final_stage_check_summary(
     else:
         optimization = "convergence unconfirmed"
     return f"Shape review: {anatomy}\nTime resolution: {resolution}\nOptimization: {optimization}"
+
+
+def continuation_progress(
+    snapshot: ReferenceCalibrationStudySnapshot,
+    candidate: CalibrationStudyCandidateState,
+    fits: Mapping[str, Mapping[str, float]],
+) -> str:
+    """Compare a saved native continuation with the checkpoint it actually used."""
+    from diffeoforge.reference_pilot_continuation import VERSION
+
+    current = candidate.metrics or {}
+    continuation = current.get("pilot_continuation") or {}
+    if (candidate.status != "completed" or not isinstance(continuation, Mapping)
+            or continuation.get("version") != VERSION):
+        return ""
+    source_id = continuation.get("source_candidate_id")
+    source = next((c for c in snapshot.candidates if c.candidate_id == source_id), None)
+    initial = continuation.get("initial_iteration")
+    final = current.get("final_iteration")
+    if (source is None or source.status != "completed" or source.metrics is None
+            or type(initial) is not int or source.metrics.get("final_iteration") != initial
+            or type(final) is not int or final <= initial):
+        return ""
+
+    previous = source.metrics
+    lines = [f"Last continuation for this fit · {initial} → {final} iterations"]
+    objective_keys = ("attachment_objective_magnitude", "deformation_energy")
+    objective = tuple(m.get(key) for m in (previous, current) for key in objective_keys)
+    if all(_finite_nonnegative(value) for value in objective):
+        before_cost = objective[0] + objective[1]
+        after_cost = objective[2] + objective[3]
+        lines.append(
+            "Optimizer cost estimate (attachment + regularity) · "
+            f"{before_cost:.5g} → {after_cost:.5g}{_percent_change(before_cost, after_cost)}"
+        )
+
+    before = fits.get(source_id, {})
+    after = fits.get(candidate.candidate_id, {})
+    names = {s.filename for s in snapshot.plan.selected_pilot_subjects}
+    comparable = (
+        bool(names) and set(before) == set(after) == names
+        and all(previous.get(key) == current.get(key)
+                for key in ("metric_version", "surface_metric"))
+        and all(m.get("fit_scope") in (None, "full_targets") for m in (previous, current))
+        and all(_finite_nonnegative(value) for fit in (before, after) for value in fit.values())
+    )
+    if comparable:
+        before_median = median(before.values())
+        after_median = median(after.values())
+        closer = sum(after[name] < before[name] for name in names)
+        farther = sum(after[name] > before[name] for name in names)
+        unchanged = len(names) - closer - farther
+        counts = f"{closer} closer, {farther} farther"
+        if unchanged:
+            counts += f", {unchanged} unchanged"
+        lines.append(
+            f"Surface P95 · {before_median:.4%} → {after_median:.4%}"
+            f"{_percent_change(before_median, after_median)} · {counts}"
+        )
+        if farther:
+            worst = max(names, key=lambda name: (after[name] - before[name], name))
+            lines.append(
+                f"Largest increase · {worst} · {before[worst]:.4%} → {after[worst]:.4%}"
+                f"{_percent_change(before[worst], after[worst])}"
+            )
+    else:
+        lines.append("Surface P95 · comparable measurements unavailable")
+    return "\n".join(lines)
+
+
+def _finite_nonnegative(value: object) -> bool:
+    return type(value) in (int, float) and math.isfinite(value) and value >= 0
+
+
+def _percent_change(before: float, after: float) -> str:
+    if before == after:
+        return " (unchanged)"
+    return f" ({(after - before) / before:+.3%})" if before else ""
 
 
 def candidate_parameter_summary(

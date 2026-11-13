@@ -1,6 +1,7 @@
 """Cumulative pilot dispatch with synthetic controllers and real study journals."""
 
 import copy
+import re
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -183,6 +184,133 @@ def test_dialog_selects_new_continuation_result_for_fresh_review(tmp_path, monke
     finally:
         dialog.close()
         application.processEvents()
+
+
+def test_dialog_compares_continuation_with_immediate_checkpoint_source(tmp_path, monkeypatch):
+    from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtWidgets import QApplication
+    from test_pilot_completion import _approve_preview
+
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    runner, before, identifier, calls = _fixture(tmp_path, monkeypatch)
+    collect = study.collect_reference_calibration_run_metrics
+    names = tuple(s.filename for s in before.plan.selected_pilot_subjects)
+    worse_subject = names[-1]
+
+    def collect_measured_continuation(run):
+        metrics = collect(run)
+        if metrics.final_iteration == 350:
+            return replace(
+                metrics,
+                residual_p95=0.10,
+                subject_residual_p95=tuple((name, 0.10) for name in names),
+            )
+        assert metrics.final_iteration == 650
+        return replace(
+            metrics,
+            residual_p95=0.09,
+            attachment_objective_magnitude=0.4,
+            subject_residual_p95=tuple(
+                (name, 0.13 if name == worse_subject else 0.08) for name in names
+            ),
+        )
+
+    monkeypatch.setattr(
+        study, "collect_reference_calibration_run_metrics", collect_measured_continuation
+    )
+    first = continuation.run(runner, identifier)
+    prior = first.candidates[-1]
+    second = continuation.run(runner, identifier)
+    latest = second.candidates[-1]
+    _approve_preview(second, latest.candidate_id)
+
+    application = QApplication.instance() or QApplication([])
+    dialog = ReferenceCalibrationDialog(second.study_directory)
+    dialog.show()
+    try:
+        wait_pilot_view(dialog)
+        dialog.selection_combo.setCurrentIndex(
+            dialog.selection_combo.findData(latest.candidate_id)
+        )
+        assert dialog.selection_combo.currentData() == latest.candidate_id
+        assert dialog.final_check_summary.isVisible()
+        assert not dialog.scroll.isAncestorOf(dialog.final_check_summary)
+        summary = dialog.final_check_summary.text()
+        assert "350 → 650" in summary
+        assert worse_subject in summary
+        assert "Surface P95" in summary
+        assert "2 closer, 1 farther" in summary
+        assert re.search(r"\+30(?:\.0+)?\s*%", summary)
+        assert "cost" in summary.lower()
+        assert re.search(r"-11\.1\d*\s*%", summary)
+        assert dialog.next_step_button.isEnabled()
+        assert "recommended" not in dialog.next_step_button.text().lower()
+        assert dialog.final_finish_button.isVisible()
+
+        dialog.selection_combo.setCurrentIndex(
+            dialog.selection_combo.findData(prior.candidate_id)
+        )
+        assert dialog.selection_combo.currentData() == prior.candidate_id
+        summary = dialog.final_check_summary.text()
+        assert "50 → 350" in summary
+        assert "350 → 650" not in summary
+        dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(identifier))
+        assert "Last continuation" not in dialog.final_check_summary.text()
+        assert len(calls) == 2
+    finally:
+        dialog.close()
+        application.processEvents()
+
+
+@pytest.mark.parametrize("mismatch", [False, True], ids=["missing-subject", "metric-family"])
+def test_continuation_keeps_objective_when_surfaces_are_incomparable(mismatch):
+    from diffeoforge.desktop.reference_calibration_presentation import continuation_progress
+
+    source = SimpleNamespace(
+        candidate_id="first",
+        status="completed",
+        metrics={
+            "final_iteration": 300,
+            "metric_version": "0.2",
+            "attachment_objective_magnitude": 0.0,
+            "deformation_energy": 0.0,
+        },
+    )
+    latest = SimpleNamespace(
+        candidate_id="continued",
+        status="completed",
+        metrics={
+            **source.metrics,
+            "final_iteration": 600,
+            "metric_version": "0.1" if mismatch else "0.2",
+            "pilot_continuation": {
+                "version": continuation.VERSION,
+                "source_candidate_id": source.candidate_id,
+                "initial_iteration": 300,
+            },
+        },
+    )
+    snapshot = SimpleNamespace(
+        candidates=(source, latest),
+        plan=SimpleNamespace(
+            selected_pilot_subjects=(SimpleNamespace(filename="subject.vtk"),)
+        ),
+    )
+    fits = {
+        "first": {"subject.vtk": 0.2},
+        "continued": {"subject.vtk": 0.1} if mismatch else {},
+    }
+
+    summary = continuation_progress(snapshot, latest, fits)
+
+    assert "300 → 600" in summary
+    assert "cost" in summary.lower()
+    assert "0 → 0 (unchanged)" in summary
+    assert "Surface P95 · comparable measurements unavailable" in summary
+    assert "closer" not in summary
+    assert continuation_progress(snapshot, source, fits) == ""
 
 
 def test_failed_continuation_can_retry_or_finish_the_reviewed_source(tmp_path, monkeypatch):

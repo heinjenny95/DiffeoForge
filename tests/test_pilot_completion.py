@@ -308,7 +308,7 @@ def test_capped_dialog_requires_recorded_qc_and_explicit_provisional_finish(tmp_
     dialog.show()
     app.processEvents()
     assert dialog.next_step_button.text().startswith("Continue saved fit: +300 iterations")
-    assert dialog.next_step_button.text().endswith("recommended")
+    assert "recommended" not in dialog.next_step_button.text().lower()
     assert dialog.next_step_button.objectName() == "primary"
     assert dialog.final_finish_button.text() == "Finish pilot provisionally → atlas setup"
     assert dialog.final_finish_button.objectName() == "secondary"

@@ -1,5 +1,15 @@
 # Development continuity — dev192 installed and verified
 
+## dev202 — compare pilot checkpoint continuations
+
+The time-resolution footer compares the selected saved continuation with the
+checkpoint it resumed. It displays the iteration interval, the change in logged
+optimizer cost and the size-normalized surface-distance P95 across specimens.
+The surface summary counts improvements and regressions and names the specimen
+with the largest increase. It requires the same complete cohort and metric.
+Existing approval, time-resolution and native convergence checks remain separate.
+The researcher chooses between another continuation and provisional completion.
+
 ## dev201 — inspect existing mesh alignment
 
 The Deformetrica setup screen opens the alignment viewer directly from
