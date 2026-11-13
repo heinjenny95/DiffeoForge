@@ -27,6 +27,10 @@ surface must have no detected intersecting or nonpositive faces.
 
 The ordinary quality record has its own key and version. Comparisons and preview
 views use its hash-bound endpoint; an ambiguous or changed endpoint fails closed.
+Qualification verifies the generated endpoint and material-source digests around
+each comparison and before publishing the quality record atomically. If either
+asset changes during checking, the saved native fit remains available and the
+qualification attempt produces no quality record.
 Failed numerical checks remain visible and veto replacing a retained starting fit.
 Cancellation propagates through fixed-field shooting and geometry workers while
 the completed native fit remains available. Existing preview approval policy and

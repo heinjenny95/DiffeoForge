@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import numpy as np
 
+from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_pilot_qualification import CRITERIA
 
@@ -89,6 +90,15 @@ def _qualify(run, destination, *, cancelled, event_callback):
         ):
             raise ValueError("Qualification input or native reconstruction changed")
 
+    def verify_evaluations(*receipts):
+        rows = {
+            (Path(receipt[k]["path"]), receipt[k]["sha256"])
+            for receipt in receipts
+            for k in ("endpoint", "reference_source")
+        }
+        if any(p.is_symlink() or not p.is_file() or sha256_file(p) != digest for p, digest in rows):
+            raise ValueError("Qualification endpoint or reference source changed")
+
     verify_bindings()
     original = load_surface_mesh(source).geometry
     target_geometry = load_surface_mesh(target).geometry
@@ -118,7 +128,7 @@ def _qualify(run, destination, *, cancelled, event_callback):
     if before["intersecting_faces"] or before["nonpositive_faces"]:
         raise ValueError("Original source geometry must be reviewed before this ordinary check")
 
-    def sample(count, name, grid):
+    def sample(count, name, grid, *, parent=None):
         verify_bindings()
         if cancelled():
             raise InterruptedError("Surface qualification cancelled; native fit retained")
@@ -129,6 +139,8 @@ def _qualify(run, destination, *, cancelled, event_callback):
                     message=(f"Checking the saved field on {count} time points; no new fitting."),
                 )
             )
+        lineage = () if parent is None else (parent,)
+        verify_evaluations(*lineage)
         result = evaluate(
             run,
             destination / name,
@@ -140,11 +152,13 @@ def _qualify(run, destination, *, cancelled, event_callback):
         )
         result["whole_surface_sampling"] = True
         verify_bindings()
+        verify_evaluations(*lineage, result)
         return result
 
     actual = sample(actual_count, "original-optimizer-grid", source)
     reproduction = movement(native, Path(actual["endpoint"]["path"]), target_diagonal)
     verify_bindings()
+    verify_evaluations(actual)
     reproduction_passed = all(
         reproduction[k] <= policy["native_export_criteria"][k]
         for k in policy["native_export_criteria"]
@@ -165,30 +179,33 @@ def _qualify(run, destination, *, cancelled, event_callback):
     fine = coarse
     for count in COUNTS[1:]:
         grid = Path(coarse["reference_source"]["path"])
-        fine = sample(count, f"grid{count}", grid)
+        evaluated = sample(count, f"grid{count}", grid, parent=coarse)
         fine = refine_evaluation(
             run,
-            fine,
+            evaluated,
             destination / f"source-grid{count}",
             plan,
             cancelled=cancelled,
             event_callback=event_callback,
             cache=cache,
         )
+        verify_evaluations(coarse, evaluated, fine)
         refined = Path(fine["reference_source"]["path"])
-        if sha256_file(refined) != sha256_file(grid):
-            coarse = sample(coarse["timepoints"], f"coarse-on-source{count}", refined)
+        if fine["reference_source"]["sha256"] != coarse["reference_source"]["sha256"]:
+            coarse = sample(coarse["timepoints"], f"coarse-on-source{count}", refined, parent=fine)
         delta = movement(Path(coarse["endpoint"]["path"]), Path(fine["endpoint"]["path"]), diagonal)
+        verify_evaluations(coarse, fine)
         checks.append(dict(coarse=coarse["timepoints"], fine=count, **delta))
         (destination / "temporal-progress.json").write_text(json.dumps(checks, indent=2) + "\n")
         if delta["maximum"] <= TEMPORAL_TOLERANCE:
             break
         coarse = fine
     final_grid = Path(fine["reference_source"]["path"])
-    actual_on_final = sample(actual_count, "optimizer-on-final-source", final_grid)
+    actual_on_final = sample(actual_count, "optimizer-on-final-source", final_grid, parent=fine)
     accuracy = movement(
         Path(actual_on_final["endpoint"]["path"]), Path(fine["endpoint"]["path"]), diagonal
     )
+    verify_evaluations(actual_on_final, fine)
     accuracy_passed = all(
         accuracy[k] <= policy["optimizer_grid_criteria"][k]
         for k in policy["optimizer_grid_criteria"]
@@ -231,9 +248,14 @@ def _qualify(run, destination, *, cancelled, event_callback):
         anatomical_approval=False,
         qualification_wall_seconds=time.monotonic() - started,
     )
+    if cancelled():
+        raise InterruptedError("Surface qualification cancelled; native fit retained")
     field_inputs(run, cache)  # Recheck bound native/manifest/field identities at completion.
     verify_bindings()
-    (destination / "quality.json").write_text(json.dumps(result, indent=2) + "\n")
+    verify_evaluations(actual, actual_on_final, fine)
+    write_text_safely(
+        destination / "quality.json", json.dumps(result, indent=2) + "\n", overwrite=True
+    )
     return result
 
 

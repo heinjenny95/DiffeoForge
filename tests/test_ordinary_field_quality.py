@@ -170,3 +170,51 @@ def test_target_changed_during_checks_cannot_receive_new_quality_binding(tmp_pat
     monkeypatch.setattr(regional_evaluation, "evaluate", change)
     with pytest.raises(ValueError, match="Qualification input or native reconstruction changed"):
         quality.qualify(run, tmp_path / "quality")
+
+
+def test_changed_generated_endpoint_cannot_receive_quality_record(tmp_path, monkeypatch):
+    run, _, _, bindings = setup_field(tmp_path, monkeypatch, lambda n: 0)
+    original = quality._surface
+    destination = tmp_path / "quality"
+    endpoint = destination / "grid73" / "endpoint.vtk"
+
+    def inspect(path):
+        if path == endpoint:
+            mesh = read_vtk_polydata(path)
+            _save(path, np.asarray(mesh.vertices) + [1e-5, 0, 0], mesh.triangles)
+        return original(path)
+
+    monkeypatch.setattr(quality, "_surface", inspect)
+    with pytest.raises(ValueError, match="Qualification endpoint or reference source changed"):
+        quality.qualify(run, destination)
+    assert not (destination / "quality.json").exists()
+    assert all(sha256_file(p) == digest for p, digest in bindings.items())
+
+
+def test_changed_refined_reference_cannot_receive_quality_record(tmp_path, monkeypatch):
+    from diffeoforge import regional_evaluation, source_refinement
+
+    run, _, _, bindings = setup_field(tmp_path, monkeypatch, lambda n: 0)
+    destination = tmp_path / "quality"
+    evaluate = regional_evaluation.evaluate
+
+    def refine(run, receipt, directory, plan, **kwargs):
+        mesh = read_vtk_polydata(Path(receipt["reference_source"]["path"]))
+        directory.mkdir()
+        grid = directory / "original-source-grid.vtk"
+        _save(grid, mesh.vertices, mesh.triangles)
+        grid.write_bytes(grid.read_bytes() + b"\n")
+        return dict(receipt, reference_source=dict(path=str(grid), sha256=sha256_file(grid)))
+
+    def change(*args, **kwargs):
+        if Path(args[1]).name == "optimizer-on-final-source":
+            grid = kwargs["_source"]
+            grid.write_bytes(grid.read_bytes() + b"\n")
+        return evaluate(*args, **kwargs)
+
+    monkeypatch.setattr(source_refinement, "refine_evaluation", refine)
+    monkeypatch.setattr(regional_evaluation, "evaluate", change)
+    with pytest.raises(ValueError, match="Qualification endpoint or reference source changed"):
+        quality.qualify(run, destination)
+    assert not (destination / "quality.json").exists()
+    assert all(sha256_file(p) == digest for p, digest in bindings.items())
