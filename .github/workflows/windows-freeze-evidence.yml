@@ -319,6 +319,8 @@ jobs:
             tests/test_macos_packaging.py tests/test_build_version.py \
             tests/test_pilot_theme_contrast.py tests/test_specimen_comparison_dialog.py \
             tests/test_pca_observed_shapes.py \
+            tests/test_desktop_input_preflight.py::test_existing_alignment_opens_read_only_gpa_viewer_before_confirmation \
+            tests/test_desktop_input_preflight.py::test_existing_alignment_discards_changed_mesh_without_reusing_preflight \
             tests/test_desktop_v143_visualizations.py::test_score_plot_opens_exact_specimen_on_click_but_not_drag \
             tests/test_guided_shared_check.py::test_suitable_local_fit_has_explicit_nonrunning_next_action \
             tests/test_pilot_common_adoption_navigation.py::test_approved_candidate_pins_adoption_and_preserves_individual_reviews \

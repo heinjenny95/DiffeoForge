@@ -1,7 +1,7 @@
-DiffeoForge v200 - macOS colleague test build
+DiffeoForge v201 - macOS colleague test build
 
 Requires macOS 15 or newer. Choose AppleSilicon for M-series Macs or Intel for Intel Macs. These packages
-contain the v200 application code, supervised workers and an isolated Deformetrica
+contain the v201 application code, supervised workers and an isolated Deformetrica
 4.3.0 / Python 3.8 / Torch 1.6 CPU environment. On Apple Silicon the reference
 environment uses Rosetta 2. The application interface itself uses the selected
 native architecture. GPU/MPS and the optional Modern engine are not included.
@@ -19,6 +19,8 @@ INSTALL
    absent, install them with `xcode-select --install`, then reopen DiffeoForge.
 
 FIRST CHECK
+In Deformetrica setup, use Existing alignment > Open alignment viewer to inspect
+already aligned meshes in their supplied coordinates before confirming alignment.
 The mounted DMG includes the public CC0 synthetic meshes and an example config.
 Copy the entire Example folder into Documents before using it. Do not save a
 project inside the DMG or inside DiffeoForge.app. The native reference executable
