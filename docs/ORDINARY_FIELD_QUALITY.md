@@ -31,6 +31,12 @@ Qualification verifies the generated endpoint and material-source digests around
 each comparison and before publishing the quality record atomically. If either
 asset changes during checking, the saved native fit remains available and the
 qualification attempt produces no quality record.
+
+The separate joint field qualification applies the same identity rule to its
+generated comparison meshes, final per-subject endpoints and shared material
+source. The completed joint native run remains available if a generated mesh
+changes during qualification. The joint quality record is published atomically
+after the final identity and cancellation checks.
 Failed numerical checks remain visible and veto replacing a retained starting fit.
 Cancellation propagates through fixed-field shooting and geometry workers while
 the completed native fit remains available. Existing preview approval policy and

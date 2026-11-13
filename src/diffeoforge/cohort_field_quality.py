@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import numpy as np
 
+from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.mesh import read_vtk_points, sha256_file, write_vtk_polydata
 from diffeoforge.ordinary_field_quality import COUNTS, TEMPORAL_TOLERANCE, _surface
 from diffeoforge.reference_pilot_qualification import CRITERIA
@@ -83,6 +84,16 @@ def _qualify(run, destination, cancelled, event_callback):
             raise ValueError("A bound final joint field, source, target or export changed")
         if cancelled():
             raise InterruptedError("Joint checks cancelled; completed native fit retained")
+
+    def verify_geometry(*receipts):
+        if any(
+            (p := Path(row["path"])).is_symlink()
+            or not p.is_file()
+            or sha256_file(p) != row["sha256"]
+            for receipt in receipts
+            for row in receipt.values()
+        ):
+            raise ValueError("A generated joint geometry changed during qualification")
 
     verify()
     destination.mkdir()
@@ -173,25 +184,37 @@ def _qualify(run, destination, cancelled, event_callback):
         return values
 
     def geometry(values, name, triangles):
-        paths = {}
+        receipts = {}
         for index, label in enumerate(labels):
             path = destination / f"{name}-{index}.vtk"
             write_vtk_polydata(path, values[label], triangles)
-            paths[label] = path
-        return paths
+            receipts[label] = dict(path=str(path), sha256=sha256_file(path))
+        return receipts
+
+    def compare(first, second, diagonal):
+        verify_geometry(first, second)
+        deltas = {
+            label: movement(Path(first[label]["path"]), Path(second[label]["path"]), diagonal)
+            for label in labels
+        }
+        verify_geometry(first, second)
+        return deltas
 
     actual = sample(vertices, actual_count, "native-grid")
     actual_paths = geometry(actual, "native-grid", faces)
     reproduction = {}
+    verify_geometry(actual_paths)
     for label in labels:
         target = load_surface_mesh(run / inputs[label]["staged_path"]).geometry
         target_diagonal = float(np.linalg.norm(np.ptp(target.vertices, axis=0)))
         if not target_diagonal > 0:
             raise ValueError("A joint target has no spatial extent")
-        delta = movement(native[label], actual_paths[label], target_diagonal)
+        delta = movement(native[label], Path(actual_paths[label]["path"]), target_diagonal)
         reproduction[label] = dict(
             passed=all(delta[k] <= v for k, v in policy["native_export_criteria"].items()), **delta
         )
+    verify_geometry(actual_paths)
+    verify()
     if not all(r["passed"] for r in reproduction.values()):
         raise ValueError("A native joint export failed independent reproduction")
     coarse = actual if actual_count == COUNTS[0] else sample(vertices, COUNTS[0], "grid37")
@@ -202,7 +225,7 @@ def _qualify(run, destination, cancelled, event_callback):
         fine = sample(vertices, count, f"grid{count}")
         coarse_paths = geometry(coarse, f"coarse{coarse_count}-for{count}", faces)
         fine_paths = geometry(fine, f"grid{count}", faces)
-        deltas = {s: movement(coarse_paths[s], fine_paths[s], diagonal) for s in labels}
+        deltas = compare(coarse_paths, fine_paths, diagonal)
         temporal.append(dict(coarse=coarse_count, fine=count, subjects=deltas))
         if all(r["maximum"] <= TEMPORAL_TOLERANCE for r in deltas.values()):
             temporal_passed = True
@@ -216,7 +239,8 @@ def _qualify(run, destination, cancelled, event_callback):
     for level in range(17):
         verify()
         final_paths = geometry(fine, f"source-level{level}", faces)
-        surfaces = {s: _surface(path) for s, path in final_paths.items()}
+        surfaces = {s: _surface(Path(row["path"])) for s, row in final_paths.items()}
+        verify_geometry(final_paths)
         selected = np.zeros(len(faces), dtype=bool)
         for label in labels:
             v = fine[label]
@@ -258,12 +282,13 @@ def _qualify(run, destination, cancelled, event_callback):
     # grid. No surface repair or field-specific source mesh is substituted.
     source_path = destination / "shared-material-source.vtk"
     write_vtk_polydata(source_path, vertices, faces)
+    source_receipt = dict(path=str(source_path), sha256=sha256_file(source_path))
     final_coarse = sample(vertices, coarse_count, "coarse-on-shared-source")
     coarse_paths = geometry(final_coarse, "coarse-on-shared-source", faces)
-    final_temporal = {s: movement(coarse_paths[s], final_paths[s], diagonal) for s in labels}
+    final_temporal = compare(coarse_paths, final_paths, diagonal)
     actual_shared = sample(vertices, actual_count, "optimizer-on-shared-source")
     actual_paths = geometry(actual_shared, "optimizer-on-shared-source", faces)
-    accuracy = {s: movement(actual_paths[s], final_paths[s], diagonal) for s in labels}
+    accuracy = compare(actual_paths, final_paths, diagonal)
     rows = {}
     for label in labels:
         passed = bool(
@@ -279,9 +304,9 @@ def _qualify(run, destination, cancelled, event_callback):
             passed=passed,
             numerical_selection_suitable=passed,
             evaluation=dict(
-                endpoint=dict(path=str(final_paths[label]), sha256=sha256_file(final_paths[label])),
+                endpoint=final_paths[label],
                 timepoints=final_count,
-                reference_source=dict(path=str(source_path), sha256=sha256_file(source_path)),
+                reference_source=source_receipt,
             ),
             source_template=dict(path=str(template), sha256=sha256_file(template)),
             final_surface=surfaces[label],
@@ -294,7 +319,6 @@ def _qualify(run, destination, cancelled, event_callback):
             qualification_wall_seconds=time.monotonic() - started,
             anatomical_approval=False,
         )
-    verify()
     result = dict(
         version=VERSION,
         passed=all(r["passed"] for r in rows.values()),
@@ -310,7 +334,11 @@ def _qualify(run, destination, cancelled, event_callback):
         qualification_wall_seconds=time.monotonic() - started,
         anatomical_approval=False,
     )
-    (destination / "quality.json").write_text(json.dumps(result, indent=2) + "\n")
+    verify_geometry(final_paths, {"source": source_receipt})
+    verify()
+    write_text_safely(
+        destination / "quality.json", json.dumps(result, indent=2) + "\n", overwrite=True
+    )
     return result
 
 

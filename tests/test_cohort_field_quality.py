@@ -133,6 +133,33 @@ def test_one_changed_target_invalidates_shared_field_checks(tmp_path, monkeypatc
         quality.qualify(run, tmp_path / "quality")
 
 
+@pytest.mark.parametrize("generated", ["source-level0-0.vtk", "shared-material-source.vtk"])
+def test_changed_generated_mesh_cannot_receive_shared_quality(tmp_path, monkeypatch, generated):
+    run, _, hook, bound = field(tmp_path, monkeypatch)
+    destination = tmp_path / "quality"
+    target = destination / generated
+
+    def change_on_final_grid(count):
+        if count == 73 and (destination / "optimizer-on-shared-source").exists():
+            target.write_bytes(target.read_bytes() + b"\n")
+
+    def change_during_accuracy(path, other, diagonal):
+        if path.parent == destination and path.name.startswith("optimizer-on-shared-source-"):
+            target.write_bytes(target.read_bytes() + b"\n")
+        return movement(path, other, diagonal)
+
+    from diffeoforge import reference_fixed_shooting as shooting
+
+    movement = shooting.movement
+    if generated.startswith("source-level"):
+        hook.append(change_on_final_grid)
+    monkeypatch.setattr(shooting, "movement", change_during_accuracy)
+    with pytest.raises(ValueError, match="generated joint geometry changed"):
+        quality.qualify(run, destination)
+    assert not (destination / "quality.json").exists()
+    assert all(sha256_file(p) == digest for p, digest in bound.items())
+
+
 def test_cancel_before_any_evaluation_keeps_completed_native_files(tmp_path, monkeypatch):
     run, calls, _, bound = field(tmp_path, monkeypatch)
     with pytest.raises(InterruptedError, match="native fit retained"):
