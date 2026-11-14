@@ -168,7 +168,11 @@ def _qualify(run, destination, cancelled, event_callback):
         )
         if set(paths) != set(labels):
             raise ValueError("Joint evaluation lost a declared form")
+        endpoint_receipts = {
+            key: dict(path=str(path), sha256=sha256_file(path)) for key, path in paths.items()
+        }
         values = {key: np.asarray(read_vtk_points(p), dtype=float) for key, p in paths.items()}
+        verify_geometry(endpoint_receipts)
         if any(v.shape != (len(points), 3) or not np.isfinite(v).all() for v in values.values()):
             raise ValueError("A joint fixed-field evaluation is empty, nonfinite or incomplete")
         evaluations.append(
@@ -177,7 +181,7 @@ def _qualify(run, destination, cancelled, event_callback):
                 timepoints=count,
                 points=len(points),
                 protected=protected,
-                endpoint={k: dict(path=str(p), sha256=sha256_file(p)) for k, p in paths.items()},
+                endpoint=endpoint_receipts,
             )
         )
         verify()
@@ -334,8 +338,8 @@ def _qualify(run, destination, cancelled, event_callback):
         qualification_wall_seconds=time.monotonic() - started,
         anatomical_approval=False,
     )
-    verify_geometry(final_paths, {"source": source_receipt})
     verify()
+    verify_geometry(final_paths, {"source": source_receipt})
     write_text_safely(
         destination / "quality.json", json.dumps(result, indent=2) + "\n", overwrite=True
     )

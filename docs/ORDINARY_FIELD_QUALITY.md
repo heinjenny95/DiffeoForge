@@ -37,6 +37,9 @@ generated comparison meshes, final per-subject endpoints and shared material
 source. The completed joint native run remains available if a generated mesh
 changes during qualification. The joint quality record is published atomically
 after the final identity and cancellation checks.
+Point-cloud shooting outputs are bound across their readback. Both qualification
+paths honor cancellation during the final field verification before publishing
+the completed quality record.
 Failed numerical checks remain visible and veto replacing a retained starting fit.
 Cancellation propagates through fixed-field shooting and geometry workers while
 the completed native fit remains available. Existing preview approval policy and

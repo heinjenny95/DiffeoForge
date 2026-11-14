@@ -165,3 +165,34 @@ def test_cancel_before_any_evaluation_keeps_completed_native_files(tmp_path, mon
     with pytest.raises(InterruptedError, match="native fit retained"):
         quality.qualify(run, tmp_path / "quality", cancelled=lambda: True)
     assert calls == [] and all(sha256_file(p) == digest for p, digest in bound.items())
+
+
+def test_changed_raw_shooting_endpoint_cannot_acquire_new_binding(tmp_path, monkeypatch):
+    run, _, _, _ = field(tmp_path, monkeypatch)
+    destination = tmp_path / "quality"
+
+    def change_after_read(path):
+        points = read_vtk_points(path)
+        if path.parent == destination / "native-grid":
+            _save(path, np.asarray(points) + [0.25, 0, 0])
+        return points
+
+    monkeypatch.setattr(quality, "read_vtk_points", change_after_read)
+    with pytest.raises(ValueError, match="generated joint geometry changed"):
+        quality.qualify(run, destination)
+    assert not (destination / "quality.json").exists()
+
+
+def test_final_cancellation_callback_cannot_rebind_changed_geometry(tmp_path, monkeypatch):
+    run, _, _, _ = field(tmp_path, monkeypatch)
+    destination = tmp_path / "quality"
+    endpoint = destination / "source-level0-0.vtk"
+
+    def change_during_callback():
+        if (destination / "optimizer-on-shared-source-0.vtk").exists():
+            endpoint.write_bytes(endpoint.read_bytes() + b"\n")
+        return False
+
+    with pytest.raises(ValueError, match="generated joint geometry changed"):
+        quality.qualify(run, destination, cancelled=change_during_callback)
+    assert not (destination / "quality.json").exists()

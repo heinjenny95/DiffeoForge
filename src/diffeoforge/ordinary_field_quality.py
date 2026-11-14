@@ -251,6 +251,8 @@ def _qualify(run, destination, *, cancelled, event_callback):
     if cancelled():
         raise InterruptedError("Surface qualification cancelled; native fit retained")
     field_inputs(run, cache)  # Recheck bound native/manifest/field identities at completion.
+    if cancelled():
+        raise InterruptedError("Surface qualification cancelled; native fit retained")
     verify_bindings()
     verify_evaluations(actual, actual_on_final, fine)
     write_text_safely(

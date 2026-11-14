@@ -218,3 +218,22 @@ def test_changed_refined_reference_cannot_receive_quality_record(tmp_path, monke
         quality.qualify(run, destination)
     assert not (destination / "quality.json").exists()
     assert all(sha256_file(p) == digest for p, digest in bindings.items())
+
+
+def test_cancellation_during_final_field_verification_is_honored(tmp_path, monkeypatch):
+    from diffeoforge import regional_evaluation
+
+    run, _, _, _ = setup_field(tmp_path, monkeypatch, lambda n: 0)
+    destination = tmp_path / "quality"
+    field_inputs = regional_evaluation.field_inputs
+    calls = 0
+
+    def verify(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return field_inputs(*args, **kwargs)
+
+    monkeypatch.setattr(regional_evaluation, "field_inputs", verify)
+    with pytest.raises(InterruptedError, match="native fit retained"):
+        quality.qualify(run, destination, cancelled=lambda: calls >= 2)
+    assert not (destination / "quality.json").exists()
