@@ -510,6 +510,23 @@ def plan_reference_preparation(
     regional = regional_assets(config)
     protected_files.extend(_copied_file(staged.as_posix(), source, source.stat().st_size, digest)
                            for source, staged, digest in regional)
+    from diffeoforge.reference_atlas_handoff import (
+        direct_joint_source_path,
+        direct_joint_start_enabled,
+        initialization,
+        staged_direct_joint_source,
+    )
+
+    handoff = initialization(config)
+    if direct_joint_start_enabled(handoff):
+        receipt = handoff["direct_joint_start"]
+        source = direct_joint_source_path(source_config, receipt)
+        protected_files.append(_copied_file(
+            staged_direct_joint_source(receipt).as_posix(),
+            source,
+            source.stat().st_size,
+            receipt["source_config_sha256"],
+        ))
     plan = {
         "schema_version": SCHEMA_VERSION,
         "status": STATUS,

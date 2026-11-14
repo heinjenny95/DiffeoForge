@@ -774,6 +774,16 @@
                         "individual_max_iterations": {"type": "integer", "minimum": 1, "maximum": 20000},
                         "early_review_iteration": {"type": "integer", "minimum": 1, "maximum": 20000},
                         "early_review_enabled": {"type": "boolean"},
+                        "direct_joint_start": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["version", "source_config_filename", "source_config_sha256"],
+                          "properties": {
+                            "version": {"const": "direct-joint-start-v1"},
+                            "source_config_filename": {"type": "string", "minLength": 6},
+                            "source_config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                          }
+                        },
                         "initial_fit_screen": {"const": "local-surface-residual-v1"},
                         "initial_fit_screen_binding": {
                           "type": "object", "additionalProperties": false,
@@ -814,6 +824,24 @@
                         "limitation": {"type": "string", "minLength": 1}
                       },
                       "allOf": [{
+                        "if": {"required": ["direct_joint_start"]},
+                        "then": {
+                          "required": ["early_review_enabled", "early_review_approved", "completed_initialization_indices"],
+                          "properties": {
+                            "method": {"const": "preserved_pilot_momenta_fixed_basis_initialization"},
+                            "early_review_enabled": {"const": false},
+                            "early_review_approved": {"const": false},
+                            "completed_initialization_indices": {"maxItems": 0}
+                          },
+                          "not": {"anyOf": [
+                            {"required": ["initial_fit_screen"]},
+                            {"required": ["initial_fit_screen_binding"]},
+                            {"required": ["early_review_choice"]},
+                            {"required": ["early_review_choice_binding"]},
+                            {"required": ["early_review_binding"]}
+                          ]}
+                        }
+                      }, {
                         "if": {"properties": {"method": {"const": "preserved_pilot_momenta_fixed_basis_initialization"}}},
                         "then": {"required": ["source_run_directory", "pilot_momenta_sha256", "initial_momenta_sha256", "subject_labels", "subject_sha256", "pilot_indices", "pilot_subject_labels", "individual_max_iterations", "early_review_iteration", "completed_initialization_indices", "early_review_approved"]}
                       }, {

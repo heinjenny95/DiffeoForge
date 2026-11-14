@@ -12,7 +12,7 @@ import pytest
 import yaml
 from test_pilot_cohort_handoff import handoff  # noqa: F401
 from test_reference_checkpoint_schedule import _adapter
-from test_runs import _execute_cap_fixture, write_tetrahedron
+from test_runs import _execute_cap_fixture, abandon_prepared_run, write_tetrahedron
 
 from diffeoforge.config import ConfigurationError, load_config, validate_input_paths
 from diffeoforge.mesh import sha256_file
@@ -26,10 +26,12 @@ from diffeoforge.reference_atlas_handoff import (
     REVIEW,
     REVIEW_CHOICE,
     adapter_source,
+    choose_direct_joint_start,
     choose_early_review,
     choose_initial_fit_screen,
     configure_preserved_pilot,
     configure_resume,
+    direct_joint_start_enabled,
     early_review_enabled,
     initialization,
     is_initial_fit_review,
@@ -40,7 +42,14 @@ from diffeoforge.reference_atlas_handoff import (
 from diffeoforge.reference_checkpoint_schedule import new_run_config, render_adapter
 from diffeoforge.reference_pca import read_deformetrica_momenta
 from diffeoforge.reference_pca_deformations import _write_momenta
-from diffeoforge.runs import prepare_resume_run, prepare_run, verify_prepared_run
+from diffeoforge.reference_preparation_plan import plan_reference_preparation
+from diffeoforge.runs import (
+    prepare_resume_run,
+    prepare_run,
+    prepare_run_against_plan,
+    recover_run,
+    verify_prepared_run,
+)
 
 
 @pytest.fixture
@@ -203,6 +212,137 @@ def test_starting_fit_review_opt_in_and_legacy_opt_out_are_linked(preserved):
     assert choose_initial_fit_screen(linked, enabled=False) == off
     with pytest.raises(ConfigurationError, match="boolean"):
         choose_initial_fit_screen(target, enabled=1)
+
+
+@pytest.fixture
+def completed_joint_pilot(tmp_path, monkeypatch):
+    from test_pilot_completion import _approve_preview, _checked
+
+    from diffeoforge import reference_adaptive_calibration as adaptive
+    from diffeoforge.reference_pilot_completion import finish
+
+    _, checked, _, identifier = _checked(tmp_path, monkeypatch, capped=True)
+    _approve_preview(checked, identifier)
+    bind = adaptive.bind_learned_seed
+    source = {}
+
+    def bind_fields(snapshot, center_id, destination):
+        seed = bind(snapshot, center_id, destination)
+        record = seed["files"]["momenta"]
+        path = destination / record["copy"]
+        fields = read_deformetrica_momenta(path)
+        fields[:] = np.arange(fields.size).reshape(fields.shape) / 128
+        path.unlink()
+        _write_momenta(path, fields)
+        record["sha256"] = sha256_file(path)
+        source[seed["source_run_directory"]] = SimpleNamespace(
+            source_hashes={"manifest.json": seed["source_manifest_sha256"]},
+            momenta_record={"sha256": record["sha256"]},
+            control_points_record={"sha256": seed["files"]["control_points"]["sha256"]},
+            subject_labels=tuple(seed["subject_labels"]),
+            momenta=fields,
+            run_report=SimpleNamespace(inventory=({
+                "path": "DeterministicAtlas__EstimatedParameters__Template_surface.vtk",
+                "sha256": seed["files"]["template"]["sha256"],
+            },)),
+        )
+        return seed
+
+    # Only the synthetic pilot runner lacks a native inventory. Preserve the real
+    # review ledger and exercise ordinary atlas preparation and sealed execution below.
+    monkeypatch.setattr(adaptive, "bind_learned_seed", bind_fields)
+    monkeypatch.setattr("diffeoforge.reference_pca.load_reference_momenta", source.__getitem__)
+    completed, _ = finish(checked.study_directory, identifier)
+    return completed
+
+
+def test_direct_joint_handoff_preserves_pilot_and_prepares_native_run(
+    completed_joint_pilot, monkeypatch
+):
+    source = completed_joint_pilot.final_config_path
+    before = {p: p.read_bytes() for p in completed_joint_pilot.study_directory.rglob("*")
+              if p.is_file()}
+    assert choose_direct_joint_start(source, enabled=False) == source
+    direct = choose_direct_joint_start(source, enabled=True)
+    assert direct != source
+    assert all(p.read_bytes() == data for p, data in before.items())
+    assert choose_direct_joint_start(source, enabled=True) == direct
+    assert choose_direct_joint_start(direct, enabled=True) == direct
+    assert choose_direct_joint_start(direct, enabled=False) == source
+
+    config = load_config(direct)
+    plan = initialization(config)
+    assert direct_joint_start_enabled(plan) and not early_review_enabled(plan)
+    assert not direct_joint_start_enabled(initialization(load_config(source)))
+    assert adapter_source(new_run_config(config)) == ""
+    for choice in (choose_early_review, choose_initial_fit_screen):
+        assert choice(direct, enabled=False) == direct
+        with pytest.raises(ConfigurationError, match="unavailable"):
+            choice(direct, enabled=True)
+
+    serial = prepare_run(source, run_id="serial-pilot-handoff")
+    preparation = plan_reference_preparation(direct, run_id="direct-pilot-handoff")
+    run = prepare_run_against_plan(direct, preparation)
+    manifest = verify_prepared_run(run)
+    assert initialization(manifest["effective_config"]) == plan
+    for name in ("model.xml", "data_set.xml", "optimization_parameters.xml"):
+        assert (run / "engine" / name).read_bytes() == (serial / "engine" / name).read_bytes()
+    for directory in ("template", "control-points", "momenta"):
+        assert [p.read_bytes() for p in (run / "input" / directory).iterdir()] == [
+            p.read_bytes() for p in (serial / "input" / directory).iterdir()
+        ]
+    native = (run / "engine/sitecustomize.py").read_text(encoding="utf-8")
+    assert "_df_atlas_update" not in native
+    assert "_df_flow" in native  # Compact native checkpoint/final export remains present.
+    compile(native, "sitecustomize.py", "exec")
+    # Also restore an interrupted direct-joint run via normal stopped-worker recovery.
+    interrupted = prepare_run(direct, run_id="direct-interrupted")
+    abandon_prepared_run(interrupted, checkpoint=b"opaque interrupted state")
+    recover_run(interrupted, reason="Synthetic interruption", confirm_process_stopped=True)
+    resumed = prepare_resume_run(interrupted, run_id="direct-resume")
+    assert initialization(verify_prepared_run(resumed)["effective_config"]) == plan
+    assert "_df_atlas_update" not in (resumed / "engine/sitecustomize.py").read_text()
+
+    # A prepared run and its capped successor are self-contained even after archiving the
+    # project-level source. Check the copied binding through ordinary prepare/execute/resume.
+    original = before[source]
+    source.unlink()
+    try:
+        assert verify_prepared_run(run) == manifest
+        _execute_cap_fixture(run, monkeypatch)
+        successor = prepare_resume_run(run, run_id="direct-plus-300", additional_iterations=300)
+        extended = verify_prepared_run(successor)
+        assert initialization(extended["effective_config"]) == plan
+        assert extended["effective_config"]["optimization"]["max_iterations"] == (
+            config["optimization"]["max_iterations"] + 300
+        )
+        assert "_df_atlas_update" not in (successor / "engine/sitecustomize.py").read_text()
+    finally:
+        source.write_bytes(original)
+    assert all(p.read_bytes() == data for p, data in before.items())
+
+
+def test_direct_joint_rejects_edited_link_or_missing_recorded_review(completed_joint_pilot):
+    from diffeoforge import reference_calibration_study as study
+
+    source = completed_joint_pilot.final_config_path
+    direct = choose_direct_joint_start(source, enabled=True)
+    edited = load_config(direct)
+    edited["optimization"]["max_iterations"] += 1
+    edited_path = direct.with_name("direct-with-edited-budget.yaml")
+    edited_path.write_text(yaml.safe_dump(edited), encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="differs from its saved pilot"):
+        prepare_run(edited_path, run_id="changed-direct")
+
+    root, _ = study._search_extension_series(completed_joint_pilot.study_directory)
+    journal = root / "visual-reviews.json"
+    saved = journal.read_bytes()
+    journal.unlink()
+    try:
+        with pytest.raises(ConfigurationError, match="Review"):
+            validate_input_paths(load_config(direct), direct)
+    finally:
+        journal.write_bytes(saved)
 
 
 def test_flagged_initial_fit_requires_its_own_review_and_keeps_pilot_gate(early):

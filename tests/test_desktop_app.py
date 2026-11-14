@@ -1505,7 +1505,7 @@ def test_desktop_continues_existing_reference_project_instead_of_restarting_gpa(
     project_directory = tmp_path / "existing project"
     project_directory.mkdir()
     config_path = project_directory / "atlas.yaml"
-    original = b"existing generated configuration\n"
+    original = (ROOT / "examples" / "minimal-atlas.yaml").read_bytes()
     config_path.write_bytes(original)
     result = ProjectSetupResult(
         engine=DesktopEngine.DEFORMETRICA_REFERENCE,
@@ -1544,6 +1544,7 @@ def test_desktop_continues_existing_reference_project_instead_of_restarting_gpa(
     assert config_path.read_bytes() == original
     assert "New-project route selected" in window.status_label.text()
     window._show_setup_page()
+    window._run_result = object()
     window._continue_to_parameter_setting()
 
     assert loaded == [config_path.resolve()]
@@ -1551,6 +1552,7 @@ def test_desktop_continues_existing_reference_project_instead_of_restarting_gpa(
     assert reviews == [True]
     assert window._procrustes_preview is None
     assert window._reference_calibrated_config_path is None
+    assert window._run_result is None
     assert config_path.read_bytes() == original
     assert "no GPA or pilot candidate is being rerun" in window.status_label.text()
 

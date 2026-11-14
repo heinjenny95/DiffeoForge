@@ -28,6 +28,16 @@ PROGRESS = "atlas-initialization.json"
 EARLY_CHECK = "early-atlas-check.json"
 REVIEW = "early-atlas-review.json"
 REVIEW_CHOICE = "early-atlas-review-choice.json"
+DIRECT_JOINT_VERSION = "direct-joint-start-v1"
+_DIRECT_JOINT_LIMITATION = (
+    "The saved joint pilot fields initialize their ordered specimens. Other specimens "
+    "start with zero momenta and are fitted directly in the shared optimization. "
+    "This can change atlas fits and does not constitute full-cohort anatomical approval."
+)
+_SCREEN_KEYS = (
+    "initial_fit_screen", "initial_fit_screen_binding", "early_review_choice",
+    "early_review_choice_binding", "early_review_binding",
+)
 
 
 def early_review_enabled(plan):
@@ -193,6 +203,205 @@ def upgrade_saved_pilot_config(config_path):
     return target
 
 
+def direct_joint_start_enabled(plan):
+    return bool(plan and plan.get("direct_joint_start"))
+
+
+def direct_joint_source_path(path, receipt):
+    name = receipt["source_config_filename"]
+    if (
+        not name.endswith(".yaml")
+        or name in {".yaml", path.name}
+        or any(ord(character) < 32 or character in '/\\:*?"<>|' for character in name)
+    ):
+        raise ConfigurationError("Direct joint start has an unsafe source configuration name.")
+    linked = path.with_name(name)
+    if linked.is_symlink() or not linked.is_file():
+        raise ConfigurationError("Direct joint start requires its saved source configuration.")
+    if sha256_file(linked) != receipt["source_config_sha256"]:
+        raise ConfigurationError("Direct joint source configuration changed.")
+    return linked
+
+
+def _direct_joint_configuration(source, path):
+    selected = copy.deepcopy(source)
+    plan = initialization(selected)
+    if (
+        not plan or plan["method"] != METHOD or direct_joint_start_enabled(plan)
+        or plan.get("completed_initialization_indices") or plan.get("early_review_approved")
+        or any(key in plan for key in (
+            "initial_fit_screen_binding", "early_review_binding", "early_review_choice_binding",
+        ))
+    ):
+        raise ConfigurationError("Direct joint start requires an unused saved pilot handoff.")
+    for key in _SCREEN_KEYS:
+        plan.pop(key, None)
+    plan["early_review_enabled"] = False
+    plan["limitation"] = _DIRECT_JOINT_LIMITATION
+    plan["direct_joint_start"] = {
+        "version": DIRECT_JOINT_VERSION,
+        "source_config_filename": path.name,
+        "source_config_sha256": sha256_file(path),
+    }
+    return selected
+
+
+def choose_direct_joint_start(config_path, *, enabled):
+    """Choose a linked direct start without changing the saved pilot or prior choices."""
+    if type(enabled) is not bool:
+        raise ConfigurationError("Direct joint start must be an explicit boolean choice.")
+    path = Path(config_path).resolve()
+    config = load_config(path)
+    plan = initialization(config)
+    if direct_joint_start_enabled(plan):
+        validate_input_paths(config, path)
+        return path if enabled else direct_joint_source_path(path, plan["direct_joint_start"])
+    if not enabled:
+        return path
+    selected = _direct_joint_configuration(config, path)
+    return _write_linked_atlas_config(
+        selected, path.with_name(f"{path.stem}-direct-joint.yaml")
+    )
+
+
+def verify_direct_joint_start(config, config_path, inputs, plan):
+    """Reverify this opt-in against the saved visual decision and immutable pilot bytes."""
+    from diffeoforge.reference_calibration_study import (
+        STUDY_MANIFEST,
+        _load_events,
+        load_reference_calibration_study,
+    )
+    from diffeoforge.reference_pca import load_reference_momenta, read_deformetrica_momenta
+
+    path = Path(config_path).resolve()
+    source = direct_joint_source_path(path, plan["direct_joint_start"])
+    source_config = load_config(source)
+    expected = _direct_joint_configuration(source_config, source)
+    if new_run_config(expected) != new_run_config(config):
+        raise ConfigurationError("Direct joint configuration differs from its saved pilot handoff.")
+
+    study = source.parent.parent
+    try:
+        snapshot = load_reference_calibration_study(study)
+    except (OSError, ValueError) as error:
+        raise ConfigurationError(f"Direct joint pilot could not be verified: {error}") from error
+    if snapshot.status != "completed" or snapshot.final_config_path is None:
+        raise ConfigurationError("Direct joint start requires a completed pilot.")
+    canonical = load_config(snapshot.final_config_path)
+    source_recommendation = source_config["project"]["parameter_provenance"]["recommendation"]
+    result = source_recommendation["calibration_result"]
+    canonical_result = canonical["project"]["parameter_provenance"]["recommendation"][
+        "calibration_result"
+    ]
+    if result["study_manifest_sha256"] != sha256_file(study / STUDY_MANIFEST):
+        raise ConfigurationError("Direct joint start is linked to a different pilot study.")
+    source_plan = initialization(source_config)
+    canonical_plan = canonical_result.get("full_cohort_initialization", {})
+    for key in ("source_run_manifest_sha256", "template_sha256", "control_points_sha256"):
+        if source_plan[key] != canonical_plan.get(key):
+            raise ConfigurationError("Direct joint start uses a different saved pilot basis.")
+    normalized_source = copy.deepcopy(source_config)
+    normalized_result = normalized_source["project"]["parameter_provenance"]["recommendation"][
+        "calibration_result"
+    ]
+    normalized_result.pop("handoff_upgrade", None)
+    normalized_result["full_cohort_initialization"] = canonical_plan
+    if not initialization(canonical):
+        for key in ("initial_momenta", "initial_momenta_subjects"):
+            normalized_source["model"]["deformation"].pop(key, None)
+    if new_run_config(normalized_source) != new_run_config(canonical):
+        raise ConfigurationError("Direct joint start changes the completed pilot parameters.")
+    if initialization(canonical) and plan["initial_momenta_sha256"] != canonical_plan[
+        "initial_momenta_sha256"
+    ]:
+        raise ConfigurationError("Direct joint start uses a different full-cohort momentum seed.")
+    stage_id = snapshot.plan.stages[-1].stage_id
+    identifier = snapshot.selected_candidate_ids[stage_id]
+    decision = next((
+        event for event in _load_events(study)
+        if event["event_hash"] == result["decision_event_hash"]
+    ), {})
+    if (
+        decision.get("event") != "stage_selected"
+        or decision.get("stage_id") != stage_id
+        or decision.get("candidate_id") != identifier
+        or decision.get("visual_approvals", {}).get(identifier) is not True
+    ):
+        raise ConfigurationError("Direct joint start requires the selected pilot's saved approval.")
+
+    pilot = load_reference_momenta(plan["source_run_directory"])
+    pilot_indices = plan["pilot_indices"]
+    labels = plan["subject_labels"]
+    if (
+        pilot.source_hashes["manifest.json"] != plan["source_run_manifest_sha256"]
+        or pilot.momenta_record["sha256"] != plan["pilot_momenta_sha256"]
+        or tuple(plan["pilot_subject_labels"]) != pilot.subject_labels
+        or any(index >= len(labels) for index in pilot_indices)
+        or tuple(labels[index] for index in pilot_indices) != pilot.subject_labels
+        or {subject.filename for subject in snapshot.plan.selected_pilot_subjects}
+        != set(pilot.subject_labels)
+    ):
+        raise ConfigurationError("Direct joint pilot momentum source or specimen binding changed.")
+    source_templates = [
+        record for record in pilot.run_report.inventory
+        if "__EstimatedParameters__Template_" in Path(record["path"]).name
+        and Path(record["path"]).suffix.lower() == ".vtk"
+    ]
+    if (
+        [record["sha256"] for record in source_templates] != [plan["template_sha256"]]
+        or pilot.control_points_record["sha256"] != plan["control_points_sha256"]
+        or sha256_file(inputs.template) != plan["template_sha256"]
+        or inputs.initial_control_points is None
+        or sha256_file(inputs.initial_control_points) != plan["control_points_sha256"]
+        or {p.name: sha256_file(p) for p in inputs.subjects} != plan["subject_sha256"]
+    ):
+        raise ConfigurationError(
+            "Direct joint start template, controls or full-cohort geometry changed."
+        )
+    momenta = read_deformetrica_momenta(inputs.initial_momenta)
+    other = sorted(set(range(len(labels))) - set(pilot_indices))
+    if (
+        not np.array_equal(momenta[pilot_indices], pilot.momenta)
+        or np.any(momenta[other] != 0)
+    ):
+        raise ConfigurationError(
+            "Direct joint momenta must retain the saved pilot rows and zero other rows."
+        )
+
+
+def staged_direct_joint_source(receipt):
+    return Path("config", "pilot-handoff", receipt["source_config_filename"])
+
+
+def verify_prepared_direct_joint_start(run, manifest):
+    """Use the protected prepared copies without requiring the original pilot directory."""
+    plan = initialization(manifest["effective_config"])
+    if not direct_joint_start_enabled(plan):
+        return
+    receipt = plan["direct_joint_start"]
+    protected = {r["path"]: r["sha256"] for r in manifest["protected_artifacts"]}
+    source = staged_direct_joint_source(receipt)
+    if protected.get(source.as_posix()) != receipt["source_config_sha256"]:
+        raise ConfigurationError("Prepared direct joint start lost its source configuration.")
+    expected = _direct_joint_configuration(load_config(run / source), run / source)
+    prepared = load_config(run / "config/source-config.yaml")
+    if new_run_config(expected) != new_run_config(prepared) or initialization(expected) != plan:
+        raise ConfigurationError("Prepared direct joint start differs from its saved handoff.")
+    inputs = {
+        Path(r["staged_path"]).name: r["geometry"]["sha256"]
+        for r in manifest["inputs"] if r["role"] == "subject"
+    }
+    if inputs != plan["subject_sha256"] or list(inputs) != plan["subject_labels"]:
+        raise ConfigurationError("Prepared direct joint cohort geometry or order changed.")
+    for prefix, digest in (
+        ("input/template/", plan["template_sha256"]),
+        ("input/control-points/", plan["control_points_sha256"]),
+        ("input/momenta/", plan["initial_momenta_sha256"]),
+    ):
+        if [value for key, value in protected.items() if key.startswith(prefix)] != [digest]:
+            raise ConfigurationError("Prepared direct joint seed binding changed.")
+
+
 def choose_early_review(config_path, *, enabled):
     """Save a linked launch choice without rewriting the completed pilot config."""
     if type(enabled) is not bool:
@@ -202,6 +411,8 @@ def choose_early_review(config_path, *, enabled):
     plan = initialization(config)
     if not plan:
         raise ConfigurationError("This configuration has no preserved-pilot atlas handoff.")
+    if direct_joint_start_enabled(plan) and enabled:
+        raise ConfigurationError("Early pilot review is unavailable for a direct joint start.")
     if early_review_enabled(plan) == enabled:
         return path
     plan["early_review_enabled"] = enabled
@@ -221,6 +432,8 @@ def choose_initial_fit_screen(config_path, *, enabled):
         if enabled:
             raise ConfigurationError("Starting-fit review requires a saved pilot atlas setup.")
         return path
+    if direct_joint_start_enabled(plan) and enabled:
+        raise ConfigurationError("Starting-fit review is unavailable for a direct joint start.")
     if bool(plan.get("initial_fit_screen")) == enabled:
         return path
     if plan.get("initial_fit_screen_binding"):
@@ -236,14 +449,17 @@ def choose_initial_fit_screen(config_path, *, enabled):
 def _write_linked_atlas_config(config, target):
     from diffeoforge.initialization import _CONFIG_MARKER
 
-    rendered = _CONFIG_MARKER + "\n" + yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
-    if target.exists():
-        if target.read_text(encoding="utf-8") != rendered:
-            raise ConfigurationError("Existing linked atlas configuration differs.")
-    else:
-        with target.open("x", encoding="utf-8", newline="\n") as handle:
-            handle.write(rendered)
     validate_input_paths(config, target)
+    rendered = _CONFIG_MARKER + "\n" + yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
+    if not target.is_symlink():
+        try:
+            with target.open("x", encoding="utf-8", newline="\n") as handle:
+                handle.write(rendered)
+            return target
+        except FileExistsError:
+            pass
+    if target.is_symlink() or target.read_text(encoding="utf-8") != rendered:
+        raise ConfigurationError("Existing linked atlas configuration differs.")
     return target
 
 
@@ -413,7 +629,7 @@ def record_early_review_choice(run_directory, *, enabled):
 def configure_resume(config, source_run):
     """Bind phase continuation to inventoried initialization and explicit review."""
     plan = initialization(config)
-    if not plan:
+    if not plan or direct_joint_start_enabled(plan):
         return
     source_run = Path(source_run)
     guard = source_run / "output" / EARLY_CHECK
@@ -513,6 +729,8 @@ def adapter_source(config):
         raise ConfigurationError("Preserved-pilot initialization requires GradientAscent.")
     if not needs_adapter(config):
         raise ConfigurationError("Preserved-pilot initialization requires compact checkpoints.")
+    if direct_joint_start_enabled(plan):
+        return ""
     if plan["method"] == REFINEMENT_METHOD and not (
         config["optimization"]["freeze_template"]
         and config["optimization"]["freeze_control_points"]

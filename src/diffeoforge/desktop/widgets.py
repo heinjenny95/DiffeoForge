@@ -632,26 +632,33 @@ class _TemplatePreviewWorker(QRunnable):
 class _PilotAtlasHandoffWorker(QRunnable):
     def __init__(
         self, config_path: Path, *, early_review: bool = False, initial_fit_review: bool = False,
+        direct_start: bool = False,
     ) -> None:
         super().__init__()
         self.config_path = config_path
         self.early_review = early_review
         self.initial_fit_review = initial_fit_review
+        self.direct_start = direct_start
         self.signals = _WorkerSignals()
 
     @Slot()
     def run(self) -> None:
         try:
             from diffeoforge.reference_atlas_handoff import (
+                choose_direct_joint_start,
                 choose_early_review,
                 choose_initial_fit_screen,
                 upgrade_saved_pilot_config,
             )
+            from diffeoforge.reference_calibration_study import calibration_verification_scope
 
-            path = upgrade_saved_pilot_config(self.config_path)
-            path = choose_initial_fit_screen(path, enabled=self.initial_fit_review)
-            path = choose_early_review(path, enabled=self.early_review)
-            result = load_existing_reference_project(path)
+            with calibration_verification_scope():
+                path = upgrade_saved_pilot_config(self.config_path)
+                path = choose_direct_joint_start(path, enabled=self.direct_start)
+                if not self.direct_start:
+                    path = choose_initial_fit_screen(path, enabled=self.initial_fit_review)
+                    path = choose_early_review(path, enabled=self.early_review)
+                result = load_existing_reference_project(path)
         except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
             return
@@ -2392,34 +2399,6 @@ class DiffeoForgeWindow(QMainWindow):
             0,
             Qt.AlignmentFlag.AlignLeft,
         )
-        self.prepare_preserved_atlas_button = QPushButton("Prepare atlas with saved pilot fits…")
-        self.prepare_preserved_atlas_button.setObjectName("secondary")
-        self.prepare_preserved_atlas_button.setToolTip(
-            "Create a separate configuration that preserves compatible pilot fields, fits "
-            "the remaining specimens on the common basis, then runs the joint atlas."
-        )
-        self.initial_fit_review_check = QCheckBox(
-            "Pause before joint fitting if starting fits need review"
-        )
-        self.initial_fit_review_check.setToolTip(
-            "Off by default. Turn on to check initialized specimens for missing or extra "
-            "surface and review substantial findings before the joint atlas starts."
-        )
-        self.initial_fit_review_check.hide()
-        calibration_layout.addWidget(self.initial_fit_review_check)
-        self.early_atlas_review_check = QCheckBox(
-            "Pause after 10 joint iterations for an optional early anatomical check"
-        )
-        self.early_atlas_review_check.setChecked(False)
-        self.early_atlas_review_check.setToolTip(
-            "Off by default: continue to the configured optimizer stop. "
-            "The finished atlas still requires its own anatomical review."
-        )
-        self.early_atlas_review_check.hide()
-        calibration_layout.addWidget(self.early_atlas_review_check)
-        self.prepare_preserved_atlas_button.clicked.connect(self._prepare_preserved_atlas)
-        self.prepare_preserved_atlas_button.hide()
-        calibration_layout.addWidget(self.prepare_preserved_atlas_button)
         self.reference_calibration_execution_card = calibration
         self.reference_calibration_execution_card.hide()
         return calibration
@@ -2566,6 +2545,42 @@ class DiffeoForgeWindow(QMainWindow):
         summary_layout.addWidget(summary_title)
         summary_layout.addWidget(self.review_summary_label)
         layout.addWidget(summary)
+
+        self.pilot_atlas_start_card = QFrame()
+        self.pilot_atlas_start_card.setObjectName("card")
+        start_layout = QVBoxLayout(self.pilot_atlas_start_card)
+        start_layout.setContentsMargins(24, 22, 24, 24)
+        start_layout.setSpacing(8)
+        start_title = QLabel("Atlas initialization")
+        start_title.setObjectName("sectionTitle")
+        self.pilot_atlas_start_combo = QComboBox()
+        self.pilot_atlas_start_combo.setAccessibleName("Atlas initialization")
+        self.pilot_atlas_start_combo.addItem(
+            "Fit remaining specimens individually (recommended)", False
+        )
+        self.pilot_atlas_start_combo.addItem("Start the joint atlas directly", True)
+        self.pilot_atlas_start_detail = QLabel()
+        self.pilot_atlas_start_detail.setObjectName("reviewDetail")
+        self.pilot_atlas_start_detail.setWordWrap(True)
+        self.initial_fit_review_check = QCheckBox(
+            "Pause before joint fitting if starting fits need review"
+        )
+        self.initial_fit_review_check.setToolTip(
+            "Inspect initialized specimens for missing or extra surface before joint fitting."
+        )
+        self.early_atlas_review_check = QCheckBox(
+            "Pause after 10 joint iterations for an optional anatomical check"
+        )
+        for widget in (
+            start_title, self.pilot_atlas_start_combo, self.pilot_atlas_start_detail,
+            self.initial_fit_review_check, self.early_atlas_review_check,
+        ):
+            start_layout.addWidget(widget)
+        self.pilot_atlas_start_card.hide()
+        layout.addWidget(self.pilot_atlas_start_card)
+        self.pilot_atlas_start_combo.currentIndexChanged.connect(self._pilot_atlas_start_changed)
+        self.initial_fit_review_check.toggled.connect(self._pilot_atlas_start_changed)
+        self.early_atlas_review_check.toggled.connect(self._pilot_atlas_start_changed)
 
         template_preview = QFrame()
         template_preview.setObjectName("card")
@@ -7782,6 +7797,8 @@ class DiffeoForgeWindow(QMainWindow):
                 and self._reference_run_request.resume_source is not None
             ):
                 return True
+            if self._pilot_atlas_start_pending():
+                return False
             return bool(self._reference_readiness is not None and self._reference_readiness.ready)
         if step == 4:
             return self._result_review is not None
@@ -8267,9 +8284,7 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _sync_ready_state(self) -> None:
         self.review_early_atlas_button.setEnabled(self._worker is None)
-        self.prepare_preserved_atlas_button.setEnabled(self._worker is None)
-        self.initial_fit_review_check.setEnabled(self._worker is None)
-        self.early_atlas_review_check.setEnabled(self._worker is None)
+        self._sync_pilot_atlas_start_controls()
         for button in (
             self.run_more_iterations_button, self.result_more_iterations_button,
             self.qc_more_iterations_button,
@@ -9870,6 +9885,16 @@ class DiffeoForgeWindow(QMainWindow):
     def _review_succeeded(self, review: ProjectReviewResult) -> None:
         self._worker = None
         self._review = review
+        self.pilot_atlas_start_combo.blockSignals(True)
+        self.pilot_atlas_start_combo.setCurrentIndex(int(review.direct_pilot_atlas))
+        self.pilot_atlas_start_combo.blockSignals(False)
+        for control, checked in (
+            (self.initial_fit_review_check, review.pilot_initial_fit_review),
+            (self.early_atlas_review_check, review.pilot_early_review),
+        ):
+            control.blockSignals(True)
+            control.setChecked(checked)
+            control.blockSignals(False)
         self._template_preview = None
         self._reference_readiness = None
         self._reference_preparation_status = None
@@ -10250,15 +10275,6 @@ class DiffeoForgeWindow(QMainWindow):
         return "Continue pilot calibration"
 
     def _refresh_reference_calibration_execution_card(self) -> None:
-        self.prepare_preserved_atlas_button.setVisible(
-            self._reference_calibration_completed()
-            and self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
-        )
-        self.prepare_preserved_atlas_button.setEnabled(self._worker is None)
-        self.initial_fit_review_check.setVisible(not self.prepare_preserved_atlas_button.isHidden())
-        self.initial_fit_review_check.setEnabled(self._worker is None)
-        self.early_atlas_review_check.setVisible(not self.prepare_preserved_atlas_button.isHidden())
-        self.early_atlas_review_check.setEnabled(self._worker is None)
         reference = self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
         if not reference:
             self.reference_calibration_execution_card.hide()
@@ -10638,14 +10654,88 @@ class DiffeoForgeWindow(QMainWindow):
             return
         self._finish_reference_calibration(snapshot)
 
+    def _pilot_atlas_start_source(self) -> Path | None:
+        if (
+            not self._bound_project_matches_form()
+            or self._run_result is not None
+            or (
+                self._reference_run_request is not None
+                and self._reference_run_request.resume_source is not None
+            )
+        ):
+            return None
+        if self._reference_calibrated_config_path is not None:
+            return self._reference_calibrated_config_path
+        if isinstance(self._review, ProjectReviewResult) and self._review.preserved_pilot_atlas:
+            return self._review.config_path
+        return None
+
+    def _pilot_atlas_start_pending(self) -> bool:
+        review = self._review
+        if (
+            not isinstance(review, ProjectReviewResult)
+            or review.engine is not DesktopEngine.DEFORMETRICA_REFERENCE
+            or self._pilot_atlas_start_source() is None
+        ):
+            return False
+        direct = self.pilot_atlas_start_combo.currentData()
+        return not review.preserved_pilot_atlas or direct != review.direct_pilot_atlas or (
+            not direct and (
+                self.initial_fit_review_check.isChecked() != review.pilot_initial_fit_review
+                or self.early_atlas_review_check.isChecked() != review.pilot_early_review
+            )
+        )
+
+    @Slot()
+    def _pilot_atlas_start_changed(self) -> None:
+        self._sync_pilot_atlas_start_controls()
+        self._sync_navigation_state()
+
+    def _sync_pilot_atlas_start_controls(self) -> None:
+        visible = bool(
+            isinstance(self._review, ProjectReviewResult)
+            and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+            and self._pilot_atlas_start_source() is not None
+        )
+        self.pilot_atlas_start_card.setVisible(visible)
+        direct = self.pilot_atlas_start_combo.currentData()
+        self.pilot_atlas_start_combo.setEnabled(self._worker is None)
+        for control in (self.initial_fit_review_check, self.early_atlas_review_check):
+            control.setVisible(not direct)
+            control.setEnabled(self._worker is None and not direct)
+        if not visible:
+            return
+        self.pilot_atlas_start_detail.setText(
+            "Use the saved pilot fits and skip the separate initialization stage. The remaining "
+            "specimens start from the undeformed pilot template. This saves initialization time. "
+            "The final fits and PCA may differ, and total runtime depends on the joint optimizer."
+            if direct else
+            "Use the saved pilot fits and fit each remaining specimen against the fixed pilot "
+            "template before joint optimization. This adds initialization time and gives each "
+            "specimen a fitted starting point."
+        )
+        if isinstance(self._worker, _PilotAtlasHandoffWorker):
+            self.show_run_button.setText("Preparing selected atlas start…")
+            self.show_run_button.setEnabled(False)
+        elif self._worker is None and self._reference_readiness and self._reference_readiness.ready:
+            self.show_run_button.setText(
+                "Review selected atlas start"
+                if self._pilot_atlas_start_pending()
+                else "Continue to supervised Deformetrica execution"
+            )
+            self.show_run_button.setEnabled(True)
+
     @Slot()
     def _prepare_preserved_atlas(self) -> None:
-        if self._worker is not None or self._reference_calibrated_config_path is None:
+        path = self._pilot_atlas_start_source()
+        if self._worker is not None or path is None or self._run_result is not None:
             return
+        direct = self.pilot_atlas_start_combo.currentData()
         worker = _PilotAtlasHandoffWorker(
-            self._reference_calibrated_config_path,
-            early_review=self.early_atlas_review_check.isChecked(),
-            initial_fit_review=self.initial_fit_review_check.isChecked(),
+            path,
+            early_review=not direct and self.early_atlas_review_check.isChecked(),
+            initial_fit_review=not direct and self.initial_fit_review_check.isChecked(),
+            direct_start=direct,
         )
         worker.signals.succeeded.connect(self._preserved_atlas_ready)
         worker.signals.failed.connect(self._preserved_atlas_failed)
@@ -10664,7 +10754,7 @@ class DiffeoForgeWindow(QMainWindow):
             return
         if (
             isinstance(worker, _PilotAtlasHandoffWorker)
-            and worker.config_path != self._reference_calibrated_config_path
+            and worker.config_path != self._pilot_atlas_start_source()
         ):
             self.status_label.setText("Project changed; the prepared atlas setup was not applied.")
             self._sync_ready_state()
@@ -10676,7 +10766,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_readiness = None
         self._reference_run_request = None
         self.status_label.setText(
-            "Saved pilot fits bound. Review the new atlas setup; starting remains your decision."
+            "Atlas initialization saved. Review the new setup before starting the atlas."
         )
         self._review_project()
 
@@ -11187,7 +11277,10 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _show_run_page(self) -> None:
-        self._navigate_to_step(3)
+        if self._pilot_atlas_start_pending():
+            self._prepare_preserved_atlas()
+        else:
+            self._navigate_to_step(3)
 
     @Slot()
     def _refresh_run_readiness(
@@ -11332,20 +11425,22 @@ class DiffeoForgeWindow(QMainWindow):
             "This check was read-only. The destination and all reviewed inputs are checked "
             "again inside the worker immediately before preparation."
         )
-        if review.preserved_pilot_atlas:
-            from diffeoforge.config import load_config
-            from diffeoforge.reference_atlas_handoff import early_review_enabled, initialization
-
-            plan = initialization(load_config(request.config_path))
-            early = early_review_enabled(plan)
+        if review.direct_pilot_atlas:
+            self.run_title_label.setText("Compute atlas with direct joint start")
+            self.run_subtitle_label.setText(
+                "Start the joint optimizer with saved pilot fits. The remaining specimens "
+                "start from the undeformed pilot template. Review the finished atlas for "
+                "anatomical quality."
+            )
+        elif review.preserved_pilot_atlas:
             self.run_title_label.setText("Initialize and compute atlas")
             initial_step = (
                 "Check the starting fits and pause for substantial findings. "
-                if plan.get("initial_fit_screen") else ""
+                if review.pilot_initial_fit_review else ""
             )
             joint_step = (
                 "Pause after 10 joint iterations for the optional anatomical check. "
-                if early else "Run the joint optimizer to its configured stop. "
+                if review.pilot_early_review else "Run the joint optimizer to its configured stop. "
             )
             self.run_subtitle_label.setText(
                 "Preserve the pilot fields and initialize other specimens on the same fixed basis. "
@@ -11540,6 +11635,8 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _start_atlas(self) -> None:
         if self._review is None or self._worker is not None or self._run_result is not None:
+            return
+        if self._pilot_atlas_start_pending():
             return
         reference = self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
         remote = not reference and self._remote_execution_selected()
@@ -13988,9 +14085,7 @@ class DiffeoForgeWindow(QMainWindow):
             self._sync_navigation_state()
             return
 
-        self._guided_reference_calibration_requested = False
-        self._reference_calibrated_config_path = None
-        self._reference_calibration_study_directory = None
+        self._clear_engine_project_state()
         self._project_succeeded(result)
         self.status_label.setObjectName("statusSuccess")
         self.status_label.setStyleSheet("")

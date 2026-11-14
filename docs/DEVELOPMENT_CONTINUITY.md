@@ -1,5 +1,20 @@
 # Development continuity — dev192 installed and verified
 
+## dev203 — choose how to start the full atlas
+
+After completing a guided Deformetrica pilot, choose **Atlas initialization**
+in the parameter review. Individual fits on the fixed pilot basis are the
+default. Direct joint start skips that stage. It reuses the saved pilot
+momenta and starts the remaining specimens with zero deformation. Both
+choices fit the same full cohort in the joint optimizer. Direct start saves
+initialization time. Overall runtime, final fits and the deformation-based
+PCA can differ.
+
+The alternate choice creates a separate configuration and requires review
+before launching. The saved pilot, approvals and previous runs are preserved.
+Optional checks tied to the prefits remain available on the individual-fit
+route. Final atlas quality review applies to both approaches.
+
 ## dev202 — compare pilot checkpoint continuations
 
 The time-resolution footer compares the selected saved continuation with the

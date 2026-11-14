@@ -262,7 +262,11 @@ def validate_input_paths(
         except (OSError, UnicodeError, ValueError, IndexError) as error:
             raise ConfigurationError(f"Invalid initial momenta: {error}") from error
 
-    from diffeoforge.reference_atlas_handoff import initialization
+    from diffeoforge.reference_atlas_handoff import (
+        direct_joint_start_enabled,
+        initialization,
+        verify_direct_joint_start,
+    )
 
     handoff = initialization(config)
     if handoff:
@@ -285,6 +289,9 @@ def validate_input_paths(
         initial_momenta=initial_momenta,
         cohort_template=cohort_template,
     )
+    if direct_joint_start_enabled(handoff):
+        verify_direct_joint_start(config, source_path, result, handoff)
+
     from diffeoforge.regional_fit import validate_scope
 
     validate_scope(config, result)

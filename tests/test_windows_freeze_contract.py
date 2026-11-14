@@ -122,9 +122,14 @@ def test_windows_freeze_workflow_is_manual_pinned_and_evidence_only() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     workflow = yaml.load(text, Loader=yaml.BaseLoader)
 
-    assert workflow["on"] == {"workflow_dispatch": ""}
+    assert set(workflow["on"]) == {"workflow_dispatch"}
+    target = workflow["on"]["workflow_dispatch"]["inputs"]["target"]
+    assert target["type"] == "choice"
+    assert target["default"] == "windows"
+    assert target["options"] == ["windows", "macos-probe", "macos", "macos-verify"]
     assert workflow["permissions"] == {"contents": "read"}
     job = workflow["jobs"]["freeze-evidence"]
+    assert job["if"] == "${{ inputs.target == 'windows' || inputs.target == '' }}"
     assert job["runs-on"] == "windows-latest"
     assert job["timeout-minutes"] == "60"
     assert job["env"] == {"PYTHONUTF8": "1", "QT_QPA_PLATFORM": "offscreen"}

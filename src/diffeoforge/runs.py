@@ -462,9 +462,15 @@ def _prepare_run(
                     or metadata.sha256 != sha256_file(path)):
                 raise ConfigurationError(f"Mesh changed since preparation preflight: {path}")
 
-    from diffeoforge.reference_atlas_handoff import initialization
+    from diffeoforge.reference_atlas_handoff import (
+        direct_joint_source_path,
+        direct_joint_start_enabled,
+        initialization,
+        staged_direct_joint_source,
+    )
 
     handoff = initialization(config)
+    direct_joint = direct_joint_start_enabled(handoff)
     if handoff and (handoff["early_review_approved"] or handoff[
         "completed_initialization_indices"
     ]):
@@ -550,7 +556,8 @@ def _prepare_run(
             _copy_and_verify(
                 summary.initial_control_points,
                 staged_control_points,
-                sha256_file(summary.initial_control_points),
+                (handoff["control_points_sha256"] if direct_joint
+                 else sha256_file(summary.initial_control_points)),
             )
 
         staged_momenta_relative: Path | None = None
@@ -559,7 +566,8 @@ def _prepare_run(
             _copy_and_verify(
                 summary.initial_momenta,
                 temp_directory / staged_momenta_relative,
-                sha256_file(summary.initial_momenta),
+                (handoff["initial_momenta_sha256"] if direct_joint
+                 else sha256_file(summary.initial_momenta)),
             )
 
         from diffeoforge.regional_fit import assets as regional_assets
@@ -571,7 +579,18 @@ def _prepare_run(
             _copy_and_verify(source, target, digest)
             regional_paths.append(target)
         source_config_copy = config_directory / "source-config.yaml"
+        direct_source_copy = None
+        if direct_joint:
+            receipt = handoff["direct_joint_start"]
+            direct_source_copy = temp_directory / staged_direct_joint_source(receipt)
+            _copy_and_verify(
+                direct_joint_source_path(source_config, receipt),
+                direct_source_copy,
+                receipt["source_config_sha256"],
+            )
         shutil.copy2(source_config, source_config_copy)
+        if direct_joint and load_config(source_config_copy) != reviewed_config:
+            raise ConfigurationError("Direct joint configuration changed during preparation.")
         effective = effective_reference_config(
             config,
             summary.input_directory,
@@ -610,6 +629,7 @@ def _prepare_run(
             ),
             *engine_files,
             *regional_paths,
+            *(() if direct_source_copy is None else (direct_source_copy,)),
         ]
         command_preview = build_command(config, final_directory)
         manifest = {
@@ -785,7 +805,9 @@ def _verify_prepared_run_contents(
             f"expected {expected_run_id!r}, observed {manifest.get('run_id')!r}"
         )
     _verify_protected_artifacts(run_path, manifest)
+    from diffeoforge.reference_atlas_handoff import verify_prepared_direct_joint_start
 
+    verify_prepared_direct_joint_start(run_path, manifest)
     events = _read_events(run_path / "events.jsonl")
     if events[-1]["event"] != "prepared":
         raise ConfigurationError(

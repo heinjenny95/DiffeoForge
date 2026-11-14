@@ -696,5 +696,74 @@ def test_starting_fit_checkbox_is_bound_when_preparing_the_atlas(review_window, 
         assert worker.config_path == config_path
         assert worker.initial_fit_review is checked
         assert worker.early_review is False
+        assert worker.direct_start is False
         window._worker = None
     assert len(queued) == 2
+
+
+def test_direct_pilot_option_requires_review_before_launch(review_window, monkeypatch):
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    window = review_window
+    review = window._review
+    if review is None:
+        from diffeoforge.desktop.project_review import ProjectReviewResult
+        from diffeoforge.desktop.project_setup import DesktopEngine
+
+        path = window._result_review.run_directory / "saved-pilot.yaml"
+        review = ProjectReviewResult(
+            DesktopEngine.DEFORMETRICA_REFERENCE, "Pilot study", path, "a" * 64,
+            path.with_suffix(".html"), "Report", 7, (), (), (), "",
+        )
+    review = replace(review, preserved_pilot_atlas=True)
+    window._review_succeeded(review)
+    window._reference_readiness = SimpleNamespace(ready=True)
+    window._run_result = None
+    window._result_review = None
+    queued = []
+    monkeypatch.setattr(window, "_thread_pool", SimpleNamespace(start=queued.append))
+    window._sync_ready_state()
+
+    assert not window.pilot_atlas_start_card.isHidden()
+    assert window.pilot_atlas_start_combo.currentData() is False
+    assert "fixed pilot template" in window.pilot_atlas_start_detail.text()
+    assert window._step_is_unlocked(3)
+    window.initial_fit_review_check.setChecked(True)
+    window.early_atlas_review_check.setChecked(True)
+    window.pilot_atlas_start_combo.setCurrentIndex(1)
+
+    assert "undeformed pilot template" in window.pilot_atlas_start_detail.text()
+    assert window.initial_fit_review_check.isHidden()
+    assert window.early_atlas_review_check.isHidden()
+    assert window.show_run_button.text() == "Review selected atlas start"
+    assert not window._step_is_unlocked(3)
+    window._start_atlas()
+    assert not queued
+    window._show_run_page()
+    window._show_run_page()
+
+    assert len(queued) == 1
+    handoff = queued[0]
+    assert handoff.config_path == review.config_path
+    assert handoff.direct_start is True
+    assert handoff.initial_fit_review is False and handoff.early_review is False
+
+    window._review_succeeded(replace(
+        review, direct_pilot_atlas=True, pilot_initial_fit_review=True, pilot_early_review=True,
+    ))
+    assert window.pilot_atlas_start_combo.currentData() is True
+    assert not window._pilot_atlas_start_pending()
+    window.pilot_atlas_start_combo.setCurrentIndex(0)
+    assert window.initial_fit_review_check.isChecked()
+    assert window.early_atlas_review_check.isChecked()
+    window._review_succeeded(replace(review, preserved_pilot_atlas=False))
+    monkeypatch.setattr(window, "_reference_calibrated_config_path", review.config_path)
+    window._reference_readiness = SimpleNamespace(ready=True)
+    window._sync_ready_state()
+    assert window.pilot_atlas_start_combo.currentData() is False
+    assert window._pilot_atlas_start_pending()
+    window._show_run_page()
+    assert len(queued) == 2
+    assert queued[-1].direct_start is False
+    assert queued[-1].config_path == review.config_path

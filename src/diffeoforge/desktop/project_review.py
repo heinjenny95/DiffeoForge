@@ -59,6 +59,9 @@ class ProjectReviewResult:
     production_readiness: ReferenceProductionReadiness | None = None
     modern_cuda_runtime: ModernCudaRuntime | None = None
     preserved_pilot_atlas: bool = False
+    direct_pilot_atlas: bool = False
+    pilot_initial_fit_review: bool = False
+    pilot_early_review: bool = False
 
 
 def _number(value: int | float) -> str:
@@ -124,9 +127,6 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
         ),)
 
     directory = preflight.inputs.input_directory
-    from diffeoforge.reference_atlas_handoff import initialization
-
-    preserved = initialization(preflight.config)
     evidence_path = directory / "procrustes.json"
     if not evidence_path.exists() and directory.name == "aligned-vtk":
         evidence_path = directory.parent / "procrustes.json"
@@ -271,20 +271,6 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
             "preprocessing evidence.",
         ),
         *(
-            (ReviewItem(
-                "Atlas initialization",
-                "preserved pilot fields; fixed-basis initialization; early joint review"
-                if preserved else "verified learned pilot template and control points",
-                "The original aligned template remains preprocessing evidence, not an "
-                "extra specimen. The unchanged subject cohort uses the learned pilot seed. "
-                + ("Pilot momentum rows are retained. Other specimens are initialized against "
-                   "that common basis. The joint atlas pauses after up to 10 iterations "
-                   "for a pilot anatomy check before continuing. This requires a new atlas; "
-                   "existing PCA results are unchanged." if preserved else ""),
-            ),)
-            if preflight.inputs.cohort_template is not None else ()
-        ),
-        *(
             (
                 ReviewItem(
                     "Scaling sensitivity",
@@ -303,7 +289,15 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
 
 
 def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewResult:
+    from diffeoforge.config import load_config
     from diffeoforge.mesh_inspection_cache import desktop_locations
+    from diffeoforge.reference_atlas_handoff import (
+        METHOD,
+        direct_joint_source_path,
+        direct_joint_start_enabled,
+        early_review_enabled,
+        initialization,
+    )
 
     shared, sources = desktop_locations()
     preflight = collect_preflight(config_path, cache_project=config_path.parent,
@@ -318,6 +312,15 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
     diagonal = preflight.template.bounding_box_diagonal
     ratios = preflight.parameter_ratios
     provenance = config["project"].get("parameter_provenance")
+    start_plan = initialization(config)
+    preserved = bool(start_plan and start_plan["method"] == METHOD)
+    direct = preserved and direct_joint_start_enabled(start_plan)
+    serial_plan = start_plan
+    if direct:
+        source = direct_joint_source_path(config_path, start_plan["direct_joint_start"])
+        serial_plan = initialization(load_config(source))
+    fit_review = preserved and bool(serial_plan and serial_plan.get("initial_fit_screen"))
+    early_review = preserved and serial_plan is not None and early_review_enabled(serial_plan)
     provenance_profile = (
         str(provenance["profile"]).replace("_", " ")
         if provenance is not None
@@ -519,6 +522,14 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             "effective values; it is not a claim of scientific suitability.",
         ),
         *recommendation_items,
+        *((ReviewItem(
+            "Atlas initialization",
+            "Direct joint start" if direct else "Individual fits before joint optimization",
+            "The saved pilot fits are reused. Other specimens start with zero deformation."
+            if direct else
+            "The saved pilot fits are reused. Other specimens are fitted on the fixed pilot "
+            "template and control points before joint optimization.",
+        ),) if preserved else ()),
         ReviewItem(
             "Coordinate unit",
             str(config["input"]["units"]),
@@ -714,11 +725,10 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         ),
         runtime_estimate=runtime_estimate,
         production_readiness=production_readiness,
-        preserved_pilot_atlas=bool(
-            config["project"].get("parameter_provenance", {}).get("recommendation", {})
-            .get("calibration_result", {}).get("full_cohort_initialization", {}).get("method")
-            == "preserved_pilot_momenta_fixed_basis_initialization"
-        ),
+        preserved_pilot_atlas=preserved,
+        direct_pilot_atlas=direct,
+        pilot_initial_fit_review=fit_review,
+        pilot_early_review=early_review,
     )
 
 
