@@ -17,10 +17,15 @@ three explicit parameter blocks:
 Triangle connectivity, target surfaces, kernel widths, noise variance,
 attachment type, and numerical integrators remain fixed during a run. The
 default block order is `momenta`, `template`, then `control_points`; callers may
-declare another permutation, which is recorded exactly. Omitting a block is
-not allowed in this full-parameter entry point. The earlier
+declare another unique subset or permutation, which is recorded exactly. The earlier
 `optimize_momenta` function remains available for a deliberately frozen
 template/control-point experiment.
+
+Because the observed target surfaces are fixed, their triangle geometry and
+quadratic attachment self terms are prepared once per optimizer invocation and
+reused without approximation. Source-dependent and cross terms are still
+recomputed, and exact dense/blockwise value and gradient parity is tested. See
+[prepared fixed-target attachments](PREPARED_ATTACHMENT_TARGETS.md).
 
 ## Transparent block update
 
@@ -35,8 +40,27 @@ The candidate is accepted only when
 
 Otherwise, `s` is multiplied by the declared backtracking factor and tried
 again. Each parameter block has its own initial step size because their units
-and gradient scales differ. There is no adaptive learning rate, stochastic
-batching, momentum term, or hidden optimizer state.
+and gradient scales differ. The explicit `fixed` strategy restarts there on
+every visit. The explicit `previous_accepted` strategy instead reuses that
+block's last accepted step on its next visit, avoiding repeated rejected
+candidates while remaining deterministic and visible in history and settings.
+There is no stochastic batching, momentum term, or unrecorded optimizer state.
+
+Engine 1.6 also supports an explicit Sobolev template-gradient mode. It leaves
+the objective unchanged but replaces only the template block's Euclidean
+gradient by the Deformetrica-compatible Gaussian convolution declared in the
+workflow. The same transformation is applied to accepted and line-search
+candidate gradients, so gradient norms and L-BFGS curvature history remain
+internally coherent. The default remains the unchanged Euclidean mode; the
+mode and width ratio are serialized as optimizer settings.
+
+Candidate objectives are evaluated before their gradients. A rejected Armijo
+candidate releases its graph without an unused backward pass; an acceptable
+candidate requests the gradient from the same graph without repeating its
+forward pass. The initial evaluation is reused for the first block. This
+changes scheduling only: the objective, candidate sequence, acceptance rule,
+accepted states, and recorded history remain identical. See
+[deferred Armijo gradients](DEFERRED_ARMIJO_GRADIENTS.md).
 
 One cycle visits every block once. If every block gradient is below the
 declared threshold in the same cycle, the run terminates as converged. A
@@ -57,8 +81,13 @@ copies. Every optimizer decision records:
 - number of line-search evaluations.
 
 The result additionally records the termination reason, failed block, completed
-cycles, convergence flag, and total line-search evaluations. Caller-owned
-inputs are never mutated.
+cycles, convergence flag, total line-search evaluations, total objective and
+gradient evaluations, and candidate gradients actually requested inside the
+line search. The latter separates Armijo candidates rejected by their forward
+objective from candidates that required a backward pass. Caller-owned inputs
+are never mutated. See the versioned
+[multi-cycle optimizer benchmark](MODERN_OPTIMIZER_BENCHMARK.md) for the strict
+fresh-process measurement contract built on these counters.
 
 ## Versioned CC0 evidence
 

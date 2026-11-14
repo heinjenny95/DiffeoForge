@@ -38,8 +38,26 @@ diffeoforge recover runs\pilot-001 `
 
 `recover` never launches Deformetrica. It inventories the files that already
 exist and records an `interrupted` terminal result with an unknown return code
-and duration. It refuses to run without the confirmation flag, on a lifecycle
-other than `started`, or when terminal artifacts already exist.
+and duration. It refuses to run without the confirmation flag or on a lifecycle
+other than `started`.
+
+The desktop exposes the same guarded path through **Recover after crashâ€¦**.
+Select either the exact nonterminal run or the project that contains it. Discovery
+is bounded and read-only: DiffeoForge verifies the manifest, every protected input,
+the latest `started` event, and any checkpoint before asking for confirmation.
+Recovery starts only after the researcher confirms that no DiffeoForge,
+Deformetrica, WSL, or container process is still writing to the run. Hashing and
+finalization run outside the GUI thread. If a checkpoint is available, the normal
+immutable-successor review opens automatically; a run without a checkpoint is
+recorded honestly but cannot be continued.
+
+Terminal publication is crash-tolerant. Convergence CSV, output inventory, and
+`result.json` are flushed and published as complete files. If recovery or normal
+execution stopped after publishing a complete inventory or result but before the
+final lifecycle event, the next explicit recovery verifies the retained bytes and
+reconciles them instead of overwriting them. Any mismatch between current output,
+the retained inventory, result, checkpoint, log, or protected source artifacts
+fails closed.
 
 ## Resume as an immutable successor
 

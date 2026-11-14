@@ -1,0 +1,19 @@
+DiffeoForge PCA video encoding uses a separate FFmpeg executable through the
+imageio-ffmpeg Python wrapper. The wrapper's license and the executable's license
+are distinct. The locally qualified imageio-ffmpeg 0.6.0 Windows FFmpeg 7.1 binary
+reports GNU GPL version 3 or later through its own -L output. The GPLv3 text is
+retained in licenses/GPL-3.0-or-later.txt. Preserve the binary's own attribution,
+version, configuration, hash and license output in private build evidence.
+
+Upstream projects and source/build information:
+https://ffmpeg.org/
+https://ffmpeg.org/legal.html
+https://ffmpeg.org/releases/
+https://github.com/imageio/imageio-ffmpeg
+https://github.com/imageio/ffmpeg-binaries
+https://www.gnu.org/licenses/gpl-3.0.html
+License text mirror: https://spdx.org/licenses/GPL-3.0-or-later.html
+
+This private local packaging notice makes no license-compatibility, public
+redistribution or release approval claim. Those remain separate project gates,
+including corresponding source/build information for any future distribution.

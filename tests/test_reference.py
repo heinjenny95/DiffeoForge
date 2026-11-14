@@ -37,6 +37,38 @@ def test_identical_candidate_passes_reference_comparison(tmp_path: Path) -> None
     assert report["status"] == "passed"
     assert report["passed_count"] == report["artifact_count"] == 10
     assert all(artifact["byte_identical"] for artifact in report["artifacts"])
+    assert all(artifact["largest_differences"] == [] for artifact in report["artifacts"])
+    assert all(artifact["different_value_count"] == 0 for artifact in report["artifacts"])
+
+
+def test_residual_rms_failure_is_explained_without_weakening_gate(tmp_path: Path) -> None:
+    run = materialize_candidate_run(tmp_path)
+    path = run / "output/DeterministicAtlas__EstimatedParameters__Residuals.txt"
+    values = [float(value) for value in path.read_text().split()]
+    values[0] += 9e-7
+    path.write_text("\n".join(str(value) for value in values))
+    report = compare_reference_run(run, REFERENCE_DIRECTORY)
+    result = next(item for item in report["artifacts"] if item["id"] == "residuals")
+    assert report["status"] == "failed"
+    assert result["passed"] is False
+    assert result["threshold_checks"] == {"max_absolute_pass": True, "rms_pass": False}
+    assert result["different_value_count"] == 1
+    assert result["largest_differences"][0]["value_index"] == 1
+
+
+def test_csv_diagnostics_identify_the_real_file_row_and_column(tmp_path: Path) -> None:
+    run = materialize_candidate_run(tmp_path)
+    path = run / "logs/convergence.csv"
+    text = path.read_text().replace("-44.07", "-44.08")
+    path.write_text(text)
+    report = compare_reference_run(run, REFERENCE_DIRECTORY)
+    result = report["artifacts"][0]
+    assert result["passed"] is False
+    assert result["different_value_count"] == 2
+    assert [(item["csv_row"], item["column"]) for item in result["largest_differences"]] == [
+        (2, "log_likelihood"),
+        (2, "attachment"),
+    ]
 
 
 def test_coordinate_drift_fails_reference_comparison(tmp_path: Path) -> None:
@@ -63,9 +95,7 @@ def test_coordinate_drift_fails_reference_comparison(tmp_path: Path) -> None:
     assert result["max_absolute_difference"] > result["tolerances"]["max_absolute"]
 
 
-def test_compare_reference_cli_returns_machine_readable_report(
-    tmp_path: Path, capsys
-) -> None:
+def test_compare_reference_cli_returns_machine_readable_report(tmp_path: Path, capsys) -> None:
     return_code = main(
         [
             "compare-reference",

@@ -6,8 +6,10 @@ import hashlib
 import math
 import re
 import struct
+import threading
+from collections import OrderedDict
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from numbers import Integral, Real
 from pathlib import Path
 
@@ -32,6 +34,8 @@ _CONNECTIVITY_RE = re.compile(
     rb"\r?\nCONNECTIVITY\s+(vtktypeint32|vtktypeint64|int|long)[ \t]*\r?\n",
     re.IGNORECASE,
 )
+_METADATA_CACHE: OrderedDict[str, MeshMetadata] = OrderedDict()
+_METADATA_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -147,8 +151,8 @@ def _read_vtk51_offsets(
     connectivity_count: int,
     encoding: str,
     path: Path,
-) -> tuple[int, bool] | None:
-    """Read VTK 5.1 split-cell arrays, or return None for classic POLYGONS."""
+) -> tuple[list[int], re.Match[bytes], bool] | None:
+    """Read and validate VTK 5.1 offsets, or return None for classic POLYGONS."""
 
     offsets_match = _OFFSETS_RE.match(raw, polygons_match.end())
     if offsets_match is None:
@@ -194,10 +198,45 @@ def _read_vtk51_offsets(
     cell_sizes = [end - start for start, end in zip(offsets[:-1], offsets[1:], strict=True)]
     if any(size <= 0 for size in cell_sizes):
         raise ConfigurationError(f"VTK 5.1 contains invalid polygon offsets: {path}")
-    return len(cell_sizes), all(size == 3 for size in cell_sizes)
+    return offsets, connectivity_match, all(size == 3 for size in cell_sizes)
+
+
+def _cache_vtk_metadata(metadata: MeshMetadata) -> None:
+    with _METADATA_LOCK:
+        _METADATA_CACHE[metadata.sha256] = metadata
+        _METADATA_CACHE.move_to_end(metadata.sha256)
+        while len(_METADATA_CACHE) > 256:
+            _METADATA_CACHE.popitem(last=False)
 
 
 def inspect_vtk(path: Path | str) -> MeshMetadata:
+    """Reuse bounded scalar metadata after a fresh streaming content hash.
+
+    Repeated project/pilot preparation never retains a mesh cohort or reparses
+    unchanged coordinates merely to rediscover counts and bounds. Fresh hashes
+    remain mandatory; stat/mtime alone never establish scientific identity.
+    """
+    source = Path(path).resolve()
+    try:
+        before = source.stat()
+        digest = sha256_file(source)
+        with _METADATA_LOCK:
+            cached = _METADATA_CACHE.get(digest)
+            if cached is not None:
+                _METADATA_CACHE.move_to_end(digest)
+        if cached is None:
+            cached = _inspect_vtk_uncached(source)
+        after = source.stat()
+        if (cached.sha256 != digest or cached.bytes != after.st_size
+                or (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns)):
+            raise ConfigurationError(f"VTK mesh changed during inspection: {source}")
+        _cache_vtk_metadata(cached)
+        return replace(cached, path=str(source))
+    except OSError as error:
+        raise ConfigurationError(f"Could not read VTK mesh {source}: {error}") from error
+
+
+def _inspect_vtk_uncached(path: Path | str) -> MeshMetadata:
     """Validate and inventory one legacy VTK triangular PolyData mesh.
 
     Legacy binary VTK coordinates are big-endian by specification. Reading the
@@ -212,6 +251,16 @@ def inspect_vtk(path: Path | str) -> MeshMetadata:
     except OSError as error:
         raise ConfigurationError(f"Could not read VTK mesh {mesh_path}: {error}") from error
 
+    metadata, _ = _inspect_vtk_bytes(raw, mesh_path)
+    return metadata
+
+
+def _inspect_vtk_bytes(
+    raw: bytes,
+    mesh_path: Path,
+    *,
+    with_geometry: bool = False,
+) -> tuple[MeshMetadata, TriangleMesh | None]:
     header = _HEADER_RE.search(raw)
     encoding_match = _ENCODING_RE.search(raw[:1024])
     dataset_match = _DATASET_RE.search(raw[:2048])
@@ -258,7 +307,7 @@ def inspect_vtk(path: Path | str) -> MeshMetadata:
     if diagonal <= 0:
         raise ConfigurationError(f"VTK mesh has a degenerate bounding box: {mesh_path}")
 
-    vtk51_cells = _read_vtk51_offsets(
+    split_arrays = _read_vtk51_offsets(
         raw,
         polygons_match,
         polygon_header_count,
@@ -266,18 +315,19 @@ def inspect_vtk(path: Path | str) -> MeshMetadata:
         encoding,
         mesh_path,
     )
-    if vtk51_cells is None:
+    if split_arrays is None:
         cell_count = polygon_header_count
         triangular = connectivity_size == cell_count * 4
     else:
-        cell_count, triangular = vtk51_cells
+        offsets, _, triangular = split_arrays
+        cell_count = len(offsets) - 1
     if not triangular:
         raise ConfigurationError(
             "VTK POLYGONS are not exclusively triangular "
             f"({cell_count} cells, connectivity size {connectivity_size}): {mesh_path}"
         )
 
-    return MeshMetadata(
+    metadata = MeshMetadata(
         path=str(mesh_path),
         bytes=len(raw),
         sha256=hashlib.sha256(raw).hexdigest(),
@@ -290,6 +340,23 @@ def inspect_vtk(path: Path | str) -> MeshMetadata:
         bounds=tuple(float(value) for value in bounds),
         bounding_box_extents=tuple(float(value) for value in extents),
         bounding_box_diagonal=float(diagonal),
+    )
+    geometry = None
+    if with_geometry:
+        triangles = _read_vtk_triangles(
+            raw, polygons_match, point_count, encoding, mesh_path, split_arrays,
+        )
+        if len(triangles) != cell_count:
+            raise ConfigurationError(
+                f"VTK triangle count changed between inspection and parsing: {mesh_path}"
+            )
+        geometry = TriangleMesh(vertices=_point_rows(values), triangles=triangles)
+    return metadata, geometry
+
+
+def _point_rows(values: list[float]) -> tuple[tuple[float, float, float], ...]:
+    return tuple(
+        (values[index], values[index + 1], values[index + 2]) for index in range(0, len(values), 3)
     )
 
 
@@ -319,9 +386,7 @@ def read_vtk_points(path: Path | str) -> tuple[tuple[float, float, float], ...]:
         mesh_path,
     )
     _bounds_from_values(values, mesh_path)
-    return tuple(
-        (values[index], values[index + 1], values[index + 2]) for index in range(0, len(values), 3)
-    )
+    return _point_rows(values)
 
 
 def _read_integer_payload(
@@ -357,13 +422,13 @@ def _read_vtk_triangles(
     point_count: int,
     encoding: str,
     path: Path,
+    split_arrays: tuple[list[int], re.Match[bytes], bool] | None,
 ) -> tuple[tuple[int, int, int], ...]:
     header_count = int(polygons_match.group(1))
     connectivity_count = int(polygons_match.group(2))
-    offsets_match = _OFFSETS_RE.match(raw, polygons_match.end())
     triangles: list[tuple[int, int, int]] = []
 
-    if offsets_match is None:
+    if split_arrays is None:
         values, _ = _read_integer_payload(
             raw,
             start=polygons_match.end(),
@@ -384,41 +449,7 @@ def _read_vtk_triangles(
         if cursor != connectivity_count:
             raise ConfigurationError(f"VTK POLYGONS size does not match the declared cells: {path}")
     else:
-        offset_width = _integer_width(offsets_match.group(1), path)
-        if encoding == "BINARY":
-            offsets, offsets_end = _read_integer_payload(
-                raw,
-                start=offsets_match.end(),
-                count=header_count,
-                width=offset_width,
-                encoding=encoding,
-                path=path,
-                label="OFFSETS",
-            )
-            connectivity_match = _CONNECTIVITY_RE.match(raw, offsets_end)
-        else:
-            connectivity_match = _CONNECTIVITY_RE.search(raw, offsets_match.end())
-            if connectivity_match is None:
-                raise ConfigurationError(f"VTK 5.1 CONNECTIVITY section is missing: {path}")
-            try:
-                offsets = [
-                    int(token)
-                    for token in raw[offsets_match.end() : connectivity_match.start()]
-                    .decode("ascii")
-                    .split()
-                ]
-            except (UnicodeDecodeError, ValueError) as error:
-                raise ConfigurationError(f"Could not parse ASCII VTK OFFSETS: {path}") from error
-        if connectivity_match is None:
-            raise ConfigurationError(f"VTK 5.1 CONNECTIVITY section is missing: {path}")
-        if len(offsets) != header_count:
-            raise ConfigurationError(
-                f"VTK 5.1 expected {header_count} offsets, found {len(offsets)}: {path}"
-            )
-        if len(offsets) < 2 or offsets[0] != 0 or offsets[-1] != connectivity_count:
-            raise ConfigurationError(
-                f"VTK 5.1 offsets do not span the declared connectivity array: {path}"
-            )
+        offsets, connectivity_match, _ = split_arrays
         connectivity_width = _integer_width(connectivity_match.group(1), path)
         connectivity, _ = _read_integer_payload(
             raw,
@@ -430,8 +461,6 @@ def _read_vtk_triangles(
             label="CONNECTIVITY",
         )
         for start, end in zip(offsets[:-1], offsets[1:], strict=True):
-            if end - start != 3:
-                raise ConfigurationError(f"VTK POLYGONS are not exclusively triangular: {path}")
             triangles.append(tuple(connectivity[start:end]))
 
     for triangle in triangles:
@@ -444,31 +473,34 @@ def _read_vtk_triangles(
     return tuple(triangles)
 
 
-def read_vtk_polydata(path: Path | str) -> TriangleMesh:
-    """Return vertices and triangle connectivity from supported legacy VTK PolyData."""
+def _read_vtk_polydata_bytes(raw: bytes, path: Path) -> tuple[MeshMetadata, TriangleMesh]:
+    """Derive validated metadata and geometry from the same immutable snapshot."""
+    metadata, geometry = _inspect_vtk_bytes(raw, path, with_geometry=True)
+    assert geometry is not None
+    _cache_vtk_metadata(metadata)
+    return metadata, geometry
 
+
+def read_vtk_polydata_with_metadata(path: Path | str) -> tuple[MeshMetadata, TriangleMesh]:
+    """Read legacy VTK PolyData metadata and geometry from one byte snapshot."""
     mesh_path = Path(path).resolve()
-    metadata = inspect_vtk(mesh_path)
     try:
+        before = mesh_path.stat()
         raw = mesh_path.read_bytes()
+        after = mesh_path.stat()
     except OSError as error:
         raise ConfigurationError(f"Could not read VTK mesh {mesh_path}: {error}") from error
-    encoding_match = _ENCODING_RE.search(raw[:1024])
-    polygons_match = _POLYGONS_RE.search(raw)
-    if encoding_match is None or polygons_match is None:
-        raise ConfigurationError(f"VTK mesh has no readable POLYGONS section: {mesh_path}")
-    triangles = _read_vtk_triangles(
-        raw,
-        polygons_match,
-        metadata.points,
-        encoding_match.group(1).decode("ascii").upper(),
-        mesh_path,
-    )
-    if len(triangles) != metadata.cells:
-        raise ConfigurationError(
-            f"VTK triangle count changed between inspection and parsing: {mesh_path}"
-        )
-    return TriangleMesh(vertices=read_vtk_points(mesh_path), triangles=triangles)
+    if len(raw) != after.st_size or (before.st_size, before.st_mtime_ns) != (
+        after.st_size, after.st_mtime_ns
+    ):
+        raise ConfigurationError(f"VTK mesh changed during inspection: {mesh_path}")
+    return _read_vtk_polydata_bytes(raw, mesh_path)
+
+
+def read_vtk_polydata(path: Path | str) -> TriangleMesh:
+    """Return vertices and triangle connectivity from supported legacy VTK PolyData."""
+    _, geometry = read_vtk_polydata_with_metadata(path)
+    return geometry
 
 
 def write_vtk_polydata(
@@ -478,7 +510,13 @@ def write_vtk_polydata(
     *,
     title: str = "DiffeoForge surface",
 ) -> Path:
-    """Write deterministic, exclusive ASCII legacy VTK triangular PolyData."""
+    """Write deterministic, exclusive ASCII legacy VTK triangular PolyData.
+
+    Validation and output are deliberately streamed over the supplied sequences.
+    The former implementation materialized normalized copies of every vertex,
+    triangle, and output line at once, which multiplied peak memory for legitimate
+    high-resolution cohorts during landmark-GPA preparation.
+    """
 
     destination = Path(path).resolve()
     if not isinstance(title, str) or not title.strip() or "\n" in title or "\r" in title:
@@ -487,56 +525,52 @@ def write_vtk_polydata(
         title.encode("ascii")
     except UnicodeEncodeError as error:
         raise ValueError("title must contain only ASCII characters") from error
-    try:
-        normalized_vertices = tuple(
-            tuple(float(coordinate) for coordinate in vertex) for vertex in vertices
-        )
-    except (TypeError, ValueError) as error:
-        raise TypeError("vertices must be a sequence of numeric rows") from error
-    if not normalized_vertices or any(len(vertex) != 3 for vertex in normalized_vertices):
+    if len(vertices) == 0 or any(len(vertex) != 3 for vertex in vertices):
         raise ValueError("vertices must have shape (n, 3)")
-    if not all(math.isfinite(value) for vertex in normalized_vertices for value in vertex):
-        raise ValueError("vertices must contain only finite values")
-
-    normalized_triangles: list[tuple[int, int, int]] = []
+    try:
+        for vertex in vertices:
+            if not all(math.isfinite(float(value)) for value in vertex):
+                raise ValueError("vertices must contain only finite values")
+    except (TypeError, ValueError) as error:
+        if isinstance(error, ValueError) and "finite" in str(error):
+            raise
+        raise TypeError("vertices must be a sequence of numeric rows") from error
+    if len(triangles) == 0:
+        raise ValueError("triangles must contain at least one face")
+    maximum_index = len(vertices) - 1
     try:
         for triangle in triangles:
             if len(triangle) != 3:
                 raise ValueError("triangles must have shape (n, 3)")
             if any(
-                isinstance(index, bool) or not isinstance(index, Integral) for index in triangle
+                isinstance(index, bool) or not isinstance(index, Integral)
+                for index in triangle
             ):
                 raise TypeError("triangle indices must be integers")
-            normalized_triangles.append(tuple(int(index) for index in triangle))
+            if min(triangle) < 0 or max(triangle) > maximum_index:
+                raise ValueError("triangles contain an out-of-range vertex index")
+            if len(set(triangle)) != 3:
+                raise ValueError("triangles contain a repeated vertex index")
     except TypeError as error:
         if "triangle indices" in str(error):
             raise
         raise TypeError("triangles must be a sequence of integer rows") from error
-    if not normalized_triangles:
-        raise ValueError("triangles must contain at least one face")
-    maximum_index = len(normalized_vertices) - 1
-    for triangle in normalized_triangles:
-        if min(triangle) < 0 or max(triangle) > maximum_index:
-            raise ValueError("triangles contain an out-of-range vertex index")
-        if len(set(triangle)) != 3:
-            raise ValueError("triangles contain a repeated vertex index")
 
     def coordinate(value: float) -> str:
         return format(0.0 if value == 0.0 else value, ".17g")
 
-    lines = [
-        "# vtk DataFile Version 3.0",
-        title.strip(),
-        "ASCII",
-        "DATASET POLYDATA",
-        f"POINTS {len(normalized_vertices)} double",
-        *(" ".join(coordinate(value) for value in vertex) for vertex in normalized_vertices),
-        f"POLYGONS {len(normalized_triangles)} {len(normalized_triangles) * 4}",
-        *(f"3 {a} {b} {c}" for a, b, c in normalized_triangles),
-    ]
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("x", encoding="ascii", newline="\n") as handle:
-        handle.write("\n".join(lines) + "\n")
+        handle.write("# vtk DataFile Version 3.0\n")
+        handle.write(f"{title.strip()}\n")
+        handle.write("ASCII\nDATASET POLYDATA\n")
+        handle.write(f"POINTS {len(vertices)} double\n")
+        for vertex in vertices:
+            handle.write(" ".join(coordinate(float(value)) for value in vertex))
+            handle.write("\n")
+        handle.write(f"POLYGONS {len(triangles)} {len(triangles) * 4}\n")
+        for a, b, c in triangles:
+            handle.write(f"3 {int(a)} {int(b)} {int(c)}\n")
     return destination
 
 

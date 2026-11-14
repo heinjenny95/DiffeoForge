@@ -1,0 +1,123 @@
+{
+  "faces_per_mesh": 10000,
+  "family": "calibration-registration-qc",
+  "phases": [
+    {
+      "phase": "cold_background_load",
+      "seconds": 0.2108446999991429,
+      "gui_timer_count": 21,
+      "max_gui_timer_gap_seconds": 0.01615279999532504,
+      "sampled_rss_bytes": 83963904
+    },
+    {
+      "phase": "install_and_first_frame",
+      "seconds": 0.13132059999770718,
+      "gui_timer_count": 10,
+      "max_gui_timer_gap_seconds": 0.028738700006215367,
+      "sampled_rss_bytes": 92430336
+    },
+    {
+      "phase": "navigation_0",
+      "seconds": 0.050350600002275314,
+      "gui_timer_count": 4,
+      "max_gui_timer_gap_seconds": 0.01875119999749586,
+      "sampled_rss_bytes": 94744576
+    },
+    {
+      "phase": "navigation_1",
+      "seconds": 0.04538420000608312,
+      "gui_timer_count": 4,
+      "max_gui_timer_gap_seconds": 0.014799699994910043,
+      "sampled_rss_bytes": 94842880
+    },
+    {
+      "phase": "navigation_2",
+      "seconds": 0.05976160000136588,
+      "gui_timer_count": 6,
+      "max_gui_timer_gap_seconds": 0.016818300005979836,
+      "sampled_rss_bytes": 94859264
+    },
+    {
+      "phase": "navigation_3",
+      "seconds": 0.050394300000334624,
+      "gui_timer_count": 4,
+      "max_gui_timer_gap_seconds": 0.017871399999421556,
+      "sampled_rss_bytes": 94859264
+    },
+    {
+      "phase": "navigation_4",
+      "seconds": 0.045123900003090966,
+      "gui_timer_count": 4,
+      "max_gui_timer_gap_seconds": 0.015729800004919525,
+      "sampled_rss_bytes": 94859264
+    },
+    {
+      "phase": "settled_after_navigation",
+      "seconds": 0.12921920000371756,
+      "gui_timer_count": 12,
+      "max_gui_timer_gap_seconds": 0.01836349999939557,
+      "sampled_rss_bytes": 93810688
+    },
+    {
+      "phase": "switch_loaded_specimen",
+      "seconds": 0.12859069999831263,
+      "gui_timer_count": 11,
+      "max_gui_timer_gap_seconds": 0.02231500000198139,
+      "sampled_rss_bytes": 93724672
+    },
+    {
+      "phase": "explicit_original_detail",
+      "seconds": 0.18050520000542747,
+      "gui_timer_count": 15,
+      "max_gui_timer_gap_seconds": 0.03819439999642782,
+      "sampled_rss_bytes": 94052352
+    },
+    {
+      "phase": "back_to_proxy",
+      "seconds": 0.14049449999583885,
+      "gui_timer_count": 14,
+      "max_gui_timer_gap_seconds": 0.018713099998421967,
+      "sampled_rss_bytes": 93782016
+    },
+    {
+      "phase": "reopen_0",
+      "seconds": 0.12961960000393447,
+      "gui_timer_count": 11,
+      "max_gui_timer_gap_seconds": 0.026794400000653695,
+      "sampled_rss_bytes": 96858112
+    },
+    {
+      "phase": "reopen_1",
+      "seconds": 0.12970389999827603,
+      "gui_timer_count": 11,
+      "max_gui_timer_gap_seconds": 0.020833599999605212,
+      "sampled_rss_bytes": 96866304
+    },
+    {
+      "phase": "reopen_2",
+      "seconds": 0.1407489000048372,
+      "gui_timer_count": 13,
+      "max_gui_timer_gap_seconds": 0.02394569999887608,
+      "sampled_rss_bytes": 96927744
+    },
+    {
+      "phase": "drain_after_active_owner_destruction",
+      "seconds": 0.010951199998089578,
+      "gui_timer_count": 1,
+      "max_gui_timer_gap_seconds": 0.010923499998170882,
+      "sampled_rss_bytes": 91471872
+    }
+  ],
+  "display_faces": [
+    7213,
+    7160
+  ],
+  "source_unchanged": true,
+  "proxy_cannot_approve_original_detail": true,
+  "explicit_original_detail_verified": true,
+  "active_render_at_owner_destruction": true,
+  "baseline_rss_bytes": 70361088,
+  "sampled_peak_rss_bytes": 98766848,
+  "rss_after_close_bytes": 91947008,
+  "scope": "fresh offscreen process; production canvases, not whole installed app"
+}

@@ -11,7 +11,7 @@ from typing import Literal
 
 from diffeoforge.desktop.worker_protocol import sha256_file
 
-ResultArtifactKind = Literal["csv", "json", "svg", "vtk"]
+ResultArtifactKind = Literal["csv", "json", "svg", "txt", "vtk"]
 _PCA_DISPLAY_LIMIT = 10
 _HISTORY_COLUMNS = (
     "cycle",
@@ -53,8 +53,19 @@ class ModernResultArtifact:
 
 
 @dataclass(frozen=True)
+class RegistrationQCItem:
+    """One full-cohort subject ranked by a geometric registration-QC proxy."""
+
+    rank: int
+    subject_name: str
+    residual_p95: float
+    original_artifact_key: str
+    reconstruction_artifact_key: str
+
+
+@dataclass(frozen=True)
 class ModernResultReview:
-    """Read-only summary created only from a fully verified Modern workflow."""
+    """Read-only summary created only from a fully verified atlas/PCA workflow."""
 
     run_directory: Path
     bundle_directory: Path
@@ -64,7 +75,7 @@ class ModernResultReview:
     workflow_manifest_sha256: str
     bundle_manifest_path: Path
     bundle_manifest_sha256: str
-    optimizer_converged: bool
+    optimizer_converged: bool | None
     optimizer_termination_reason: str
     optimizer_cycles_completed: int
     optimizer_max_cycles: int
@@ -76,12 +87,27 @@ class ModernResultReview:
     scientific_boundaries: tuple[str, ...]
     pca_pc2_pc3_unavailable_reason: str | None = None
     optimizer_convergence_plot_unavailable_reason: str | None = None
+    engine_route: Literal["modern", "deformetrica_reference"] = "modern"
+    execution_duration_seconds: float | None = None
+    optimizer_stop_interpretation: str | None = None
+    additional_artifact_roots: tuple[Path, ...] = ()
+    additional_manifest_bindings: tuple[tuple[Path, str], ...] = ()
+    registration_qc: tuple[RegistrationQCItem, ...] = ()
+    pca_method_id: str = "cartesian_initial_momenta_pca"
+    pca_method_label: str = "Cartesian initial-momenta PCA — Modern Engine"
+    registration_qc_metric_label: str = "nearest-vertex p95 (proxy)"
 
     def artifact(self, key: str) -> ModernResultArtifact:
         for artifact in self.artifacts:
             if artifact.key == key:
                 return artifact
         raise KeyError(key)
+
+    def registration_qc_item(self, subject_name: str) -> RegistrationQCItem:
+        for item in self.registration_qc:
+            if item.subject_name == subject_name:
+                return item
+        raise KeyError(subject_name)
 
 
 def _safe_bundle_path(root: Path, value: object, *, label: str) -> Path:
@@ -309,7 +335,7 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
     cumulative = 0.0
     pca_items: list[ResultReviewItem] = [
         ResultReviewItem(
-            "PCA space",
+            "Cartesian initial-momenta PCA — Modern Engine",
             f"{pca['components']} components · rank {pca['numerical_rank']}",
             "PCA of subject-specific initial momenta; not a taxonomic axis.",
         ),
@@ -368,6 +394,49 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         "vtk",
         "Template surface estimated by the Modern atlas.",
     )
+    for position, subject in enumerate(bundle["subjects"], start=1):
+        add_artifact(
+            f"subject-reconstruction-{position}",
+            f"{subject['label']}",
+            subject["reconstruction_path"],
+            "vtk",
+            "Final subject-specific reconstruction for visual atlas quality control.",
+        )
+    workflow_artifacts = {record["path"]: record for record in workflow["artifacts"]}
+    inputs_by_label = {record["label"]: record for record in workflow["input"]["subjects"]}
+    if set(inputs_by_label) != {subject["label"] for subject in bundle["subjects"]}:
+        raise ModernResultReviewError("Visual review originals do not match reconstructed subjects")
+    qc_items = []
+    for position, subject in enumerate(bundle["subjects"], start=1):
+        source = inputs_by_label[subject["label"]]
+        value = source["aligned_path"] or source["raw_path"]
+        record = workflow_artifacts[value]
+        path = _safe_bundle_path(run_directory, value, label="Registration original")
+        if path.stat().st_size != record["bytes"] or sha256_file(path) != record["sha256"]:
+            raise ModernResultReviewError("Registration original changed after verification")
+        key = f"subject-original-{position}"
+        artifacts.append(
+            ModernResultArtifact(
+                key, str(subject["label"]), path, "vtk", record["bytes"], record["sha256"],
+                "Verified input in the same atlas coordinates as the reconstruction.",
+            )
+        )
+        qc_items.append(
+            RegistrationQCItem(
+                0, str(subject["label"]), _finite_number(subject["residual"], "QC residual"),
+                key, f"subject-reconstruction-{position}",
+            )
+        )
+    registration_qc = tuple(
+        RegistrationQCItem(
+            rank, item.subject_name, item.residual_p95,
+            item.original_artifact_key, item.reconstruction_artifact_key,
+        )
+        for rank, item in enumerate(
+            sorted(qc_items, key=lambda item: (-item.residual_p95, item.subject_name.casefold())),
+            start=1,
+        )
+    )
     add_artifact(
         "optimizer-history",
         "Optimization history (CSV)",
@@ -385,28 +454,28 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         )
     add_artifact(
         "pca-summary",
-        "PCA summary (JSON)",
+        "Cartesian initial-momenta PCA summary (JSON)",
         pca["summary_path"],
         "json",
         "Complete variance, rank, and sign convention.",
     )
     add_artifact(
         "pca-scores",
-        "PCA-Scores (CSV)",
+        "Cartesian initial-momenta PCA scores (CSV)",
         pca["scores_path"],
         "csv",
         "Open table of all subject scores.",
     )
     add_artifact(
         "pca-scree",
-        "PCA scree plot (SVG)",
+        "Cartesian initial-momenta PCA scree plot (SVG)",
         pca["plots"]["scree_path"],
         "svg",
         "Static, script-free SVG of explained variance.",
     )
     add_artifact(
         "pca-score-plot",
-        "PCA scores: PC1 vs PC2 (SVG)",
+        "Cartesian initial-momenta PCA: PC1 vs PC2 (SVG)",
         pca["plots"]["scores_path"],
         "svg",
         "Static, script-free SVG with explained variance on both axes.",
@@ -414,7 +483,7 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
     if secondary_plot_path is not None:
         add_artifact(
             "pca-score-plot-pc2-pc3",
-            "PCA scores: PC2 vs PC3 (SVG)",
+            "Cartesian initial-momenta PCA: PC2 vs PC3 (SVG)",
             secondary_plot_path,
             "svg",
             "Static, script-free SVG using the same score matrix and subject ordering.",
@@ -487,7 +556,9 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         ResultReviewItem("Project", str(workflow["project"]["name"]), "Manifested name."),
         ResultReviewItem(
             "Engine",
-            f"{workflow['engine']['id']} · {pairwise['mode']} · CPU/float64",
+            f"{workflow['engine']['id']} · {pairwise['mode']} · "
+            f"{str(workflow['engine']['device']).upper()}/"
+            f"{workflow['engine']['dtype']}",
             "Numerical route actually manifested by the workflow.",
         ),
         ResultReviewItem(
@@ -504,6 +575,12 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
             "Control points",
             str(bundle["parameters"]["control_points"]),
             "Manifested dimension of the momenta parameter space.",
+        ),
+        ResultReviewItem(
+            "PCA method",
+            "Cartesian initial-momenta PCA — Modern Engine",
+            "Linear deterministic PCA of subject-specific Cartesian initial momenta; "
+            "this is not nonlinear generic RBF KernelPCA.",
         ),
         ResultReviewItem(
             "Procrustes",
@@ -603,6 +680,11 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         quality=quality_items,
         artifacts=tuple(artifacts),
         scientific_boundaries=boundaries,
+        pca_method_id="cartesian_initial_momenta_pca",
+        registration_qc=registration_qc,
+        registration_qc_metric_label="attachment residual",
+        additional_artifact_roots=(run_directory,),
+        pca_method_label="Cartesian initial-momenta PCA — Modern Engine",
         pca_pc2_pc3_unavailable_reason=(
             None if secondary_plot_path is not None else str(secondary_unavailable_reason)
         ),
@@ -624,17 +706,46 @@ def verify_result_artifact(review: ModernResultReview, key: str) -> Path:
         raise ModernResultReviewError("Workflow manifest changed after result review")
     if bundle_sha256 != review.bundle_manifest_sha256:
         raise ModernResultReviewError("Bundle manifest changed after result review")
+    for manifest_path, expected_sha256 in review.additional_manifest_bindings:
+        try:
+            observed_sha256 = sha256_file(manifest_path)
+        except OSError as error:
+            raise ModernResultReviewError(
+                "An additional reviewed result manifest is no longer readable"
+            ) from error
+        if observed_sha256 != expected_sha256:
+            raise ModernResultReviewError(
+                "An additional reviewed result manifest changed after result review"
+            )
     try:
         artifact = review.artifact(key)
     except KeyError as error:
         raise ModernResultReviewError(f"Unknown result artifact key: {key!r}") from error
     path = artifact.path
+    roots = (review.bundle_directory, *review.additional_artifact_roots)
+    resolved = path.resolve()
+    matched_root: Path | None = None
+    for root in roots:
+        try:
+            resolved.relative_to(root.resolve())
+        except ValueError:
+            continue
+        matched_root = root
+        break
+    if matched_root is None:
+        raise ModernResultReviewError("Selected artifact escapes the reviewed artifact roots")
+    cursor = matched_root
+    symbolic = cursor.is_symlink()
     try:
-        resolved = path.resolve()
-        resolved.relative_to(review.bundle_directory.resolve())
+        relative = path.relative_to(matched_root)
     except ValueError as error:
-        raise ModernResultReviewError("Selected artifact escapes the reviewed bundle") from error
-    if path.is_symlink() or not path.is_file():
+        raise ModernResultReviewError(
+            "Selected artifact path differs from its reviewed root"
+        ) from error
+    for part in relative.parts:
+        cursor = cursor / part
+        symbolic = symbolic or cursor.is_symlink()
+    if symbolic or not path.is_file():
         raise ModernResultReviewError("Selected result artifact is missing or symbolic")
     try:
         matches = path.stat().st_size == artifact.bytes and sha256_file(path) == artifact.sha256
