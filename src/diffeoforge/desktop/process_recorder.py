@@ -427,6 +427,9 @@ class ProcessRecorder(QObject):
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
+        # The video canvas and all offsets are already in physical pixels.
+        # Do not let drawPixmap shrink the fitted image by the source screen's DPR.
+        scaled.setDevicePixelRatio(1.0)
         x, y = (w - scaled.width()) // 2, (h - 44 - scaled.height()) // 2
         painter.drawPixmap(x, y, scaled)
         scale = scaled.width() / max(1, window.width())
@@ -436,8 +439,13 @@ class ProcessRecorder(QObject):
             if popup.windowType() != Qt.WindowType.Popup:
                 continue
             offset = window.mapFromGlobal(popup.mapToGlobal(QPoint(0, 0)))
-            p = popup.grab().scaled(round(popup.width() * scale), round(popup.height() * scale))
-            painter.drawPixmap(x + round(offset.x() * scale), y + round(offset.y() * scale), p)
+            scaled_popup = popup.grab().scaled(
+                round(popup.width() * scale), round(popup.height() * scale)
+            )
+            scaled_popup.setDevicePixelRatio(1.0)
+            painter.drawPixmap(
+                x + round(offset.x() * scale), y + round(offset.y() * scale), scaled_popup
+            )
         point = window.mapFromGlobal(QCursor.pos())
         if window.rect().contains(point) and self._owned(QApplication.activeWindow()):
             cx, cy = x + round(point.x() * scale), y + round(point.y() * scale)

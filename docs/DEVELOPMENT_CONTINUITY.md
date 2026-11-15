@@ -1,5 +1,13 @@
 # Development continuity — dev192 installed and verified
 
+## dev206 — fit recorded windows to the video frame at high DPI
+
+Process recording fits the active owned window to the video frame using
+physical video pixels. Window and popup captures use the same scale as the
+cursor and click markers, including on displays with fractional scaling.
+Pilot review can fill the available video area when opened full screen.
+The correction applies when capturing new frames.
+
 ## dev205 — earlier control-point comparison and full-screen pilot review
 
 After an unsuitable ordinary single-form fit with high or extreme expected

@@ -10,6 +10,7 @@ import pytest
 pytest.importorskip("PySide6")
 pytest.importorskip("imageio_ffmpeg")
 from PySide6.QtCore import QObject, QPoint, QSettings, Qt, Signal, Slot
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QLineEdit, QVBoxLayout, QWidget
 
@@ -177,6 +178,43 @@ def test_owned_dialog_capture_excludes_foreign_windows_and_wait_mode(application
         foreign.close()
         dialog.close()
         stop(application, window, rec)
+
+
+@pytest.mark.parametrize("pixel_ratio", [1, 1.25, 1.5, 2])
+def test_recording_fits_high_dpi_dialog_and_popup_to_video_pixels(
+    application, tmp_path, monkeypatch, pixel_ratio,
+):
+    window, recorder, _settings = setup(tmp_path)
+    dialog = QDialog(window)
+    dialog.resize(400, 200)
+    popup = QWidget(dialog, Qt.WindowType.Popup)
+    popup.resize(80, 60)
+    try:
+        dialog.show()
+        popup.move(dialog.mapToGlobal(QPoint(80, 60)))
+        popup.show()
+        application.processEvents()
+        monkeypatch.setattr(recorder, "_capture_window", lambda: dialog)
+        # Model actual Qt widget grabs even when the test display itself runs at 100%.
+        for widget, color in ((dialog, "#ff0000"), (popup, "#00ff00")):
+            pixmap = QPixmap(widget.size() * pixel_ratio)
+            pixmap.setDevicePixelRatio(pixel_ratio)
+            pixmap.fill(QColor(color))
+            monkeypatch.setattr(widget, "grab", lambda pixmap=pixmap: QPixmap(pixmap))
+
+        image = recorder._image(time.monotonic(), "pilot_review")
+        # A 400×200 logical window fits a 640×320 rectangle with 18px above it.
+        assert image.pixelColor(620, 325) == QColor("#ff0000")
+        assert image.pixelColor(620, 350) == QColor("#e9eff0")
+        offset = dialog.mapFromGlobal(popup.mapToGlobal(QPoint()))
+        right = round((offset.x() + popup.width()) * 1.6)
+        bottom = 18 + round((offset.y() + popup.height()) * 1.6)
+        assert image.pixelColor(right - 8, bottom - 8) == QColor("#00ff00")
+        assert image.pixelColor(right + 8, bottom - 8) == QColor("#ff0000")
+    finally:
+        popup.close()
+        dialog.close()
+        stop(application, window, recorder)
 
 
 def test_real_gui_stall_pauses_video_without_splitting_or_cutting_responsive_waits(
@@ -392,20 +430,47 @@ def test_async_pilot_open_records_rotating_meshes_during_actual_modal_review(
     monkeypatch.setattr(
         "diffeoforge.desktop.pilot_preview.load_pilot_preview", lambda path, **_kw: _model(path),
     )
-    observed, closed = [], []
+    observed, closed, video_marker = [], [], []
 
     class ObservedViewer(module.CalibrationCandidateViewerDialog):
         def exec(self):
+            readiness = QTimer(self)
+
             def inspect():
+                if not self.canvas.comparison_ready:
+                    return
+                readiness.stop()
                 observed.append((rec._capture_window() is self, rec._recording_mode(),
                                  self.canvas.comparison_ready))
+                # A marker near the bottom-right edge measures window framing in
+                # the decoded frames independently of the mesh pose and lighting.
+                marker = QLabel(self)
+                marker.setStyleSheet("background-color: #00ff00;")
+                marker.setGeometry(self.width() - 40, self.height() - 40, 32, 32)
+                marker.show()
+                fitted = self.size().scaled(640, 356, Qt.AspectRatioMode.KeepAspectRatio)
+                video_marker.append((
+                    (640 - fitted.width()) // 2
+                    + round(marker.geometry().center().x() * fitted.width() / self.width()),
+                    (356 - fitted.height()) // 2
+                    + round(marker.geometry().center().y() * fitted.height() / self.height()),
+                ))
+                QTimer.singleShot(350, lambda: self.canvas.set_linked_camera(
+                    (0.5, 0.65, 1.0, (0.0, 0.0), False),
+                ))
+                QTimer.singleShot(1300, self.reject)
 
-            QTimer.singleShot(500, inspect)
-            QTimer.singleShot(850, lambda: self.canvas.set_linked_camera(
-                (0.5, 0.65, 1.0, (0.0, 0.0), False),
-            ))
-            QTimer.singleShot(1800, self.reject)
-            result = super().exec()
+            readiness.timeout.connect(inspect)
+            readiness.start(50)
+            timeout = QTimer(self)
+            timeout.setSingleShot(True)
+            timeout.timeout.connect(self.reject)
+            timeout.start(7000)
+            try:
+                result = super().exec()
+            finally:
+                readiness.stop()
+                timeout.stop()
             closed.append(True)
             return result
 
@@ -429,16 +494,19 @@ def test_async_pilot_open_records_rotating_meshes_during_actual_modal_review(
         reader = imageio_ffmpeg.read_frames(str(rec.last_output))
         try:
             next(reader)
-            blue_counts = []
+            x, y = video_marker[0]
+            framed_mesh_count = 0
             for frame in reader:
                 pixels = np.frombuffer(frame, np.uint8).reshape(400, 640, 3)
-                blue_counts.append(np.count_nonzero(
+                red, green, blue = pixels[y, x]
+                blue_count = np.count_nonzero(
                     (pixels[:, :, 0] < 80) & (pixels[:, :, 1] > 40)
                     & (pixels[:, :, 1] < 140) & (pixels[:, :, 2] > 120),
-                ))
+                )
+                framed_mesh_count += red < 90 and green > 190 and blue < 90 and blue_count > 300
         finally:
             reader.close()
-        assert sum(count > 300 for count in blue_counts) >= 5
+        assert framed_mesh_count >= 5
     finally:
         pilot.close()
         window._reference_calibration_dialog = None
