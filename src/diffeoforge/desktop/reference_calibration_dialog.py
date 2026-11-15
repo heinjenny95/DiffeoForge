@@ -3054,6 +3054,14 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             if root == self.study_directory:
                 if action == "common_review":
                     self._open_common_saved_fit(identifier)
+                elif action == "fit_direction_compare":
+                    from diffeoforge.desktop.guided_fit_direction import open_comparison
+
+                    open_comparison(self, identifier)
+                elif action == "fit_direction_inputs":
+                    from diffeoforge.desktop.guided_diagnosis import inspect_inputs
+
+                    inspect_inputs(self, identifier)
                 else:
                     self._start_pilot(adaptive=False, guided_action=(
                         action, identifier, getattr(self, "_guided_footer_goal", None)))
@@ -4772,8 +4780,8 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             (root, candidate), prepare,
         )
 
-    def _open_guided_working_fit(self, identifier, reference):
-        self._open_guided_saved_fit(reference, working_for=identifier)
+    def _open_guided_working_fit(self, identifier, reference, *, view_hint=None):
+        self._open_guided_saved_fit(reference, working_for=identifier, view_hint=view_hint)
 
     def _open_common_saved_fit(self, reference):
         if self._view_loading or self._view_closed or self._review_saving or self._worker:
@@ -4811,7 +4819,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
 
         self._viewer_preparation.request_operation(("guided-common", origin, reference), prepare)
 
-    def _open_guided_saved_fit(self, reference, *, working_for=None):
+    def _open_guided_saved_fit(self, reference, *, working_for=None, view_hint=None):
         if self._view_loading or self._view_closed or self._review_saving or self._worker:
             return
         origin = self.study_directory
@@ -4831,7 +4839,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                     context = presentation(current, working_for)
                     choice = next(r for r in context["choices"] if r["reference"] == reference)
                     context.update(reference=reference, label=choice["label"],
-                                   target=reference["target"])
+                                   target=reference["target"], view_hint=view_hint)
                     return (parent, collect_calibration_qc_pairs(parent.study_directory, candidate),
                             normalized_candidate_subject_fit(parent, candidate), candidate, context)
                 return (parent, collect_calibration_qc_pairs(parent.study_directory, candidate),
@@ -4875,6 +4883,12 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                 from diffeoforge.desktop.guided_working_fit import show
 
                 show(self, key, prepared)
+            return
+        if key[0] == "guided-fit-direction":
+            if key[1] == self.study_directory and not self._worker:
+                from diffeoforge.desktop.guided_fit_direction import show_comparison
+
+                show_comparison(self, key[2], prepared)
             return
         if key[0] == "guided-inputs":
             if key[1] != self.study_directory or self._worker:

@@ -105,6 +105,32 @@ def test_capped_new_field_keeps_old_comparison_and_cannot_loop_unchanged(monkeyp
     assert alternative["available"] and alternative["anchor"] == reference
 
 
+@pytest.mark.parametrize("evidence", ["missing", "another-fit", "global-regression", "improved"])
+def test_difficult_fit_recommends_more_iterations_only_for_supported_seed(monkeypatch, evidence):
+    snapshot, data, reference = model(monkeypatch, outcome="same", goal="density", capped=True)
+    snapshot.plan.pilot_subject_count = 1
+    data["current"].config_path = "synthetic-global-field.yaml"
+    data["capacity_context"] = {"disparity": "extreme", "bounds": (0, 1, 0, 1, 0, 1)}
+    data["regions"] = [dict(radius=.4, symptom="detail")]
+    monkeypatch.setattr("diffeoforge.config.load_config", lambda _: {})
+    if evidence != "missing":
+        fit = data["current_reference"]
+        if evidence == "another-fit":
+            fit = dict(fit, candidate_id="previous-fit")
+        data["response_cases"] = [dict(
+            method="current", target="form.vtk", goal="detail", outcome="same",
+            reference=reference, fit=fit, values=reference["values"],
+            response={"status": "improved", "global_worse": evidence == "global-regression"},
+        )]
+
+    recommendation = guided_search.propose(snapshot, "fit", "detail", data)
+    assert recommendation["available"]
+    assert (recommendation["goal"] == "optimize") == (evidence == "improved")
+    explicit = guided_search.propose(snapshot, "fit", "goal:optimize", data)
+    assert explicit["available"]
+    assert explicit["initialization_reference"] == data["current_reference"]
+
+
 def test_selector_callbacks_perform_no_verification_or_file_reads(tmp_path, monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from pilot_view_helpers import wait_pilot_view

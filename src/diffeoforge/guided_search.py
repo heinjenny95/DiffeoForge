@@ -94,7 +94,7 @@ def inputs(snapshot, identifier, context, *, regions_override=None, allow_contin
     return verified
 
 
-def propose(snapshot, identifier, request, data):
+def propose(snapshot, identifier, request, data, *, follow_density_successors=True):
     """One explicit, meaningful test, retaining human preference independently of its seed."""
     info = guided.record(snapshot)
     strategy = info.get("strategy") or {}
@@ -149,8 +149,25 @@ def propose(snapshot, identifier, request, data):
     repetition_reason = (common_effort or {}).get("blocked_reason", "")
     can_optimize = seed_parent.plan.pilot_subject_count == 1 and iteration_limited(numerical) \
         and not extended and not repetition_reason
+    capacity_context = data.get("capacity_context")
+    automatic_extension = not explicit and can_optimize and symptom != "distortion"
     reason = ""
-    if not explicit and can_optimize and symptom != "distortion":
+    if (automatic_extension and capacity_context and not common_effort
+            and snapshot.plan.pilot_subject_count == 1
+            and not snapshot.attachment_comparison.get("regional_objective")
+            and not seed_parent.attachment_comparison.get("regional_objective")):
+        from diffeoforge.pilot_form_progress import is_common_check
+
+        if not (is_common_check(info) or is_common_check(guided.record(seed_parent))):
+            automatic_extension = bool(marked) and any(
+                row.get("fit") == seed and row.get("outcome") not in {"worse", "rejected"}
+                and not row.get("severe")
+                and response.get("status") == "improved" and response.get("global_worse") is False
+                for row in relevant if (response := row.get("response"))
+            )
+            if automatic_extension:
+                reason = "Saved surface measurements show improvement in the marked areas. "
+    if automatic_extension:
         goal = "optimize"
     elif not explicit and symptom in {"detail", "unsure"}:
         fallback = "weight" if marked and base_values["attachment_kernel_width"] <= \
@@ -171,7 +188,6 @@ def propose(snapshot, identifier, request, data):
         seed, seed_parent = reference, parent
     available, blocked = True, ""
     step = 0
-    capacity_context = data.get("capacity_context")
     early_density = (capacity_context and not marked
         and not seed_parent.attachment_comparison.get("regional_objective")
         and symptom in {"detail", "unsure", "missing"}
@@ -207,16 +223,18 @@ def propose(snapshot, identifier, request, data):
         blocked = "This method/settings pair has a saved result. Inspect it or change a parameter."
     elif goal == "density":
         seed, seed_parent = reference, parent
-        # Repeat density on its most recent inspected, non-worse nested field; no
-        # projection, no promotion of that field as the retained comparison.
-        latest = next((r for r in reversed(local) if r.get("family", r.get("goal")) == "density"
-                       and r.get("fit") and r.get("outcome") in {"same", "better"}
-                       and not r.get("severe")
-                       and r.get('response', {}).get('status') not in {'worse', 'tradeoff'}
-                       and not r.get('response', {}).get('global_worse')), None)
-        if latest:
-            seed = latest["fit"]
-            seed_parent = data["references"][seed["directory"]]
+        if follow_density_successors:
+            # Adaptive search can expand the latest non-worse nested field.
+            latest = next((
+                r for r in reversed(local) if r.get("family", r.get("goal")) == "density"
+                and r.get("fit") and r.get("outcome") in {"same", "better"}
+                and not r.get("severe")
+                and r.get('response', {}).get('status') not in {'worse', 'tradeoff'}
+                and not r.get('response', {}).get('global_worse')
+            ), None)
+            if latest:
+                seed = latest["fit"]
+                seed_parent = data["references"][seed["directory"]]
         values = guided.adjusted_values(seed["values"], goal, conservative=True)
         method = base_method
         from diffeoforge.guided_density import controls_for
@@ -319,7 +337,8 @@ def propose(snapshot, identifier, request, data):
         for alternative in ("detail", "weight", "local_motion", "density", "motion", "smooth"):
             if alternative == goal:
                 continue
-            follow = propose(snapshot, identifier, "goal:" + alternative, data)
+            follow = propose(snapshot, identifier, "goal:" + alternative, data,
+                             follow_density_successors=follow_density_successors)
             if follow["available"]:
                 follow["reason"] = blocked + " " + follow["reason"]
                 return follow

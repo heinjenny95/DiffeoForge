@@ -108,6 +108,7 @@ def _context(snapshot):
 
 
 def _read_context(snapshot):
+    from diffeoforge.guided_density import controls_for
     from diffeoforge.pilot_form_progress import is_common_check
 
     cases, goals = [], []
@@ -146,7 +147,8 @@ def _read_context(snapshot):
                     regions=(info.get("feedback") or {}).get("regions", []),
                     iterations=other.attachment_comparison["iterations"],
                     stop=(candidate.metrics or {}).get("optimizer_stop_signal"),
-                    control_count=other.attachment_comparison["controls"]["count"],
+                    control_count=controls_for(
+                        other.attachment_comparison, candidate.candidate_id)["count"],
                     severe=any(r.get("refinement_guard", {}).get("severe") is True for r in
                         (candidate.metrics or {}).get("attachment_comparison", {}).get(
                             "subjects", {}).values()),
@@ -310,14 +312,67 @@ def prepare_proposals(snapshot, context):
             context["proposals"][identifier] = {
                 request: propose(snapshot, identifier, request, verified) for request in requests}
             selected = (context["feedback"].get(identifier) or {}).get("selected")
-            if selected and selected.get("directory") != str(snapshot.study_directory):
+            if selected and (selected["directory"], selected["candidate_id"]) != (
+                    str(snapshot.study_directory), identifier):
                 from diffeoforge import guided_working_fit as working
 
                 parent, working_data = working.inputs(snapshot, identifier, context,
                                                       verified=verified)
                 context["working_proposals"][identifier] = {
                     request: working.propose(parent, request, working_data) for request in requests}
+        context["fit_direction"] = _prepare_fit_direction(snapshot, context)
     return context
+
+
+def _prepare_fit_direction(snapshot, context):
+    from diffeoforge.guided_fit_direction import preview
+
+    direction = preview(snapshot, context)
+    if not direction or direction["mode"] != "compare":
+        return direction
+
+    identifier = direction["identifier"]
+    feedback = context["feedback"][identifier]
+    selected = feedback["selected"]
+    working = context["working_proposals"].get(identifier)
+    if not working or selected not in (direction["current"], direction["alternative"]):
+        return direction
+    # Merely restoring a view or saving relative feedback is not an explicit
+    # choice to proceed from one of the compared fields.
+    chosen = next((event for event in reversed(study._load_events(snapshot.study_directory))
+                   if event["event"] == "guided_starting_fit_selected"), None)
+    if (not chosen or chosen.get("editing_candidate_id") != identifier
+            or chosen["reference"] != selected or feedback["needs_direction"]):
+        return direction
+
+    regions = feedback["problem_regions"].get(selected["target"], [])
+    symptoms = {row["symptom"] for row in regions if row.get("purpose", "problem") == "problem"}
+    if symptoms and symptoms <= {"detail", "missing"}:
+        request = "goal:detail"
+    elif symptoms == {"distortion"}:
+        request = "goal:smooth"
+    else:
+        request = None
+    proposal = working.get(request)
+    if proposal and proposal["available"] and proposal["initialization_reference"] == selected:
+        choice = next(row for row in feedback["choices"] if row["reference"] == selected)
+        count_key = "alternative_cp" if selected == direction["alternative"] else "current_cp"
+        count = direction[count_key]
+        label = f"{selected['method'].title()} · Test {choice['trial_index']} · {count:,} CP"
+        return dict(
+            direction, mode="trial", title=proposal["title"], start_label=label,
+            reason="This test compares the same marked areas on the selected saved fit. "
+                   "Review the affected areas and the rest of the shape after the test.",
+            request=dict(request=request, reference=selected, values=proposal["values"],
+                         goal=proposal["goal"], regions=regions),
+        )
+    if not symptoms or symptoms & {"alignment", "topology"}:
+        return dict(direction, mode="inputs", current=selected,
+                    reason="Inspect how the original template and specimen match before "
+                           "choosing another test. This opens the saved input overlay.")
+    # Leave refinements and history accessible for marks that do not support
+    # one safe preselected adjustment.
+    return None
 
 
 def trial_proposal(snapshot, identifier, symptom, *, context=None):
@@ -496,7 +551,15 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         elif action == "recover_start":
             from diffeoforge.guided_working_fit import trial
 
-            proposed = trial(snapshot, identifier, goal or "unsure")
+            if isinstance(goal, dict):
+                proposed = trial(snapshot, identifier, goal["request"])
+                if any(proposed[key] != goal[bound] for key, bound in (
+                    ("initialization_reference", "reference"), ("values", "values"),
+                    ("goal", "goal"),
+                )):
+                    raise ValueError("The suggested trial changed. Reopen the next-step guidance.")
+            else:
+                proposed = trial(snapshot, identifier, goal or "unsure")
         else:
             proposed = trial_proposal(snapshot, identifier, goal or "unsure")
         if not proposed["available"]:
@@ -516,6 +579,8 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         comparison = proposed["anchor"]
         comparison_snapshot = verify_reference(comparison)
         marked, cleared = region_state(snapshot, identifier, target)
+        if action == "recover_start" and isinstance(goal, dict) and goal["regions"] != marked:
+            raise ValueError("The marked areas changed. Reopen the next-step guidance.")
         feedback = capture(comparison_snapshot, comparison["candidate_id"], target, regions=marked)
         feedback["regions_cleared"] = cleared
         strategy["baseline"] = _reference(baseline_snapshot, baseline_id, target)

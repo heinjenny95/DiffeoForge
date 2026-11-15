@@ -527,6 +527,27 @@ def test_guided_search_and_regional_direct_route_use_same_continuation(case):
         assert row["goal"] == "optimize" and row["regional_continuation"]
 
 
+def test_explicit_regional_working_fit_refuses_density_that_discards_its_prefix(case):
+    from diffeoforge import guided_working_fit
+
+    case.snapshot.attachment_comparison = dict(
+        methods={case.identifier: "varifold"},
+        controls={"count": len(case.cp)},
+        regional_objective=case.config["project"]["parameter_provenance"]["regional_fit"],
+    )
+    case.snapshot.plan.selected_pilot_subjects = [SimpleNamespace(filename=case.ref["target"])]
+    case.snapshot.visual_reviews = {}
+    case.snapshot.subject_decisions = {}
+    case.snapshot.problem_regions = {}
+    case.info.update(target=case.ref["target"], screen_trial_limit=None)
+    data = dict(case.data, regions=[], context={"cases": [], "feedback": {}},
+                references={case.ref["directory"]: case.snapshot})
+
+    proposal = guided_working_fit.propose(case.snapshot, "goal:density", data)
+    assert not proposal["available"]
+    assert "Improve marked areas" in proposal["blocked_reason"]
+
+
 @pytest.mark.parametrize("new_runtime_markers", [False, True])
 def test_actual_batch_staging_never_presents_regional_terms_as_full_cohort(
     case, monkeypatch, new_runtime_markers,

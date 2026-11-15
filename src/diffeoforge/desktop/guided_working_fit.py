@@ -1,6 +1,7 @@
 """Annotate a saved fit in the current workspace, with no historical QC writes."""
 
 from copy import deepcopy
+from dataclasses import replace
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QDialog, QLabel, QPushButton
@@ -9,8 +10,15 @@ from PySide6.QtWidgets import QDialog, QLabel, QPushButton
 def viewer(window, origin, parent, candidate, pairs, fit, context):
     from diffeoforge.desktop.reference_calibration_dialog import CalibrationCandidateViewerDialog
 
+    pairs = tuple(p for p in pairs if p.required and p.original_path.name == context["target"])
+    hint = context.get("view_hint")
+    if (hint and len(pairs) == 1 and hint["reference"] == context["reference"]
+            and hint["hashes"] == (pairs[0].original_sha256, pairs[0].reconstruction_sha256)):
+        pairs = (replace(pairs[0], inspection_markers=hint["markers"]),)
+    else:
+        hint = None
     dialog = CalibrationCandidateViewerDialog(parent.study_directory, candidate, window,
-        pairs=tuple(p for p in pairs if p.required and p.original_path.name == context["target"]),
+        pairs=pairs,
         subject_fit=fit, read_only=True, compact_review=True,
         preview_cache=origin / "display-cache")
     dialog.setWindowTitle("Work from selected saved fit")
@@ -19,6 +27,20 @@ def viewer(window, origin, parent, candidate, pairs, fit, context):
         "Orange: original · Blue: selected saved reconstruction. Mark improvements and "
         "areas to retain here. Saving uses this fit as your working source; it does not "
         "alter its old review, approve it, prepare a trial or start fitting.")
+    if hint:
+        # The normal initial pair load resets the camera before the hand-off.
+        # Later full-detail loads must keep the user's new view.
+        def restore_view(_key, _models):
+            dialog._mesh_loader.loaded.disconnect(restore_view)
+            dialog.canvas.set_linked_camera(hint["camera"])
+
+        dialog._mesh_loader.loaded.connect(restore_view)
+        if hint["markers"]:
+            label = QLabel(
+                "Numbered areas are visual guides. Use the marking tool to select areas."
+            )
+            label.setWordWrap(True)
+            dialog.layout().addWidget(label)
     dialog.problem_regions = deepcopy(context["problem_regions"])
     dialog.cleared_region_subjects = set(context["cleared_region_subjects"])
     edit = QPushButton("Mark / edit multiple areas on this starting fit…")

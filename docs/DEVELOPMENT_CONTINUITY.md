@@ -1,5 +1,22 @@
 # Development continuity — dev192 installed and verified
 
+## dev207 — use saved evidence to choose the next pilot action
+
+After an unsuccessful individual fit, the pilot can open reviewed Current and
+Varifold fits of the exact same specimen in linked views. It uses repeated
+geometric distance measurements against the original and names both saved
+trials. Coarse regions direct inspection. The researcher decides which features
+matter anatomically and explicitly selects a working fit.
+
+The footer proposes one next action before the optional controls. Meaningful
+saved comparisons need no fitting. Repeated unsuccessful trials can prompt
+an input inspection. Confirmed local detail or distortion marks can prompt one
+fitting adjustment from the named saved field. Preparing the test preserves
+the existing geometry, reviews and run evidence. Run starts the prepared test.
+Selecting a prior field also binds subsequent density tests to that exact
+field, even if a newer fit is available. For difficult ordinary single fits,
+automatic continuation requires measured improvement on the marked areas.
+
 ## dev206 — fit recorded windows to the video frame at high DPI
 
 Process recording fits the active owned window to the video frame using

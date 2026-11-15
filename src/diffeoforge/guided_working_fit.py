@@ -83,12 +83,23 @@ def propose(parent, request, data):
     from diffeoforge.guided_search import propose as search_proposal
 
     ref = data["anchor"]
-    result = search_proposal(parent, ref["candidate_id"], request, data)
+    result = search_proposal(parent, ref["candidate_id"], request, data,
+                             follow_density_successors=False)
     if (result["available"] and (result.get("initialization_reference") != ref
             or result.get("initialization") not in {"learned", "nested", "residual"})):
-        result = dict(result, available=False, blocked_reason=
+        return dict(result, available=False, blocked_reason=
             "This adjustment cannot retain the selected saved field. Choose a compatible "
             "adjustment or inspect another starting fit; no fresh restart is prepared.")
+    if (result["available"] and result["initialization"] == "nested"
+            and parent.attachment_comparison.get("regional_objective")):
+        from diffeoforge.config import load_config
+        from diffeoforge.regional_fit import read_plan
+
+        plan = read_plan(load_config(data["current"].config_path))
+        if not plan or plan.get("residual"):
+            return dict(result, available=False, blocked_reason=
+                "This fit includes a preserved regional field. Use Improve marked areas "
+                "to continue the complete deformation.")
     return result
 
 

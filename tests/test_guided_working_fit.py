@@ -127,6 +127,51 @@ def test_working_density_retains_the_selected_fit_integration_grid(tmp_path, mon
     assert all(sha256_file(path) == digest for path, digest in before.items())
 
 
+def test_working_density_keeps_selected_source_when_a_newer_density_fit_exists(
+    tmp_path, monkeypatch
+):
+    import math
+
+    from test_guided_early_density import first_trial
+    from test_guided_pilot import run_batch
+    from test_pilot_region_feedback import reject
+
+    from diffeoforge.guided_density import controls_for
+
+    identifier = "guided-varifold"
+    _, base = first_trial(tmp_path, monkeypatch)
+    base = reject(base, identifier)
+    pair = guided.next_action(base.study_directory, "adaptive_density_comparison", identifier)
+    pair = run_batch(pair, monkeypatch)
+    pair = feedback.save_feedback(
+        pair.study_directory, identifier, decision(base, pair, "same")
+    )
+    retained = feedback.reference(base, identifier)
+    denser = feedback.reference(pair, identifier)
+    choice = payload(base, pair) | {"problem_regions": {}}
+    selected = guided.next_action(
+        pair.study_directory, "adaptive_working_start", identifier, goal=choice
+    )
+    context = strategy.prepare_proposals(selected, strategy.state(selected))
+    assert context["proposals"][identifier]["goal:density"]["initialization_reference"] == denser
+    preview = context["working_proposals"][identifier]["goal:density"]
+    assert preview["available"] and preview["initialization_reference"] == retained
+
+    revisited = guided.next_action(
+        selected.study_directory, "adaptive_working_start", identifier,
+        goal=choice | {"reference": denser},
+    )
+    saved_count = controls_for(revisited.attachment_comparison, identifier)["count"]
+    trial = guided.next_action(
+        revisited.study_directory, "adaptive_recover_start", identifier, goal="goal:density"
+    )
+    result = trial.attachment_comparison
+    assert result["refinement"]["initialization"] == "nested"
+    assert result["refinement"]["reference"] == denser
+    assert result["controls"]["count"] == math.ceil(1.5 * saved_count)
+    assert trial.candidates[0].attempts == 0 and not trial.visual_reviews
+
+
 @pytest.mark.parametrize("change", ["scope", "source", "other_form"])
 def test_working_edits_require_inspection_and_original_identity(tmp_path, monkeypatch, change):
     base, trial = attempted(tmp_path, monkeypatch)

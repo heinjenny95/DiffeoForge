@@ -1,0 +1,228 @@
+"""View a bound pair of saved pilot fits with the same original and camera."""
+
+from pathlib import Path
+
+import numpy as np
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QCheckBox, QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+
+from diffeoforge.desktop.calibration_comparison_widget import CalibrationComparisonCanvas3D
+from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
+from diffeoforge.desktop.reference_calibration_dialog import (
+    _FullscreenPilotDialog,
+    collect_calibration_qc_pairs,
+)
+
+
+def _prepare(origin, direction):
+    from diffeoforge import reference_calibration_study as study
+    from diffeoforge.guided_density import controls_for
+    from diffeoforge.guided_feedback import verify_reference
+    from diffeoforge.reference_guided_pilot import record
+
+    with study.calibration_verification_scope():
+        active = study.load_reference_calibration_study(origin)
+        info = record(active)
+        target = direction["target"]
+        if not info or info["target"] != target:
+            raise ValueError("The current pilot form changed. Reopen the comparison.")
+        allowed = {str(active.study_directory), *(row["directory"] for row in info["history"])}
+        active_inputs = study._verify_manifest(active.study_directory)["inputs"]
+        subject = next(row for row in active_inputs["subjects"] if row["filename"] == target)
+        source = (subject["sha256"], active_inputs["template"]["sha256"])
+        bindings = []
+        for name in ("current", "alternative"):
+            reference = direction[name]
+            if reference["directory"] not in allowed or reference["target"] != target:
+                raise ValueError("The comparison fits do not belong to this pilot form.")
+            parent = verify_reference(reference)
+            saved = record(parent)
+            if (Path(saved["origin"]).resolve() != Path(info["origin"]).resolve()
+                    or parent.plan.pilot_subject_count != 1):
+                raise ValueError("The comparison requires two saved single-form results.")
+            candidate = next(c for c in parent.candidates
+                             if c.candidate_id == reference["candidate_id"])
+            manifest = study._verify_manifest(parent.study_directory)
+            pair = next(p for p in collect_calibration_qc_pairs(parent.study_directory, candidate)
+                        if p.required and p.original_path.name == target)
+            template_sha = manifest["inputs"]["template"]["sha256"]
+            if (not all(source) or (pair.original_sha256, template_sha) != source
+                    or not pair.reconstruction_sha256):
+                raise ValueError("The compared fits must share the exact original and template.")
+            count = controls_for(parent.attachment_comparison, candidate.candidate_id)["count"]
+            if count != direction[f"{name}_cp"]:
+                raise ValueError("The saved control-point count changed. Reopen the comparison.")
+            headline = (f"{reference['method'].title()} · Test {saved['screen_trials_spent']} "
+                        f"· {count:,} CP")
+            bindings.append((pair, headline))
+        left, right = bindings
+        return (left[0], right[0]), (left[1], right[1])
+
+
+def open_comparison(window, direction):
+    if window._worker or window._view_loading or window._view_closed or window._review_saving:
+        return
+    origin = window.study_directory
+    window.status.setText("Preparing both saved overlays…")
+    window._viewer_preparation.request_operation(
+        ("guided-fit-direction", origin, direction), lambda: _prepare(origin, direction),
+    )
+
+
+def _markers(original_bounds, regions):
+    low = np.asarray(original_bounds[::2])
+    span = np.asarray(original_bounds[1::2]) - low
+    return {
+        f"Area {index}": tuple(low + (np.asarray(row["cell"]) + 0.5) * span / 4)
+        for index, row in enumerate(regions, 1)
+    }
+
+
+class _ComparisonDialog(_FullscreenPilotDialog):
+    """Open two settled overlays before handing an explicit choice to the pilot."""
+
+    def __init__(self, window, origin, direction, prepared):
+        super().__init__(window)
+        (left, right), labels = prepared
+        self.paths = (left.original_path, left.reconstruction_path, right.reconstruction_path)
+        self.hashes = (
+            left.original_sha256, left.reconstruction_sha256, right.reconstruction_sha256,
+        )
+        self.cache = origin / "display-cache"
+        self._alternative = direction["alternative"]
+        self._regions = direction["regions"]
+        self._markers = ()
+        self._loaded_detail = None
+        self.working_view = None
+        self.setWindowTitle("Compare saved pilot fits")
+        self.resize(1180, 730)
+        self.setMinimumSize(620, 430)
+        self.setProperty("processRecordingPilotReview", True)
+        layout = QVBoxLayout(self)
+        title = QLabel(direction["target"])
+        title.setObjectName("title")
+        title.setTextFormat(Qt.TextFormat.PlainText)
+        title.setWordWrap(True)
+        layout.addWidget(title)
+        hint = QLabel("Orange lines show the same original in both views. "
+                      "Blue shows each saved fit. Rotate either view to compare the same area.")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        views = QHBoxLayout()
+        self.canvases = tuple(CalibrationComparisonCanvas3D(
+            self, show_inspection_hints=False) for _ in labels)
+        for index, (heading, canvas) in enumerate(zip(labels, self.canvases, strict=True)):
+            panel = QVBoxLayout()
+            metric = direction["alternative_p95" if index else "current_p95"]
+            label = QLabel(f"{heading} · P95 {metric:.2f}%")
+            label.setWordWrap(True)
+            panel.addWidget(label)
+            canvas.setMinimumHeight(230)
+            canvas.original_detail.hide()
+            panel.addWidget(canvas, 1)
+            views.addLayout(panel, 1)
+        layout.addLayout(views, 1)
+        self.canvases[0].cameraChanged.connect(self.canvases[1].set_linked_camera)
+        self.canvases[1].cameraChanged.connect(self.canvases[0].set_linked_camera)
+
+        if self._regions:
+            areas = "  ·  ".join(
+                f"Area {index}: {row['current_p95']:.1f}% → {row['alternative_p95']:.1f}%"
+                for index, row in enumerate(self._regions, 1))
+            caption = QLabel(areas + "\nNumbered areas show approximate locations from "
+                             "repeated measurements. Check their anatomy in both views.")
+            caption.setWordWrap(True)
+            layout.addWidget(caption)
+        self.status = QLabel()
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        actions = QHBoxLayout()
+        actions.addWidget(self.full_screen_button)
+        self.detail = QCheckBox("Load full detail (optional, slower)")
+        actions.addWidget(self.detail)
+        actions.addStretch()
+        close = QPushButton("Close comparison")
+        close.clicked.connect(self.reject)
+        actions.addWidget(close)
+        self.work = QPushButton(f"Work from {labels[1]}…")
+        self.work.setObjectName("primary")
+        self.work.clicked.connect(self._choose_alternative)
+        self.work.setEnabled(False)
+        actions.addWidget(self.work)
+        layout.addLayout(actions)
+
+        self.loader = PreviewMeshLoader(self)
+        self.loader.loaded.connect(self._loaded)
+        self.loader.failed.connect(self._failed)
+        self.loader.activity_changed.connect(
+            lambda busy: self.setProperty("processRecordingWaiting", busy))
+        self.finished.connect(self.loader.cancel)
+        self.detail.toggled.connect(self._request)
+        for canvas in self.canvases:
+            canvas.fullResolutionReadyChanged.connect(self._update_actions)
+        self._request(False)
+
+    def _request(self, detail):
+        self._loaded_detail = None
+        self.work.setEnabled(False)
+        self.status.setText("Loading both saved overlays…")
+        self.loader.request_paths(
+            detail, self.paths, expected=self.hashes, pilot_cache=None if detail else self.cache,
+        )
+
+    def _loaded(self, detail, models):
+        if detail != self.detail.isChecked():
+            return
+        if any(model.path.resolve() != path.resolve() or model.sha256 != digest
+               for model, path, digest in zip(models, self.paths, self.hashes, strict=True)):
+            self._failed(detail, "Displayed meshes do not match the saved fits.")
+            return
+        original, left, right = models
+        bounds = np.asarray([model.bounds for model in models])
+        low, high = bounds[:, ::2].min(axis=0), bounds[:, 1::2].max(axis=0)
+        markers = _markers(original.bounds, self._regions)
+        self._markers = tuple(markers.items())
+        for canvas, reconstruction in zip(self.canvases, (left, right), strict=True):
+            canvas.set_models(original, reconstruction)
+            canvas.set_comparison_extent((low + high) / 2, float(max(high - low)))
+            canvas.set_inspection_markers(markers)
+            if detail:
+                canvas.original_detail.setChecked(True)
+        self._loaded_detail = detail
+        self.status.setText("P95 is a sampled surface distance as a percentage of the original "
+                            "diagonal. Your visual review determines suitability.")
+        self._update_actions()
+
+    def _failed(self, detail, message):
+        if detail == self.detail.isChecked():
+            self.status.setText("Comparison unavailable. " + message)
+
+    def _update_actions(self):
+        self.work.setEnabled(
+            self._loaded_detail == self.detail.isChecked()
+            and all(canvas.comparison_ready for canvas in self.canvases))
+
+    def _choose_alternative(self):
+        self._update_actions()
+        if self.work.isEnabled():
+            camera = self.canvases[1].camera_state()
+            self.working_view = dict(
+                reference=self._alternative,
+                hashes=(self.hashes[0], self.hashes[2]),
+                camera=(*camera[:4], False, *camera[5:]),
+                markers=self._markers,
+            )
+            self.accept()
+
+
+def show_comparison(window, direction, prepared):
+    origin = window.study_directory
+    dialog = _ComparisonDialog(window, origin, direction, prepared)
+    try:
+        chosen = dialog.working_view if dialog.exec() == QDialog.DialogCode.Accepted else None
+    finally:
+        dialog.deleteLater()
+    if chosen and window.study_directory == origin and not window._worker:
+        window._open_guided_working_fit(
+            direction["identifier"], direction["alternative"], view_hint=chosen,
+        )

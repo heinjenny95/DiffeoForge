@@ -315,11 +315,36 @@ def render(window, prepared):
                 _set_action_emphasis(window.next_step_button, True)
                 break
 
+    direction_pinned = False
     if not running and not unresolved:
         pin_recovery(
             window, snapshot, guidance.get("common_recovery"), current_target=info.get("target"),
         )
         pin_revision(window, snapshot, guidance, info.get("target"))
+        direction = guidance.get("fit_direction")
+        if direction and not common_flow and not (review and review["pending"]):
+            mode = direction["mode"]
+            if mode == "compare":
+                direction_pinned = pin_action(
+                    window, snapshot, "Compare saved fits",
+                    "fit_direction_compare", direction,
+                    "Open both saved fits at the same scale. Starts no fitting.",
+                )
+            elif mode == "inputs":
+                direction_pinned = pin_action(
+                    window, snapshot, "Inspect template and alignment",
+                    "fit_direction_inputs", direction["current"],
+                    "Open the saved input surfaces. Starts no fitting.",
+                )
+            elif mode == "trial":
+                direction_pinned = pin_action(
+                    window, snapshot, f"{direction['title']} · {direction['start_label']}",
+                    "adaptive_recover_start", direction["identifier"],
+                    "Prepare this one test. Fitting starts only when you choose Run.",
+                    goal=direction["request"],
+                )
+            if direction_pinned:
+                window.status.setText(direction["reason"])
         offers = guidance.get("density_comparisons", {})
         identifier = next((key for key, row in offers.items()
                            if row["reference"]["method"] == guidance["preferred"]), None)
@@ -327,9 +352,26 @@ def render(window, prepared):
         if identifier is not None:
             option = offers[identifier]
             low, high = option["initial_control_count"], option["denser_control_count"]
-            pin_action(window, snapshot, f"Compare {low} and {high} control points",
-                       "adaptive_density_comparison", identifier,
-                       "Prepare two short trials from the same saved fit. Run starts both.")
+            label = f"Compare {low} and {high} control points"
+            tooltip = "Prepare two short trials from the same saved fit. Run starts both."
+            density_pinned = pin_action(window, snapshot, label, "adaptive_density_comparison",
+                                        identifier, tooltip)
+            if direction_pinned and not density_pinned:
+                density = QPushButton(label)
+                density.setToolTip(tooltip)
+                density.clicked.connect(lambda _checked=False, selected=identifier:
+                    window._start_pilot(adaptive=False, guided_action=(
+                        "adaptive_density_comparison", selected, None)))
+                window.content_layout.addWidget(InfoDisclosure("Optional control-point test",
+                                                               density))
+
+    def recovery_tools(candidate, layout):
+        if not direction_pinned:
+            _recovery(window, snapshot, candidate, layout, guidance)
+            return
+        panel = QWidget()
+        _recovery(window, snapshot, candidate, QVBoxLayout(panel), guidance)
+        layout.addWidget(InfoDisclosure("Other adjustments and input checks", panel))
 
     def action(layout, label, kind, identifier, *, goal=None, available=True, fixed=False):
         enabled = not running and not unresolved and available
@@ -350,7 +392,7 @@ def render(window, prepared):
         return button
 
     def emphasize_common_action():
-        if not common_flow:
+        if not (common_flow or direction_pinned):
             return
         primary = (
             window.review_next_button if review and review["pending"]
@@ -379,7 +421,7 @@ def render(window, prepared):
             start_layout = QVBoxLayout(start_card)
             render_starting_fits(window, snapshot, candidate.candidate_id, start_layout, feedback)
             if not unresolved:
-                _recovery(window, snapshot, candidate, start_layout, guidance)
+                recovery_tools(candidate, start_layout)
             if review and review["pending"] and review["kind"] == "common":
                 for button in start_card.findChildren(QPushButton):
                     _set_action_emphasis(button, False)
@@ -675,7 +717,7 @@ def render(window, prepared):
             if (not separate_start and decision is not True and (decision is False or has_start)
                     and (valid or has_start) and not unresolved
                     and (guidance["preferred"] == method or has_start or info["phase"] == "joint")):
-                _recovery(window, snapshot, candidate, layout, guidance)
+                recovery_tools(candidate, layout)
             regional = bool(snapshot.attachment_comparison.get("regional_objective"))
             if decision is True and regional and not separate_start:
                 note = QLabel("This fit is saved as suitable for this specimen. Further "
