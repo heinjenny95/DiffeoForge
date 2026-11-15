@@ -30,6 +30,7 @@ def render(window, prepared):
     window.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
     info = record(snapshot)
     guidance = prepared.guidance
+    density_pair = snapshot.attachment_comparison.get("early_density_comparison")
     common_flow = (
         info["phase"] == "joint"
         or info.get("goal") in {
@@ -79,7 +80,9 @@ def render(window, prepared):
         and guidance.get("common_revision", {}).get(snapshot.candidates[0].candidate_id)
     )
     title = QLabel(
-        "Use the approved common settings"
+        "Compare control-point density"
+        if density_pair
+        else "Use the approved common settings"
         if approved_common_revision
         else "Shared model · capture then detail"
         if info.get("goal") == "common_multiscale"
@@ -175,8 +178,27 @@ def render(window, prepared):
         conditions.setWordWrap(True)
         conditions.setObjectName("jointFitConditions")
         window.content_layout.addWidget(conditions)
-    if (info.get("goal") and not regional_accepted and not approved_common_revision
-            and not guard_failures and not checks_pending):
+    if density_pair:
+        from diffeoforge.guided_early_density import ITERATIONS, outcome
+
+        note = QLabel(f"Both fits start from the same saved deformation. Each gets up to "
+                      f"{ITERATIONS} iterations with the same integration and fitting settings. "
+                      "Compare the whole shape and the marked areas before choosing a fit.")
+        note.setWordWrap(True)
+        window.content_layout.addWidget(note)
+        comparison = outcome(snapshot)
+        if comparison:
+            conclusion = QLabel({
+                "regression": "The denser fit triggered a surface-distance or geometry warning.",
+                "improved": "With more points, marked-area distances improved without a "
+                            "measured regression elsewhere.",
+                "unclear": "The measurements show no clear advantage for more points.",
+                "unavailable": "Both fits are saved. A paired measurement is unavailable.",
+            }[comparison] + " Inspect the two fits before choosing one.")
+            conclusion.setWordWrap(True)
+            window.content_layout.addWidget(conclusion)
+    if (info.get("goal") and not density_pair and not regional_accepted
+            and not approved_common_revision and not guard_failures and not checks_pending):
         from diffeoforge.pilot_recovery import DESCRIPTIONS
 
         reason = DESCRIPTIONS.get(info["goal"])
@@ -225,6 +247,8 @@ def render(window, prepared):
         if (info.get("strategy") or {}).get("common_multiscale", {}).get("stage") == "capture"
         else "Run final detail stage · retain the checked capture"
         if (info.get("strategy") or {}).get("common_multiscale", {}).get("stage") == "detail"
+        else f"Run control-point comparison · {len(pending)} remaining"
+        if density_pair
         else f"Compare Current / Varifold · {len(pending)} trials on 1 specimen"
         if len(snapshot.candidates) == 2
         else "Run prepared test · 1 trial on 1 specimen"
@@ -296,6 +320,16 @@ def render(window, prepared):
             window, snapshot, guidance.get("common_recovery"), current_target=info.get("target"),
         )
         pin_revision(window, snapshot, guidance, info.get("target"))
+        offers = guidance.get("density_comparisons", {})
+        identifier = next((key for key, row in offers.items()
+                           if row["reference"]["method"] == guidance["preferred"]), None)
+        identifier = identifier or next(iter(offers), None)
+        if identifier is not None:
+            option = offers[identifier]
+            low, high = option["initial_control_count"], option["denser_control_count"]
+            pin_action(window, snapshot, f"Compare {low} and {high} control points",
+                       "adaptive_density_comparison", identifier,
+                       "Prepare two short trials from the same saved fit. Run starts both.")
 
     def action(layout, label, kind, identifier, *, goal=None, available=True, fixed=False):
         enabled = not running and not unresolved and available
@@ -481,7 +515,9 @@ def render(window, prepared):
                           "This regional objective still needs a shared cohort protocol.")
             note.setWordWrap(True)
             layout.addWidget(note)
-        initialization = snapshot.attachment_comparison.get("refinement", {})
+        from diffeoforge.guided_density import refinement_for
+
+        initialization = refinement_for(snapshot.attachment_comparison, candidate.candidate_id)
         if initialization:
             starting = QLabel(
                 "Starting from your saved fitted shape; optimizer history starts anew."
@@ -497,6 +533,18 @@ def render(window, prepared):
             )
             starting.setWordWrap(True)
             layout.addWidget(starting)
+        if density_pair and candidate.status == "completed":
+            metrics = candidate.metrics or {}
+            surface = metrics.get("original_surface_fit", {}).get(info["target"], {})
+            if surface.get("diagonal"):
+                diagonal = surface["diagonal"]
+                distances = QLabel(
+                    f"P95 {100 * surface['p95'] / diagonal:.3f}% · "
+                    f"P99 {100 * surface['p99'] / diagonal:.3f}% of target diagonal · "
+                    f"{metrics['final_iteration']} / {metrics['maximum_iterations']} iterations"
+                )
+                distances.setWordWrap(True)
+                layout.addWidget(distances)
         if candidate in failed:
             failure = guard_failures.get(candidate.candidate_id)
             if failure:
@@ -675,7 +723,7 @@ def render(window, prepared):
         )
         emphasize_common_action()
         return
-    if len(snapshot.candidates) == 2:
+    if len(snapshot.candidates) == 2 and not density_pair:
         covered = {r["filename"] for r in info["approved"]} | {info["target"]}
         remaining = set(info["pilot_order"]) - covered
         action(

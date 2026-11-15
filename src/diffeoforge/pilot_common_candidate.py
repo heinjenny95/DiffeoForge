@@ -2,6 +2,8 @@
 from copy import deepcopy
 from pathlib import Path
 
+from diffeoforge.guided_density import controls_for
+
 LEGACY_VERSION = "common-candidate-refinement-v1"
 VERSION = "common-candidate-refinement-v2"
 KINDS = {"iterations", "detail", "weight"}
@@ -121,7 +123,7 @@ def preview(snapshot, tested, target, value):
     retained = next(c for c in parent.candidates if c.candidate_id == seed["candidate_id"])
     values = (dict(seed["values"]) if kind == "iterations" else
               guided.adjusted_values(seed["values"], kind, conservative=True))
-    count = parent.attachment_comparison["controls"]["count"]
+    count = controls_for(parent.attachment_comparison, seed["candidate_id"])["count"]
     title = {"iterations": "Continue this common candidate",
              "detail": "Refine surface matching on this common candidate",
              "weight": "Test stronger surface matching on this common candidate"}[kind]
@@ -212,8 +214,10 @@ def verify(info, record, manifest, root):
             or value["protocol"] != marker["protocol"]
             or info["approved"] != guided.record(parent)["approved"]
             or record.get("regional_objective")
-            or record["controls"]["sha256"] != origin.attachment_comparison["controls"]["sha256"]
-            or record["controls"]["sha256"] != seed.attachment_comparison["controls"]["sha256"]
+            or record["controls"]["sha256"] != controls_for(
+                origin.attachment_comparison, marker["capacity_origin"]["candidate_id"])["sha256"]
+            or record["controls"]["sha256"] != controls_for(
+                seed.attachment_comparison, marker["reference"]["candidate_id"])["sha256"]
             or record["refinement"]["initialization"] != "learned"
             or record["refinement"]["reference"] != marker["reference"]
             or record["refinement"]["momenta"]["sha256"] != sha256_file(seed_field.momenta_path)

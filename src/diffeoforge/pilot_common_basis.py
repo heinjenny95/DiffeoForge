@@ -6,6 +6,7 @@ import numpy as np
 from diffeoforge import reference_calibration_study as study
 from diffeoforge import reference_guided_pilot as guided
 from diffeoforge.config import load_config
+from diffeoforge.guided_density import controls_for, refinement_for
 from diffeoforge.mesh import sha256_file
 
 LEGACY_VERSION = "nested-common-basis-step-v1"
@@ -46,8 +47,8 @@ def transferable_direct_field(config):
                 and not plan.get("residual"))
 
 
-def _prefix_basis(parent, shared):
-    controls = parent.attachment_comparison["controls"]
+def _prefix_basis(parent, shared, *, candidate_id=None):
+    controls = controls_for(parent.attachment_comparison, candidate_id)
     path = study._safe_study_path(parent.study_directory, controls["copy"])
     if sha256_file(path) != controls["sha256"]:
         raise ValueError("Retained control basis changed")
@@ -55,31 +56,34 @@ def _prefix_basis(parent, shared):
     return len(source) < len(shared) and np.array_equal(shared[:len(source)], source)
 
 
-def nested_source(basis, *, seen=None):
+def nested_source(basis, candidate_id, *, seen=None):
     from diffeoforge.guided_feedback import verify_reference
 
     seen = set() if seen is None else seen
-    if basis.study_directory in seen:
+    key = basis.study_directory, candidate_id
+    if key in seen:
         raise ValueError("Cyclic common-basis provenance")
-    seen.add(basis.study_directory)
+    seen.add(key)
     record = basis.attachment_comparison
     if record.get("regional_objective"):
         return {}
-    nested = record.get("refinement") or {}
+    nested = refinement_for(record, candidate_id)
     if nested.get("initialization") == "nested":
         return nested
     strategy = guided.record(basis).get("strategy") or {}
     capacity = strategy.get("common_capacity_request")
     if capacity:
-        previous = verify_reference(capacity["protocol"]["reference"])
-        return dict(initialization="nested", source_controls=previous.attachment_comparison[
-            "controls"])
+        ref = capacity["protocol"]["reference"]
+        previous = verify_reference(ref)
+        return dict(initialization="nested", source_controls=controls_for(
+            previous.attachment_comparison, ref["candidate_id"]))
     step = strategy.get("common_candidate_step")
     ref = step["capacity_origin"] if step else nested.get("reference")
     if ref and nested.get("initialization") == "learned":
         parent = verify_reference(ref)
-        if record["controls"]["sha256"] == parent.attachment_comparison["controls"]["sha256"]:
-            return nested_source(parent, seen=seen)
+        if controls_for(record, candidate_id)["sha256"] == controls_for(
+                parent.attachment_comparison, ref["candidate_id"])["sha256"]:
+            return nested_source(parent, ref["candidate_id"], seen=seen)
     return {}
 
 
@@ -87,8 +91,9 @@ def preview(snapshot, target, protocol):
     from diffeoforge.guided_feedback import reference, verify_reference
     from diffeoforge.pilot_iteration_accounting import branch_total
 
-    basis = verify_reference(protocol["reference"])
-    nested = nested_source(basis)
+    basis_ref = protocol["reference"]
+    basis = verify_reference(basis_ref)
+    nested = nested_source(basis, basis_ref["candidate_id"])
     if nested.get("initialization") != "nested":
         return None
     info = guided.record(snapshot)
@@ -100,9 +105,9 @@ def preview(snapshot, target, protocol):
             reason="The warm shared-basis test is already prepared or running. "
                    "No duplicate is needed.")
     basis_candidate = next(c for c in basis.candidates
-                           if c.candidate_id == protocol["reference"]["candidate_id"])
+                           if c.candidate_id == basis_ref["candidate_id"])
     expected = direct_field_physics(load_config(basis_candidate.config_path))
-    row = basis.attachment_comparison["controls"]
+    row = controls_for(basis.attachment_comparison, basis_ref["candidate_id"])
     shared = np.loadtxt(study._safe_study_path(basis.study_directory, row["copy"]), ndmin=2)
     if sha256_file(study._safe_study_path(basis.study_directory, row["copy"])) != row["sha256"]:
         raise ValueError("Adopted shared control basis changed")
@@ -120,8 +125,7 @@ def preview(snapshot, target, protocol):
             continue
         seen.add(parent.study_directory)
         other = guided.record(parent)
-        if (other["origin"] != info["origin"] or other["target"] != target
-                or not _prefix_basis(parent, shared)):
+        if other["origin"] != info["origin"] or other["target"] != target:
             continue
         for candidate in parent.candidates:
             try:
@@ -134,7 +138,8 @@ def preview(snapshot, target, protocol):
                     and protocol["reference"]["values"]["initial_control_point_spacing"]
                     == ref["values"]["initial_control_point_spacing"] * .8
                     and transferable_direct_field(config)
-                    and direct_field_physics(config) == expected):
+                    and direct_field_physics(config) == expected
+                    and _prefix_basis(parent, shared, candidate_id=candidate.candidate_id)):
                 found.append((ref, parent, candidate))
     if not found:
         return None
@@ -167,15 +172,16 @@ def apply(plan, choice, protocol):
 
 
 def verify(info, record, manifest, root):
-    from diffeoforge.guided_feedback import verify_reference
     from diffeoforge import pilot_common_warm_start
+    from diffeoforge.guided_feedback import verify_reference
 
     marker = info["strategy"]["common_basis_step"]
     if marker["version"] == pilot_common_warm_start.VERSION:
         return pilot_common_warm_start.verify(info, record, manifest, root)
     ref, protocol = marker["reference"], marker["protocol"]
     seed = verify_reference(ref)
-    basis = verify_reference(protocol["reference"])
+    basis_ref = protocol["reference"]
+    basis = verify_reference(basis_ref)
     candidate = next(c for c in seed.candidates if c.candidate_id == ref["candidate_id"])
     previous = info["strategy"]["previous"]
     parent_snapshot = study.load_reference_calibration_study(Path(previous["directory"]))
@@ -206,7 +212,8 @@ def verify(info, record, manifest, root):
             or record.get("regional_objective")
             or record.get("refinement", {}).get("initialization") != "nested"
             or record["refinement"]["reference"] != ref
-            or record["controls"]["sha256"] != basis.attachment_comparison["controls"]["sha256"]
+            or record["controls"]["sha256"] != controls_for(
+                basis.attachment_comparison, basis_ref["candidate_id"])["sha256"]
             or manifest["plan"]["baseline_effective_values"] != protocol["reference"]["values"]
             or value["reviews"] != list(reviews.values()) or protocol != value["protocol"]
             or not approved_basis

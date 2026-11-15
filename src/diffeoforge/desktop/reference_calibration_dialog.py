@@ -7,8 +7,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QUrl, Signal, Slot
-from PySide6.QtGui import QCloseEvent, QDesktopServices
+from PySide6.QtCore import QObject, QRunnable, Qt, QTimer, QUrl, Signal, Slot
+from PySide6.QtGui import (
+    QCloseEvent,
+    QDesktopServices,
+    QKeyEvent,
+    QKeySequence,
+    QResizeEvent,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -515,7 +522,53 @@ class _CompletedPilotRefinementWorker(QRunnable):
             self.signals.finished.emit(self)
 
 
-class _CalibrationCandidateViewerDialog(QDialog):
+class _FullscreenPilotDialog(QDialog):
+    """Share a reversible, window-local full-screen action between pilot dialogs."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._windowed_state = None
+        self.full_screen_button = QPushButton("Full screen")
+        self.full_screen_button.setToolTip("Use the full screen (F11)")
+        self.full_screen_button.clicked.connect(self._toggle_full_screen)
+        _set_action_emphasis(self.full_screen_button, False)
+        self._full_screen_shortcut = QShortcut(QKeySequence("F11"), self)
+        self._full_screen_shortcut.activated.connect(self._toggle_full_screen)
+
+    @Slot()
+    def _toggle_full_screen(self) -> None:
+        if self._windowed_state is not None:
+            geometry, minimum, maximized = self._windowed_state
+            self._windowed_state = None
+            self._full_screen_layout(False)
+            self.setMinimumSize(minimum)
+            if maximized:
+                self.showMaximized()
+            else:
+                self.showNormal()
+                self.setGeometry(geometry)
+            self.full_screen_button.setText("Full screen")
+            self.full_screen_button.setToolTip("Use the full screen (F11)")
+            return
+        self._windowed_state = (self.geometry(), self.minimumSize(), self.isMaximized())
+        self.setMinimumSize(0, 0)
+        self._full_screen_layout(True)
+        self.showFullScreen()
+        self.full_screen_button.setText("Exit full screen")
+        self.full_screen_button.setToolTip("Restore the previous window (F11 or Esc)")
+
+    def _full_screen_layout(self, enabled: bool) -> None:
+        """Give canvas-based dialogs a chance to resize their existing layout."""
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Escape and self._windowed_state is not None:
+            self._toggle_full_screen()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
+class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
     """Review the atlas and all subject reconstructions from one immutable run."""
 
     def __init__(
@@ -595,7 +648,7 @@ class _CalibrationCandidateViewerDialog(QDialog):
         self.setWindowTitle(f"Visual registration check — {candidate.candidate_id}")
         self.resize(1080, 900)
         self.setMinimumSize(760, 640)
-        root = QVBoxLayout(self)
+        root = self._root_layout = QVBoxLayout(self)
         self.body_scroll = QScrollArea()
         self.body_scroll.setWidgetResizable(True)
         self.body_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -605,7 +658,7 @@ class _CalibrationCandidateViewerDialog(QDialog):
             QSizePolicy.Policy.Ignored,
             QSizePolicy.Policy.Preferred,
         )
-        layout = QVBoxLayout(body)
+        layout = self._body_layout = QVBoxLayout(body)
         self.body_scroll.setWidget(body)
         root.addWidget(self.body_scroll, 1)
         title = QLabel("Does the reconstruction preserve the original anatomy?")
@@ -876,11 +929,24 @@ class _CalibrationCandidateViewerDialog(QDialog):
         decision_layout.addLayout(controls)
         root.addWidget(self.decision_panel)
         # Closing must remain possible while geometry is loading or unavailable.
-        root.addWidget(self.close_button, alignment=Qt.AlignmentFlag.AlignRight)
+        self._window_actions = QWidget()
+        window_actions = QHBoxLayout(self._window_actions)
+        window_actions.setContentsMargins(0, 0, 0, 0)
+        window_actions.addWidget(self.full_screen_button)
+        window_actions.addStretch()
+        window_actions.addWidget(self.close_button)
         if read_only and not compact_review:
             close_comparison = QPushButton("Close comparison")
             close_comparison.clicked.connect(self.reject)
-            root.addWidget(close_comparison)
+            window_actions.addWidget(close_comparison)
+        root.addWidget(self._window_actions)
+        self._windowed_canvas_limits = {}
+        self._full_screen_canvas_timer = QTimer(self)
+        self._full_screen_canvas_timer.setSingleShot(True)
+        self._full_screen_canvas_timer.timeout.connect(self._fit_full_screen_canvas)
+        self._full_screen_scroll_timer = QTimer(self)
+        self._full_screen_scroll_timer.setSingleShot(True)
+        self._full_screen_scroll_timer.timeout.connect(self._show_full_screen_canvas)
         if compact_review:
             title.setText("Inspect fit")
             intro.setText("Orange: original · Blue: reconstruction")
@@ -930,6 +996,53 @@ class _CalibrationCandidateViewerDialog(QDialog):
         elif self.mesh_combo.count():
             self._load_selected(self.mesh_combo.currentIndex())
         self._update_review_progress()
+
+    def _full_screen_layout(self, enabled: bool) -> None:
+        panel = self.decision_panel
+        hidden = panel.isHidden()
+        if enabled:
+            # The assessment stays reachable, but its height no longer clips
+            # the mesh on a small screen. Window controls stay in the footer.
+            self._root_layout.removeWidget(panel)
+            self._body_layout.addWidget(panel)
+            canvases = [self.canvas]
+            if self.fit_preferences is not None:
+                canvases.append(self.fit_preferences.reference_canvas)
+            if hasattr(self, "saved_comparison"):
+                canvases.append(self.saved_comparison.canvas)
+            self._windowed_canvas_limits = {
+                c: (c.minimumHeight(), c.maximumHeight()) for c in canvases
+            }
+            self._full_screen_canvas_timer.start(0)
+        else:
+            self._full_screen_scroll_timer.stop()
+            self._body_layout.removeWidget(panel)
+            self._root_layout.insertWidget(self._root_layout.indexOf(self._window_actions), panel)
+            for canvas, (minimum, maximum) in self._windowed_canvas_limits.items():
+                canvas.setMinimumHeight(minimum)
+                canvas.setMaximumHeight(maximum)
+            self._windowed_canvas_limits.clear()
+        panel.setVisible(not hidden)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        # Window systems apply the final full-screen size asynchronously.
+        if self._windowed_state is not None and self._windowed_canvas_limits:
+            self._full_screen_canvas_timer.start(0)
+
+    def _fit_full_screen_canvas(self) -> None:
+        if not self.isFullScreen():
+            return
+        height = max(120, self.body_scroll.viewport().height() - 12)
+        for canvas in self._windowed_canvas_limits:
+            canvas.setFixedHeight(height)
+        # A scaled screen can queue several child layout passes after the
+        # viewport resize. Reveal the canvas after those passes settle.
+        self._full_screen_scroll_timer.start(35)
+
+    def _show_full_screen_canvas(self) -> None:
+        if self.isFullScreen() and self.isVisible():
+            self.body_scroll.ensureWidgetVisible(self.canvas, 0, 0)
 
     def done(self, result):
         if self.fit_preferences:
@@ -1373,7 +1486,7 @@ class CalibrationCandidateViewerDialog(FullGeometryReviewMixin, _CalibrationCand
     """Fit decisions require complete, matching display geometry."""
 
 
-class ReferenceCalibrationDialog(QDialog):
+class ReferenceCalibrationDialog(_FullscreenPilotDialog):
     """Batch each stage and require every-specimen fit review before advancing."""
 
     def __init__(
@@ -1454,7 +1567,10 @@ class ReferenceCalibrationDialog(QDialog):
         root = QVBoxLayout(self)
         title = QLabel("Automatic staged pilot calibration")
         title.setObjectName("title")
-        root.addWidget(title)
+        header = QHBoxLayout()
+        header.addWidget(title, 1)
+        header.addWidget(self.full_screen_button)
+        root.addLayout(header)
         root.addWidget(self._thread_pool.indicator)
         boundary = QLabel(
             "Run the options in this stage, then inspect every specimen before advancing."

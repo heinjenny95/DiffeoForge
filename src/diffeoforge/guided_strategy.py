@@ -137,6 +137,8 @@ def _read_context(snapshot):
                     target=info["target"],
                     goal=info.get("goal"),
                     individual=individual,
+                    early_density_comparison=bool(
+                        other.attachment_comparison.get("early_density_comparison")),
                     reference=other.attachment_comparison.get("refinement", {}).get("reference"),
                     comparison=(info.get("strategy") or {}).get("anchor"),
                     family=(info.get("strategy") or {}).get("search_family", info.get("goal")),
@@ -194,6 +196,12 @@ def _read_state(snapshot):
                 allowed={c.candidate_id: starting_allowed(snapshot, c.candidate_id)
                          for c in snapshot.candidates if c.status == "completed"})
     result["provisional_comparison"] = provisional_comparison(snapshot, context=result)
+    from diffeoforge.guided_early_density import preview as density_comparison
+
+    result["density_comparisons"] = {
+        c.candidate_id: option for c in snapshot.candidates
+        if (option := density_comparison(snapshot, c.candidate_id, result)) is not None
+    }
     from diffeoforge.guided_failed_parent import preview
 
     result["failed_parents"] = {c.candidate_id: preview(snapshot, c.candidate_id)
@@ -340,7 +348,8 @@ def verify_strategy(info, record, manifest, study_root=None):
             return False
     elif info["phase"] != "screen" or info["screen_trials_spent"] != 2 or info["approved"]:
         return False
-    if (len(record["methods"]) != (2 if info["phase"] == "screen" else 1)
+    pair = record.get("early_density_comparison")
+    if (len(record["methods"]) != (2 if info["phase"] == "screen" or pair else 1)
             or not set(strategy.get("difficult_targets", [])) <= set(info["pilot_order"])):
         return False
     for key in ("preference", "baseline", "control_basis"):
@@ -459,8 +468,27 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     values = snapshot.plan.effective_values
     cases, _last = _context(snapshot)
     feedback = None
+    density_comparison = None
     preference = _preference(snapshot)
-    if action in {"recover", "recover_from_retained", "recover_start"}:
+    if action == "density_comparison":
+        density_comparison = state(snapshot)["density_comparisons"].get(identifier)
+        if not density_comparison:
+            raise ValueError("Choose a reviewed, unsuitable high-disparity single fit")
+        from diffeoforge.guided_feedback import region_state, verify_reference
+
+        reference = density_comparison["reference"]
+        parent = verify_reference(reference)
+        target = reference["target"]
+        marked, cleared = region_state(snapshot, identifier, target)
+        feedback = capture(parent, reference["candidate_id"], target, regions=marked)
+        feedback["regions_cleared"] = cleared
+        strategy.update(baseline=reference, anchor=reference, control_basis=reference,
+                        search_family="density")
+        methods = (reference["method"],)
+        values = guided.adjusted_values(reference["values"], "density", conservative=True)
+        preference = None
+        phase, goal = "refine", "density"
+    elif action in {"recover", "recover_from_retained", "recover_start"}:
         if action == "recover_from_retained":
             from diffeoforge.guided_failed_parent import trial
 
@@ -597,7 +625,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     strategy["preference"] = preference
     return dict(source=source, previous=snapshot, phase=phase, target=target, methods=methods,
         values=values, approved=approved, history=history, spent=info["screen_trials_spent"],
-        goal=goal, feedback=feedback, strategy=strategy)
+        goal=goal, feedback=feedback, strategy=strategy, density_comparison=density_comparison)
 
 
 def transition(snapshot, action, identifier, *, goal=None):

@@ -16,8 +16,8 @@ def field_fixture(run):
     config = load_config(config_path)
     root = next(p for p in (run, *run.parents) if (p / study.STUDY_MANIFEST).is_file())
     manifest = study._read_json(root / study.STUDY_MANIFEST, "synthetic study")
-    controls = manifest["attachment_comparison"]["controls"]
-    points = np.loadtxt(root / controls["copy"]).reshape(-1, 3)
+    controls = config["model"]["deformation"]["initial_control_points"]
+    points = np.loadtxt(config_path.parent / controls).reshape(-1, 3)
     labels = tuple(r["filename"] for r in manifest["inputs"]["subjects"])
     momenta = np.full((len(labels), len(points), 3), 0.001, dtype=np.float64)
     path = run / "synthetic-final-momenta.txt"

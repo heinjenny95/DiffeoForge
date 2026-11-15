@@ -253,3 +253,28 @@ def test_dialog_reuses_fresh_worker_snapshot_without_loading_again(
     app.processEvents()
     with pytest.raises(ValueError, match="different study"):
         dialog_module.ReferenceCalibrationDialog(tmp_path / "different", verified_snapshot=snapshot)
+
+
+def test_pilot_full_screen_and_f11_preserve_the_dialog_and_footer(pilot_window):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    app, _window, snapshot = pilot_window
+    dialog = ReferenceCalibrationDialog(snapshot.study_directory, verified_snapshot=snapshot)
+    dialog.show()
+    wait_pilot_view(dialog)
+    geometry = dialog.geometry()
+    dialog.full_screen_button.click()
+    app.processEvents()
+    assert dialog.isFullScreen()
+    assert dialog.close_button.isVisible() and dialog.full_screen_button.isVisible()
+    dialog.activateWindow()
+    app.processEvents()
+    QTest.keyClick(dialog, Qt.Key.Key_F11)
+    app.processEvents()
+    assert dialog.isVisible() and not dialog.isFullScreen()
+    assert dialog.geometry() == geometry and dialog.snapshot is snapshot
+    dialog.close()
+    app.processEvents()

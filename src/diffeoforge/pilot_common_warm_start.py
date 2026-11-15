@@ -6,6 +6,7 @@ from pathlib import Path
 from diffeoforge import reference_calibration_study as study
 from diffeoforge import reference_guided_pilot as guided
 from diffeoforge.config import load_config
+from diffeoforge.guided_density import controls_for
 from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_attachment_comparison import ITERATIONS
 
@@ -22,11 +23,13 @@ def seed_for(value, target):
     ref = dict(row)
     ref["target"] = ref.pop("filename")
     seed = verify_reference(ref)
-    basis = verify_reference(value["protocol"]["reference"])
+    basis_ref = value["protocol"]["reference"]
+    basis = verify_reference(basis_ref)
     seed_record, basis_record = seed.attachment_comparison, basis.attachment_comparison
     if (not seed_record.get("regional_objective")
-            or seed_record["controls"]["sha256"] != basis_record["controls"]["sha256"]
-            or ref["method"] != value["protocol"]["reference"]["method"]
+            or controls_for(seed_record, ref["candidate_id"])["sha256"]
+            != controls_for(basis_record, basis_ref["candidate_id"])["sha256"]
+            or ref["method"] != basis_ref["method"]
             or guided.record(seed)["origin"] != guided.record(basis)["origin"]
             or guided._approved_record(seed, ref["candidate_id"]) != row):
         return None
@@ -146,9 +149,9 @@ def apply(plan, choice, protocol):
 
 
 def verify(info, record, manifest, root):
+    from diffeoforge.guided_feedback import verify_reference
     from diffeoforge.guided_refinement import load_field
     from diffeoforge.pilot_form_progress import compatible
-    from diffeoforge.guided_feedback import verify_reference
 
     strategy = info["strategy"]
     step, value = strategy["common_basis_step"], strategy["form_progress"]
@@ -187,10 +190,12 @@ def verify(info, record, manifest, root):
     bound = record["refinement"]
     if (bound["initialization"] != "learned" or bound["reference"] != seed
             or bound["momenta"]["sha256"] != sha256_file(field.momenta_path)
-            or record["controls"]["sha256"] != source.attachment_comparison["controls"]["sha256"]
+            or record["controls"]["sha256"] != controls_for(
+                source.attachment_comparison, seed["candidate_id"])["sha256"]
             or config["runtime"]["precision"] != protocol["precision"]
             or config["optimization"]["convergence_tolerance"] != protocol["tolerance"]
-            or any(config["model"]["deformation"][k] != v for k, v in protocol["integration"].items())
+            or any(config["model"]["deformation"][k] != v
+                   for k, v in protocol["integration"].items())
             or any(config["optimization"][k] != origin_config["optimization"][k]
                    for k in ("method", "initial_step_size", "max_line_search_iterations"))):
         raise ValueError("Common warm start changed its field or optimization protocol")

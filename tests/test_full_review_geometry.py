@@ -113,6 +113,45 @@ def test_preview_is_sufficient_to_approve_without_loading_full_geometry(viewer):
     assert viewer.v.review_passed and viewer.v.review_complete
 
 
+def test_full_screen_fits_the_mesh_and_keeps_review_controls_reachable(viewer):
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    dialog = viewer.v
+    dialog.resize(760, 640)
+    show_proxy(viewer)
+    windowed_geometry = dialog.geometry()
+    windowed_minimum = dialog.canvas.minimumHeight()
+    dialog.anatomical_notes.setText("Retain review notes while resizing")
+
+    dialog.full_screen_button.click()
+    viewport = dialog.body_scroll.viewport()
+
+    def whole_canvas_visible():
+        spare_height = viewport.height() - dialog.canvas.height()
+        top = dialog.canvas.mapTo(viewport, QPoint()).y()
+        return 0 <= top <= spare_height <= 20
+
+    wait(viewer.app, lambda: dialog.isFullScreen() and dialog.canvas.comparison_ready
+         and whole_canvas_visible())
+    assert dialog.full_screen_button.text() == "Exit full screen"
+    assert dialog.close_button.isVisible()
+    assert dialog.decision_panel.parentWidget() == dialog.body_scroll.widget()
+    dialog.body_scroll.ensureWidgetVisible(dialog.complete_button)
+    viewer.app.processEvents()
+    assert viewport.rect().contains(dialog.complete_button.mapTo(viewport, QPoint(1, 1)))
+    assert dialog.complete_button.isEnabled() and not dialog.review_recorded
+
+    QTest.keyClick(dialog, Qt.Key.Key_Escape)
+    wait(viewer.app, lambda: not dialog.isFullScreen() and dialog.canvas.comparison_ready)
+    assert dialog.isVisible() and dialog.geometry() == windowed_geometry
+    assert dialog.decision_panel.parentWidget() == dialog
+    assert dialog.canvas.minimumHeight() == windowed_minimum
+    assert dialog.anatomical_notes.text() == "Retain review notes while resizing"
+    assert dialog.full_screen_button.text() == "Full screen"
+    assert dialog.complete_button.isEnabled() and not dialog.review_recorded
+
+
 def test_initial_fit_marker_keeps_preview_ready_and_clears_for_the_next_pair(viewer):
     v = viewer.v
     original_pair = v._pairs[0]

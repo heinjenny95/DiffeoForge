@@ -46,6 +46,7 @@ def _geometry(parent, candidate, target):
 
 def _compare(accepted_ref, current_ref, *, regions=None):
     from diffeoforge import reference_calibration_study as study
+    from diffeoforge.guided_density import controls_for
     from diffeoforge.guided_feedback import verify_reference
     from diffeoforge.reference_attachment_comparison import compare_geometry
     from diffeoforge.reference_calibration import _canonical_hash
@@ -97,7 +98,8 @@ def _compare(accepted_ref, current_ref, *, regions=None):
         objective_tail=[r.log_likelihood for r in second[3].convergence[-6:]],
         accepted_local=bool(accepted.attachment_comparison.get("regional_objective")),
         accepted_controls=count(accepted_ref),
-        current_controls=current.attachment_comparison["controls"]["count"])
+        current_controls=controls_for(current.attachment_comparison,
+                                      current_ref["candidate_id"])["count"])
     if regions:
         from diffeoforge.guided_response import measured
 

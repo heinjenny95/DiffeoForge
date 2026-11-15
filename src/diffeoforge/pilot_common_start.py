@@ -10,19 +10,21 @@ def rank(profiles):
 
 def prepare(snapshot, value):
     from diffeoforge.config import load_config
+    from diffeoforge.guided_density import controls_for, refinement_for
     from diffeoforge.guided_feedback import verify_reference
     from diffeoforge.pilot_common_basis import _physics
     from diffeoforge.pilot_form_progress import _protocol, configure
 
     result = deepcopy(value)
     protocol = value["protocol"]
-    base = verify_reference(protocol["reference"])
+    reference = protocol["reference"]
+    base = verify_reference(reference)
     base_candidate = next(c for c in base.candidates
-                          if c.candidate_id == protocol["reference"]["candidate_id"])
+                          if c.candidate_id == reference["candidate_id"])
     config = load_config(base_candidate.config_path)
     configure(config, value, config["optimization"]["method"])
     physics = _physics(config)
-    controls = base.attachment_comparison["controls"]
+    controls = controls_for(base.attachment_comparison, reference["candidate_id"])
     profiles = []
     for row in value["reviews"]:
         ref = dict(row)
@@ -30,18 +32,21 @@ def prepare(snapshot, value):
         parent = verify_reference(ref)
         candidate = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
         record = parent.attachment_comparison
-        nested = record.get("refinement") or {}
+        nested = refinement_for(record, ref["candidate_id"])
         capacity = (record.get("guided", {}).get("strategy") or {}).get("common_capacity_request")
         if capacity and nested.get("initialization") != "nested":
-            previous = verify_reference(capacity["protocol"]["reference"])
+            source = capacity["protocol"]["reference"]
+            previous = verify_reference(source)
             nested = dict(initialization="nested",
-                          source_controls=previous.attachment_comparison["controls"])
+                          source_controls=controls_for(
+                              previous.attachment_comparison, source["candidate_id"]))
         eligible = (not record.get("regional_objective")
             and nested.get("initialization") == "nested"
             and nested["source_controls"]["sha256"] == controls["sha256"]
             and ref["method"] == protocol["reference"]["method"]
             and _physics(load_config(candidate.config_path)) == physics)
-        profiles.append(dict(row=row, parent=parent, controls=record["controls"]["count"],
+        profiles.append(dict(row=row, parent=parent,
+                             controls=controls_for(record, ref["candidate_id"])["count"],
                              eligible_basis=eligible,
                              regional=bool(record.get("regional_objective"))))
     chosen = rank(profiles)

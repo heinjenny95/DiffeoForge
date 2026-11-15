@@ -90,19 +90,21 @@ def _protocol(snapshot, identifier):
 
 
 def compatible(row, protocol):
+    from diffeoforge.guided_density import controls_for
     from diffeoforge.guided_feedback import verify_reference
 
     parent = study.load_reference_calibration_study(Path(row["directory"]))
-    basis = verify_reference(protocol["reference"])
+    reference = protocol["reference"]
+    basis = verify_reference(reference)
     candidate = next(c for c in parent.candidates if c.candidate_id == row["candidate_id"])
     config = load_config(candidate.config_path)
     return (not parent.attachment_comparison.get("regional_objective")
         and parent.plan.pilot_subject_count == 1
-        and row["method"] == protocol["reference"]["method"]
-        and row["values"] == protocol["reference"]["values"]
+        and row["method"] == reference["method"]
+        and row["values"] == reference["values"]
         and all(config["optimization"][k] for k in ("freeze_template", "freeze_control_points"))
-        and parent.attachment_comparison["controls"]["sha256"]
-        == basis.attachment_comparison["controls"]["sha256"]
+        and controls_for(parent.attachment_comparison, row["candidate_id"])["sha256"]
+        == controls_for(basis.attachment_comparison, reference["candidate_id"])["sha256"]
         and study._verify_manifest(parent.study_directory)["inputs"]["template"]["sha256"]
         == study._verify_manifest(basis.study_directory)["inputs"]["template"]["sha256"]
         and all(config["model"]["deformation"][k] == v

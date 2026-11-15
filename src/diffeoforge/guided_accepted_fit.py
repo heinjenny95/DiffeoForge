@@ -111,7 +111,9 @@ def rejected_joint(snapshot, ref, *, proposed_references=None):
         if {r["filename"] for r in rows} != set(info["pilot_order"]):
             return None
         proposed_references = references(rows)
-    expected_controls = source.attachment_comparison["controls"]["sha256"]
+    from diffeoforge.guided_density import controls_for
+
+    expected_controls = controls_for(source.attachment_comparison, ref["candidate_id"])["sha256"]
     flags = snapshot.attachment_comparison["confirmation_freeze_settings"]
     for row in [None, *reversed(info["history"])]:
         root = Path(row["directory"]) if row else snapshot.study_directory

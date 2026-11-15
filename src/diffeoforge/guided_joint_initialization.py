@@ -137,6 +137,7 @@ def verify(root, manifest, record):
     if not request:
         return
     from diffeoforge.config import load_config
+    from diffeoforge.guided_density import controls_for
     from diffeoforge.guided_feedback import verify_reference
     from diffeoforge.reference_pca import read_deformetrica_momenta
 
@@ -177,7 +178,8 @@ def verify(root, manifest, record):
                 != {ref["target"]: expected[ref["target"]]}
                 or original["inputs"]["template"]["sha256"]
                 != manifest["inputs"]["template"]["sha256"]
-                or part["controls_sha256"] != parent.attachment_comparison["controls"]["sha256"]
+                or part["controls_sha256"] != controls_for(
+                    parent.attachment_comparison, ref["candidate_id"])["sha256"]
                 or _basis(load_config(candidate.config_path)) != _basis(requested, values, method)
                 or not source.resolve().is_relative_to(run.resolve())
                 or sha256_file(run / "manifest.json") != part["source_run_sha256"]

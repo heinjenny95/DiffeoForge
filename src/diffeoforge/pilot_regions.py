@@ -159,9 +159,10 @@ def comparison(before, after, global_before, global_after):
                 continue
             improved |= max(y) + floor < min(x) * 0.95
             worsened |= min(y) > max(x) * 1.05 + floor
+    floor = (before[0] if before else global_before)["diagonal"] * 1e-6
     global_worse = any(
         min(r[k] for r in global_after["repeats"])
-        > max(r[k] for r in global_before["repeats"]) * 1.05 + before[0]["diagonal"] * 1e-6
+        > max(r[k] for r in global_before["repeats"]) * 1.05 + floor
         for k in ("p95", "p99", "regional_tail")
     ) or bool(global_after.get("warnings"))
     for key in {k for r in global_before["repeats"] for k in r.get("regions", {})}:
@@ -176,5 +177,5 @@ def comparison(before, after, global_before, global_after):
             if key in r.get("regions", {})
         ]
         if len(x) == 2 and len(y) == 2:
-            global_worse |= min(y) > max(x) * 1.05 + before[0]["diagonal"] * 1e-6
+            global_worse |= min(y) > max(x) * 1.05 + floor
     return "regression" if worsened or global_worse else "improved" if improved else "unclear"

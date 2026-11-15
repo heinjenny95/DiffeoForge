@@ -204,6 +204,7 @@ def retained_support(snapshot, value, *, version=VERSION):
     from diffeoforge import reference_calibration_study as study
     from diffeoforge import reference_guided_pilot as guided
     from diffeoforge.config import load_config
+    from diffeoforge.guided_density import controls_for
     from diffeoforge.guided_feedback import verify_reference
     from diffeoforge.guided_refinement import load_field
     from diffeoforge.mesh import sha256_file
@@ -226,12 +227,13 @@ def retained_support(snapshot, value, *, version=VERSION):
     template = study._safe_study_path(base.study_directory, template_row["copy"])
     source = load_surface_mesh(template).geometry
     diagonal = float(np.linalg.norm(np.ptp(source.vertices, axis=0)))
-    controls = base.attachment_comparison["controls"]
+    controls = controls_for(base.attachment_comparison, original["candidate_id"])
     prefix_study = base
     current = study._verify_manifest(snapshot.study_directory)
     if (
         version == LEGACY_VERSION
         and not snapshot.attachment_comparison.get("regional_objective")
+        and not snapshot.attachment_comparison.get("early_density_comparison")
         and current["inputs"]["template"]["sha256"] == template_row["sha256"]
         and snapshot.attachment_comparison["controls"]["count"] > controls["count"]
     ):

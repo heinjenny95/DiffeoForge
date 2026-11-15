@@ -2,6 +2,8 @@
 from copy import deepcopy
 from functools import wraps
 
+from diffeoforge.guided_density import controls_for, refinement_for
+
 VERSION = "accepted-control-demand-v1"
 
 
@@ -27,8 +29,8 @@ def count(reference, *, seen=None):
     seen.add(key)
     parent = verify_reference(reference)
     record = parent.attachment_comparison
-    total = record["controls"]["count"]
-    refinement = record.get("refinement") or {}
+    total = controls_for(record, reference["candidate_id"])["count"]
+    refinement = refinement_for(record, reference["candidate_id"])
     if refinement.get("initialization") == "residual":
         total += count(refinement["reference"], seen=seen)
     elif record.get("regional_objective") and refinement.get("initialization") == "learned":
@@ -36,7 +38,8 @@ def count(reference, *, seen=None):
         # does not append that field for every batch of extra iterations.
         ref = refinement["reference"]
         previous = verify_reference(ref)
-        total += count(ref, seen=seen) - previous.attachment_comparison["controls"]["count"]
+        previous_count = controls_for(previous.attachment_comparison, ref["candidate_id"])["count"]
+        total += count(ref, seen=seen) - previous_count
     return total
 
 
@@ -64,8 +67,9 @@ def describe(value, *, grow=False):
 
     from diffeoforge.guided_feedback import verify_reference
 
-    base = verify_reference(value["protocol"]["reference"])
-    current = base.attachment_comparison["controls"]["count"]
+    reference = value["protocol"]["reference"]
+    base = verify_reference(reference)
+    current = controls_for(base.attachment_comparison, reference["candidate_id"])["count"]
     counts = demand(value)
     required = max(counts.values(), default=current)
     proposed = max(required, math.ceil(current * 1.5) if grow else current)
@@ -128,8 +132,9 @@ def points(value):
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.guided_feedback import verify_reference
 
-    base = verify_reference(value["protocol"]["reference"])
-    controls = base.attachment_comparison["controls"]
+    reference = value["protocol"]["reference"]
+    base = verify_reference(reference)
+    controls = controls_for(base.attachment_comparison, reference["candidate_id"])
     return np.loadtxt(study._safe_study_path(base.study_directory, controls["copy"]), ndmin=2)
 
 

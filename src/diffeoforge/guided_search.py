@@ -219,8 +219,11 @@ def propose(snapshot, identifier, request, data):
             seed_parent = data["references"][seed["directory"]]
         values = guided.adjusted_values(seed["values"], goal, conservative=True)
         method = base_method
+        from diffeoforge.guided_density import controls_for
+
+        controls = controls_for(seed_parent.attachment_comparison, seed["candidate_id"])
         available = seed_parent.plan.pilot_subject_count == 1 and \
-            seed_parent.attachment_comparison["controls"]["count"] * 1.5 <= 2000
+            controls["count"] * 1.5 <= 2000
         blocked = ("This density test would exceed the 2,000-control resource guard or lacks "
                    "a single-form field. Other parameter tests and input checks remain available.")
         reason += ("Preserve the saved field and expand its controls; "

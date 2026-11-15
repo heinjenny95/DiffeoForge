@@ -197,7 +197,7 @@ def prepare(directory):
 def _batch(
     source, previous, *, phase, target, methods, values, approved, history, spent, goal=None,
     feedback=None, coverage_extension=None, strategy=None,
-    destination_parent=None,
+    destination_parent=None, density_comparison=None,
 ):
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.guided_joint_initialization import references as joint_references
@@ -299,9 +299,17 @@ def _batch(
                             if c.candidate_id == refinement["candidate_id"])
             # A field-preserving adjustment starts on the selected field's grid,
             # even when the project's screening grid is coarser.
-            deformation = load_config(retained.config_path)["model"]["deformation"]
+            retained_config = load_config(retained.config_path)
+            deformation = retained_config["model"]["deformation"]
             for key in ("timepoints", "use_rk2"):
                 config["model"]["deformation"][key] = deformation[key]
+            if density_comparison:
+                from diffeoforge.guided_early_density import ITERATIONS as COMPARISON_ITERATIONS
+
+                iterations = COMPARISON_ITERATIONS
+                config["optimization"] = dict(retained_config["optimization"],
+                                              max_iterations=iterations)
+                config["runtime"] = copy.deepcopy(retained_config["runtime"])
     if ((strategy or {}).get("regional_recipe")
             and not (strategy or {}).get("regional_continuation")):
         from diffeoforge.regional_pilot import configure_numerics
@@ -393,11 +401,30 @@ def _batch(
         )
         for method in methods
     )
+    density_record = {}
+    if density_comparison:
+        from diffeoforge.guided_early_density import REFERENCE_ID
+        from diffeoforge.guided_early_density import VERSION as DENSITY_VERSION
+
+        current, = candidates
+        initial = density_comparison["initial_control_count"]
+        denser = density_comparison["denser_control_count"]
+        candidates = (
+            replace(current, candidate_id=REFERENCE_ID, label=f"{initial} control points",
+                    parameter_values=tuple(sorted(refinement["values"].items()))),
+            replace(current, label=f"{denser} control points"),
+        )
+        methods = methods + methods
+        density_record["early_density_comparison"] = dict(
+            version=DENSITY_VERSION, reference_candidate_id=REFERENCE_ID,
+            denser_candidate_id=current.candidate_id, initial_control_count=initial,
+        )
     stages = (
         replace(
             source.plan.stages[0],
             candidates=candidates,
-            title="Joint pilot confirmation" if phase == "joint" else "Compare matching methods",
+            title=("Compare control-point density" if density_comparison else
+                   "Joint pilot confirmation" if phase == "joint" else "Compare matching methods"),
         ),
         *tuple(replace(s, candidates=(s.candidates[0],)) for s in source.plan.stages[1:]),
     )
@@ -439,6 +466,7 @@ def _batch(
         pilot_max_iterations=iterations,
         attachment_comparison=dict(
             version=METRIC_VERSION,
+            **density_record,
             methods={c.candidate_id: m for c, m in zip(candidates, methods, strict=True)},
             source_directory=str(source.study_directory),
             source_manifest_sha256=sha256_file(source.study_directory / study.STUDY_MANIFEST),

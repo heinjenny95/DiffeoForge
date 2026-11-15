@@ -24,6 +24,7 @@ def alternatives(snapshot, identifier):
 
     feedback = presentation(snapshot, identifier)
     starting = feedback["comparison"] if feedback else None
+    density_pair = snapshot.attachment_comparison.get("early_density_comparison")
     result = []
     sources = [
         snapshot,
@@ -53,8 +54,10 @@ def alternatives(snapshot, identifier):
             is_start = bool(starting and starting["directory"] == str(other.study_directory)
                             and starting["candidate_id"] == candidate.candidate_id)
             label = f"Test {record(other)['screen_trials_spent']} · {candidate.label}"
+            paired = density_pair and other.study_directory == snapshot.study_directory
+            prefix = "Matched density · " if paired else "Starting fit · " if is_start else ""
             result.append((other.visual_reviews.get(candidate.candidate_id) is True,
-                           ("Starting fit · " if is_start else "") + label, pair))
+                           prefix + label, pair))
     if starting and not any(r[1].startswith("Starting fit · ") for r in result):
         other = verify_reference(starting)
         candidate = next(c for c in other.candidates if c.candidate_id == starting["candidate_id"])
@@ -65,7 +68,8 @@ def alternatives(snapshot, identifier):
         result.append((other.visual_reviews.get(candidate.candidate_id) is True,
                        "Starting fit · " + candidate.label, pair))
     # An explicit approval is preferred. Never label an unreviewed fit approved/best.
-    return tuple(sorted(result, key=lambda r: (not r[1].startswith("Starting fit · "), not r[0])))
+    return tuple(sorted(result, key=lambda r: (not r[1].startswith("Matched density · "),
+                                               not r[1].startswith("Starting fit · "), not r[0])))
 
 
 class _SavedFitComparison(QWidget):

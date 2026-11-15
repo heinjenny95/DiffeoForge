@@ -6,6 +6,32 @@ from pathlib import Path
 import numpy as np
 
 
+def controls_for(record, candidate_id):
+    """Return the selected arm's basis, or the historical shared basis."""
+    comparison = record.get("early_density_comparison")
+    if not comparison or candidate_id == comparison["denser_candidate_id"]:
+        return record["controls"]
+    if candidate_id != comparison["reference_candidate_id"]:
+        raise ValueError("Unknown control-density comparison candidate")
+    retained = record["refinement"]
+    return dict(retained["source_controls"], count=comparison["initial_control_count"],
+                spacing=retained["reference"]["values"]["initial_control_point_spacing"])
+
+
+def refinement_for(record, candidate_id):
+    """The matched reference retains the learned field on its original basis."""
+    refinement = record.get("refinement") or {}
+    comparison = record.get("early_density_comparison")
+    if not comparison or candidate_id == comparison["denser_candidate_id"]:
+        return refinement
+    if candidate_id != comparison["reference_candidate_id"]:
+        raise ValueError("Unknown control-density comparison candidate")
+    return dict(version=refinement["version"], reference=refinement["reference"],
+                initialization="learned", momenta=refinement["source_momenta"],
+                source_run_sha256=refinement["reference"]["binding"]["run_manifest_sha256"],
+                reason="Same frozen basis and retained initial field as the density comparison.")
+
+
 def extend(points, spacing, *, target_count=None):
     from diffeoforge.reference_fit_search import control_grid
 
@@ -28,7 +54,7 @@ def copy_basis(root, record):
     if not reference:
         return None
     parent = verify_reference(reference)
-    controls = parent.attachment_comparison["controls"]
+    controls = controls_for(parent.attachment_comparison, reference["candidate_id"])
     source = study._safe_study_path(parent.study_directory, controls["copy"])
     destination = root / "method-controls.txt"
     request = (record.get("guided", {}).get("strategy") or {}).get("common_capacity_request")
@@ -55,8 +81,9 @@ def _extended(root, record, points, spacing):
         from diffeoforge import reference_calibration_study as study
         from diffeoforge.guided_feedback import verify_reference
 
-        basis = verify_reference(transfer["protocol"]["reference"])
-        row = basis.attachment_comparison["controls"]
+        reference = transfer["protocol"]["reference"]
+        basis = verify_reference(reference)
+        row = controls_for(basis.attachment_comparison, reference["candidate_id"])
         result = np.loadtxt(study._safe_study_path(basis.study_directory, row["copy"]), ndmin=2)
         if (not len(points) < len(result) <= 2000
                 or not np.array_equal(result[:len(points)], points)):
@@ -128,12 +155,14 @@ def verify(root, manifest, record):
             or np.any(arrays["momenta"][:, len(old):] != 0)):
         raise ValueError("Nested refinement must preserve its source field exactly")
     from diffeoforge.guided_feedback import verify_reference
-    parent = verify_reference(request["reference"])
+    reference = request["reference"]
+    parent = verify_reference(reference)
     candidate = next(c for c in parent.candidates
-                     if c.candidate_id == request["reference"]["candidate_id"])
+                     if c.candidate_id == reference["candidate_id"])
     run = study.calibration_candidate_run_directory(candidate)
     original = study._safe_study_path(parent.study_directory, request["source_momenta_relative"])
-    if (request["source_controls"]["sha256"] != parent.attachment_comparison["controls"]["sha256"]
+    if (request["source_controls"]["sha256"]
+            != controls_for(parent.attachment_comparison, reference["candidate_id"])["sha256"]
             or not original.resolve().is_relative_to(run.resolve())
             or sha256_file(original) != request["source_momenta"]["sha256"]):
         raise ValueError("Nested refinement source differs from the retained fitted field")

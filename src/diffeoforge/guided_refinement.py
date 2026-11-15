@@ -37,6 +37,7 @@ def bind(root, manifest, record):
     """Copy only a compatible frozen singleton field; never run an optimizer."""
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.config import load_config
+    from diffeoforge.guided_density import controls_for
     from diffeoforge.guided_feedback import verify_reference
 
     request = record.get("refinement")
@@ -96,7 +97,7 @@ def bind(root, manifest, record):
     requested = load_config(root / manifest["source_config"]["copy"])
     upgrade = integration_upgrade(config['model']['deformation'],
                                   requested['model']['deformation'], recipe)
-    controls = old["attachment_comparison"]["controls"]
+    controls = controls_for(old["attachment_comparison"], ref["candidate_id"])
     source = study._safe_study_path(parent.study_directory, controls["copy"])
     original = np.loadtxt(source).reshape(-1, 3)
     run_subjects = {

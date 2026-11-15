@@ -1,5 +1,19 @@
 # Development continuity — dev192 installed and verified
 
+## dev205 — earlier control-point comparison and full-screen pilot review
+
+After an unsuitable ordinary single-form fit with high or extreme expected
+disparity, the pilot offers one matched control-point comparison for the form.
+The existing and 50% larger bases start from the same saved deformation. The
+added controls start at zero momenta. Both trials use the same integration,
+objective, stopping settings and allowance of 40 iterations. Run explicitly
+starts the comparison. Each result needs its own visual decision before reuse
+and carries its exact control basis through subsequent checks. The paired
+surface measurements report regressions separately from sampling-level gains.
+
+The pilot and its fit viewer have full-screen controls. The viewer enlarges the
+mesh area and keeps access to the existing review controls on smaller screens.
+
 ## dev204 — preserve the time grid of a selected pilot fit
 
 A single-form density, detail, weight or smoothing trial that reuses an

@@ -187,6 +187,9 @@ def verify(root, manifest):
     from diffeoforge.guided_refinement import verify as verify_refinement
 
     verify_refinement(root, manifest, record)
+    from diffeoforge.guided_early_density import verify as verify_density_comparison
+
+    verify_density_comparison(root, manifest, record)
     from diffeoforge.guided_joint_initialization import verify as verify_joint
 
     verify_joint(root, manifest, record)
@@ -299,7 +302,9 @@ def configure(config, root, manifest, candidate_id):
     policy.update(state="selected", selected_method=method)
     record = manifest.get("attachment_comparison")
     if record and candidate_id in record["methods"]:
-        controls = record["controls"]
+        from diffeoforge.guided_density import controls_for, refinement_for
+
+        controls = controls_for(record, candidate_id)
         config["optimization"].update(
             freeze_template=True, freeze_control_points=True, max_iterations=record["iterations"]
         )
@@ -312,7 +317,7 @@ def configure(config, root, manifest, candidate_id):
             initial_control_points=str(root / controls["copy"]),
             initial_control_point_spacing=controls["spacing"],
         )
-        refinement = record.get("refinement")
+        refinement = refinement_for(record, candidate_id)
         joint = record.get("joint_initialization")
         if joint:
             deformation.update(initial_momenta=str(root / joint["momenta"]["copy"]),
@@ -538,6 +543,10 @@ def recommendation(snapshot):
     record = snapshot.attachment_comparison
     if not record or snapshot.current_stage.order != 1:
         return None
+    if record.get("early_density_comparison"):
+        return dict(version=VERSION, recommended_candidate_id=None, recommended_method=None,
+                    best_candidates={}, warnings={}, status="review_required",
+                    limitation="Review the matched endpoints before choosing a control basis.")
     expected = {s.filename for s in snapshot.plan.selected_pilot_subjects}
     available, warnings = {}, {}
     for candidate in snapshot.candidates:
@@ -628,14 +637,18 @@ def assess(snapshot, assessment):
         )
         for row in assessment.candidates
     )
-    cautions = (
+    paired_density = snapshot.attachment_comparison.get("early_density_comparison")
+    cautions = ((
+        "Both control bases use the same starting deformation and iteration allowance.",
+        result["limitation"],
+    ) if paired_density else (
         "Two methods compared against identical originals; native objective values are not ranked.",
         "No clear advantage: inspect both methods."
         if chosen is None
         else "Stable measured advantage; every specimen still needs visual approval.",
         *[warning for values in result["warnings"].values() for warning in values],
         result["limitation"],
-    )
+    ))
     return replace(
         assessment,
         version=VERSION,
