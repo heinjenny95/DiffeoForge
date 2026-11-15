@@ -286,6 +286,22 @@ def _batch(
 
         configure_source(config, multiscale)
         iterations = 120
+    refinement = (strategy or {}).get("baseline") if phase == "refine" else None
+    if (refinement and goal in {"density", "detail", "weight", "smooth"}
+            and not strategy.get("regional_recipe")):
+        from diffeoforge.guided_feedback import verify_reference
+
+        parent = verify_reference(refinement)
+        if (parent.plan.pilot_subject_count == 1
+                and parent.attachment_comparison.get("refinement", {}).get("initialization")
+                != "residual"):
+            retained = next(c for c in parent.candidates
+                            if c.candidate_id == refinement["candidate_id"])
+            # A field-preserving adjustment starts on the selected field's grid,
+            # even when the project's screening grid is coarser.
+            deformation = load_config(retained.config_path)["model"]["deformation"]
+            for key in ("timepoints", "use_rk2"):
+                config["model"]["deformation"][key] = deformation[key]
     if ((strategy or {}).get("regional_recipe")
             and not (strategy or {}).get("regional_continuation")):
         from diffeoforge.regional_pilot import configure_numerics
@@ -327,7 +343,6 @@ def _batch(
     template = load_surface_mesh(source.study_directory / manifest["inputs"]["template"]["copy"])
     _, spacing = control_grid(template.metadata.bounds)
     center = dict(values)
-    refinement = (strategy or {}).get("baseline") if phase == "refine" else None
     capacity = (strategy or {}).get("control_capacity_request")
     if (not multiscale and not capacity and strategy is not None and phase == "screen"
             and not refinement and not strategy.get("control_basis")

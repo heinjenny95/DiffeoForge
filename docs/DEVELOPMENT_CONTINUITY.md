@@ -1,5 +1,14 @@
 # Development continuity — dev192 installed and verified
 
+## dev204 — preserve the time grid of a selected pilot fit
+
+A single-form density, detail, weight or smoothing trial that reuses an
+inspected fixed field inherits its integrator and time points. The original
+screening configuration still supplies the defaults for fresh fields. The
+existing field, topology, geometry and source checks continue to apply.
+Selecting an earlier fit and preparing its successor keeps the stored fit
+and review evidence. Preparing the successor does not start a solver.
+
 ## dev203 — choose how to start the full atlas
 
 After completing a guided Deformetrica pilot, choose **Atlas initialization**
