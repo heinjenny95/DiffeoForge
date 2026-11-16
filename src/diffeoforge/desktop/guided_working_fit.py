@@ -24,9 +24,9 @@ def viewer(window, origin, parent, candidate, pairs, fit, context):
     dialog.setWindowTitle("Work from selected saved fit")
     dialog.findChild(QLabel, "title").setText("Selected starting fit · " + context["label"])
     dialog._comparison_intro.setText(
-        "Orange: original · Blue: selected saved reconstruction. Mark improvements and "
-        "areas to retain here. Saving uses this fit as your working source; it does not "
-        "alter its old review, approve it, prepare a trial or start fitting.")
+        "Orange: original · Blue: saved reconstruction. Use Improve on the areas that "
+        "still need work and Retain on the areas that now look right. Save this fit and "
+        "the marks as the starting point for your next test.")
     if hint:
         # The normal initial pair load resets the camera before the hand-off.
         # Later full-detail loads must keep the user's new view.

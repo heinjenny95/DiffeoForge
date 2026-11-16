@@ -136,8 +136,80 @@ def _no_gain(case, marked):
             and case.get("region_outcomes") in (["unclear"], ["regression"]))
 
 
+def _problem_marks(rows):
+    return [row for row in rows if row.get("purpose", "problem") == "problem"]
+
+
+def _partial_local_fit(snapshot, reference):
+    """Use the researcher's narrower review, even when the remaining mark moved."""
+    identifier, target = reference["candidate_id"], reference["target"]
+    if (not snapshot.attachment_comparison.get("regional_objective")
+            or snapshot.visual_reviews.get(identifier) is not False):
+        return False
+    prepared = (guided.record(snapshot).get("feedback") or {}).get("regions", [])
+    reviewed = snapshot.problem_regions.get(identifier, {}).get(target, [])
+    return 0 < len(_problem_marks(reviewed)) < len(_problem_marks(prepared))
+
+
+def _return_direction(snapshot, context, identifier, reference, reason):
+    data = context["feedback"].get(identifier) or {}
+    choice = next((row for row in data.get("choices", [])
+                   if row["reference"] == reference), None)
+    if choice and reference["target"] == guided.record(snapshot)["target"]:
+        quality = local_quality_note(verify_reference(reference), reference)
+        return dict(mode="return", identifier=identifier, current=reference,
+                    start_label=choice["label"],
+                    reason=" ".join(filter(None, (reason, quality))),
+                    quality_warning=quality)
+    return None
+
+
+def _density_return(snapshot, context, candidate_id, outcome_note):
+    info = guided.record(snapshot)
+    seed = snapshot.attachment_comparison["refinement"]["reference"]
+    previous = info["strategy"]["previous"]["directory"]
+    data = context["feedback"].get(candidate_id) or {}
+    discounted = [case["fit"] for case in context["cases"]
+                  if case.get("outcome") in {"same", "worse"}]
+    for row in data.get("choices", []):
+        ref = row["reference"]
+        if (ref["directory"] == previous and ref not in discounted
+                and _partial_local_fit(verify_reference(ref), ref)):
+            return _return_direction(
+                snapshot, context, candidate_id, ref,
+                outcome_note + " Your earlier local review left fewer "
+                "areas to improve. Open that fit and confirm what to improve and retain.",
+            )
+    return _return_direction(
+        snapshot, context, candidate_id, seed,
+        outcome_note + " Return to the exact fit used to start them "
+        "and check what still needs improvement.",
+    )
+
+
+def local_quality_note(snapshot, reference):
+    """Explain a saved field's checks when it is revisited as a provisional start."""
+    candidate = next(c for c in snapshot.candidates
+                     if c.candidate_id == reference["candidate_id"])
+    quality = ((candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
+               .get(reference["target"], {}).get("regional_quality", {}))
+    if quality.get("numerical_selection_suitable") is not False:
+        return ""
+    labels = {
+        "outside_preserved": "preservation outside the marked area",
+        "transition_preserved": "preservation at the edge of the marked area",
+        "shape_preserved": "preservation of the marked part shape",
+        "no_new_intersection_flags": "surface intersections",
+        "temporal_grid_stable": "time-grid stability",
+        "spatial_resolution_sufficient": "original-source spatial resolution",
+    }
+    failed = [label for key, label in labels.items() if quality.get(key) is False]
+    return ("The saved fit failed checks for " + ", ".join(failed) + "." if failed
+            else "The saved fit did not pass all numerical checks.")
+
+
 def _input_direction(snapshot, context, target):
-    """A rejected protected repair or a fully reviewed density pair can prompt an input check."""
+    """Offer a saved start or input check after fully reviewed trials."""
     record = snapshot.attachment_comparison
     regional = record.get("regional_objective")
     density_pair = record.get("early_density_comparison")
@@ -158,6 +230,15 @@ def _input_direction(snapshot, context, target):
     }
     if not current or current.keys() != candidates.keys():
         return None
+    if regional and len(current) == 1:
+        identifier, case = next(iter(current.items()))
+        if case.get("outcome") not in {"same", "worse"} and _partial_local_fit(
+                snapshot, case["fit"]):
+            return _return_direction(
+                snapshot, context, identifier, case["fit"],
+                "Your local review left fewer areas to improve. Open this saved fit "
+                "to confirm the remaining problem and mark the good areas to retain.",
+            )
     guarded_local_fit = False
     for identifier, case in current.items():
         feedback = (context.get("feedback", {}).get(identifier) or {})
@@ -177,9 +258,13 @@ def _input_direction(snapshot, context, target):
         verify_reference(reference)
     except (OSError, ValueError):
         return None
+    if density_pair:
+        outcome_note = ("You rated both control-point trials worse."
+                        if all(case["outcome"] == "worse" for case in current.values())
+                        else "Both control-point trials still need work.")
+        return _density_return(snapshot, context, reference["candidate_id"], outcome_note)
     reason = ("The rejected local fit did not pass its saved quality checks."
-              if guarded_local_fit else "This local test did not resolve the problem."
-              if regional else "Neither control-point option resolved the problem.")
+              if guarded_local_fit else "This local test did not resolve the problem.")
     return dict(
         mode="inputs", current=reference,
         reason=reason + " Check the pose and the corresponding structure in the original "

@@ -115,7 +115,7 @@ def test_saved_comparison_opens_from_the_fixed_footer_without_preparing_fit(tmp_
         app.processEvents()
 
 
-def _regional_trial(tmp_path, monkeypatch):
+def _regional_trial(tmp_path, monkeypatch, *, base=None, mark_count=1):
     import shutil
     from types import SimpleNamespace
 
@@ -127,17 +127,17 @@ def _regional_trial(tmp_path, monkeypatch):
     from diffeoforge.surface_io import load_surface_mesh
 
     identifier = "guided-varifold"
-    base = run_batch(initial(tmp_path), monkeypatch)
+    base = base or run_batch(initial(tmp_path), monkeypatch)
     manifest = study._verify_manifest(base.study_directory)
     target = base.plan.selected_pilot_subjects[0]
     original = base.study_directory / manifest["inputs"]["subjects"][0]["copy"]
     vertices = load_surface_mesh(original).geometry.vertices
-    center = list(max(vertices, key=lambda point: point[0]))
-    mark = patch(target.sha256, center=center, radius=.25)
+    marks = [patch(target.sha256, center=list(max(vertices, key=lambda point: point[axis])),
+                   radius=.25) for axis in range(mark_count)]
     base = study.record_reference_calibration_candidate_review(
         base.study_directory, candidate_id=identifier, approved=False,
         reviewed_subjects=(target.filename,), subject_decisions={target.filename: "fail"},
-        problem_regions={target.filename: [mark]},
+        problem_regions={target.filename: marks},
     )
 
     candidate = next(c for c in base.candidates if c.candidate_id == identifier)
@@ -242,7 +242,7 @@ def test_rejected_protected_fit_offers_bound_input_check(
         _assert_read_only_input_footer(reopened, direction, monkeypatch)
 
 
-def test_rejected_density_pair_offers_input_check_after_both_reviews(tmp_path, monkeypatch):
+def test_rejected_density_pair_offers_its_seed_after_both_reviews(tmp_path, monkeypatch):
     from test_guided_early_density import METHOD, REFERENCE, _marked_rejection, first_trial
     from test_pilot_region_feedback import reject
 
@@ -252,19 +252,144 @@ def test_rejected_density_pair_offers_input_check_after_both_reviews(tmp_path, m
     pair = _complete_with_regions(pair, monkeypatch, "unclear")
     partial = reject(pair, REFERENCE)
     guidance = guided_strategy.prepare_proposals(partial, guided_strategy.state(partial))
-    assert (guidance["fit_direction"] or {}).get("mode") != "inputs"
+    assert (guidance["fit_direction"] or {}).get("mode") != "return"
 
     pair = reject(partial, METHOD)
     journal = pair.study_directory / study.STUDY_EVENTS
     digest = sha256_file(journal)
     guidance = guided_strategy.prepare_proposals(pair, guided_strategy.state(pair))
     direction = guidance["fit_direction"]
-    assert direction["mode"] == "inputs"
-    assert direction["current"] in [
-        guided_feedback.reference(pair, identifier) for identifier in (REFERENCE, METHOD)
-    ]
+    assert direction["mode"] == "return"
+    assert direction["current"] == guided_feedback.reference(initial, METHOD)
     assert sha256_file(journal) == digest
-    _assert_read_only_input_footer(pair, direction, monkeypatch)
+
+
+def test_return_to_the_partial_local_fit_after_worse_control_point_trials(tmp_path, monkeypatch):
+    import shutil
+    from types import SimpleNamespace
+
+    from test_guided_early_density import METHOD, REFERENCE, first_trial
+    from test_guided_feedback import decision
+    from test_interactive_pilot import geometry_receipt
+    from test_pilot_region_feedback import reject
+
+    from diffeoforge import regional_evaluation, result_report
+    from diffeoforge.config import load_config
+    from diffeoforge.pilot_regions import EDIT_VERSION
+
+    _, root = first_trial(tmp_path, monkeypatch)
+    base, local, identifier = _regional_trial(tmp_path, monkeypatch, base=root, mark_count=3)
+    marks = guided.record(local)["feedback"]["regions"]
+    assert len(marks) == 3
+    source = local.plan.selected_pilot_subjects[0]
+    target = source.filename
+    remaining = dict(marks[-1], radius=marks[-1]["radius"] * 1.01)
+    local = _complete_with_regions(local, monkeypatch, "regression", failed_guard=True)
+    local = study.record_reference_calibration_candidate_review(
+        local.study_directory, candidate_id=identifier, approved=False,
+        reviewed_subjects=(target,), subject_decisions={target: "fail"},
+        problem_regions={target: [remaining]},
+    )
+    retained = guided_feedback.reference(local, METHOD)
+    local_direction = guided_strategy.prepare_proposals(local, guided_strategy.state(local))[
+        "fit_direction"]
+    assert local_direction["mode"] == "return" and local_direction["current"] == retained
+    assert "preservation of the marked part shape" in local_direction["reason"]
+
+    geometry_receipt(base, METHOD, monkeypatch)
+    pair = guided.next_action(local.study_directory, "adaptive_density_comparison", METHOD)
+    assert pair.attachment_comparison["refinement"]["reference"] == guided_feedback.reference(
+        base, METHOD)
+    pair = _complete_with_regions(pair, monkeypatch, "regression")
+    for arm in (REFERENCE, METHOD):
+        pair = reject(pair, arm, marked=True)
+        pair = guided_feedback.save_feedback(
+            pair.study_directory, arm, decision(base, pair, "worse"),
+        )
+        direction = guided_strategy.prepare_proposals(pair, guided_strategy.state(pair))[
+            "fit_direction"]
+        if arm == REFERENCE:
+            assert (direction or {}).get("mode") != "return"
+    assert direction["mode"] == "return" and direction["current"] == retained
+
+    # Opening the footer routes to the exact earlier reconstruction without a write.
+    _assert_working_footer(pair, direction, monkeypatch)
+    local_candidate = local.candidates[0]
+    local_run = local_candidate.run_directory
+    config = load_config(local_candidate.config_path)
+    local_row = study._verify_manifest(local.study_directory)["inputs"]["subjects"][0]
+    endpoint = (local_run / "output" /
+                f"Fixture__Reconstruction__{config['model']['object_id']}__subject_{target}.vtk")
+    endpoint.parent.mkdir(exist_ok=True)
+    shutil.copyfile(local.study_directory / local_row["copy"], endpoint)
+    local_report = SimpleNamespace(
+        inventory=[dict(path=endpoint.name, sha256=sha256_file(endpoint))],
+        manifest=dict(effective_config=config),
+    )
+    base_report = result_report.collect_run_report
+    base_endpoint = regional_evaluation.endpoint
+    monkeypatch.setattr(result_report, "collect_run_report",
+                        lambda path: local_report if path == local_run else base_report(path))
+    monkeypatch.setattr(regional_evaluation, "endpoint", lambda candidate, subject=None:
+        dict(path=str(endpoint), sha256=local_report.inventory[0]["sha256"])
+        if candidate.run_directory == local_run else base_endpoint(candidate, subject))
+    local_pins = {p: sha256_file(p) for p in local.study_directory.rglob("*") if p.is_file()}
+    selected_marks = [dict(mark, version=EDIT_VERSION, purpose="fixed") for mark in marks[:2]]
+    selected_marks.append(remaining)
+    chosen = guided.next_action(
+        pair.study_directory, "adaptive_working_start", direction["identifier"], goal=dict(
+            reference=retained, display_scopes={target: "preview"},
+            inspected_subjects=[target], problem_regions={target: selected_marks},
+        ),
+    )
+    direction = guided_strategy.prepare_proposals(chosen, guided_strategy.state(chosen))[
+        "fit_direction"]
+    assert direction["mode"] == "trial"
+    assert direction["request"]["reference"] == retained
+    assert direction["request"]["regions"] == selected_marks
+    assert "preservation of the marked part shape" in direction["reason"]
+    assert chosen.visual_reviews == pair.visual_reviews
+    base_reference = guided_feedback.reference(base, METHOD)
+    selected_other = guided.next_action(
+        chosen.study_directory, "adaptive_working_start", direction["identifier"], goal=dict(
+            reference=base_reference, display_scopes={target: "preview"},
+            inspected_subjects=[target], problem_regions={target: [remaining]},
+        ),
+    )
+    other_direction = guided_strategy.prepare_proposals(
+        selected_other, guided_strategy.state(selected_other),
+    )["fit_direction"]
+    assert other_direction["mode"] == "trial"
+    assert other_direction["request"]["reference"] == base_reference
+    assert not other_direction["quality_warning"]
+    assert all(sha256_file(path) == digest for path, digest in local_pins.items())
+
+
+def _assert_working_footer(snapshot, direction, monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    app = QApplication.instance() or QApplication([])
+    view = ReferenceCalibrationDialog(snapshot.study_directory)
+    observed = []
+    monkeypatch.setattr(view, "_open_guided_working_fit", lambda *args: observed.append(args))
+    journal = snapshot.study_directory / study.STUDY_EVENTS
+    digest = sha256_file(journal)
+    view.show()
+    try:
+        wait_pilot_view(view)
+        assert view.next_step_button.isVisible() and view.next_step_button.isEnabled()
+        assert view.next_step_button.text() == f"Work from saved fit · {direction['start_label']}"
+        view.next_step_button.click()
+        assert observed == [(direction["identifier"], direction["current"])]
+        assert not view._worker and sha256_file(journal) == digest
+    finally:
+        view.close()
+        app.processEvents()
 
 
 def _assert_read_only_input_footer(snapshot, direction, monkeypatch):

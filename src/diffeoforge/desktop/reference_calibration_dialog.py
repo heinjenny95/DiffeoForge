@@ -1902,6 +1902,15 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         close = QPushButton("Close")
         close.clicked.connect(self.reject)
         self.close_button = close
+        self.pilot_assistant_button = QPushButton("Pilot chat")
+        self.pilot_assistant_button.hide()
+
+        def open_pilot_chat():
+            from diffeoforge.desktop.pilot_assistant_context import open_chat
+
+            open_chat(self)
+
+        self.pilot_assistant_button.clicked.connect(open_pilot_chat)
         self.next_step_button = QPushButton()
         self._guided_footer_action = None
         self._guided_footer_goal = None
@@ -1939,6 +1948,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         footer.addLayout(extra_actions)
         main_actions = QHBoxLayout()
         main_actions.addWidget(self.cancel_button)
+        main_actions.addWidget(self.pilot_assistant_button)
         main_actions.addStretch()
         main_actions.addWidget(self.next_step_button)
         main_actions.addWidget(self.final_finish_button)
@@ -2063,7 +2073,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                 for control in (self.start_button, self.advance_button,
                                 self.review_next_button, self.keep_previous_button,
                                 self.next_step_button, self.final_finish_button,
-                                self.final_retry_button,
+                                self.final_retry_button, self.pilot_assistant_button,
                                 self.selection_combo, self.find_fit_button,
                                 self.collect_evidence_button,
                                 self.advanced_mode, self.afk_mode):
@@ -2208,7 +2218,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         running = self._worker is not None or self._restoring_search
         from diffeoforge.reference_guided_pilot import record as guided_record
 
-        if guided_record(self._snapshot) and stage and stage.order == 1:
+        guided_view = bool(guided_record(self._snapshot) and stage and stage.order == 1)
+        self.pilot_assistant_button.setVisible(guided_view)
+        self.pilot_assistant_button.setEnabled(guided_view)
+        if guided_view:
             from diffeoforge.desktop.guided_pilot import render
 
             render(self, prepared)
@@ -3062,6 +3075,8 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                     from diffeoforge.desktop.guided_diagnosis import inspect_inputs
 
                     inspect_inputs(self, identifier)
+                elif action == "fit_direction_working":
+                    self._open_guided_working_fit(*identifier)
                 else:
                     self._start_pilot(adaptive=False, guided_action=(
                         action, identifier, getattr(self, "_guided_footer_goal", None)))

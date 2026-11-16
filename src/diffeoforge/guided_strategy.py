@@ -289,6 +289,8 @@ def prepare_proposals(snapshot, context):
         context["proposals"] = {}
         context["working_proposals"] = {}
         context["failed_proposals"] = {}
+        chosen = next((event for event in reversed(study._load_events(snapshot.study_directory))
+                       if event["event"] == "guided_starting_fit_selected"), None)
         for candidate in snapshot.candidates:
             identifier = candidate.candidate_id
             if candidate.status == "failed":
@@ -312,22 +314,26 @@ def prepare_proposals(snapshot, context):
             context["proposals"][identifier] = {
                 request: propose(snapshot, identifier, request, verified) for request in requests}
             selected = (context["feedback"].get(identifier) or {}).get("selected")
-            if selected and (selected["directory"], selected["candidate_id"]) != (
-                    str(snapshot.study_directory), identifier):
+            if selected and ((selected["directory"], selected["candidate_id"]) != (
+                    str(snapshot.study_directory), identifier) or
+                    (chosen and chosen.get("editing_candidate_id") == identifier
+                     and chosen["reference"] == selected)):
                 from diffeoforge import guided_working_fit as working
 
                 parent, working_data = working.inputs(snapshot, identifier, context,
                                                       verified=verified)
                 context["working_proposals"][identifier] = {
                     request: working.propose(parent, request, working_data) for request in requests}
-        context["fit_direction"] = _prepare_fit_direction(snapshot, context)
+        context["fit_direction"] = _prepare_fit_direction(snapshot, context, chosen)
     return context
 
 
-def _prepare_fit_direction(snapshot, context):
+def _prepare_fit_direction(snapshot, context, chosen):
     from diffeoforge.guided_fit_direction import preview
 
     direction = preview(snapshot, context)
+    if direction and direction["mode"] == "return":
+        return _prepare_return_direction(context, direction, chosen)
     if not direction or direction["mode"] != "compare":
         return direction
 
@@ -339,8 +345,6 @@ def _prepare_fit_direction(snapshot, context):
         return direction
     # Merely restoring a view or saving relative feedback is not an explicit
     # choice to proceed from one of the compared fields.
-    chosen = next((event for event in reversed(study._load_events(snapshot.study_directory))
-                   if event["event"] == "guided_starting_fit_selected"), None)
     if (not chosen or chosen.get("editing_candidate_id") != identifier
             or chosen["reference"] != selected or feedback["needs_direction"]):
         return direction
@@ -373,6 +377,48 @@ def _prepare_fit_direction(snapshot, context):
     # Leave refinements and history accessible for marks that do not support
     # one safe preselected adjustment.
     return None
+
+
+def _prepare_return_direction(context, direction, chosen):
+    from diffeoforge.guided_feedback import verify_reference
+    from diffeoforge.guided_fit_direction import local_quality_note
+
+    identifier = (chosen or {}).get("editing_candidate_id")
+    feedback = context["feedback"].get(identifier) or {}
+    working = context["working_proposals"].get(identifier)
+    reference = (chosen or {}).get("reference")
+    if (not reference or not working or feedback.get("selected") != reference
+            or feedback["needs_direction"]):
+        return direction
+    choice = next((row for row in feedback["choices"] if row["reference"] == reference), None)
+    if not choice:
+        return direction
+    quality = local_quality_note(verify_reference(reference), reference)
+    start = dict(direction, identifier=identifier, current=reference, start_label=choice["label"],
+                 quality_warning=quality)
+    regions = feedback["problem_regions"].get(reference["target"], [])
+    problem = [row for row in regions if row.get("purpose", "problem") == "problem"]
+    if not problem:
+        return dict(start, reason=" ".join(filter(None, (
+            "Mark the area that still needs improvement on this fit.", quality,
+        ))))
+    symptom = next((row["symptom"] for row in problem if row["symptom"] != "unsure"), "unsure")
+    request = "regional:" + symptom
+    proposal = working[request]
+    if not proposal["available"] or proposal["initialization_reference"] != reference:
+        reason = proposal.get("blocked_reason") or "The saved field cannot seed this adjustment."
+        return dict(start, reason=" ".join(filter(None, (reason, quality))))
+    return dict(
+        start, mode="trial",
+        title="Work on remaining marked area" if len(problem) == 1 else
+              "Work on remaining marked areas",
+        reason=" ".join(filter(None, (
+            "Prepare a protected local test from this saved fit. "
+            "Review the new result before deciding if it is suitable.", quality,
+        ))),
+        request=dict(request=request, reference=reference, values=proposal["values"],
+                     goal=proposal["goal"], regions=regions),
+    )
 
 
 def trial_proposal(snapshot, identifier, symptom, *, context=None):

@@ -1,5 +1,34 @@
 # Development continuity — dev192 installed and verified
 
+## dev209 — return to a partial fit and ask Pilot chat
+
+After a local review reduces the number of problem areas, the footer offers
+that saved fit as a working source. When both arms of a control-point comparison
+are rejected as unhelpful, the footer offers the earlier partial repair if it
+is the verified preceding result. Otherwise it offers the exact comparison
+seed. Numerical quality warnings follow the selected fit. The researcher can
+confirm good areas to retain, keep the remaining Improve marks and prepare a
+protected local trial only when the selected field passes preparation checks.
+
+**Pilot chat** answers German and English questions about the current guided
+stage. It names verified inspection actions and opens them after a click. A
+reply cannot edit marks, approve a fit, prepare a trial or start computation.
+It keeps the conversation in memory while the chat is open. The reviewed scope
+and available actions come from the same prepared view as the pilot footer.
+Each selected action checks that the view is still current.
+
+For ambiguous phrasing, a separately staged Windows x64 sidecar can classify
+the question on the CPU. It uses pinned [llama.cpp b10566](https://github.com/ggml-org/llama.cpp/releases/tag/b10566)
+and [Qwen2.5-1.5B-Instruct Q4_K_M](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/tree/91cad51170dc346986eccefdc2dd33a9da36ead9).
+The model receives the question and up to two previous questions. It returns
+one topic from a finite list. DiffeoForge supplies case facts, answer text and
+buttons. The model uses no network and receives no automatic access to meshes,
+notes, logs or saved-fit paths. The sidecar is optional, with built-in replies on
+all platforms and during local fitting. Set `DIFFEOFORGE_PILOT_ASSISTANT_DIR` to
+an explicit verified sidecar directory or place it in `pilot-assistant` under
+the per-user state directory. Set `DIFFEOFORGE_PILOT_ASSISTANT_OFFLINE_RULES=1`
+to use built-in replies only. The ordinary installer carries the chat code.
+
 ## dev208 — inspect inputs after an unhelpful fit change
 
 After rejection of a protected local fit or of both arms of a matched

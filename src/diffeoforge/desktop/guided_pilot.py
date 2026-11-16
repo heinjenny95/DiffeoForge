@@ -336,6 +336,12 @@ def render(window, prepared):
                     "fit_direction_inputs", direction["current"],
                     "Open the saved input surfaces. Starts no fitting.",
                 )
+            elif mode == "return":
+                direction_pinned = pin_action(
+                    window, snapshot, f"Work from saved fit · {direction['start_label']}",
+                    "fit_direction_working", (direction["identifier"], direction["current"]),
+                    "Open the saved reconstruction to confirm areas to improve and retain.",
+                )
             elif mode == "trial":
                 direction_pinned = pin_action(
                     window, snapshot, f"{direction['title']} · {direction['start_label']}",
