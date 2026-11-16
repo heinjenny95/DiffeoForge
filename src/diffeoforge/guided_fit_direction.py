@@ -127,19 +127,82 @@ def _progress_stalled(saved, current):
     return stalled >= 2
 
 
+def _no_gain(case, marked):
+    """Use the visual comparison, or measurements of the exact areas still marked."""
+    outcome = case.get("outcome")
+    if outcome in {"same", "worse"}:
+        return True
+    return (outcome == "rejected" and bool(marked) and case.get("regions") == marked
+            and case.get("region_outcomes") in (["unclear"], ["regression"]))
+
+
+def _input_direction(snapshot, context, target):
+    """A rejected protected repair or a fully reviewed density pair can prompt an input check."""
+    record = snapshot.attachment_comparison
+    regional = record.get("regional_objective")
+    density_pair = record.get("early_density_comparison")
+    if not (regional or density_pair):
+        return None
+    candidates = {candidate.candidate_id: candidate for candidate in snapshot.candidates}
+    if not all(snapshot.visual_reviews.get(i) is False and context["allowed"].get(i)
+               for i in candidates):
+        return None
+
+    directory = str(snapshot.study_directory)
+    current = {
+        ref["candidate_id"]: case
+        for case in context["cases"]
+        if (ref := case.get("fit")) and ref["directory"] == directory
+        and ref["candidate_id"] in candidates and ref["target"] == target
+        and case.get("individual") and case.get("target") == target
+    }
+    if not current or current.keys() != candidates.keys():
+        return None
+    guarded_local_fit = False
+    for identifier, case in current.items():
+        feedback = (context.get("feedback", {}).get(identifier) or {})
+        marked = feedback.get("problem_regions", {}).get(target, [])
+        metrics = candidates[identifier].metrics or {}
+        quality = (metrics.get("attachment_comparison", {}).get("subjects", {})
+                   .get(target, {}).get("regional_quality", {}))
+        guarded_local_fit = (bool(regional) and case.get("outcome") == "rejected"
+                             and quality.get("numerical_selection_suitable") is False)
+        if not (guarded_local_fit or _no_gain(case, marked)):
+            return None
+
+    preferred = context.get("preference")
+    reference = next((r["fit"] for r in current.values() if r["fit"] == preferred),
+                     next(iter(current.values()))["fit"])
+    try:
+        verify_reference(reference)
+    except (OSError, ValueError):
+        return None
+    reason = ("The rejected local fit did not pass its saved quality checks."
+              if guarded_local_fit else "This local test did not resolve the problem."
+              if regional else "Neither control-point option resolved the problem.")
+    return dict(
+        mode="inputs", current=reference,
+        reason=reason + " Check the pose and the corresponding structure in the original "
+        "template and specimen before preparing another fit.",
+    )
+
+
 def preview(snapshot, context):
     """Offer one read-only next view, without remeasuring geometry or changing a fit."""
     record = snapshot.attachment_comparison
     info = guided.record(snapshot)
     if (not info or not info.get("target") or info["phase"] == "joint"
             or snapshot.plan.pilot_subject_count != 1 or is_common_check(info)
-            or record.get("regional_objective") or any(snapshot.visual_reviews.values())
+            or any(snapshot.visual_reviews.values())
             or any(c.status not in {"completed", "failed"} for c in snapshot.candidates)):
         return None
     target = info["target"]
     directory = str(snapshot.study_directory)
     origin = Path(info["origin"]).resolve()
     with study.calibration_verification_scope():
+        inputs = _input_direction(snapshot, context, target)
+        if inputs is not None or record.get("regional_objective"):
+            return inputs
         source = _input_identity(study._verify_manifest(snapshot.study_directory), target)
         if source is None:
             return None

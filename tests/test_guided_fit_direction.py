@@ -106,3 +106,25 @@ def test_input_check_requires_separate_stalled_trials_and_respects_improvement()
     assert direction._progress_stalled([pair, pair, later], later)
     assert not direction._progress_stalled([pair, row("other-method", "same", "varifold"),
                                            row("better-test", "better"), later], later)
+
+
+@pytest.mark.parametrize(
+    "outcome, measured, marks_match, expected",
+    [
+        ("same", [], False, True),
+        ("worse", ["improved"], True, True),
+        ("better", ["regression"], True, False),
+        ("rejected", ["regression"], True, True),
+        ("rejected", ["unclear"], True, True),
+        ("rejected", ["improved"], True, False),
+        ("rejected", ["regression"], False, False),
+        ("rejected", [], True, False),
+    ],
+)
+def test_input_check_separates_reported_progress_from_unchanged_mark_measurements(
+    outcome, measured, marks_match, expected,
+):
+    marks = [{"source_sha256": "source", "radius": 0.42}]
+    active = marks if marks_match else [{"source_sha256": "source", "radius": 0.63}]
+    case = dict(outcome=outcome, regions=marks, region_outcomes=measured)
+    assert direction._no_gain(case, active) is expected

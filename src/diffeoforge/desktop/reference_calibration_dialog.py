@@ -4901,8 +4901,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             dialog.findChild(QLabel, "title").setText(
                 "Original template alignment — before fitting")
             dialog._comparison_intro.setText(
-                "Orange: original specimen. Blue: original template after prealignment. "
-                "This is an input check, not a reconstruction or anatomical approval.")
+                "Orange: original specimen. Blue: starting template in the saved alignment. "
+                "Compare the area that needs work. If its pose or the template needs correction, "
+                "close the pilot and return to Data & engine. If the inputs look suitable, "
+                "return to the pilot and review the saved attempts before choosing another test.")
             dialog.show_reconstruction.setText("Show original template (blue surface)")
             try:
                 dialog.exec()

@@ -1,5 +1,19 @@
 # Development continuity — dev192 installed and verified
 
+## dev208 — inspect inputs after an unhelpful fit change
+
+After rejection of a protected local fit or of both arms of a matched
+control-point test, the fixed footer can show **Inspect template and
+alignment**. This action uses recorded visual comparison feedback, a failed
+local quality check, or measured regression or unclear progress on the same
+marked areas. The viewer compares
+the original template and target in their saved coordinate frame.
+
+Pending reviews and suitable fits keep their existing next actions. A
+reported improvement or a measurement from different marks leaves the normal
+recovery options available. The input check opens a read-only preview and
+keeps repair options accessible. Run still requires an explicit action.
+
 ## dev207 — use saved evidence to choose the next pilot action
 
 After an unsuccessful individual fit, the pilot can open reviewed Current and
