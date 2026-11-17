@@ -122,6 +122,9 @@ def selection(snapshot, identifier):
     if retention and retention["available"] and retention["automatic_start_allowed"]:
         return retention["reference"]
     for event in reversed(study._load_events(snapshot.study_directory)):
+        if event["event"] == "guided_method_preference":
+            _same_source(snapshot, event["preference"])
+            return event["preference"]
         if (event["event"] == "guided_joint_starting_fit_selected"
                 and event["current"]["candidate_id"] == identifier):
             from diffeoforge.guided_accepted_fit import verify_selection

@@ -1,5 +1,14 @@
 # Development continuity
 
+## dev219 — follow the selected pilot field
+
+Choosing a saved comparison fit or its method card now supplies the same
+verified starting reference to the next-step recommendation. Empty marks no
+longer imply an alignment problem or reopen the comparison. Existing verified
+parameter/local tests remain explicit preparations, with separate Run and review.
+Selected-source concerns and green-reference conflicts retain their safeguards.
+See [selection behavior and checks](PILOT_SELECTED_SOURCE_GUIDANCE.md).
+
 ## dev218 — mark reconstruction defects and continue reviewed fits
 
 Saved-fit choices name both methods and use equal emphasis for an unranked pair

@@ -163,9 +163,14 @@ def test_actual_rejected_method_buttons_and_repeat_click_guard(tmp_path, monkeyp
         queued.pop().run()
         wait_pilot_view(dialog)
         assert dialog._snapshot.visual_reviews["guided-varifold"] is False
-        prepare = next(b for b in dialog.content.findChildren(QPushButton)
-                       if "prepare 1 trial on 1 specimen" in b.text())
+        # After choosing the method the visible next-step footer owns its
+        # experiment; stale or optional per-method controls are not the route.
+        prepare = dialog.next_step_button
         assert prepare.isEnabled() and not prepare.isHidden()
+        assert prepare.text().startswith("Test finer surface matching")
+        assert dialog._guided_footer_action[2] == "guided-varifold"
+        assert dialog._guided_footer_goal["reference"]["method"] == "varifold"
+        assert dialog._guided_footer_goal["reference"]["directory"] == str(snapshot.study_directory)
         assert dialog.start_button.isHidden()
     finally:
         dialog._worker = None

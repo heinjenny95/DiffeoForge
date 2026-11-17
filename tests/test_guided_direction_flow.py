@@ -83,7 +83,174 @@ def test_choosing_other_method_in_same_study_advances_from_comparison(tmp_path, 
     )
     state = guided_strategy.prepare_proposals(chosen, guided_strategy.state(chosen))
     result = state["fit_direction"]
-    assert result["mode"] == "inputs" and result["current"] == alternative
+    assert result["mode"] == "trial" and result["current"] == alternative
+    assert result["request"]["reference"] == alternative
+    assert result["identifier"] == "guided-current"
+
+
+def _selected_other_method(tmp_path, monkeypatch, *, selected_symptom=None,
+                           stale_current_alignment=False):
+    from test_guided_pilot import run_batch
+    from test_interactive_pilot import geometry_receipt, initial
+    from test_pilot_region_feedback import reject
+
+    snapshot = reject(reject(run_batch(initial(tmp_path), monkeypatch), "guided-current"),
+                      "guided-varifold")
+    for identifier in ("guided-current", "guided-varifold"):
+        geometry_receipt(snapshot, identifier, monkeypatch)
+    current = guided_feedback.reference(snapshot, "guided-current")
+    alternative = guided_feedback.reference(snapshot, "guided-varifold")
+    target = alternative["target"]
+    if stale_current_alignment:
+        snapshot = guided_feedback.save_feedback(snapshot.study_directory, "guided-current", dict(
+            comparison=alternative, outcome="same", symptom="alignment", note="Old current review",
+            inspected_subjects=[target], display_scopes={target: "preview"},
+            problem_regions={},
+        ))
+    form = snapshot.plan.selected_pilot_subjects[0]
+    marks = [patch(form.sha256, symptom=selected_symptom)] if selected_symptom else []
+    selected = guided.next_action(snapshot.study_directory, "adaptive_working_start",
+        "guided-current", goal=dict(reference=alternative, display_scopes={target: "preview"},
+            inspected_subjects=[target], problem_regions={target: marks} if marks else {}))
+    return selected, current, alternative, marks
+
+
+def test_new_explicit_other_method_choice_supersedes_stale_current_alignment_feedback(
+    tmp_path, monkeypatch,
+):
+    snapshot, old, selected, _ = _selected_other_method(
+        tmp_path, monkeypatch, stale_current_alignment=True)
+    journal = snapshot.study_directory / study.STUDY_EVENTS
+    before = journal.read_bytes()
+    approvals = dict(snapshot.visual_reviews)
+    state = guided_strategy.prepare_proposals(snapshot, guided_strategy.state(snapshot))
+    result = state["fit_direction"]
+    assert result["mode"] == "trial" and result["current"] == selected
+    assert result["request"]["reference"] == selected
+    assert result["current"] != old
+    assert "alignment issue" not in result["reason"].lower()
+    assert journal.read_bytes() == before and snapshot.visual_reviews == approvals
+
+
+@pytest.mark.parametrize("symptom", ["alignment", "topology"])
+def test_explicit_selected_fit_input_concern_keeps_a_named_input_action(
+    tmp_path, monkeypatch, symptom,
+):
+    snapshot, _, selected, marks = _selected_other_method(
+        tmp_path, monkeypatch, selected_symptom=symptom)
+    state = guided_strategy.prepare_proposals(snapshot, guided_strategy.state(snapshot))
+    result = state["fit_direction"]
+    assert result["mode"] == "inputs" and result["current"] == selected
+    assert "Varifold" in result["reason"] or "selected" in result["reason"].lower()
+    assert ("alignment" in result["reason"].lower() if symptom == "alignment"
+            else any(word in result["reason"].lower()
+                     for word in ("opening", "connection", "topology")))
+    assert state["feedback"]["guided-current"]["problem_regions"][selected["target"]] == marks
+
+
+def test_selected_no_mark_footer_prepares_exact_working_fit_without_starting_optimizer(
+    tmp_path, monkeypatch,
+):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    snapshot, _, selected, _ = _selected_other_method(tmp_path, monkeypatch)
+    approvals = dict(snapshot.visual_reviews)
+    journal = snapshot.study_directory / study.STUDY_EVENTS
+    prefix = journal.read_bytes()
+    preserved = {p: sha256_file(p) for p in snapshot.study_directory.rglob("*")
+                 if p.is_file() and p != journal}
+    monkeypatch.setattr(study.ReferenceCalibrationStudyRunner, "run_current_stage",
+                        lambda *_a, **_k: pytest.fail("Navigation started an optimizer"))
+    app = QApplication.instance() or QApplication([])
+    view = ReferenceCalibrationDialog(snapshot.study_directory)
+    view.show()
+    try:
+        wait_pilot_view(view)
+        footer = view.next_step_button
+        assert footer.isVisible() and footer.isEnabled()
+        assert "Varifold" in footer.text() and "alignment" not in footer.text().lower()
+        assert view._guided_footer_action == (
+            snapshot.study_directory, "adaptive_recover_start", "guided-current")
+        goal = view._guided_footer_goal
+        assert goal["reference"] == selected and not goal["regions"]
+        assert [b for b in view.findChildren(QPushButton, "primary")
+                if b.isVisible() and b.isEnabled()] == [footer]
+        footer.click()
+        deadline = time.monotonic() + 20
+        while view._worker and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(.002)
+        assert view._worker is None
+        wait_pilot_view(view)
+        prepared = view._snapshot
+        assert prepared.study_directory != snapshot.study_directory
+        assert prepared.attachment_comparison["refinement"]["reference"] == selected
+        assert set(prepared.attachment_comparison["methods"].values()) == {"varifold"}
+        assert prepared.plan.pilot_subject_count == len(prepared.candidates) == 1
+        assert all(c.status == "pending" and c.attempts == 0 for c in prepared.candidates)
+        assert not prepared.visual_reviews
+        assert study.load_reference_calibration_study(snapshot.study_directory).visual_reviews == (
+            approvals)
+        assert journal.read_bytes().startswith(prefix)
+        assert all(sha256_file(path) == digest for path, digest in preserved.items())
+    finally:
+        view.close()
+        app.processEvents()
+
+
+def test_later_explicit_method_card_choice_supersedes_an_older_cross_method_saved_start(
+    tmp_path, monkeypatch,
+):
+    snapshot, current, old_selected, _ = _selected_other_method(tmp_path, monkeypatch)
+    approvals = dict(snapshot.visual_reviews)
+    preferred = guided.next_action(snapshot.study_directory, "adaptive_prefer", "guided-current")
+    assert guided_feedback.selection(preferred, "guided-current") == current
+    state = guided_strategy.prepare_proposals(preferred, guided_strategy.state(preferred))
+    result = state["fit_direction"]
+    assert result["mode"] == "trial"
+    assert result["request"]["reference"] == current
+    assert result["request"]["reference"] != old_selected
+    assert state["preferred"] == "current"
+    assert preferred.visual_reviews == approvals
+
+
+def test_method_card_choice_exposes_green_reference_confirmation_before_a_new_trial(
+    tmp_path, monkeypatch,
+):
+    from diffeoforge.retained_mark_source import context as retained_context
+
+    snapshot, current, retained, _ = _selected_other_method(tmp_path, monkeypatch)
+    form = snapshot.plan.selected_pilot_subjects[0]
+    marks = [patch(form.sha256, center=[-.7, 0., 0.], radius=.3,
+                   version="surface-region-v2", purpose="problem"),
+             patch(form.sha256, center=[.7, 0., 0.], radius=.3,
+                   version="surface-region-v2", purpose="fixed")]
+    marked = guided.next_action(snapshot.study_directory, "adaptive_working_start",
+        "guided-current", goal=dict(reference=retained,
+            inspected_subjects=[form.filename], display_scopes={form.filename: "preview"},
+            problem_regions={form.filename: marks}))
+    assert retained_context(marked, "guided-current")["reference"] == retained
+    switched = guided.next_action(marked.study_directory, "adaptive_prefer", "guided-current")
+    prefix = (switched.study_directory / study.STUDY_EVENTS).read_bytes()
+    state = guided_strategy.prepare_proposals(switched, guided_strategy.state(switched))
+    result = state["fit_direction"]
+    assert result["mode"] == "return" and result["current"] == current
+    assert "green" in result["reason"].lower() and "confirm" in result["reason"].lower()
+    assert "alignment" not in result["reason"].lower()
+    assert retained_context(switched, "guided-current")["reference"] == retained
+    assert (switched.study_directory / study.STUDY_EVENTS).read_bytes() == prefix
+    confirmed = guided.next_action(switched.study_directory, "adaptive_working_start",
+        "guided-current", goal=dict(reference=current,
+            inspected_subjects=[form.filename], display_scopes={form.filename: "preview"},
+            problem_regions={form.filename: marks}))
+    assert retained_context(confirmed, "guided-current")["reference"] == current
+    assert confirmed.visual_reviews == snapshot.visual_reviews
+    assert all(c.attempts == 1 for c in confirmed.candidates)
 
 
 def test_saved_comparison_opens_from_the_fixed_footer_without_preparing_fit(tmp_path, monkeypatch):
@@ -312,9 +479,9 @@ def test_marked_area_is_the_only_primary_next_action_and_does_not_run(
         assert view.next_step_button.objectName() == "primary"
         assert "marked areas" in view.next_step_button.text()
         assert "local test that protects" in view.status.text()
-        assert view._guided_footer_action == (
-            snapshot.study_directory, "adaptive_recover", identifier,
-        )
+        origin, dispatch, subject = view._guided_footer_action
+        assert origin == snapshot.study_directory and subject == identifier
+        assert dispatch in {"adaptive_recover", "adaptive_recover_start"}
         goal = view._guided_footer_goal
         assert goal["reference"] == guided_feedback.reference(snapshot, identifier)
         assert goal["goal"] == "regional" and goal["request"] == "regional:" + symptom
@@ -336,7 +503,7 @@ def test_marked_area_is_the_only_primary_next_action_and_does_not_run(
         assert not any(b.isVisible() and "Improve marked areas" in b.text()
                        for b in view.content.findChildren(QPushButton))
         with pytest.raises(ValueError, match="marked areas changed"):
-            guided.next_action(snapshot.study_directory, "adaptive_recover", identifier,
+            guided.next_action(snapshot.study_directory, dispatch, identifier,
                                goal=goal | {"regions": []})
         with pytest.raises(ValueError, match="saved reviews changed"):
             guided_strategy._plan_transition(
@@ -555,7 +722,7 @@ def test_return_to_the_partial_local_fit_after_worse_control_point_trials(tmp_pa
     )["fit_direction"]
     assert other_direction["mode"] == "trial"
     assert other_direction["request"]["reference"] == base_reference
-    assert not other_direction["quality_warning"]
+    assert not other_direction.get("quality_warning")
     assert all(sha256_file(path) == digest for path, digest in local_pins.items())
 
 

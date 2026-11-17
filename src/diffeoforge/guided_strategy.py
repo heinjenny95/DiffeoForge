@@ -66,6 +66,11 @@ def _verify_reference(reference):
 
 def _preference(snapshot):
     for event in reversed(study._load_events(snapshot.study_directory)):
+        if event["event"] == "guided_starting_fit_selected":
+            from diffeoforge.guided_feedback import _same_source
+
+            _same_source(snapshot, event["reference"])
+            return event["reference"]
         if event["event"] == "guided_method_preference":
             reference = event["preference"]
             if reference != _reference(snapshot, reference["candidate_id"], reference["target"]):
@@ -298,8 +303,7 @@ def prepare_proposals(snapshot, context):
         context["proposals"] = {}
         context["working_proposals"] = {}
         context["failed_proposals"] = {}
-        chosen = next((event for event in reversed(study._load_events(snapshot.study_directory))
-                       if event["event"] == "guided_starting_fit_selected"), None)
+        chosen = _explicit_start(snapshot, context)
         for candidate in snapshot.candidates:
             identifier = candidate.candidate_id
             if candidate.status == "failed":
@@ -323,10 +327,12 @@ def prepare_proposals(snapshot, context):
             context["proposals"][identifier] = {
                 request: propose(snapshot, identifier, request, verified) for request in requests}
             selected = (context["feedback"].get(identifier) or {}).get("selected")
-            if selected and ((selected["directory"], selected["candidate_id"]) != (
-                    str(snapshot.study_directory), identifier) or
-                    (chosen and chosen.get("editing_candidate_id") == identifier
-                     and chosen["reference"] == selected)):
+            active_editor = not chosen or chosen["editing_candidate_id"] == identifier
+            if (active_editor and selected and (
+                    (selected["directory"], selected["candidate_id"]) != (
+                        str(snapshot.study_directory), identifier)
+                    or (chosen and chosen.get("editing_candidate_id") == identifier
+                        and chosen["reference"] == selected))):
                 from diffeoforge import guided_working_fit as working
 
                 parent, working_data = working.inputs(snapshot, identifier, context,
@@ -336,10 +342,104 @@ def prepare_proposals(snapshot, context):
         from diffeoforge.pilot_capped_direction import preview as capped_direction
 
         context["fit_direction"] = (capped_direction(snapshot, context, chosen)
+                                    or _selected_start_direction(snapshot, context, chosen)
                                     or _prepare_fit_direction(snapshot, context, chosen)
                                     or _marked_trial_direction(snapshot, context, chosen)
                                     or _default_trial_direction(snapshot, context, chosen))
     return context
+
+
+def _explicit_start(snapshot, context):
+    """Normalize both explicit selection buttons without rewriting their journals."""
+    from diffeoforge.guided_feedback import _same_source
+
+    for event in reversed(study._load_events(snapshot.study_directory)):
+        kind = event["event"]
+        if kind not in {"guided_starting_fit_selected", "guided_method_preference"}:
+            continue
+        reference = event["reference" if kind == "guided_starting_fit_selected" else "preference"]
+        _same_source(snapshot, reference)
+        identifier = event.get("editing_candidate_id")
+        if identifier is None:
+            identifier = reference["candidate_id"]
+            if identifier not in context["feedback"] and len(context["feedback"]) == 1:
+                identifier = next(iter(context["feedback"]))
+        data = context["feedback"].get(identifier) or {}
+        if not any(row["reference"] == reference for row in data.get("choices", [])):
+            return None
+        retention = data.get("retention_context") or {}
+        confirm_retention = (data.get("selected") != reference
+                             and retention.get("automatic_start_allowed")
+                             and retention.get("reference") == data.get("selected"))
+        if data.get("selected") != reference and not confirm_retention:
+            return None
+        return dict(event, reference=reference, editing_candidate_id=identifier,
+                    confirm_retention=bool(confirm_retention))
+    return None
+
+
+def _selected_start_direction(snapshot, context, chosen):
+    """An explicit inspected source drives its own next experiment, not a comparison loop."""
+    from diffeoforge.guided_feedback import _local_events, verify_reference
+    from diffeoforge.guided_fit_direction import local_quality_note
+    from diffeoforge.pilot_form_progress import is_common_check
+
+    info = guided.record(snapshot)
+    if (not chosen or not info.get("target") or info["phase"] == "joint"
+            or snapshot.plan.pilot_subject_count != 1 or is_common_check(info)
+            or any(snapshot.visual_reviews.values())
+            or any(c.status != "completed" for c in snapshot.candidates)):
+        return None
+    identifier, reference = chosen["editing_candidate_id"], chosen["reference"]
+    data = context["feedback"].get(identifier) or {}
+    if not context["allowed"].get(identifier) or reference["target"] != info["target"]:
+        return None
+    parent = verify_reference(reference)
+    choice = next(row for row in data["choices"] if row["reference"] == reference)
+    if chosen.get("confirm_retention"):
+        return dict(mode="return", identifier=identifier, current=reference,
+                    explicit_start=True,
+                    start_label=choice["label"], partial=False, quality_warning="",
+                    reason=f"You selected {reference['method'].title()}, but the green areas "
+                    "still refer to another saved field. Inspect and confirm those areas "
+                    "on this selected fit before preparing a correction.")
+    events = list(_local_events(parent, reference["candidate_id"]))
+    selected_data = dict(data, feedback=events[-1] if events else None, needs_direction=False)
+    selected_context = dict(context, feedback={identifier: selected_data},
+                            preferred=reference["method"], preference=reference)
+    regions = data.get("problem_regions", {}).get(info["target"], [])
+    symptoms = {(selected_data.get("feedback") or {}).get("symptom"), *(
+        row["symptom"] for row in regions if row.get("purpose", "problem") == "problem")}
+    if symptoms & {"alignment", "topology"}:
+        concern = "opening or connection" if "topology" in symptoms else "alignment"
+        return dict(mode="inputs", identifier=identifier, current=reference,
+                    explicit_start=True,
+                    reason=f"Your review of the selected {reference['method'].title()} fit "
+                    f"flags an {concern} concern. Compare its original template and specimen; "
+                    "then review the selected fit or correct the inputs in a separate project.")
+    direction = _marked_trial_direction(snapshot, selected_context, chosen)
+    if direction is None and any(row.get("purpose", "problem") == "problem" for row in regions):
+        # A new protected correction may repair a provisionally selected field
+        # with failed checks. Reuse its existing independently verified proposal;
+        # this is not an unchanged numerical continuation or anatomical approval.
+        direction = _prepare_return_direction(selected_context, dict(
+            mode="return", identifier=identifier, current=reference,
+            start_label=choice["label"], partial=False), chosen)
+    direction = direction or _default_trial_direction(snapshot, selected_context, chosen)
+    if direction is not None:
+        return dict(direction, explicit_start=True, reason=f"Continue from your selected "
+                    f"{reference['method'].title()} fit. " + direction["reason"])
+    quality = local_quality_note(parent, reference)
+    working = context["working_proposals"].get(identifier, {})
+    request = default_recovery_symptom(selected_data)
+    blocked = (working.get(request) or {}).get("blocked_reason", "")
+    return dict(mode="return", identifier=identifier, current=reference,
+                explicit_start=True,
+                start_label=choice["label"], partial=False, quality_warning=quality,
+                reason=" ".join(filter(None, (
+                    f"Your selected {reference['method'].title()} fit remains the starting point. "
+                    "Mark the remaining problem and protect areas that already fit, so the "
+                    "pilot can prepare a specific correction.", blocked, quality))))
 
 
 def default_recovery_symptom(feedback):
@@ -416,7 +516,14 @@ def _marked_trial_direction(snapshot, context, chosen):
         if (not chosen and context["preference"]
                 and snapshot.attachment_comparison["methods"][identifier] != context["preferred"]):
             continue
-        subject = ((candidate.metrics or {}).get("attachment_comparison", {})
+        source_candidate = candidate
+        if chosen:
+            from diffeoforge.guided_feedback import verify_reference
+
+            source = verify_reference(chosen["reference"])
+            source_candidate = next(c for c in source.candidates
+                                    if c.candidate_id == chosen["reference"]["candidate_id"])
+        subject = ((source_candidate.metrics or {}).get("attachment_comparison", {})
                    .get("subjects", {}).get(target, {}))
         if (subject.get("regional_quality") or {}).get("numerical_selection_suitable") is False:
             continue  # A visually better result did not supersede its failed guard.
@@ -498,7 +605,7 @@ def _prepare_fit_direction(snapshot, context, chosen):
             request=dict(request=request, reference=selected, values=proposal["values"],
                          goal=proposal["goal"], regions=regions),
         )
-    if not symptoms or symptoms & {"alignment", "topology"}:
+    if symptoms & {"alignment", "topology"}:
         return dict(direction, mode="inputs", current=selected,
                     reason="Inspect how the original template and specimen match before "
                            "choosing another test. This opens the saved input overlay.")

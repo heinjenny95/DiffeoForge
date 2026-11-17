@@ -397,6 +397,11 @@ def render(window, prepared):
             window.content_layout.addWidget(InfoDisclosure("Optional control-point test", density))
 
     def recovery_tools(candidate, layout):
+        if (direction and direction.get("explicit_start")
+                and direction["identifier"] != candidate.candidate_id):
+            # Choosing the other method is still explicit on its card. Do not
+            # duplicate the selected field's adjustments under another method.
+            return
         if not (direction_pinned or marked_direction):
             _recovery(window, snapshot, candidate, layout, guidance)
             return
