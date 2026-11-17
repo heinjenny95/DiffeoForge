@@ -6,18 +6,27 @@ from diffeoforge.guided_density import controls_for
 
 LEGACY_VERSION = "common-candidate-refinement-v1"
 VERSION = "common-candidate-refinement-v2"
+ORDINARY_BASIS_VERSION = "common-candidate-refinement-v3"
 KINDS = {"iterations", "detail", "weight"}
 
 
 def decide(diagnosis, *, capped, counts, outcome=None):
     """A finite experiment policy; better feedback never becomes suitability."""
-    if diagnosis and diagnosis.get("warnings"):
+    from diffeoforge.pilot_common_diagnosis import detail_evidence
+
+    if not diagnosis or not diagnosis["gap"] or diagnosis.get("warnings"):
         return None
-    if (diagnosis and diagnosis["gap"] and diagnosis["trend"] == "improving"
-            and diagnosis.get('marked_progress') is not False
+    progress = diagnosis.get("marked_progress")
+    if ((diagnosis["trend"] == "improving" or diagnosis["trend"] == "plateau" and progress is True)
+            and progress is not False
             and capped and outcome == "better"
             and counts.get("iterations", 0) < 2):
         return "iterations"
+    broad = diagnosis.get("whole_gap") and not detail_evidence(diagnosis)
+    if broad and not diagnosis.get("accepted_local"):
+        # A broad discrepancy provides a reason to test weight, while a width
+        # contrast needs evidence at the scale of a specific feature.
+        return "weight" if not counts.get("weight") else None
     return next((kind for kind in ("detail", "weight") if not counts.get(kind)), None)
 
 
@@ -43,12 +52,12 @@ def family(snapshot, origin):
     return result
 
 
-def preview(snapshot, tested, target, value):
+def preview(snapshot, tested, target, value, *, ordinary_basis=False):
     from diffeoforge import reference_calibration_study as study
     from diffeoforge import reference_guided_pilot as guided
     from diffeoforge.guided_feedback import inspected, reference, verify_reference
     from diffeoforge.guided_progress import iteration_limited
-    from diffeoforge.pilot_common_diagnosis import diagnose
+    from diffeoforge.pilot_common_diagnosis import alignment_advice, diagnose, experiment
     from diffeoforge.pilot_iteration_accounting import branch_total
 
     def pending():
@@ -73,13 +82,18 @@ def preview(snapshot, tested, target, value):
     try:
         ref = reference(latest, candidate.candidate_id)
     except ValueError:
+        retained = trials[-1][1]["reference"] if trials else origin
+        retained_number = guided.record(verify_reference(retained))["screen_trials_spent"]
         return dict(mode="stalled", available=False, target=target,
-            label="Inspect the failed common-candidate refinement · " + target,
-            reason="The latest candidate has no valid completed field. It is not restarted "
-                   "automatically; accepted fields and the old protocol remain saved.")
+            retained_reference=retained, retained_test_number=retained_number,
+            bounded_exhausted=True,
+            label=f"Inspect retained common fit · Test {retained_number} · {target}",
+            reason="The latest candidate has no valid completed field. Inspect the retained "
+                   "starting fit and its remaining mismatch.")
     base = dict(target=target, reference=ref, review_reference=ref,
                 test_number=guided.record(latest)["screen_trials_spent"],
-                comparison_kind="capacity", candidate_origin=origin)
+                comparison_kind="surface" if ordinary_basis else "capacity",
+                candidate_origin=origin, ordinary_basis=ordinary_basis)
     if candidate.candidate_id not in latest.visual_reviews or not inspected(
             latest, candidate.candidate_id):
         return dict(base, mode="review", available=True,
@@ -96,10 +110,13 @@ def preview(snapshot, tested, target, value):
     strategy = guided.record(latest).get("strategy") or {}
     step = strategy.get("common_candidate_step")
     previous = step["reference"] if step else strategy.get("baseline")
-    measured = diagnose(snapshot, value, ref, previous)
     feedback = [event for event in study._load_events(latest.study_directory)
         if event["event"] == "guided_fit_feedback"
         and event["current"]["candidate_id"] == candidate.candidate_id]
+    alignment = alignment_advice(snapshot, latest, ref, feedback, value)
+    if alignment:
+        return dict(base, **alignment)
+    measured = diagnose(snapshot, value, ref, previous)
     outcome = feedback[-1]["outcome"] if feedback else None
     if not feedback or not feedback[-1].get("event_hash"):
         return dict(base, mode="feedback", available=True, diagnosis=measured,
@@ -108,18 +125,21 @@ def preview(snapshot, tested, target, value):
                    "it with its saved starting fit and choose Better, About the same or "
                    "Worse before another test is prepared. No extra iterations are proposed.")
     counts = {kind: sum(m["kind"] == kind for _, m in trials) for kind in KINDS}
-    kind = decide(measured, capped=iteration_limited(candidate), counts=counts, outcome=outcome)
+    kind = ("detail" if ordinary_basis and not trials else decide(
+        measured, capped=iteration_limited(candidate), counts=counts, outcome=outcome))
+    # Only a useful contrast becomes the next seed. A tied or worse contrast
+    # leaves its exact earlier starting field available for inspection or reuse.
+    seed = (step["reference"] if step and (outcome != "better" or not measured
+            or measured["trend"] == "worse" or measured.get("warnings")) else ref)
+    parent = verify_reference(seed)
+    retained_number = guided.record(parent)["screen_trials_spent"]
+    base.update(retained_reference=seed, retained_test_number=retained_number)
     if kind is None:
         return dict(base, mode="stalled", available=False, diagnosis=measured,
-            label="Review the remaining candidate mismatch · " + target,
-            reason="This candidate remains unsuitable. Its bounded iteration and surface-scale "
-                   "contrasts are exhausted or checks need attention. Reopen this exact result "
-                   "and its comparison or choose a saved field for a different hypothesis. "
-                   "No approval, restart or identical repeat is required.")
-    # An unsuccessful parameter contrast does not silently become the next seed.
-    seed = (step["reference"] if step and (outcome == "worse" or measured
-            and measured["trend"] == "worse") else ref)
-    parent = verify_reference(seed)
+            bounded_exhausted=True,
+            label=f"Inspect retained common fit · Test {retained_number} · " + target,
+            reason="The available shape checks give no reason for another bounded test. "
+            + f"Return to retained Test {retained_number} to inspect the remaining mismatch.")
     retained = next(c for c in parent.candidates if c.candidate_id == seed["candidate_id"])
     values = (dict(seed["values"]) if kind == "iterations" else
               guided.adjusted_values(seed["values"], kind, conservative=True))
@@ -127,24 +147,21 @@ def preview(snapshot, tested, target, value):
     title = {"iterations": "Continue this common candidate",
              "detail": "Refine surface matching on this common candidate",
              "weight": "Test stronger surface matching on this common candidate"}[kind]
-    reason = ("The saved candidate is improving toward the accepted shape without a measured "
-              "local regression. " if kind == "iterations" else
-              "The candidate is still unsuitable or shows a local trade-off. Test a different "
-              "surface-matching setting instead of repeating unchanged iterations. ")
-    reason += (f"Start from its saved {count}-control field; retain every control and momentum. "
-               "The old common model, good individual fits and all approvals stay saved. "
-               "Prepare at most 120 steps with fresh optimizer history; adoption is separate.")
+    explanation = experiment(kind, measured or {})
+    explanation["reason"] += (f" Start from Test {retained_number} with {count} control points. "
+                              "The optimizer starts fresh with a 120-iteration cap.")
     return dict(base, mode="candidate_refine", available=True, diagnosis=measured, kind=kind,
         reference=seed, values=values, candidate_controls=count, additional_iterations=120,
         previous_iterations=branch_total(parent, retained), counts=counts,
         human_feedback=dict(reference=ref, event_hash=feedback[-1]["event_hash"], outcome=outcome),
         label=f"{title} · {count} CP · " + (
             "up to +120 · " if kind == "iterations" else "1 setting test · ") + target,
-        reason=reason)
+        **explanation)
 
 
 def apply(plan, choice):
-    marker = dict(version=VERSION, kind=choice["kind"], reference=choice["reference"],
+    version = ORDINARY_BASIS_VERSION if choice["ordinary_basis"] else VERSION
+    marker = dict(version=version, kind=choice["kind"], reference=choice["reference"],
         capacity_origin=choice["candidate_origin"], protocol=deepcopy(plan["strategy"][
             "form_progress"]["protocol"]), additional_iterations=120,
         previous_iterations=choice["previous_iterations"], approval_transferred=False,
@@ -187,8 +204,22 @@ def verify(info, record, manifest, root):
     seed_run = study.calibration_candidate_run_directory(candidate)
     seed_field = load_field(seed_run)
     declared = (guided.record(origin).get("strategy") or {})
-    capacity = declared.get("common_capacity_request") or declared.get("common_diagnosis_test")
-    if marker["version"] == VERSION:
+    capacity = (declared.get("common_capacity_request") or
+                (declared.get("common_diagnosis_test") or {}).get("kind") == "capacity")
+    if marker["version"] == ORDINARY_BASIS_VERSION:
+        from diffeoforge.pilot_common_model import _saved
+        from diffeoforge.pilot_form_progress import is_common_check
+
+        origin_id = marker["capacity_origin"]["candidate_id"]
+        known = _saved(parent, info["target"], value["protocol"])
+        valid_origin = (not capacity and is_common_check(guided.record(origin))
+                        and origin.visual_reviews.get(origin_id) is False
+                        and any(ref == marker["capacity_origin"] and inspected
+                                for _, _, ref, inspected in known)
+                        and (kind == "detail" or bool(trials)))
+    else:
+        valid_origin = bool(capacity)
+    if marker["version"] in {VERSION, ORDINARY_BASIS_VERSION}:
         human = marker.get("human_feedback") or {}
         if not isinstance(human.get("reference"), dict) or not human.get("event_hash"):
             raise ValueError("A common-candidate step needs its bound human comparison")
@@ -201,7 +232,8 @@ def verify(info, record, manifest, root):
                 or kind == "iterations" and human["outcome"] != "better"):
             raise ValueError("A common-candidate step needs its bound human comparison; "
                              "unchanged iterations require explicit Better feedback")
-    if (marker["version"] not in {LEGACY_VERSION, VERSION} or kind not in KINDS or not capacity
+    if (marker["version"] not in {LEGACY_VERSION, VERSION, ORDINARY_BASIS_VERSION}
+            or kind not in KINDS or not valid_origin
             or marker["reference"] not in refs or marker["approval_transferred"] is not False
             or counts[kind] >= (2 if kind == "iterations" else 1)
             or kind == "iterations" and not iteration_limited(candidate)

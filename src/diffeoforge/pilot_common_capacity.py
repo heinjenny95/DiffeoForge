@@ -93,14 +93,16 @@ def choice(value, target, *, grow=False, reference=None, diagnosis=None):
         capacity_request=request, current_controls=old, proposed_controls=new,
         additional_iterations=120,
         label=f"Test shared controls for accepted shapes · {old} → {new} · {target}",
+        expected=("Look for better agreement while fitted areas stay stable."
+                  if request["available"] else None),
         reason=(f"Accepted individual fields used up to {request['required_controls']} controls, "
             "including preserved prefixes and local additions. Test at least that many on "
             "one shared basis before spending more steps on an undersized basis. "
             "Existing fields and approvals stay saved. This separate 120-step candidate "
             "needs review and explicit adoption as the common model."
             if request["available"] else
-            "The accepted field demand exceeds the 2,000-control pilot guard. The count "
-            "is not silently reduced; retain the accepted shapes and review the shared model."))
+            f"The proposed {new:,}-control trial exceeds the 2,000-control pilot guard. "
+            "Review the saved common fit and accepted shapes."))
 
 
 def apply(plan, selected):

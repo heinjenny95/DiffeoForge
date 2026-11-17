@@ -10,7 +10,8 @@ from diffeoforge.mesh import sha256_file
 def read_failure(directory):
     """Return a verified C5 stop, or None for a different kind of failure."""
     from diffeoforge import runs
-    from diffeoforge.reference_finite_accepted_guard import DECLARATION
+    from diffeoforge.reference_finite_accepted_guard import DECLARATION as REGIONAL
+    from diffeoforge.reference_ordinary_guard import DECLARATION as ORDINARY
 
     run = Path(directory).resolve(strict=True)
     if not (run / "manifest.json").is_file():
@@ -19,7 +20,7 @@ def read_failure(directory):
         return None
     manifest = runs._read_manifest(run)
     provenance = manifest["effective_config"]["project"].get("parameter_provenance", {})
-    if provenance.get("finite_accepted_guard") != DECLARATION:
+    if provenance.get("finite_accepted_guard") not in (REGIONAL, ORDINARY):
         return None
     runs._verify_protected_artifacts(run, manifest)
     result = runs._read_json_object(run / "result.json", "Failed result")

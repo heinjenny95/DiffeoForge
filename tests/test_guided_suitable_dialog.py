@@ -383,3 +383,67 @@ def test_selected_starting_fit_has_own_working_card_and_preparation_action(panel
         panel.window.resize(1050, 780)
         panel.app.processEvents()
         assert panel.window.grab().save(capture)
+
+
+
+def test_shared_capture_blocks_run_and_opens_exact_template_and_target(panel, monkeypatch):
+    from PySide6.QtWidgets import QLabel, QPushButton
+
+    from diffeoforge import reference_calibration_study as study
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+    from diffeoforge.mesh import sha256_file
+    from diffeoforge.pilot_multiscale_failure import diagnose
+
+    snapshot, candidate, window = panel.snapshot, panel.candidate, panel.window
+    candidate.status = "failed"
+    candidate.metrics = None
+    candidate.run_directory = None
+    candidate.error = "The template template.vtk has 21 faces with self-intersections. Inspect it."
+    candidate.failure = dict(code="template_geometry")
+    snapshot.visual_reviews.clear()
+    snapshot.attachment_comparison.pop("regional_objective")
+    snapshot.attachment_comparison["guided"] = dict(
+        target="specimen.vtk", strategy=dict(common_multiscale=dict(
+            stage="capture", target="specimen.vtk", accepted_marker=dict(reviews=[]),
+            specification=dict(controls=457),
+        )),
+    )
+    panel.guidance["common_stage_failures"] = {
+        candidate.candidate_id: diagnose(snapshot, candidate),
+    }
+    panel.guidance["feedback"].clear()
+    panel.guidance["allowed"].clear()
+    template = snapshot.study_directory / "template.vtk"
+    target = snapshot.study_directory / "specimen.vtk"
+    template.write_text("synthetic staged template", encoding="utf-8")
+    target.write_text("synthetic staged target", encoding="utf-8")
+    manifest = dict(inputs=dict(
+        template=dict(copy=template.name, sha256=sha256_file(template)),
+        subjects=[dict(filename=target.name, copy=target.name, sha256=sha256_file(target))],
+    ))
+    monkeypatch.setattr(study, "_verify_manifest", lambda root: manifest)
+    monkeypatch.setattr(study, "load_reference_calibration_study", lambda root: snapshot)
+    opened = []
+    window._view_closed = False
+    window._viewer_preparation = SimpleNamespace(
+        request_operation=lambda key, prepare: opened.append((key, prepare())),
+    )
+    window.next_step_button.clicked.connect(
+        lambda: ReferenceCalibrationDialog._perform_final_next_step(window),
+    )
+    panel.render()
+    assert window.next_step_button.isVisible() and window.next_step_button.isEnabled()
+    assert window.next_step_button.text() == "Inspect shared template"
+    assert window.start_button.isHidden() and not window.start_button.isEnabled()
+    assert "template.vtk has 21 faces" in window.status.text()
+    texts = [widget.text() for cls in (QLabel, QPushButton) for widget in window.findChildren(cls)]
+    assert not any("finite-accepted guard" in text or "Inspect retained earlier fit" in text
+                   for text in texts)
+    window.next_step_button.click()
+    assert len(opened) == 1 and not panel.invoked
+    key, (parent, selected, (pair,)) = opened[0]
+    assert key == ("guided-inputs", snapshot.study_directory, candidate.candidate_id)
+    assert parent is snapshot and selected is candidate
+    assert (pair.original_path, pair.reconstruction_path) == (target, template)
+    assert pair.original_sha256 == manifest["inputs"]["subjects"][0]["sha256"]
+    assert pair.reconstruction_sha256 == manifest["inputs"]["template"]["sha256"]

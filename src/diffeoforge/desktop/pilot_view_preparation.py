@@ -78,6 +78,7 @@ def _guidance(snapshot, manifest):
         context["guard_failures"] = {
             c.candidate_id: failure for c in snapshot.candidates
             if c.candidate_id not in context['qualification_pending']
+            and c.candidate_id not in context.get("common_stage_failures", {})
             if (failure := for_candidate(c)) is not None
         }
         context["input_topology"] = prepare_for_snapshot(snapshot, manifest)

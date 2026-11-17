@@ -27,6 +27,12 @@ def viewer(window, origin, parent, candidate, pairs, fit, context):
         "Orange: original · Blue: saved reconstruction. Use Improve on the areas that "
         "still need work and Retain on the areas that now look right. Save this fit and "
         "the marks as the starting point for your next test.")
+    if draft := context.get("partial_draft"):
+        detail = (f" · {draft['suggested']} suggested Retain"
+                  if draft["suggested"] else "")
+        dialog._comparison_intro.setText(
+            f"{draft['remaining']} remaining Improve{detail}. Review the proposed areas "
+            "on this saved fit and edit them if needed. Saving confirms the displayed marks.")
     if hint:
         # The normal initial pair load resets the camera before the hand-off.
         # Later full-detail loads must keep the user's new view.

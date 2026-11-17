@@ -78,21 +78,46 @@ def inspect_inputs(window, reference):
 
     def prepare():
         from diffeoforge import reference_calibration_study as study
-        from diffeoforge.desktop.reference_calibration_dialog import CalibrationQcPair
         from diffeoforge.guided_feedback import verify_reference
 
         with study.calibration_verification_scope():
             parent = verify_reference(reference)
-            manifest = study._verify_manifest(parent.study_directory)
-            target = next(r for r in manifest["inputs"]["subjects"]
-                          if r["filename"] == reference["target"])
-            template = manifest["inputs"]["template"]
-            pair = CalibrationQcPair("input-alignment", reference["target"],
-                parent.study_directory / target["copy"],
-                parent.study_directory / template["copy"], True,
-                target["sha256"], template["sha256"])
             candidate = next(c for c in parent.candidates
                              if c.candidate_id == reference["candidate_id"])
-            return parent, candidate, (pair,)
+            return _prepare_inputs(parent, candidate, reference["target"])
 
     window._viewer_preparation.request_operation(("guided-inputs", origin, reference), prepare)
+
+
+def _prepare_inputs(snapshot, candidate, target_name):
+    from diffeoforge import reference_calibration_study as study
+    from diffeoforge.desktop.reference_calibration_dialog import CalibrationQcPair
+
+    manifest = study._verify_manifest(snapshot.study_directory)
+    target = next(r for r in manifest["inputs"]["subjects"] if r["filename"] == target_name)
+    template = manifest["inputs"]["template"]
+    pair = CalibrationQcPair("input-alignment", target_name,
+        snapshot.study_directory / target["copy"],
+        snapshot.study_directory / template["copy"], True,
+        target["sha256"], template["sha256"])
+    return snapshot, candidate, (pair,)
+
+
+def inspect_template(window, identifier):
+    """Open the exact staged template and target even when the preflight stopped Run."""
+    if window._worker or window._view_loading or window._view_closed or window._review_saving:
+        return
+    origin = window.study_directory
+
+    def prepare():
+        from diffeoforge import reference_calibration_study as study
+        from diffeoforge import reference_guided_pilot as guided
+
+        with study.calibration_verification_scope():
+            snapshot = study.load_reference_calibration_study(origin)
+            candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
+            if candidate.status not in {"failed", "interrupted"}:
+                raise ValueError("The failed attempt changed. Reopen the pilot result.")
+            return _prepare_inputs(snapshot, candidate, guided.record(snapshot)["target"])
+
+    window._viewer_preparation.request_operation(("guided-inputs", origin, identifier), prepare)

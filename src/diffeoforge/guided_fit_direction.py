@@ -8,6 +8,7 @@ from diffeoforge import reference_guided_pilot as guided
 from diffeoforge.guided_density import controls_for
 from diffeoforge.guided_feedback import verify_reference
 from diffeoforge.pilot_form_progress import is_common_check
+from diffeoforge.pilot_regions import EDIT_VERSION, MAX_REGIONS, VERSION
 from diffeoforge.reference_attachment_comparison import VERSION as COMPARISON_VERSION
 
 
@@ -140,18 +141,45 @@ def _problem_marks(rows):
     return [row for row in rows if row.get("purpose", "problem") == "problem"]
 
 
-def _partial_local_fit(snapshot, reference):
-    """Use the researcher's narrower review, even when the remaining mark moved."""
+def _bounds(region):
+    if "bounds" in region:
+        return region["bounds"]
+    return [bound for value in region["center"]
+            for bound in (value - region["radius"], value + region["radius"])]
+
+
+def _overlaps(a, b):
+    a, b = _bounds(a), _bounds(b)
+    return all(a[i] <= b[i + 1] and b[i] <= a[i + 1] for i in (0, 2, 4))
+
+
+def partial_mark_draft(snapshot, reference):
+    """Draft Retain marks from an explicit narrower review of this exact saved fit."""
     identifier, target = reference["candidate_id"], reference["target"]
     if (not snapshot.attachment_comparison.get("regional_objective")
             or snapshot.visual_reviews.get(identifier) is not False):
-        return False
+        return None
     prepared = (guided.record(snapshot).get("feedback") or {}).get("regions", [])
     reviewed = snapshot.problem_regions.get(identifier, {}).get(target, [])
-    return 0 < len(_problem_marks(reviewed)) < len(_problem_marks(prepared))
+    problems = _problem_marks(reviewed)
+    if not 0 < len(problems) < len(_problem_marks(prepared)):
+        return None
+    draft = list(reviewed)
+    suggested = 0
+    for area in _problem_marks(prepared):
+        if len(draft) >= MAX_REGIONS:
+            break
+        if any(_overlaps(area, marked) for marked in draft):
+            continue
+        retained = dict(area, purpose="fixed")
+        if retained["version"] == VERSION:
+            retained["version"] = EDIT_VERSION
+        draft.append(retained)
+        suggested += 1
+    return dict(marks=draft, suggested=suggested, remaining=len(problems))
 
 
-def _return_direction(snapshot, context, identifier, reference, reason):
+def _return_direction(snapshot, context, identifier, reference, reason, *, draft=None):
     data = context["feedback"].get(identifier) or {}
     choice = next((row for row in data.get("choices", [])
                    if row["reference"] == reference), None)
@@ -160,26 +188,34 @@ def _return_direction(snapshot, context, identifier, reference, reason):
         return dict(mode="return", identifier=identifier, current=reference,
                     start_label=choice["label"],
                     reason=" ".join(filter(None, (reason, quality))),
-                    quality_warning=quality)
+                    quality_warning=quality, partial=draft is not None)
     return None
 
 
-def _density_return(snapshot, context, candidate_id, outcome_note):
-    info = guided.record(snapshot)
-    seed = snapshot.attachment_comparison["refinement"]["reference"]
-    previous = info["strategy"]["previous"]["directory"]
+def _prior_partial(snapshot, context, candidate_id, outcome_note):
     data = context["feedback"].get(candidate_id) or {}
     discounted = [case["fit"] for case in context["cases"]
                   if case.get("outcome") in {"same", "worse"}]
     for row in data.get("choices", []):
         ref = row["reference"]
-        if (ref["directory"] == previous and ref not in discounted
-                and _partial_local_fit(verify_reference(ref), ref)):
+        if ref in discounted or ref["directory"] == str(snapshot.study_directory):
+            continue
+        draft = partial_mark_draft(verify_reference(ref), ref)
+        if draft is not None:
             return _return_direction(
                 snapshot, context, candidate_id, ref,
-                outcome_note + " Your earlier local review left fewer "
-                "areas to improve. Open that fit and confirm what to improve and retain.",
+                outcome_note + " Your earlier local review left fewer areas to improve. "
+                "Confirm the remaining Improve and suggested Retain areas on that saved fit.",
+                draft=draft,
             )
+    return None
+
+
+def _density_return(snapshot, context, candidate_id, outcome_note):
+    retained = _prior_partial(snapshot, context, candidate_id, outcome_note)
+    if retained is not None:
+        return retained
+    seed = snapshot.attachment_comparison["refinement"]["reference"]
     return _return_direction(
         snapshot, context, candidate_id, seed,
         outcome_note + " Return to the exact fit used to start them "
@@ -232,12 +268,13 @@ def _input_direction(snapshot, context, target):
         return None
     if regional and len(current) == 1:
         identifier, case = next(iter(current.items()))
-        if case.get("outcome") not in {"same", "worse"} and _partial_local_fit(
-                snapshot, case["fit"]):
+        draft = partial_mark_draft(snapshot, case["fit"])
+        if case.get("outcome") not in {"same", "worse"} and draft is not None:
             return _return_direction(
                 snapshot, context, identifier, case["fit"],
-                "Your local review left fewer areas to improve. Open this saved fit "
-                "to confirm the remaining problem and mark the good areas to retain.",
+                "Your local review left fewer areas to improve. Confirm the remaining "
+                "Improve and suggested Retain areas on this saved fit.",
+                draft=draft,
             )
     guarded_local_fit = False
     for identifier, case in current.items():
@@ -265,11 +302,33 @@ def _input_direction(snapshot, context, target):
         return _density_return(snapshot, context, reference["candidate_id"], outcome_note)
     reason = ("The rejected local fit did not pass its saved quality checks."
               if guarded_local_fit else "This local test did not resolve the problem.")
+    retained = _prior_partial(snapshot, context, reference["candidate_id"], reason)
+    if retained is not None:
+        return retained
     return dict(
         mode="inputs", current=reference,
         reason=reason + " Check the pose and the corresponding structure in the original "
         "template and specimen before preparing another fit.",
     )
+
+
+def _reviewed_alignment(snapshot, context, target):
+    """Route explicit alignment concerns to the exact saved input overlay."""
+    for identifier, data in context["feedback"].items():
+        if (not data or not context["allowed"].get(identifier)
+                or snapshot.visual_reviews.get(identifier) is not False):
+            continue
+        feedback = data.get("feedback") or {}
+        problems = _problem_marks(data.get("problem_regions", {}).get(target, []))
+        if feedback.get("symptom") == "alignment" or any(
+                row["symptom"] == "alignment" for row in problems):
+            current = next((row["reference"] for row in data["choices"] if row["current"]), None)
+            if current is not None:
+                return dict(mode="inputs", current=current,
+                            reason="Your review flags a possible alignment issue. Compare the "
+                                   "starting template and specimen in their saved coordinates "
+                                   "before changing the fitting settings.")
+    return None
 
 
 def preview(snapshot, context):
@@ -285,7 +344,8 @@ def preview(snapshot, context):
     directory = str(snapshot.study_directory)
     origin = Path(info["origin"]).resolve()
     with study.calibration_verification_scope():
-        inputs = _input_direction(snapshot, context, target)
+        inputs = _reviewed_alignment(snapshot, context, target)
+        inputs = inputs or _input_direction(snapshot, context, target)
         if inputs is not None or record.get("regional_objective"):
             return inputs
         source = _input_identity(study._verify_manifest(snapshot.study_directory), target)

@@ -455,9 +455,12 @@ def measure(root, manifest, candidate, run, *, cancelled=lambda: False, event_ca
         quality = None
     elif marker == ORDINARY:
         from diffeoforge.ordinary_field_quality import evaluate_and_measure
+        from diffeoforge.pilot_multiscale_study import marker as multiscale_marker
 
-        quality = evaluate_and_measure(root, candidate, run, cancelled=cancelled,
-                                       event_callback=event_callback)
+        quality = evaluate_and_measure(
+            root, candidate, run, cancelled=cancelled, event_callback=event_callback,
+            reuse_template_preflight=bool(multiscale_marker(manifest["attachment_comparison"])),
+        )
     else:
         from diffeoforge.regional_quality import evaluate_and_measure
 

@@ -88,7 +88,9 @@ def test_active_problem_plateau_vetoes_iterations_despite_improving_toward_poor_
 def test_active_problem_needs_an_actual_local_progress_comparison(monkeypatch):
     result = assessed(monkeypatch, evidence(0.2, 0.4))
     assert result["gap"] and result["marked_progress"] is False
-    assert diagnosis.recommend(result, capped=True)["kind"] == "capacity"
+    # The same number of controls was enough for the accepted fit. Test the
+    # local attachment scale before adding controls or unchanged iterations.
+    assert diagnosis.recommend(result, capped=True)["kind"] == "detail"
 
 
 def test_measured_progress_at_every_active_problem_allows_the_existing_bounded_test(monkeypatch):

@@ -120,6 +120,50 @@ def test_global_improvement_cannot_hide_a_plateau_in_a_marked_missing_feature():
     assert decide(measured, capped=True, counts={}, outcome='better') == 'iterations'
 
 
+def test_local_plateau_on_sufficient_controls_prefers_finer_attachment():
+    current = evidence()
+    current['current_controls'] = current['accepted_controls']
+    current['marked_accepted'] = [dict(region={'purpose': 'problem'}, repeats=[
+        dict(original_to_fit_p95=.02, fit_to_original_p95=.02)] * 2)]
+    current['marked_current'] = [dict(region={'purpose': 'problem'}, repeats=[
+        dict(original_to_fit_p95=.4, fit_to_original_p95=.02)] * 2)]
+    measured = diagnosis.assess(current, require_problem_progress=True)
+    choice = diagnosis.recommend(measured, capped=True)
+    assert choice['kind'] == 'detail'
+    assert 'same feature' in choice['expected']
+    measured['current_controls'] -= 1
+    assert diagnosis.recommend(measured, capped=True)['kind'] == 'capacity'
+
+
+def test_alignment_advice_needs_explicit_feedback_or_an_open_mark(monkeypatch):
+    target = 'test.vtk'
+    reference = dict(target=target)
+    accepted = dict(filename=target, candidate_id='one')
+    value = dict(reviews=[accepted])
+    marks = [dict(purpose='fixed', symptom='alignment')]
+    monkeypatch.setattr(diagnosis, 'comparison_regions', lambda *_: marks)
+    assert diagnosis.alignment_advice(None, None, reference, [], value) is None
+    result = diagnosis.alignment_advice(None, None, reference, [dict(symptom='alignment')], value)
+    assert result['mode'] == 'inspect_alignment' and not result['available']
+    assert result['accepted_reference'] == dict(target=target, candidate_id='one')
+    marks[0]['purpose'] = 'problem'
+    assert diagnosis.alignment_advice(None, None, reference, [], value) == result
+
+
+def test_missing_previous_patch_samples_do_not_count_as_local_progress():
+    before, current = evidence(.4), evidence(.2)
+    def patch(value):
+        return [dict(region={'purpose': 'problem'}, repeats=[
+            dict(original_to_fit_p95=value, fit_to_original_p95=.01)] * 2)]
+    for row in (before, current):
+        row['marked_accepted'] = patch(.01)
+    before['marked_current'] = patch(None)
+    current['marked_current'] = patch(.3)
+    actual = diagnosis.assess(current, before, require_problem_progress=True)
+    assert actual['trend'] == 'improving' and actual['marked_progress'] is False
+    assert diagnosis.recommend(actual, capped=True)['kind'] != 'iterations'
+
+
 def test_real_triangle_surfaces_find_a_small_missing_projection_in_both_directions():
     from diffeoforge.mesh import TriangleMesh
     from diffeoforge.reference_attachment_comparison import compare_geometry

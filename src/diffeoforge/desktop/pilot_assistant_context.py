@@ -48,16 +48,38 @@ def context_for_view(window, view):
         if review.get("pending"):
             facts["next_label"], facts["next_action"] = labels["review"], "review"
     footer = window._guided_footer_action
+    footer_action = footer[1] if footer else None
     if enabled(window.next_step_button) and not facts.get("next_label"):
         facts["next_label"] = window.next_step_button.text()
         # A chat action may open a view. Trial preparation stays in the regular pilot.
         mode = {"fit_direction_compare": "compare", "fit_direction_inputs": "inputs",
-                "common_review": "review"}.get(footer[1]) if footer else None
+                "inspect_failed_template": "inputs", "common_retained": "retained",
+                "common_review": "review"}.get(footer_action)
         if mode:
             offer(mode, facts["next_label"], window.next_step_button.click)
             facts["next_action"] = mode
     if not facts.get("next_label") and enabled(window.start_button):
         facts["next_label"] = window.start_button.text()
+    failure = next(iter(guidance.get("common_stage_failures", {}).values()), None)
+    common = guidance.get("common_recovery") or {}
+    inspecting_common = (footer_action == "fit_direction_inputs"
+                         and common.get("mode") == "inspect_alignment")
+    if failure and not running:
+        facts["next_reason"] = failure["message"]
+    elif common.get("reason") and (inspecting_common
+            or footer_action in {"adaptive_common_continue", "common_retained"}):
+        facts["next_reason"] = common["reason"]
+        facts["expected_result"] = common.get("expected")
+    elif direction and footer_action in {
+        "fit_direction_compare", "fit_direction_inputs", "fit_direction_working",
+        "adaptive_recover_start",
+    }:
+        facts["next_reason"] = direction["reason"]
+    accepted = ((common.get("diagnosis") or {}).get("accepted")
+                or common.get("accepted_reference"))
+    if accepted and not running:
+        offer("accepted", "Inspect accepted individual fit",
+              lambda: window._open_guided_saved_fit(accepted))
     candidate_id = direction.get("identifier") or next(iter(marks), None)
     feedback = marks.get(candidate_id) or {}
     working = (direction.get("current") if direction.get("mode") == "return"
@@ -67,8 +89,11 @@ def context_for_view(window, view):
         for row in feedback.get("choices", []):
             reference, label = row["reference"], row["label"]
             action = f"work:{len(history)}"
+            restore_partial = reference == working and direction.get("partial")
+            options = {"restore_partial": True} if restore_partial else {}
             offer(action, "Open starting fit · " + label,
-                  lambda ref=reference: window._open_guided_working_fit(candidate_id, ref))
+                  lambda ref=reference, opts=options: window._open_guided_working_fit(
+                      candidate_id, ref, **opts))
             history.append(action)
             facts["saved_tests"].setdefault(row["trial_index"], []).append((label, action))
             if reference == working:

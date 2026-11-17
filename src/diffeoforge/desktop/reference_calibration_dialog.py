@@ -588,7 +588,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         preview_cache: Path | None = None,
     ) -> None:
         super().__init__(parent)
-        if candidate.run_directory is None:
+        if candidate.run_directory is None and not (read_only and pairs):
             raise ValueError("Candidate has no completed run directory")
         self.setProperty("processRecordingPilotReview", True)
         self._pairs = (
@@ -3067,6 +3067,12 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             if root == self.study_directory:
                 if action == "common_review":
                     self._open_common_saved_fit(identifier)
+                elif action == "common_retained":
+                    self._open_guided_saved_fit(identifier)
+                elif action == "inspect_failed_template":
+                    from diffeoforge.desktop.guided_diagnosis import inspect_template
+
+                    inspect_template(self, identifier)
                 elif action == "fit_direction_compare":
                     from diffeoforge.desktop.guided_fit_direction import open_comparison
 
@@ -3076,7 +3082,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
 
                     inspect_inputs(self, identifier)
                 elif action == "fit_direction_working":
-                    self._open_guided_working_fit(*identifier)
+                    if self._guided_footer_goal:
+                        self._open_guided_working_fit(*identifier, restore_partial=True)
+                    else:
+                        self._open_guided_working_fit(*identifier)
                 else:
                     self._start_pilot(adaptive=False, guided_action=(
                         action, identifier, getattr(self, "_guided_footer_goal", None)))
@@ -4796,8 +4805,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             (root, candidate), prepare,
         )
 
-    def _open_guided_working_fit(self, identifier, reference, *, view_hint=None):
-        self._open_guided_saved_fit(reference, working_for=identifier, view_hint=view_hint)
+    def _open_guided_working_fit(self, identifier, reference, *, view_hint=None,
+                                 restore_partial=False):
+        self._open_guided_saved_fit(reference, working_for=identifier, view_hint=view_hint,
+                                    restore_partial=restore_partial)
 
     def _open_common_saved_fit(self, reference):
         if self._view_loading or self._view_closed or self._review_saving or self._worker:
@@ -4835,7 +4846,8 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
 
         self._viewer_preparation.request_operation(("guided-common", origin, reference), prepare)
 
-    def _open_guided_saved_fit(self, reference, *, working_for=None, view_hint=None):
+    def _open_guided_saved_fit(self, reference, *, working_for=None, view_hint=None,
+                               restore_partial=False):
         if self._view_loading or self._view_closed or self._review_saving or self._worker:
             return
         origin = self.study_directory
@@ -4856,6 +4868,13 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                     choice = next(r for r in context["choices"] if r["reference"] == reference)
                     context.update(reference=reference, label=choice["label"],
                                    target=reference["target"], view_hint=view_hint)
+                    if restore_partial:
+                        from diffeoforge.guided_fit_direction import partial_mark_draft
+
+                        draft = partial_mark_draft(parent, reference)
+                        if draft is not None:
+                            context.update(problem_regions={reference["target"]: draft["marks"]},
+                                           cleared_region_subjects=[], partial_draft=draft)
                     return (parent, collect_calibration_qc_pairs(parent.study_directory, candidate),
                             normalized_candidate_subject_fit(parent, candidate), candidate, context)
                 return (parent, collect_calibration_qc_pairs(parent.study_directory, candidate),
@@ -4911,7 +4930,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                 return
             parent, candidate, pairs = prepared
             dialog = CalibrationCandidateViewerDialog(parent.study_directory, candidate, self,
-                pairs=pairs, read_only=True)
+                pairs=pairs, read_only=True, preview_cache=key[1] / "display-cache")
             dialog._input_alignment = True
             dialog.setWindowTitle("Original inputs — template alignment (no fit)")
             dialog.findChild(QLabel, "title").setText(

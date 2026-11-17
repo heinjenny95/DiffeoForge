@@ -33,15 +33,17 @@ def _surface(path):
     )
 
 
-def qualify(run, destination, *, cancelled=lambda: False, event_callback=None):
+def qualify(run, destination, *, cancelled=lambda: False, event_callback=None,
+            preflight_study=None):
     """Evaluate saved coefficients only; never fit, smooth or replace native outputs."""
     from diffeoforge.mesh_filter_worker import mesh_filter_cancellation
 
     with mesh_filter_cancellation(cancelled):
-        return _qualify(run, destination, cancelled=cancelled, event_callback=event_callback)
+        return _qualify(run, destination, cancelled=cancelled, event_callback=event_callback,
+                        preflight_study=preflight_study)
 
 
-def _qualify(run, destination, *, cancelled, event_callback):
+def _qualify(run, destination, *, cancelled, event_callback, preflight_study):
     from diffeoforge.reference_fixed_shooting import movement
     from diffeoforge.regional_evaluation import evaluate, field_inputs
     from diffeoforge.source_refinement import refine_evaluation
@@ -124,7 +126,12 @@ def _qualify(run, destination, *, cancelled, event_callback):
         anatomical_approval=False,
     )
     (destination / "policy.json").write_text(json.dumps(policy, indent=2) + "\n")
-    before = _surface(source)
+    if preflight_study is not None:
+        from diffeoforge.pilot_template_preflight import source_topology
+
+        before = source_topology(source, bindings[source], preflight_study)
+    else:
+        before = _surface(source)
     if before["intersecting_faces"] or before["nonpositive_faces"]:
         raise ValueError("Original source geometry must be reviewed before this ordinary check")
 
@@ -261,9 +268,11 @@ def _qualify(run, destination, *, cancelled, event_callback):
     return result
 
 
-def evaluate_and_measure(root, candidate, run, *, cancelled, event_callback):
+def evaluate_and_measure(root, candidate, run, *, cancelled, event_callback,
+                         reuse_template_preflight=False):
     destination = (
         Path(root) / "ordinary-evaluations" / (candidate.candidate_id + "-" + uuid4().hex[:8])
     )
     destination.parent.mkdir(exist_ok=True)
-    return qualify(run, destination, cancelled=cancelled, event_callback=event_callback)
+    return qualify(run, destination, cancelled=cancelled, event_callback=event_callback,
+                   preflight_study=Path(root) if reuse_template_preflight else None)

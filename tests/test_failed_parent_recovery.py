@@ -338,6 +338,7 @@ def test_actual_failed_card_inspects_parent_then_explicitly_prepares_without_run
         "denser_model_button",
         "start_button",
         "cancel_button",
+        "next_step_button",
     ):
         setattr(window, name, QPushButton(name, window))
     invoked = []

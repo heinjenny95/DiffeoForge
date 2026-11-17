@@ -3,6 +3,7 @@
 import re
 
 _WORDS = {
+    "failure": r"fehler|failed|failure|abbruch|abgebrochen|error|blockiert|blocked|guard",
     "keep": (r"zurück|behalt|bewahr|retain|go back|keep|vorherig|früher|anknüpf|"
              r"\b(?:two|zwei|2)\b.{0,45}(?:stellen|areas)|\b(?:letzte|remaining)\b.{0,24}"
              r"(?:stelle|punkt|area|spot)"),
@@ -44,7 +45,7 @@ def reply(context, message, history=()):
                     break
     baseline = ({"message": marking, "actions": ()} if marking
                 else _pilot_reply(context, question, topic))
-    if not context["facts"].get("running"):
+    if not context["facts"].get("running") and not baseline.get("verified"):
         text = generate(message, history, baseline["message"], marking=bool(marking),
                         contextual=bool(marking or topic))
         if text is not None:
@@ -65,6 +66,10 @@ def _pilot_reply(context, question, topic):
 
     next_label = facts.get("next_label")
     next_text = f"Choose “{next_label}” next." if next_label else ""
+    if reason := facts.get("next_reason"):
+        if topic in {None, "failure", "next", "iterations", "controls", "atlas", "alignment"}:
+            body = " ".join(filter(None, (reason, facts.get("expected_result"), next_text)))
+            return dict(answer(body, "next", "accepted"), verified=True)
     source = facts.get("working_label")
     working_action = facts.get("working_action")
     if topic == "keep":

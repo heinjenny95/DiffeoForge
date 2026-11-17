@@ -25,20 +25,36 @@ def pin_action(window, snapshot, label, action, identifier, tooltip, *, goal=Non
     return True
 
 
+def _explanation(choice):
+    reason = choice.get("reason", "One separate common-model check is needed.")
+    return reason + " " + choice["expected"] if choice.get("expected") else reason
+
+
 def pin_recovery(window, snapshot, choice, *, current_target=None):
     """Keep the candidate's next preparation outside scrolling repair/history tools."""
-    if (not choice or choice.get("mode") not in _PINNED_RECOVERY
-            or not choice.get("available") or window._guided_footer_action
-            or len(snapshot.candidates) != 1):
+    if not choice or window._guided_footer_action:
         return
-    identifier = snapshot.candidates[0].candidate_id
-    pin_action(
-        window, snapshot, choice["label"],
-        "adaptive_multiscale_detail" if choice["mode"] == "detail_pending"
-        else "adaptive_common_continue", identifier,
-        "Prepare this common-model test. Fitting starts when you choose Run.",
-        goal=choice.get("target") if choice.get("target") != current_target else None,
-    )
+    mode = choice["mode"]
+    goal = None
+    if mode == "inspect_alignment":
+        action, identifier = "fit_direction_inputs", choice["reference"]
+        tooltip = "Open the template and original in the saved coordinate frame."
+    elif mode == "stalled" and choice.get("retained_reference"):
+        action, identifier = "common_retained", choice["retained_reference"]
+        tooltip = "Open the verified retained fit for inspection."
+    elif mode in _PINNED_RECOVERY and choice["available"] and len(snapshot.candidates) == 1:
+        identifier = snapshot.candidates[0].candidate_id
+        action = ("adaptive_multiscale_detail" if mode == "detail_pending"
+                  else "adaptive_common_continue")
+        tooltip = "Prepare this common-model test. Fitting starts when you choose Run."
+        if choice.get("target") != current_target:
+            goal = choice.get("target")
+    else:
+        return
+    if pin_action(window, snapshot, choice["label"], action, identifier, tooltip, goal=goal):
+        status = getattr(window, "status", None)
+        if status is not None and choice.get("reason"):
+            status.setText(_explanation(choice))
 
 
 def pin_revision(window, snapshot, guidance, target):
@@ -70,10 +86,12 @@ def dispatch(window, following, identifier, *, starting=False):
 
 def recovery(window, layout, identifier, choice):
     """Preparation and inspection only; native execution keeps its normal button."""
-    reason = QLabel(choice.get("reason", "One separate common-model check is needed. "
-        "Your suitable individual fits and previous common approvals remain saved."))
-    reason.setWordWrap(True)
-    layout.addWidget(reason)
+    pinned = getattr(window, "_guided_footer_action", None)
+    if not pinned or pinned[1] not in {"adaptive_common_continue", "adaptive_multiscale_detail",
+                                      "common_retained", "fit_direction_inputs"}:
+        reason = QLabel(_explanation(choice))
+        reason.setWordWrap(True)
+        layout.addWidget(reason)
     capacity = choice.get("capacity_request")
     if capacity:
         note = QLabel(f"Accepted single-fit control demand: {capacity['required_controls']}. "
@@ -108,16 +126,17 @@ def recovery(window, layout, identifier, choice):
             "Sampled distance agreement is separate from anatomical approval.")
         technical.setWordWrap(True)
         layout.addWidget(InfoDisclosure("Measurements behind this suggestion", technical))
-        number = diagnosis.get("accepted_test_number")
+    accepted = (diagnosis or {}).get("accepted") or choice.get("accepted_reference")
+    if accepted:
+        number = (diagnosis or {}).get("accepted_test_number")
         name = f" · Test {number}" if number is not None else ""
         inspect = QPushButton("Inspect accepted individual fit" + name + "…")
-        inspect.clicked.connect(lambda: window._open_guided_saved_fit(diagnosis["accepted"]))
+        inspect.clicked.connect(lambda: window._open_guided_saved_fit(accepted))
         layout.addWidget(inspect)
     target = getattr(window, "_guided_review_target", None)
     if (choice["mode"] in {"review", "feedback"} and target and target["kind"] == "common"
             and target["reference"] == choice["reference"]):
         return  # Use the single, permanently visible action with the exact result name.
-    pinned = getattr(window, "_guided_footer_action", None)
     action = ("adaptive_multiscale_detail" if choice["mode"] == "detail_pending"
               else "adaptive_common_continue")
     if (choice["mode"] in _PINNED_RECOVERY and pinned

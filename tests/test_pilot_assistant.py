@@ -66,6 +66,32 @@ def test_model_generates_english_while_app_owns_actions(context, monkeypatch):
                                        thinking_model=True).count("<|im_end|>") == 2
 
 
+def test_chat_explains_shared_template_block_with_verified_inspection(context, monkeypatch):
+    monkeypatch.setattr(pilot_assistant_model, "generate",
+                        lambda *_a, **_k: pytest.fail("A model must not reinterpret a blocker"))
+    context["assistant_actions"]["inputs"] = "Inspect shared template"
+    context["facts"].update(next_label="Inspect shared template", next_action="inputs",
+                            next_reason="The shared template has intersecting faces.")
+    response = pilot_assistant.reply(context, "Warum ist Capture abgebrochen?")
+    assert response["message"] == (
+        "The shared template has intersecting faces. Choose “Inspect shared template” next.")
+    assert response["actions"] == ("inputs",)
+
+
+def test_chat_explains_common_experiment_with_accepted_reference(context):
+    context["assistant_actions"]["accepted"] = "Inspect accepted individual fit"
+    context["facts"].update(
+        next_label="Test finer attachment width",
+        next_action=None,
+        next_reason="The marked opening remains wider on the accepted individual fit.",
+        expected_result="Check the opening and the surrounding surface.")
+    response = pilot_assistant.reply(context, "Was bringt der nächste Test?")
+    assert "accepted individual fit" in response["message"]
+    assert "Check the opening" in response["message"]
+    assert "Test finer attachment width" in response["message"]
+    assert response["actions"] == ("accepted",)
+
+
 def test_model_falls_back_if_missing_or_tampered(tmp_path, monkeypatch):
     monkeypatch.setattr(pilot_assistant_model, "_home", lambda: tmp_path)
     assert pilot_assistant_model.generate("Kann ich da wieder anknüpfen?", (), "") is None

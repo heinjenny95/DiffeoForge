@@ -128,3 +128,21 @@ def test_input_check_separates_reported_progress_from_unchanged_mark_measurement
     active = marks if marks_match else [{"source_sha256": "source", "radius": 0.63}]
     case = dict(outcome=outcome, regions=marks, region_outcomes=measured)
     assert direction._no_gain(case, active) is expected
+
+
+def test_alignment_review_promotes_input_overlay_before_the_next_experiment():
+    from types import SimpleNamespace
+
+    target = "shape.vtk"
+    identifier = "guided-varifold"
+    reference = {"target": target, "candidate_id": identifier}
+    snapshot = SimpleNamespace(visual_reviews={identifier: False})
+    data = dict(feedback={"symptom": "alignment"},
+                choices=[{"reference": reference, "current": True}])
+    context = dict(allowed={identifier: True}, feedback={identifier: data})
+    result = direction._reviewed_alignment(snapshot, context, target)
+    assert result["mode"] == "inputs" and result["current"] == reference
+    data["feedback"]["symptom"] = "unsure"
+    assert direction._reviewed_alignment(snapshot, context, target) is None
+    data["problem_regions"] = {target: [dict(symptom="alignment", purpose="fixed")]}
+    assert direction._reviewed_alignment(snapshot, context, target) is None

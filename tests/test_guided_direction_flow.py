@@ -334,8 +334,11 @@ def test_return_to_the_partial_local_fit_after_worse_control_point_trials(tmp_pa
         dict(path=str(endpoint), sha256=local_report.inventory[0]["sha256"])
         if candidate.run_directory == local_run else base_endpoint(candidate, subject))
     local_pins = {p: sha256_file(p) for p in local.study_directory.rglob("*") if p.is_file()}
-    selected_marks = [dict(mark, version=EDIT_VERSION, purpose="fixed") for mark in marks[:2]]
-    selected_marks.append(remaining)
+    draft = guided_fit_direction.partial_mark_draft(local, retained)
+    assert draft["remaining"] == 1 and draft["suggested"] == 2
+    selected_marks = draft["marks"]
+    assert selected_marks == [remaining, *(
+        dict(mark, version=EDIT_VERSION, purpose="fixed") for mark in marks[:2])]
     chosen = guided.next_action(
         pair.study_directory, "adaptive_working_start", direction["identifier"], goal=dict(
             reference=retained, display_scopes={target: "preview"},
@@ -376,7 +379,8 @@ def _assert_working_footer(snapshot, direction, monkeypatch):
     app = QApplication.instance() or QApplication([])
     view = ReferenceCalibrationDialog(snapshot.study_directory)
     observed = []
-    monkeypatch.setattr(view, "_open_guided_working_fit", lambda *args: observed.append(args))
+    monkeypatch.setattr(view, "_open_guided_working_fit",
+                        lambda *args, **kwargs: observed.append((args, kwargs)))
     journal = snapshot.study_directory / study.STUDY_EVENTS
     digest = sha256_file(journal)
     view.show()
@@ -385,7 +389,8 @@ def _assert_working_footer(snapshot, direction, monkeypatch):
         assert view.next_step_button.isVisible() and view.next_step_button.isEnabled()
         assert view.next_step_button.text() == f"Work from saved fit · {direction['start_label']}"
         view.next_step_button.click()
-        assert observed == [(direction["identifier"], direction["current"])]
+        assert observed == [((direction["identifier"], direction["current"]),
+                             {"restore_partial": True} if direction["partial"] else {})]
         assert not view._worker and sha256_file(journal) == digest
     finally:
         view.close()

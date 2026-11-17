@@ -52,7 +52,8 @@ def optimization_context(snapshot, context, references):
                 blocked_reason=choice.get("reason", "")
                 if choice["mode"] in {"stalled", "feedback", "review", "approved",
                                       "capacity", "fresh_capacity", "prepared", "adopt",
-                                      "candidate_refine", "accepted_warm"} else "")
+                                      "inspect_alignment", "candidate_refine", "accepted_warm"}
+                else "")
     return result
 
 
@@ -175,13 +176,21 @@ def _preview(snapshot, context, target, *, value=None):
                     test_number=guided.record(parent)["screen_trials_spent"],
                     label="Review saved common-model fit · " + target,
                     reason="This matching result already exists. Review it before another fit.")
-    from diffeoforge.pilot_common_diagnosis import diagnose, recommend
+    from diffeoforge.pilot_common_candidate import family as candidate_family
+    from diffeoforge.pilot_common_candidate import preview as candidate_preview
+    from diffeoforge.pilot_common_diagnosis import alignment_advice, diagnose, recommend
 
-    earlier = [r for r in saved[:-1] if r[3]]
-    diagnosis = diagnose(snapshot, value, ref, earlier[-1][2] if earlier else None)
+    if candidate_family(snapshot, ref):
+        return candidate_preview(snapshot, parent, target, value, ordinary_basis=True)
+
     feedback = [event for event in study._load_events(parent.study_directory)
                 if event["event"] == "guided_fit_feedback"
                 and event["current"]["candidate_id"] == candidate.candidate_id]
+    alignment = alignment_advice(snapshot, parent, ref, feedback, value)
+    if alignment:
+        return dict(alignment, test_number=guided.record(parent)["screen_trials_spent"])
+    earlier = [r for r in saved[:-1] if r[3]]
+    diagnosis = diagnose(snapshot, value, ref, earlier[-1][2] if earlier else None)
     strategy = guided.record(parent).get("strategy") or {}
     optimization = strategy.get("optimization") or {}
     step = strategy.get("common_model_step") or (
@@ -201,19 +210,56 @@ def _preview(snapshot, context, target, *, value=None):
         iteration_tests=iteration_tests,
         density_tested=any(t["kind"] == "capacity" for _, t in tests), veto=stalled)
     if shortfall or recommendation and recommendation["kind"] == "capacity":
-        return capacity_choice(value, target, grow=not shortfall, reference=ref,
-                               diagnosis=diagnosis)
+        choice = capacity_choice(value, target, grow=not shortfall, reference=ref,
+                                 diagnosis=diagnosis)
+        if not shortfall and choice["available"]:
+            choice.update(reason=recommendation["reason"], expected=recommendation["expected"])
+        return choice
+    if recommendation and recommendation["kind"] == "detail":
+        from diffeoforge.pilot_form_progress import is_common_check
+
+        if is_common_check(guided.record(parent)) and parent.visual_reviews.get(
+                candidate.candidate_id) is False:
+            return candidate_preview(snapshot, parent, target, value, ordinary_basis=True)
+        return dict(mode="feedback", available=True, target=target, reference=ref,
+                    review_reference=ref, diagnosis=diagnosis,
+                    label="Review saved common-model fit · " + target,
+                    reason="Record whether this common result is suitable before testing a "
+                           "finer attachment width.")
     if recommendation and recommendation["kind"] in {"inspect", "stalled"}:
+        accepted = recommendation["kind"] == "inspect"
+        retained = diagnosis["accepted"] if accepted else ref
+        retained_number = (diagnosis["accepted_test_number"] if accepted else
+                           guided.record(parent)["screen_trials_spent"])
+        title = "Inspect accepted individual fit" if accepted else "Inspect retained common fit"
         return dict(mode="stalled", available=False, target=target, reference=ref,
-                    diagnosis=diagnosis,
-                    label="Compare with the accepted individual fit · " + target,
+                    diagnosis=diagnosis, retained_reference=retained,
+                    retained_test_number=retained_number,
+                    label=f"{title} · Test {retained_number} · {target}",
                     reason=recommendation["reason"])
-    if not iteration_limited(candidate) or stalled:
+    if not diagnosis:
+        from diffeoforge.guided_feedback import region_state
+
+        regions, _ = region_state(parent, candidate.candidate_id, target)
+        if any(row.get("purpose", "problem") == "problem" for row in regions):
+            return dict(mode="stalled", available=False, target=target, reference=ref,
+                        retained_reference=ref, retained_test_number=guided.record(parent)[
+                            "screen_trials_spent"], bounded_exhausted=True,
+                        label="Inspect the saved marked areas · " + target,
+                        reason="There is no comparable measurement of improvement at the open "
+                               "marks. Inspect their saved overlay before another fit.")
+    if not iteration_limited(candidate) or stalled or iteration_tests >= 2:
+        from diffeoforge.guided_feedback import verify_reference
+        from diffeoforge.pilot_common_diagnosis import accepted_reference
+
+        retained = step["reference"] if stalled else ref
+        retained_number = guided.record(verify_reference(retained))["screen_trials_spent"]
         return dict(mode="stalled", available=False, target=target, reference=ref,
-                    label="Review the shared model · " + target,
-                    reason="This shared-model result stopped or did not improve. Keep your "
-                    "suitable local fit; revise the shared model explicitly rather than "
-                    "repeating the same fit or returning to a local-repair loop.")
+                    retained_reference=retained, retained_test_number=retained_number,
+                    accepted_reference=accepted_reference(value, target),
+                    label=f"Inspect retained common fit · Test {retained_number} · {target}",
+                    reason="This shared-model result stopped or did not improve. Open the "
+                           "retained common fit and review the remaining mismatch.")
     if not feedback or feedback[-1]['outcome'] != 'better' or not feedback[-1].get('event_hash'):
         return dict(mode="feedback", available=True, target=target, reference=ref,
                     review_reference=ref, diagnosis=diagnosis,
@@ -227,6 +273,7 @@ def _preview(snapshot, context, target, *, value=None):
     previous = branch_total(parent, candidate)
     return dict(mode="continue", available=True, target=target, reference=ref,
                 diagnosis=diagnosis,
+                expected=(recommendation or {}).get("expected"),
                 additional_iterations=ITERATIONS, previous_iterations=previous,
                 previous_recorded_iterations=recorded,
                 human_feedback=dict(reference=ref, event_hash=feedback[-1]['event_hash'],

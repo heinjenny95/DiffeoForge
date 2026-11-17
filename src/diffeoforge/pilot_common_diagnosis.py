@@ -175,8 +175,10 @@ def assess(measured, previous=None, *, require_problem_progress=False):
             _, index, key = loss['region'].split(':', 2)
             now = measured['marked_current'][int(index)]['repeats']
             before = previous['marked_current'][int(index)]['repeats']
-            progress.append(max(r[key] for r in now) + floor
-                            < min(r[key] for r in before) * .95)
+            old_values = [r[key] for r in before if r.get(key) is not None]
+            new_values = [r[key] for r in now if r.get(key) is not None]
+            progress.append(len(old_values) == len(new_values) == 2
+                            and max(new_values) + floor < min(old_values) * .95)
         marked_progress = all(progress)
     # A newly rejected problem remains a goal even if the accepted reference
     # already missed it. Stable preserve/fixed marks do not require improvement.
@@ -204,7 +206,8 @@ def assess(measured, previous=None, *, require_problem_progress=False):
     numerical_progress = (len(tail) >= 3 and all(
         y >= x for x, y in zip(tail[:-1], tail[1:], strict=True))
                           and tail[-1] - tail[0] > max(abs(tail[0]), 1.) * 1e-6)
-    return dict(local_losses=lost, gap=bool(lost or whole_gap or active), trend=trend,
+    return dict(local_losses=lost, whole_gap=whole_gap, gap=bool(lost or whole_gap or active),
+                trend=trend,
                 reviewed_problem_marks=len(active),
                 marked_progress=marked_progress,
                 accepted_local=measured["accepted_local"], numerical_progress=numerical_progress,
@@ -269,16 +272,38 @@ def comparison_regions(snapshot, current, current_ref):
     return regions  # Explicit Clear remains [], including a newer edit on an older field.
 
 
-def diagnose(snapshot, value, current_ref, previous_ref=None):
-    from diffeoforge.guided_feedback import reference, verify_reference
+def alignment_advice(snapshot, parent, ref, feedback, value):
+    """An explicit pose concern warrants inspecting the unchanged input overlay."""
+    marked = comparison_regions(snapshot, parent, ref) or []
+    if (not (feedback and feedback[-1].get("symptom") == "alignment")
+            and not any(row.get("purpose", "problem") == "problem"
+                        and row.get("symptom") == "alignment" for row in marked)):
+        return None
+    return dict(mode="inspect_alignment", available=False, target=ref["target"], reference=ref,
+                review_reference=ref, accepted_reference=accepted_reference(value, ref["target"]),
+                label="Inspect template and alignment · " + ref["target"],
+                reason="You flagged the overall alignment. Open the original and template in "
+                       "their saved coordinate frame. If the alignment checks out, update your "
+                       "fit feedback to choose the next test.")
 
-    row = next((r for r in value["reviews"] if r["filename"] == current_ref["target"]), None)
+
+def accepted_reference(value, target):
+    row = next((r for r in value["reviews"] if r["filename"] == target), None)
     if not row:
         return None
     ref = dict(row)
     ref["target"] = ref.pop("filename")
+    return ref
+
+
+def diagnose(snapshot, value, current_ref, previous_ref=None):
+    from diffeoforge.guided_feedback import reference, verify_reference
+
+    ref = accepted_reference(value, current_ref["target"])
+    if not ref:
+        return None
     parent = verify_reference(ref)
-    accepted = reference(parent, row["candidate_id"])
+    accepted = reference(parent, ref["candidate_id"])
     current = verify_reference(current_ref)
     regions = comparison_regions(snapshot, current, current_ref)
     measured = _compare(accepted, current_ref, regions=regions)
@@ -286,11 +311,40 @@ def diagnose(snapshot, value, current_ref, previous_ref=None):
         return None
     previous = _compare(accepted, previous_ref, regions=regions) if previous_ref else None
     rejected = getattr(current, "visual_reviews", {}).get(current_ref["candidate_id"]) is False
+    accepted_width = accepted.get("values", {}).get("attachment_kernel_width")
+    current_width = current_ref.get("values", {}).get("attachment_kernel_width")
     return dict(version=VERSION, accepted=accepted, current=current_ref,
                 previous=previous_ref, original_sha256=measured["original_sha256"],
                 accepted_test_number=parent.attachment_comparison["guided"]["screen_trials_spent"],
                 template_sha256=measured["template_sha256"],
+                accepted_finer_attachment=(accepted_width is not None and current_width is not None
+                                           and accepted_width < current_width),
                 **assess(measured, previous, require_problem_progress=rejected))
+
+
+def detail_evidence(diagnosis):
+    return (bool(diagnosis.get("local_losses")) or diagnosis.get("reviewed_problem_marks", 0) > 0
+            or diagnosis.get("accepted_finer_attachment", False))
+
+
+def experiment(kind, diagnosis):
+    """Describe the particular contrast and how its result can support the hypothesis."""
+    if kind == "iterations":
+        return dict(reason="The fit is still getting closer to the accepted shape.",
+                    expected="Look for smaller errors in the open areas and stable fitted areas.")
+    if kind == "detail":
+        reason = ("The accepted fit used a finer attachment scale." if
+                  diagnosis.get("accepted_finer_attachment") else
+                  "The comparison points to a remaining local shape mismatch.")
+        return dict(reason=reason + " Test a finer attachment width with the saved control basis.",
+                    expected="Look for better agreement at the same feature in both directions.")
+    if kind == "weight":
+        return dict(reason="A residual surface mismatch remains on the saved control basis. "
+                           "Test stronger surface matching at the same width.",
+                    expected="Surface distances should shrink without distortion in fitted areas.")
+    return dict(reason="The accepted shape exposes a remaining mismatch. Test whether a "
+                       "denser shared control basis lets the field reach that shape.",
+                expected="Look for closer agreement with the accepted fit and stable fitted areas.")
 
 
 def recommend(diagnosis, *, capped, iteration_tests=0, density_tested=False, veto=False):
@@ -300,20 +354,24 @@ def recommend(diagnosis, *, capped, iteration_tests=0, density_tested=False, vet
     if not diagnosis["gap"]:
         return dict(kind="inspect", reason="Sampled surfaces are close to the accepted fit. "
             "Inspect the remaining feature difference; these samples cannot approve anatomy.")
-    improving = diagnosis["trend"] == "improving" or (
-        diagnosis["trend"] == "unknown" and diagnosis["numerical_progress"]
-        and not diagnosis["accepted_local"])
+    improving = (diagnosis["trend"] == "improving" or diagnosis.get("marked_progress") is True
+                 and diagnosis["trend"] == "plateau")
+    # A numerical trend can support an unmarked first comparison, while an
+    # open mark always needs a same-area geometric comparison.
+    improving |= (diagnosis["trend"] == "unknown" and diagnosis["numerical_progress"]
+                  and not detail_evidence(diagnosis) and not diagnosis["accepted_local"])
     if (capped and improving and diagnosis.get('marked_progress') is not False
             and iteration_tests < 2 and not veto and not diagnosis["warnings"]):
-        return dict(kind="iterations", reason="The common field is still improving toward "
-            "the accepted shape without a measured whole-shape regression. Test up to 120 "
-            "additional steps with the same basis.")
+        evidence = experiment("iterations", diagnosis)
+        if diagnosis["trend"] == "unknown":
+            evidence["reason"] = ("The objective improved up to the cap. This unmarked first "
+                                  "comparison has a single surface measurement.")
+        return dict(kind="iterations", **evidence)
+    if (not diagnosis["warnings"] and detail_evidence(diagnosis)
+            and diagnosis["accepted_controls"] <= diagnosis["current_controls"]):
+        return dict(kind="detail", **experiment("detail", diagnosis))
     if not density_tested and not diagnosis["warnings"]:
-        reason = ("Your reviewed problem areas still need improvement. "
-                  if diagnosis.get("reviewed_problem_marks") else
-                  "The accepted shape exposes unresolved local or whole-shape differences. ")
-        return dict(kind="capacity", reason=reason + "Compare additional controls before "
-            "another unchanged iteration round. This is a capacity hypothesis, not a proven cause.")
+        return dict(kind="capacity", **experiment("capacity", diagnosis))
     return dict(kind="stalled", reason="The bounded comparison has not resolved this model. "
         "Keep all accepted fits; review a shared-model revision or another fitting scale "
         "rather than repeating identical tests.")

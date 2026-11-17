@@ -205,9 +205,18 @@ def _read_state(snapshot):
         if (option := density_comparison(snapshot, c.candidate_id, result)) is not None
     }
     from diffeoforge.guided_failed_parent import preview
+    from diffeoforge.pilot_multiscale_failure import diagnose as stage_failure
+    from diffeoforge.pilot_multiscale_study import marker as multiscale_marker
 
-    result["failed_parents"] = {c.candidate_id: preview(snapshot, c.candidate_id)
-                                for c in snapshot.candidates if c.status == "failed"}
+    multiscale = multiscale_marker(snapshot.attachment_comparison)
+    result["failed_parents"] = {
+        c.candidate_id: preview(snapshot, c.candidate_id)
+        for c in snapshot.candidates if c.status == "failed" and not multiscale
+    }
+    result["common_stage_failures"] = {
+        c.candidate_id: failure for c in snapshot.candidates
+        if (failure := stage_failure(snapshot, c)) is not None
+    }
     from diffeoforge.guided_accepted_fit import preview as accepted_fit
 
     result["accepted_fits"] = {c.candidate_id: accepted_fit(snapshot, c.candidate_id, cases)
@@ -241,9 +250,9 @@ def _read_state(snapshot):
         from diffeoforge.pilot_form_progress import compatible, proposal
 
         result["common_revision"] = {}
-        from diffeoforge.pilot_multiscale_study import marker as multiscale_marker
-
-        multiscale = multiscale_marker(snapshot.attachment_comparison)
+        failure = (result["common_recovery"] or {}).get("stage_failure")
+        if failure and failure["directory"] == snapshot.study_directory:
+            result["common_stage_failures"][failure["candidate_id"]] = failure
         if (snapshot.plan.pilot_subject_count == 1 and info["phase"] != "joint"
                 and not snapshot.attachment_comparison.get("regional_objective")
                 and not (multiscale and multiscale["stage"] == "capture")):
@@ -395,7 +404,7 @@ def _prepare_return_direction(context, direction, chosen):
         return direction
     quality = local_quality_note(verify_reference(reference), reference)
     start = dict(direction, identifier=identifier, current=reference, start_label=choice["label"],
-                 quality_warning=quality)
+                 quality_warning=quality, partial=False)
     regions = feedback["problem_regions"].get(reference["target"], [])
     problem = [row for row in regions if row.get("purpose", "problem") == "problem"]
     if not problem:

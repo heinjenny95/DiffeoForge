@@ -7,6 +7,7 @@ two-stage dispatch, review/adoption, next-form and joint setup use production co
 from copy import deepcopy
 
 import numpy as np
+import pytest
 from test_guided_pilot import approve, run_batch
 from test_reviewed_start_progress import selected_local_after_common_failure
 
@@ -79,11 +80,7 @@ def synthetic_inputs(monkeypatch):
     monkeypatch.setattr(pipeline, "_capture_field", field)
 
 
-def test_capture_detail_review_adoption_next_forms_and_original_joint_choices(
-    tmp_path, monkeypatch
-):
-    from diffeoforge import guided_strategy
-
+def prepare_capture(tmp_path, monkeypatch):
     local, previous = selected_local_after_common_failure(tmp_path, monkeypatch)
     value = marker(previous)
     individual = deepcopy(value["reviews"])
@@ -112,6 +109,25 @@ def test_capture_detail_review_adoption_next_forms_and_original_joint_choices(
     )
     plan = pipeline.apply(plan, previous, value)
     capture = guided._batch(**plan)
+    return capture, local, individual, original_reviews, source_config
+
+
+def test_capture_detail_review_adoption_next_forms_and_original_joint_choices(
+    tmp_path, monkeypatch
+):
+    from diffeoforge import guided_strategy, ordinary_field_quality
+
+    capture, local, individual, original_reviews, source_config = prepare_capture(
+        tmp_path, monkeypatch
+    )
+    inspections = []
+    inspect = ordinary_field_quality._surface
+
+    def track_inspection(path):
+        inspections.append(sha256_file(path))
+        return inspect(path)
+
+    monkeypatch.setattr(ordinary_field_quality, "_surface", track_inspection)
     assert pipeline.marker(capture.attachment_comparison)["stage"] == "capture"
     assert capture.candidates[0].attempts == 0
     cfg = load_config(capture.candidates[0].config_path)
@@ -198,3 +214,62 @@ def test_capture_detail_review_adoption_next_forms_and_original_joint_choices(
     assert study.load_reference_calibration_study(local.study_directory).visual_reviews == (
         original_reviews
     )
+
+    assert inspections == [
+        study._verify_manifest(capture.study_directory)["inputs"]["template"]["sha256"]
+    ]
+
+
+def test_template_preflight_cancellation_and_block_preserve_saved_reviews(tmp_path, monkeypatch):
+    from diffeoforge import ordinary_field_quality
+
+    capture, local, individual, original_reviews, _ = prepare_capture(tmp_path, monkeypatch)
+    config = capture.candidates[0].config_path
+    config_digest = sha256_file(config)
+    template = study._verify_manifest(capture.study_directory)["inputs"]["template"]
+    input_path = capture.study_directory / template["copy"]
+
+    def forbid_controller(*args, **kwargs):
+        pytest.fail("A blocked template must not launch the native optimizer")
+
+    inspected = []
+
+    def inspect(path):
+        inspected.append(path)
+        assert sha256_file(path) == template["sha256"]
+        return dict(vertices=42, faces=80, intersecting_faces=3, nonpositive_faces=0)
+
+    monkeypatch.setattr(ordinary_field_quality, "_surface", inspect)
+    runner = study.ReferenceCalibrationStudyRunner(
+        capture.study_directory, controller_factory=forbid_controller
+    )
+
+    def cancel_preflight(event):
+        if event["event"] == "qualification_phase":
+            runner.request_cancel()
+
+    cancelled = runner.run_current_stage(event_callback=cancel_preflight)
+    candidate = cancelled.candidates[0]
+    assert candidate.status == "interrupted" and candidate.run_directory is None
+    assert candidate.failure == {"code": "template_preflight_cancelled"}
+    assert not inspected
+
+    runner = study.ReferenceCalibrationStudyRunner(
+        capture.study_directory, controller_factory=forbid_controller
+    )
+    blocked = runner.run_current_stage()
+    candidate = blocked.candidates[0]
+    assert candidate.status == "failed" and candidate.run_directory is None
+    assert candidate.failure["code"] == "template_geometry"
+    assert candidate.failure["sha256"] == template["sha256"]
+    assert candidate.failure["template"] == input_path.name
+    assert candidate.failure["intersecting_faces"] == 3
+    assert "3 faces with self-intersections" in candidate.error
+    assert inspected == [input_path]
+    assert blocked.study_directory == capture.study_directory
+    assert marker(blocked)["reviews"] == individual
+    assert study.load_reference_calibration_study(local.study_directory).visual_reviews == (
+        original_reviews
+    )
+    assert sha256_file(config) == config_digest
+    assert not (config.parent / "runs").exists()

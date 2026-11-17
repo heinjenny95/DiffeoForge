@@ -1,5 +1,25 @@
 # Development continuity — dev192 installed and verified
 
+## dev213 — explain and recover from the next pilot decision
+
+Shared capture and detail check the configured scientific template before
+starting the optimizer. The check reuses exact template hashes when the surface
+is unchanged. Old and new failures show the relevant inspection or proven
+recovery action. Continuing verified saved surface checks does not refit.
+
+A narrower review of a protected fit can propose that saved fit at the next
+decision, with editable Improve and Retain suggestions. The researcher confirms
+these marks on the saved fit before another local test. Explicit alignment
+concerns open the saved template and specimen overlay.
+
+Common-fit recommendations use the verified individual comparison and prior
+tests to justify a targeted iteration, capacity or attachment experiment.
+Remaining marks must show a reliable local gain for an unchanged continuation.
+The pilot can stop the bounded search and offer the retained fit. The fixed
+footer and English Pilot chat use the same verified reasons and inspection
+actions. Saved review decisions, native tolerances and configured iteration
+limits keep their recorded meaning.
+
 ## dev212 — faster display previews in the pilot
 
 Pilot overlays use a 4,000-face display budget per mesh. They can reuse a

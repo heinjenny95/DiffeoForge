@@ -48,6 +48,11 @@ def render(window, prepared):
     window._guided_review_target = review
     guard_failures = guidance.get("guard_failures", {})
     checks_pending = guidance.get('qualification_pending', {})
+    common_failures = guidance.get("common_stage_failures", {})
+    common_failure = next(iter(common_failures.values()), None)
+    failure_inspection = bool(common_failure and common_failure["action"] in {
+        "inspect", "inspect_template",
+    })
     running = window._worker is not None or window._restoring_search
     regional_accepted = bool(
         snapshot.attachment_comparison.get("regional_objective")
@@ -229,7 +234,7 @@ def render(window, prepared):
     unresolved = [
         c for c in snapshot.candidates if c.status not in {"completed", "failed", "interrupted"}
     ]
-    failed = [c for c in snapshot.candidates if c.status in {"failed", "interrupted"}]
+    failed = [c for c in snapshot.candidates if c.status in {"failed", "interrupted", "orphaned"}]
     resume_checks = bool(pending) and all(c.candidate_id in checks_pending for c in pending)
     retry_blocked = any(c.candidate_id in guard_failures for c in pending)
     window.progress.setVisible(running or bool(completed))
@@ -237,7 +242,9 @@ def render(window, prepared):
     window.progress.setValue(len(completed))
     window.progress.setFormat(f"{len(completed)} of {len(snapshot.candidates)} trials completed")
     window.start_button.setText(
-        "Review numerical failure · this test cannot be rerun"
+        common_failure["label"]
+        if common_failure
+        else "Review numerical failure · this test cannot be rerun"
         if retry_blocked
         else "Resume checks on saved fit · no new fitting"
         if resume_checks
@@ -253,17 +260,20 @@ def render(window, prepared):
         if len(snapshot.candidates) == 2
         else "Run prepared test · 1 trial on 1 specimen"
     )
-    if common_flow and info["phase"] != "joint" and info.get("target"):
+    if common_flow and not common_failure and info["phase"] != "joint" and info.get("target"):
         window.start_button.setText(f"{window.start_button.text()} · {info['target']}")
-    window.start_button.setVisible(bool(pending))
-    window.start_button.setEnabled(not running and not retry_blocked)
+    can_run = bool(pending) and not failure_inspection
+    window.start_button.setVisible(can_run)
+    window.start_button.setEnabled(can_run and not running and not retry_blocked)
     window.start_button.setToolTip(
-        "Inspect the retained fit and numerical failure. The same failed test cannot be rerun."
+        common_failure["message"]
+        if common_failure
+        else "Inspect the retained fit and numerical failure. The same failed test cannot be rerun."
         if retry_blocked else "Reverify the saved native result and finish its surface checks. "
         "The optimizer will not be started again."
         if resume_checks else ""
     )
-    _set_action_emphasis(window.start_button, bool(pending) and not running and not retry_blocked)
+    _set_action_emphasis(window.start_button, can_run and not running and not retry_blocked)
     window.cancel_button.setVisible(running)
     window.cancel_button.setEnabled(running)
     inspected_feedback = any(
@@ -273,6 +283,8 @@ def render(window, prepared):
     window.status.setText(
         "Computing the confirmed batch…"
         if running
+        else common_failure["message"]
+        if common_failure
         else "Numerical check stopped a trial. Inspect the retained fit and failure details."
         if retry_blocked
         else "Saved fit retained. Choose Resume checks; no new fitting is needed."
@@ -294,7 +306,14 @@ def render(window, prepared):
         if completed
         else "Test prepared. Select Run when ready."
     )
-    if not running and not unresolved:
+    if not running and common_failure:
+        if common_failure["action"] == "inspect_template":
+            pin_action(window, snapshot, common_failure["label"], "inspect_failed_template",
+                       common_failure["candidate_id"], common_failure["message"])
+        elif common_failure.get("reference"):
+            pin_action(window, snapshot, common_failure["label"], "common_retained",
+                       common_failure["reference"], common_failure["message"])
+    if not running and not unresolved and not common_failure:
         for identifier, following in next_forms.items():
             if following.get("available"):
                 if ((following.get("common_reuse") or {}).get("mode") in {"review", "feedback"}
@@ -316,7 +335,7 @@ def render(window, prepared):
                 break
 
     direction_pinned = False
-    if not running and not unresolved:
+    if not running and not unresolved and not common_failure:
         pin_recovery(
             window, snapshot, guidance.get("common_recovery"), current_target=info.get("target"),
         )
@@ -341,6 +360,7 @@ def render(window, prepared):
                     window, snapshot, f"Work from saved fit · {direction['start_label']}",
                     "fit_direction_working", (direction["identifier"], direction["current"]),
                     "Open the saved reconstruction to confirm areas to improve and retain.",
+                    goal=direction.get("partial", False),
                 )
             elif mode == "trial":
                 direction_pinned = pin_action(
@@ -593,7 +613,13 @@ def render(window, prepared):
                 )
                 distances.setWordWrap(True)
                 layout.addWidget(distances)
-        if candidate in failed:
+        report = common_failures.get(candidate.candidate_id)
+        if report:
+            detail = QLabel(report["detail"])
+            detail.setTextFormat(Qt.TextFormat.PlainText)
+            detail.setWordWrap(True)
+            layout.addWidget(InfoDisclosure(report["title"], detail))
+        elif candidate in failed:
             failure = guard_failures.get(candidate.candidate_id)
             if failure:
                 note = QLabel(failure["message"])

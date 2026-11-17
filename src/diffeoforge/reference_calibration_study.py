@@ -174,6 +174,7 @@ class CalibrationStudyCandidateState:
     metrics: Mapping[str, object] | None
     error: str | None
     attempts: int
+    failure: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -2057,6 +2058,7 @@ def _load_verified_calibration_study(
                     )
                 ),
                 attempts=len(starts),
+                failure=failures[-1].get("failure") if not completed and failures else None,
             )
         )
     from diffeoforge.reference_stage_screening import screening_state
@@ -2291,8 +2293,11 @@ class ReferenceCalibrationStudyRunner:
             from diffeoforge.reference_integration_check import declare_tolerances
 
             snapshot = declare_tolerances(snapshot, integration_tolerances)
+        from diffeoforge.pilot_multiscale_study import marker as multiscale_marker
+        from diffeoforge.pilot_template_preflight import TemplateTopologyBlocked, check_template
         from diffeoforge.reference_stage_screening import joint_candidate_ids
 
+        multiscale = multiscale_marker(manifest.get("attachment_comparison", {}))
         allowed = joint_candidate_ids(snapshot)
         for candidate in snapshot.candidates:
             if (
@@ -2306,6 +2311,15 @@ class ReferenceCalibrationStudyRunner:
             from diffeoforge.reference_qualification_resume import verified_run
 
             checks_run = verified_run(snapshot, candidate)
+            if multiscale:
+                from diffeoforge.pilot_multiscale_failure import diagnose as stage_failure
+
+                failure = stage_failure(
+                    snapshot, candidate, checks_available=checks_run is not None,
+                    include_reference=False,
+                )
+                if failure and failure["action"] not in {"retry", "checks"}:
+                    raise ReferenceCalibrationStudyError(failure["message"])
             request = _launch_request(self.study_directory, manifest, candidate)
             if checks_run is not None:
                 request = replace(request, destination=checks_run, run_id=checks_run.name)
@@ -2330,9 +2344,6 @@ class ReferenceCalibrationStudyRunner:
             )
             if event_callback is not None:
                 event_callback(started)
-            controller = self._controller_factory(request) if checks_run is None else None
-            self._active_controller = controller
-
             def forward(
                 event: DesktopReferenceWorkerEvent,
                 candidate_id: str = candidate.candidate_id,
@@ -2348,8 +2359,26 @@ class ReferenceCalibrationStudyRunner:
                     )
 
             native_completed = False
+            preflight = checks_run is None and bool(multiscale)
             try:
-                if controller is not None:
+                if checks_run is None:
+                    if preflight:
+                        if event_callback is not None:
+                            event_callback(dict(
+                                event="qualification_phase",
+                                candidate_id=candidate.candidate_id,
+                                message="Checking the template surface before the fit.",
+                            ))
+                        if self._cancel_requested:
+                            raise InterruptedError("Template check cancelled before fitting.")
+                        check_template(
+                            request, self.study_directory, manifest["inputs"]["template"]
+                        )
+                        if self._cancel_requested:
+                            raise InterruptedError("Template check cancelled before fitting.")
+                        preflight = False
+                    controller = self._controller_factory(request)
+                    self._active_controller = controller
                     result = controller.run(event_callback=forward)
                     native_completed = result.completed
                 else:
@@ -2449,6 +2478,16 @@ class ReferenceCalibrationStudyRunner:
             except Exception as error:
                 cancelled_checks = (native_completed and self._cancel_requested
                                     and isinstance(error, InterruptedError))
+                cancelled_preflight = (preflight and self._cancel_requested
+                                       and isinstance(error, InterruptedError))
+                failure_context = {}
+                if isinstance(error, TemplateTopologyBlocked):
+                    failure_context = dict(phase="template_preflight", failure=error.failure)
+                elif cancelled_preflight:
+                    failure_context = dict(
+                        phase="template_preflight",
+                        failure=dict(code="template_preflight_cancelled"),
+                    )
                 interrupted = {}
                 if cancelled_checks:
                     from diffeoforge.reference_qualification_resume import binding
@@ -2462,7 +2501,8 @@ class ReferenceCalibrationStudyRunner:
                                            + str(binding_error))
                 terminal = _append_event(
                     self.study_directory,
-                    "candidate_interrupted" if cancelled_checks else "candidate_failed",
+                    "candidate_interrupted"
+                    if cancelled_checks or cancelled_preflight else "candidate_failed",
                     {
                         "stage_id": snapshot.current_stage.stage_id,
                         "candidate_id": candidate.candidate_id,
@@ -2473,6 +2513,7 @@ class ReferenceCalibrationStudyRunner:
                             else None
                         ),
                         "error": str(error),
+                        **failure_context,
                         **interrupted,
                     },
                 )

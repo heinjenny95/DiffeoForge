@@ -40,11 +40,13 @@ def choice(snapshot, value, target, previous):
         previous
         and previous["mode"] == "candidate_refine"
         and previous.get("kind") in {"detail", "weight"}
+        and not previous.get("expected")
         and (previous.get("human_feedback") or {}).get("outcome") in {"same", "worse"}
     )
     eligible = (
         previous
         and (previous["mode"] == "stalled" or plateau_contrast)
+        and not previous.get("bounded_exhausted")
         and diagnosis.get("gap")
         and not diagnosis.get("warnings")
     )
@@ -60,7 +62,7 @@ def choice(snapshot, value, target, previous):
         parent = found[-1]
         declaration = marker(parent.attachment_comparison)
         candidate = parent.candidates[0]
-        if candidate.status != "completed":
+        if candidate.status == "pending":
             return dict(
                 mode="prepared",
                 available=False,
@@ -69,30 +71,33 @@ def choice(snapshot, value, target, previous):
                 reason="Use its Run/check controls. No duplicate test is prepared; "
                 "your accepted individual shapes remain saved.",
             )
-        if declaration["stage"] != "detail":
-            from diffeoforge.pilot_multiscale_study import _capture_field
-
-            try:
-                _capture_field(parent)
-            except ValueError:
-                pass
-            else:
-                return dict(
-                    mode="detail_pending",
-                    available=True,
-                    target=target,
-                    label="Prepare the declared detail stage · " + target,
-                    reason="The checked capture is saved. Prepare its second and final "
-                    "stage from the complete same-form field. Fitting starts only "
-                    "with Run; the capture is not repeated.",
-                )
+        if candidate.status != "completed":
             return dict(
                 mode="stalled",
                 available=False,
                 target=target,
-                label="Inspect capture checks · " + target,
-                reason="This capture has no qualified detail result. Inspect its checks; "
-                "no recovery, repeated capture or additional iterations are automatic.",
+                label=f"Inspect {declaration['stage']} outcome · {target}",
+                reason="Open the saved stage to see its outcome and recovery options.",
+            )
+        if declaration["stage"] != "detail":
+            from diffeoforge.pilot_multiscale_failure import diagnose
+            from diffeoforge.pilot_multiscale_study import _capture_field
+
+            try:
+                _capture_field(parent)
+            except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
+                failure = diagnose(parent, candidate, capture_check_error=error)
+                return dict(mode="stalled", available=False, target=target,
+                            label=failure["label"], reason=failure["message"],
+                            stage_failure=failure)
+            return dict(
+                mode="detail_pending",
+                available=True,
+                target=target,
+                label="Prepare the declared detail stage · " + target,
+                reason="The checked capture is saved. Prepare its second and final "
+                "stage from the complete same-form field. Fitting starts only "
+                "with Run; the capture is not repeated.",
             )
         try:
             ref = reference(parent, candidate.candidate_id)
@@ -136,6 +141,14 @@ def choice(snapshot, value, target, previous):
                 reason="Your review is saved. Continue to the next missing common check "
                 "using the approved model; no identical repeat is needed.",
             )
+        from diffeoforge.pilot_common_diagnosis import alignment_advice
+
+        feedback = [event for event in study._load_events(parent.study_directory)
+                    if event["event"] == "guided_fit_feedback"
+                    and event["current"]["candidate_id"] == candidate.candidate_id]
+        alignment = alignment_advice(snapshot, parent, ref, feedback, value)
+        if alignment:
+            return dict(base, **alignment)
         return dict(
             base,
             mode="stalled",
@@ -145,6 +158,8 @@ def choice(snapshot, value, target, previous):
             "individual fit and review the remaining mismatch. More unchanged "
             "iterations or a fresh copy of the same experiment are not proposed.",
         )
+    if previous and previous["mode"] == "inspect_alignment":
+        return previous
     if model or eligible:
         if len(value["reviews"]) != len(info["pilot_order"]):
             return previous

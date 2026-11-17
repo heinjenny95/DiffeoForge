@@ -72,3 +72,14 @@ def test_conflicting_terminal_event_cannot_authorize_retry(terminal):
     result["outputs"]["inventory_sha256"] = sha256_file(terminal.run / "output-inventory.json")
     terminal.write(terminal.run / "result.json", result)
     assert not failure.for_candidate(terminal.snapshot.candidates[0])["verified"]
+
+
+
+def test_ordinary_singleton_receipt_also_blocks_repeating_numerical_stop(terminal):
+    from diffeoforge.reference_ordinary_guard import DECLARATION
+
+    terminal.manifest["effective_config"]["project"]["parameter_provenance"] = dict(
+        finite_accepted_guard=DECLARATION)
+    diagnostic = failure.read_failure(terminal.run)
+    assert diagnostic["verified"] and diagnostic["block_retry"]
+    assert diagnostic["reason"] == "accepted_cost_regression"

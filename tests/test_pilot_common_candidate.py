@@ -32,6 +32,84 @@ def test_candidate_policy_uses_finite_iterations_or_surface_contrasts_without_ap
     assert candidate.decide(measured, capped=True, counts={}) is None
 
 
+def test_broad_residual_justifies_weight_and_unresolved_local_loss_justifies_width():
+    result = dict(gap=True, whole_gap=True, trend='plateau', warnings=[])
+    assert candidate.decide(result, capped=True, counts={}) == 'weight'
+    assert candidate.decide(result, capped=True, counts={'weight': 1}) is None
+    result['local_losses'] = [dict(region='mark:0:fit_to_original_p95')]
+    assert candidate.decide(result, capped=True, counts={'weight': 1}) == 'detail'
+
+
+def test_pinned_common_guidance_shows_the_reason_and_inspection_action(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv('QT_QPA_PLATFORM', 'offscreen')
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+
+    from diffeoforge.desktop.pilot_common_model import pin_recovery
+
+    app = QApplication.instance() or QApplication([])
+    button, status = QPushButton(), QLabel()
+    window = SimpleNamespace(next_step_button=button, status=status, _guided_footer_action=None)
+    ref = dict(directory='retained', target='sample.vtk')
+    snapshot = SimpleNamespace(study_directory=tmp_path)
+    choice = dict(mode='stalled', retained_reference=ref, label='Inspect retained common fit',
+                  reason='No useful comparison remains.', expected='Check the open feature.')
+    pin_recovery(window, snapshot, choice)
+    assert window._guided_footer_action == (tmp_path, 'common_retained', ref)
+    assert status.text() == 'No useful comparison remains. Check the open feature.'
+    button.deleteLater()
+    status.deleteLater()
+    app.processEvents()
+
+
+def test_ordinary_common_field_gets_a_same_basis_contrast_and_keeps_its_seed(tmp_path, monkeypatch):
+    from test_guided_pilot import run_batch
+    from test_pilot_region_feedback import reject
+    from test_reviewed_start_progress import selected_local_after_common_failure
+
+    from diffeoforge import guided_feedback, guided_strategy, pilot_form_progress
+    from diffeoforge import pilot_common_diagnosis as diagnosis
+    from diffeoforge import reference_guided_pilot as guided
+
+    local, current = selected_local_after_common_failure(tmp_path, monkeypatch)
+    accepted = guided_feedback.reference(local, 'guided-varifold')
+    saved = guided_feedback.reference(current, 'guided-varifold')
+
+    def local_plateau(*args):
+        return dict(gap=True, whole_gap=False, trend='plateau', warnings=[],
+            accepted=accepted, current_controls=201, accepted_controls=201,
+            local_losses=[dict(region='mark:0:original_to_fit_p95')], marked_progress=False)
+
+    monkeypatch.setattr(diagnosis, 'diagnose', local_plateau)
+    choice = guided_strategy.state(current)['common_recovery']
+    assert choice['kind'] == 'detail' and choice['reference'] == saved
+    assert choice['diagnosis']['accepted'] == accepted
+    assert 'same feature' in choice['expected']
+    successor = guided.next_action(current.study_directory, 'adaptive_common_continue',
+                                   'guided-varifold')
+    assert successor.candidates[0].attempts == 0 and not successor.visual_reviews
+    assert successor.attachment_comparison['iterations'] == 120
+    assert successor.attachment_comparison['controls']['sha256'] == current.attachment_comparison[
+        'controls']['sha256']
+    assert guided.record(successor)['strategy']['common_candidate_step']['version'] == (
+        candidate.ORDINARY_BASIS_VERSION)
+    ledger = pilot_form_progress.marker(current)
+    assert pilot_form_progress.marker(successor) == ledger
+    tested = reject(run_batch(successor, monkeypatch, capped=True), 'guided-varifold')
+    tested = compared(tested, 'same')
+    after = guided_strategy.state(tested)['common_recovery']
+    assert after['kind'] == 'weight' and after['reference'] == saved
+    successor = guided.next_action(tested.study_directory, 'adaptive_common_continue',
+                                   'guided-varifold')
+    tested = reject(run_batch(successor, monkeypatch, capped=True), 'guided-varifold')
+    tested = compared(tested, 'worse')
+    after = guided_strategy.state(tested)['common_recovery']
+    assert after['mode'] == 'stalled' and after['bounded_exhausted']
+    assert after['retained_reference'] == saved
+    assert not after['available'] and pilot_form_progress.marker(tested) == ledger
+
+
 def test_shared_field_transfer_allows_only_explicit_objective_contrasts(tmp_path):
     from test_reference_calibration_study import _project
 
