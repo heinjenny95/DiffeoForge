@@ -80,6 +80,7 @@
           "additionalProperties": false,
           "required": ["profile", "scale_reference", "ratios", "sources"],
           "properties": {
+            "pilot_live_preview": {"const": {"version": "pilot-live-preview-v1"}},
             "surface_gather": {
               "type": "object", "additionalProperties": false,
               "required": ["version"],

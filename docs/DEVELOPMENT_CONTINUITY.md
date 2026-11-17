@@ -1,5 +1,19 @@
 # Development continuity — dev192 installed and verified
 
+## dev216 — lightweight live preview during a pilot fit
+
+While an eligible guided fit runs, the pilot can display a reduced overlay
+below the fit information. The label names the accepted iteration displayed.
+The optional control-point layer shows a bounded sample of the advected
+controls at the end of that deformation.
+
+The display uses up to 1,600 triangles per surface and samples an already
+computed native endpoint at most once every 20 seconds. A short viewer lease
+and one background publisher bound the extra work. When the viewer is hidden
+or the publisher is busy, frames can be skipped. The fit uses the existing
+optimizer and review steps. The observer is included in newly prepared,
+supported single-specimen trials with a frozen template and control basis.
+
 ## dev215 — one guided next action after reviewing a fit
 
 The fixed footer uses the reviewed starting fit's verified default adjustment.

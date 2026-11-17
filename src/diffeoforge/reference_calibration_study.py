@@ -642,6 +642,9 @@ def _prepare_stage(
 
         prepare_coordinates(config, candidate_directory,
             same_objective=bool(numerical_successor(manifest.get('attachment_comparison') or {})))
+        from diffeoforge.pilot_preview_configuration import mark as mark_live_preview
+
+        mark_live_preview(config, manifest)
         config_path = candidate_directory / "atlas.yaml"
         _write_yaml(config_path, config, overwrite=False)
         records.append(

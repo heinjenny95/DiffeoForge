@@ -11,6 +11,8 @@ from PySide6.QtGui import (
     QMouseEvent,
     QPainter,
     QPaintEvent,
+    QPen,
+    QPolygonF,
     QWheelEvent,
 )
 from PySide6.QtWidgets import QCheckBox, QSizePolicy, QVBoxLayout, QWidget
@@ -44,6 +46,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._frames.changed.connect(self.update)
         self._presented_key: tuple | None = None
         self._inspection_markers: dict[str, tuple[float, float, float]] = {}
+        self._control_points: np.ndarray | None = None
         self._wheel_timer = QTimer(self)
         self._wheel_timer.setSingleShot(True)
         self._wheel_timer.setInterval(160)
@@ -95,13 +98,18 @@ class CalibrationComparisonCanvas3D(QWidget):
         self,
         original: MeshPreviewModel,
         reconstruction: MeshPreviewModel,
+        *,
+        keep_viewport: bool = False,
     ) -> None:
         """Bind both immutable meshes to a shared camera and viewport."""
 
+        retain_frame = keep_viewport and original is self._original
         self._original = original
         self._reconstruction = reconstruction
         self._inspection_markers.clear()
-        self._frames.clear()
+        self._control_points = None
+        if not retain_frame:
+            self._frames.clear()
         self._presented_key = None
         self.original_detail.setChecked(False)
         self.original_detail.setEnabled(True)
@@ -116,18 +124,24 @@ class CalibrationComparisonCanvas3D(QWidget):
             dtype=np.int64,
         )
         self._original_edges = np.asarray(original.edges, dtype=np.int64)
-        combined = np.vstack((self._original_vertices, self._reconstruction_vertices))
-        minimum = np.min(combined, axis=0)
-        maximum = np.max(combined, axis=0)
-        self._center = (minimum + maximum) / 2.0
-        self._scale = float(np.max(maximum - minimum))
-        if not math.isfinite(self._scale) or self._scale <= 0:
-            raise ValueError("Comparison meshes must have positive finite extent")
+        if not retain_frame:
+            combined = np.vstack((self._original_vertices, self._reconstruction_vertices))
+            minimum = np.min(combined, axis=0)
+            maximum = np.max(combined, axis=0)
+            self._center = (minimum + maximum) / 2.0
+            self._scale = float(np.max(maximum - minimum))
+            if not math.isfinite(self._scale) or self._scale <= 0:
+                raise ValueError("Comparison meshes must have positive finite extent")
         self.update()
 
     def set_inspection_markers(self, markers: dict[str, tuple[float, float, float]]) -> None:
         """Show measured positions in the shared camera without changing either layer."""
         self._inspection_markers = dict(markers)
+        self.update()
+
+    def set_control_points(self, points: np.ndarray | None) -> None:
+        """Show the fitted snapshot's control points, independent of mesh rendering."""
+        self._control_points = points
         self.update()
 
     def clear(self) -> None:
@@ -139,6 +153,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._reconstruction_vertices = np.empty((0, 3), dtype=np.float64)
         self._reconstruction_triangles = np.empty((0, 3), dtype=np.int64)
         self._original_edges = np.empty((0, 2), dtype=np.int64)
+        self._control_points = None
         self._frames.clear()
         self._presented_key = None
         self.update()
@@ -437,6 +452,19 @@ class CalibrationComparisonCanvas3D(QWidget):
         image = self._frames.request(key, scene)
         if image is not None:
             painter.drawImage(0, 0, image)
+            if self._control_points is not None and self._frames.ready(key):
+                _, positions = self._project(self._control_points)
+                points = QPolygonF([QPointF(float(x), float(y)) for x, y in positions])
+                # A light border keeps points legible on both surfaces.
+                pen = QPen(QColor("#ffffff"))
+                pen.setWidth(6)
+                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                painter.setPen(pen)
+                painter.drawPoints(points)
+                pen.setWidth(4)
+                pen.setColor(QColor("#9f2d73"))
+                painter.setPen(pen)
+                painter.drawPoints(points)
             if self._inspection_markers:
                 _, positions = self._project(np.asarray(tuple(self._inspection_markers.values())))
                 painter.setPen(QColor("#aa1551"))

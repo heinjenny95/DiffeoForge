@@ -24,7 +24,8 @@ def clear_runtime_markers(config):
     """Remove the complete regional runtime contract from a cohort staging config."""
     provenance = config.get("project", {}).get("parameter_provenance", {})
     for name in (
-        "finite_accepted_guard", "pilot_review", "surface_gather", "regional_conditioning",
+        "finite_accepted_guard", "pilot_review", "pilot_live_preview",
+        "surface_gather", "regional_conditioning",
     ):
         provenance.pop(name, None)
 

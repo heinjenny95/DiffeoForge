@@ -280,6 +280,9 @@ def render_engine_file_bytes(
     from diffeoforge.reference_finite_accepted_guard import extend_engine_files
 
     rendered = extend_engine_files(config, len(staged_subjects), rendered)
+    from diffeoforge.pilot_preview_configuration import extend_engine_files as extend_live_preview
+
+    rendered = extend_live_preview(config, len(staged_subjects), rendered)
     if config["output"].get("process_control") == "linux_session_v1":
         from diffeoforge.reference_process_control import CONTROL_SOURCE
 
@@ -316,7 +319,9 @@ def generate_engine_files(
         adapter = engine_directory / "sitecustomize.py"
         adapter.write_bytes(rendered["sitecustomize.py"])
         paths.append(adapter)
-    for name in ("finite_accepted_guard.py", "regional_guard_runtime.py",
+    from diffeoforge.pilot_preview_configuration import ASSET as LIVE_PREVIEW_ASSET
+
+    for name in ("finite_accepted_guard.py", "regional_guard_runtime.py", LIVE_PREVIEW_ASSET,
                  "ordinary_guard_runtime.py", "ordinary-scope.json", "cpu_surface_gather.py",
                  "guard-policy.json",
                  "pilot_review_runtime.py", "linear_conditioning.py", "conditioning.npy"):

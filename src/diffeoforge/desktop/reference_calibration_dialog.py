@@ -2024,6 +2024,13 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         scroll_layout.addWidget(self.content)
         self.pilot_tools = InfoDisclosure("Fit tools and saved searches", options)
         scroll_layout.addWidget(self.pilot_tools)
+        from diffeoforge.desktop.pilot_live_preview import PilotLivePreviewPanel
+
+        self._live_fit_preview = PilotLivePreviewPanel(
+            self, active=lambda: self._worker is not None and not self._view_closed
+            and not getattr(getattr(self._worker, "runner", None), "_cancel_requested", False),
+        )
+        scroll_layout.addWidget(self._live_fit_preview, 1)
         scroll_layout.addStretch()
         self.scroll.setWidget(scroll_body)
         title.setText("Pilot · fit → review → combined check")
@@ -4302,10 +4309,17 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         elif kind == "adaptive_search_decision":
             self.status.setText(str(event["rationale"]))
         elif kind == "candidate_started":
+            self._live_fit_preview.clear()
             if event.get("run_directory"):
                 review_run = (self.study_directory / str(event["run_directory"])).resolve()
                 if review_run.is_relative_to(self.study_directory.resolve()):
                     self._pilot_review_panel.set_run(review_run)
+                    request = event.get("request_id")
+                    if (self._worker is not None and isinstance(request, str) and request
+                            and not event.get("qualification_only")):
+                        self._live_fit_preview.set_run(
+                            review_run, request, iteration_offset=event.get("iteration_offset", 0)
+                        )
             self._progress_context = dict(
                 candidate=candidate_id, phase="Preparing reference fit", iteration=None, cap=None,
                 iteration_offset=event.get("iteration_offset", 0),
@@ -4368,6 +4382,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             self._thread_pool.indicator.label.setText(self.status.text())
         elif kind == "candidate_completed":
             self._pilot_review_panel.clear()
+            self._live_fit_preview.clear()
             self._render(event.get("snapshot"))
             candidate = next(c for c in self._snapshot.candidates if c.candidate_id == candidate_id)
             root = self.study_directory
@@ -4406,6 +4421,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                 "evidence. Running only the new outward candidates now."
             )
         elif kind in {"candidate_failed", "candidate_interrupted"}:
+            self._live_fit_preview.clear()
             self.status.setText(f"{candidate_id}: {event['error']}")
 
     @Slot(object)
@@ -4417,6 +4433,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             and snapshot.status != "completed"
         )
         self._worker = None
+        self._live_fit_preview.clear()
         self.study_directory = snapshot.study_directory
         if finishing and snapshot.status == "completed":
             self._snapshot = snapshot
@@ -4461,6 +4478,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
     @Slot(str)
     def _failed(self, message: str) -> None:
         self._worker = None
+        self._live_fit_preview.clear()
         self.operation_error.setText(f"Calibration stage could not continue: {message}")
         self.operation_error.show()
         self._render()
@@ -4538,6 +4556,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         # A prior completion may already have dispatched a new specimen worker.
         if self._worker is worker:
             self._worker = None
+            self._live_fit_preview.clear()
             self._pending_specimen_review = None
             self.operation_error.setText(
                 worker.error_message
@@ -4745,6 +4764,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         if self._worker is None:
             return
         if self._worker.request_cancel():
+            self._live_fit_preview.clear()
             self.cancel_button.setEnabled(False)
             self.status.setText(
                 "Cancellation requested. The current candidate is being stopped "
@@ -5200,6 +5220,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
     @Slot(int)
     def _dispose_readers(self, _result=0) -> None:
         self._view_closed = True
+        self._live_fit_preview.clear()
         for loader in (self._view_loader, self._viewer_preparation,
                        self._preview_prefetch, self._saved_search_loader):
             loader.cancel()
