@@ -4,7 +4,15 @@ from pathlib import Path
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QCheckBox, QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import (
+    QBoxLayout,
+    QCheckBox,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+)
 
 from diffeoforge.desktop.calibration_comparison_widget import CalibrationComparisonCanvas3D
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
@@ -159,17 +167,24 @@ class _ComparisonDialog(_FullscreenPilotDialog):
         close = QPushButton("Close comparison")
         close.clicked.connect(self.reject)
         actions.addWidget(close)
-        self.keep_left = QPushButton("Work from left fit…")
+        layout.addLayout(actions)
+        self.fit_actions = QHBoxLayout()
+        self.keep_left = QPushButton(f"Work from {labels[0]}…")
         self.keep_left.setEnabled(False)
-        self.keep_left.setVisible(bool(direction.get("tradeoff")))
         self.keep_left.clicked.connect(lambda: self._choose_fit(0))
-        actions.addWidget(self.keep_left)
+        self.fit_actions.addWidget(self.keep_left, 1)
         self.work = QPushButton(f"Work from {labels[1]}…")
-        self.work.setObjectName("primary")
+        # A trade-off (or an unranked pair) does not justify visually favouring
+        # the right-hand fit. Keep both named choices available after inspection.
+        if direction.get("metric_preference") == "alternative" and not direction.get("tradeoff"):
+            self.work.setObjectName("primary")
+            self.work.setToolTip("Lower sampled surface distances; your visual review "
+                                 "still determines anatomical suitability.")
         self.work.clicked.connect(lambda: self._choose_fit(1))
         self.work.setEnabled(False)
-        actions.addWidget(self.work)
-        layout.addLayout(actions)
+        self.fit_actions.addWidget(self.work, 1)
+        layout.addLayout(self.fit_actions)
+        self._arrange_actions()
 
         self.loader = PreviewMeshLoader(self)
         self.loader.loaded.connect(self._loaded)
@@ -181,6 +196,18 @@ class _ComparisonDialog(_FullscreenPilotDialog):
         for canvas in self.canvases:
             canvas.fullResolutionReadyChanged.connect(self._update_actions)
         self._request(False)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "fit_actions"):
+            self._arrange_actions()
+
+    def _arrange_actions(self):
+        required = self.keep_left.sizeHint().width() + self.work.sizeHint().width() + 50
+        self.fit_actions.setDirection(
+            QBoxLayout.Direction.TopToBottom if self.width() < max(900, required)
+            else QBoxLayout.Direction.LeftToRight
+        )
 
     def _request(self, detail):
         self._loaded_detail = None

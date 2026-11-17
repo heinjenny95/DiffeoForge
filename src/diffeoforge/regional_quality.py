@@ -27,12 +27,19 @@ def _local_improved(current, before):
     return max(map(symmetric_mean, current)) < min(map(symmetric_mean, before))*.95
 
 
-def _distances(target, target_faces, fitted, fitted_faces, areas):
+def _distances(target, target_faces, fitted, fitted_faces, areas, *, target_face_ids=None):
     from diffeoforge.reference_fit_search import grouped_surface_distances, surface_samples
 
     rows = []
-    a = target_faces[mask(target[target_faces].mean(1), areas)]
-    b = fitted_faces[mask(fitted[fitted_faces].mean(1), areas)]
+    a = (target_faces[mask(target[target_faces].mean(1), areas)] if target_face_ids is None
+         else target_faces[np.asarray(target_face_ids, int)])
+    chosen = mask(fitted[fitted_faces].mean(1), [r for r in areas
+                                               if not r.get("reconstruction")])
+    if any(r.get("reconstruction") for r in areas):
+        from diffeoforge.reconstruction_feedback import material_mask
+
+        chosen |= material_mask(fitted, fitted_faces, areas)
+    b = fitted_faces[chosen]
     if not len(a):
         raise ValueError("Regional surface verification needs faces in the marked original")
     if not len(b):
@@ -87,7 +94,8 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None,
     if sf.shape != ff.shape or not np.array_equal(sf, ff) or sv.shape != fv.shape:
         raise ValueError("Regional verification requires full, unchanged source connectivity")
     diagonal = float(np.linalg.norm(np.ptp(tv, axis=0)))
-    current = _distances(tv, tf, fv, ff, plan["focus_regions"])
+    current = _distances(tv, tf, fv, ff, plan["focus_regions"],
+                         target_face_ids=plan.get("focus_target_face_ids"))
     before = None
     retained = plan.get("retained_reference")
     if retained:
@@ -100,6 +108,7 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None,
             np.asarray(original.vertices, float),
             np.asarray(original.triangles, int),
             plan["focus_regions"],
+            target_face_ids=plan.get("focus_target_face_ids"),
         )
     p95 = max(max(r["original_to_fit_p95"], r["fit_to_original_p95"]) for r in current)
     old_p95 = (

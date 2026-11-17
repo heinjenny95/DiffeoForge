@@ -1,4 +1,16 @@
-# Development continuity — dev192 installed and verified
+# Development continuity
+
+## dev218 — mark reconstruction defects and continue reviewed fits
+
+Saved-fit choices name both methods and use equal emphasis for an unranked pair
+or a measured local trade-off. Reconstruction-surface corrections bind the
+inspected output and material faces, including areas without original surface.
+The editor keeps its controls separate from the canvas at small window sizes.
+An eligible improving capped individual/local fit can present continuation in
+the visible next-step area with its exact retained field and existing budget.
+Objective progress and surface improvement remain distinct. Isolated performance
+qualification tools do not change production fitting defaults.
+See [behavior, verification and limits](V218_PILOT_FOLLOWUP.md).
 
 ## dev217 — inspect scientific sensitivity across saved atlases
 

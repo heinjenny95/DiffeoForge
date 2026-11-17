@@ -1721,6 +1721,9 @@ def record_reference_calibration_candidate_review(
         s.filename: s.sha256 for s in snapshot.plan.selected_pilot_subjects
         if s.filename in reviewed
     })
+    from diffeoforge.reconstruction_feedback import verify_review_regions
+
+    verify_review_regions(snapshot, candidate, regions)
     if (set(cleared_region_subjects) - reviewed
             or len(set(cleared_region_subjects)) != len(cleared_region_subjects)
             or set(cleared_region_subjects) & set(regions)):

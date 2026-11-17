@@ -183,7 +183,8 @@ def test_correct_fit_clicks_original_and_fit_and_uses_only_confirmed_diagnosis(
         protect_mode = next(b for b in dialog.click_modes.buttons()
                             if b.text() == "Green · Keep unchanged")
         protect_mode.click()
-        assert dialog.view.currentData() == "original"
+        assert dialog.view.currentData() == "overlay"
+        assert dialog.pick_surface.currentData() == "original"
         click_centre(offset=-9)
         protected = dialog._rows[2]
         assert protected["purpose"] == "fixed"

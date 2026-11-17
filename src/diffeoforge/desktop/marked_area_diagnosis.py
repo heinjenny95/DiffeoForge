@@ -10,8 +10,15 @@ _MAX_SAMPLES = 128
 _MIN_SAMPLES = 16
 
 
-def _measure(origin, target, area):
-    centres = origin.centres_in(area)
+def _measure(origin, target, area, *, reconstruction=False):
+    if reconstruction and area.get("reconstruction"):
+        from diffeoforge.reconstruction_feedback import material_mask
+
+        m = origin.model
+        selected = material_mask(m.vertices, m.triangles, [area])
+        centres = np.asarray(m.vertices)[np.asarray(m.triangles)[selected]].mean(1)
+    else:
+        centres = origin.centres_in(area)
     count = len(centres)
     if count == 0:
         return 0, 0, None
@@ -43,8 +50,14 @@ def diagnose(original_marking, reconstruction_marking, row) -> dict:
     original_faces, original_samples, forward = _measure(
         original_marking, reconstruction_marking, area,
     )
-    fit_faces, fit_samples, reverse = _measure(reconstruction_marking, original_marking, area)
-    if min(original_samples, fit_samples) < _MIN_SAMPLES:
+    fit_faces, fit_samples, reverse = _measure(reconstruction_marking, original_marking, area,
+                                               reconstruction=True)
+    if area.get("reconstruction") and original_faces == 0 and fit_samples >= _MIN_SAMPLES:
+        symptom = "distortion" if reverse >= 0.1 * area["radius"] else None
+        evidence = ("The marked reconstruction material has no original surface in this brush. "
+                    "Check this extra surface against the original. A true extra connection "
+                    "requires template/input review; a diffeomorphic fit cannot remove it.")
+    elif min(original_samples, fit_samples) < _MIN_SAMPLES:
         symptom = None
         evidence = "This area has too few face centres for a reliable two-way suggestion."
     else:

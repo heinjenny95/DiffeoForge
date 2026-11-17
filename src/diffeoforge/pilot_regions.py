@@ -24,7 +24,7 @@ SYMPTOMS = {
     "unsure": "I am unsure what is wrong",
 }
 MAX_REGIONS = 8
-MEASUREMENT_VERSION = "surface-region-measurement-v2"
+MEASUREMENT_VERSION = "surface-region-measurement-v3"
 
 
 def validate(regions, sources):
@@ -50,6 +50,8 @@ def validate(regions, sources):
                 expected |= {"purpose"} if "purpose" in row else set()
             if boxed:
                 expected |= {"shape", "bounds"}
+            if isinstance(row, dict) and "reconstruction" in row:
+                expected |= {"reconstruction"}
             if not isinstance(row, dict) or set(row) != expected:
                 raise ValueError("Invalid 3D region record")
             center, radius = row["center"], row["radius"]
@@ -69,6 +71,12 @@ def validate(regions, sources):
                 raise ValueError("Region source, coordinates, size or symptom changed")
             if row.get("purpose", "problem") not in {"problem", "preserve", "fixed"}:
                 raise ValueError("Choose whether to improve, preserve shape, or keep an area fixed")
+            if "reconstruction" in row:
+                from diffeoforge.reconstruction_feedback import validate_evidence
+
+                validate_evidence(row["reconstruction"])
+                if row.get("purpose", "problem") != "problem":
+                    raise ValueError("Retain areas must be marked on the original surface")
             if boxed:
                 bounds = row["bounds"]
                 if (row["shape"] != "box" or not isinstance(bounds, (list, tuple))
@@ -107,18 +115,25 @@ def measure(original, reconstruction, regions):
         from diffeoforge.regional_fit import mask as region_mask
 
         chosen = region_mask(av[af].mean(1), [row])
-        if not chosen.any():
+        if not chosen.any() and not row.get("reconstruction"):
             raise ValueError("The marked brush contains no original face centres; enlarge it")
-        reverse_chosen = region_mask(bv[bf].mean(1), [row])
+        if row.get("reconstruction"):
+            from diffeoforge.reconstruction_feedback import material_mask
+
+            reverse_chosen = material_mask(bv, bf, [row])
+        else:
+            reverse_chosen = region_mask(bv[bf].mean(1), [row])
         repeats = []
         for seed in seeds:
-            points = surface_samples(av, af[chosen], 2048, seed=seed)
+            points = (surface_samples(av, af[chosen], 2048, seed=seed)
+                      if chosen.any() else np.empty((0, 3), float))
             reverse = (surface_samples(bv, bf[reverse_chosen], 2048, seed=seed)
                        if reverse_chosen.any() else np.empty((0, 3), float))
             forward_groups.append(points)
             reverse_groups.append(reverse)
             repeats.append(
                 dict(
+                    forward_count=len(points),
                     reverse_count=len(reverse),
                 )
             )
@@ -133,9 +148,9 @@ def measure(original, reconstruction, regions):
     repeats = [repeat for row in result for repeat in row["repeats"]]
     for repeat, distances, back in zip(repeats, forward, reverse, strict=True):
         repeat.update(
-            original_to_fit_p95=float(np.quantile(distances, 0.95)),
-            original_to_fit_mean=float(np.mean(distances)),
-            original_to_fit_p99=float(np.quantile(distances, 0.99)),
+            original_to_fit_p95=float(np.quantile(distances, 0.95)) if len(distances) else None,
+            original_to_fit_mean=float(np.mean(distances)) if len(distances) else None,
+            original_to_fit_p99=float(np.quantile(distances, 0.99)) if len(distances) else None,
             fit_to_original_p95=float(np.quantile(back, 0.95)) if len(back) else None,
             fit_to_original_p99=float(np.quantile(back, 0.99)) if len(back) else None,
         )

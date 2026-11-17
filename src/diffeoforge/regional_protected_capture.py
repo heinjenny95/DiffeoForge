@@ -22,6 +22,8 @@ def proposal(snapshot, identifier, data, info, symptom):
         return None
     marked = data['regions']
     problem = [r for r in marked if r.get('purpose', 'problem') == 'problem']
+    if any(r.get('reconstruction') for r in problem):
+        return None  # A reverse-material mark is not a missing-original capture request.
     if (not any(r.get('purpose') == 'fixed' for r in marked) or not problem
             or any(r['symptom'] not in {'detail', 'missing'} for r in problem)
             or any(r.get('purpose') == 'preserve' for r in marked)):

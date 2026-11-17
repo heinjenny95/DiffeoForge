@@ -244,6 +244,10 @@ def save_feedback(directory, identifier, decision):
         raise ValueError("Choose what still needs improvement, or Unsure")
     manifest = study._verify_manifest(snapshot.study_directory)
     validate(regions, {r["filename"]: r["sha256"] for r in manifest["inputs"]["subjects"]})
+    from diffeoforge.reconstruction_feedback import verify_review_regions
+
+    candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
+    verify_review_regions(snapshot, candidate, regions)
     study._append_event(snapshot.study_directory, "guided_fit_feedback", dict(
         current=current, comparison=comparison, outcome=outcome, note=note,
         symptom=symptom,

@@ -333,7 +333,10 @@ def prepare_proposals(snapshot, context):
                                                       verified=verified)
                 context["working_proposals"][identifier] = {
                     request: working.propose(parent, request, working_data) for request in requests}
-        context["fit_direction"] = (_prepare_fit_direction(snapshot, context, chosen)
+        from diffeoforge.pilot_capped_direction import preview as capped_direction
+
+        context["fit_direction"] = (capped_direction(snapshot, context, chosen)
+                                    or _prepare_fit_direction(snapshot, context, chosen)
                                     or _marked_trial_direction(snapshot, context, chosen)
                                     or _default_trial_direction(snapshot, context, chosen))
     return context
@@ -736,6 +739,9 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
             ("initialization_reference", "reference"), ("values", "values"), ("goal", "goal"),
         )):
             raise ValueError("The suggested trial changed. Reopen the next-step guidance.")
+        if (bound and "optimization_iterations" in goal
+                and proposed["optimization_iterations"] != goal["optimization_iterations"]):
+            raise ValueError("The suggested iteration allowance changed. Reopen the guidance.")
         if not proposed["available"]:
             raise ValueError(proposed.get("blocked_reason", "This unchanged combination was "
                 "already tested. Inspect saved alternatives or choose another adjustment; "

@@ -16,8 +16,14 @@ def capture(snapshot, reference, regions, *, per_region=False):
 
         measured = measure(snapshot, candidate.candidate_id, reference['target'], regions=regions)
         rows = [repeat for area in measured['baseline'] for repeat in area['repeats']]
+    forward = [r['original_to_fit_p95'] for r in rows
+               if r.get('original_to_fit_p95') is not None]
+    reverse = [r['fit_to_original_p95'] for r in rows
+               if r.get('fit_to_original_p95') is not None]
     result = dict(reference=reference, regions=regions,
-                  original_to_fit_p95=max(r['original_to_fit_p95'] for r in rows))
+                  original_to_fit_p95=max(forward) if forward else None)
+    if any(r.get("reconstruction") for r in regions):
+        result["symmetric_tail"] = max([*forward, *reverse], default=0)
     if per_region:
         result['per_region'] = capture_rows(measured['baseline'])
     return result
@@ -27,13 +33,15 @@ def capture_rows(measurements):
     """Keep missing reverse samples unknown and every brush separately identified."""
     rows = []
     for area in measurements:
-        forward = max(r['original_to_fit_p95'] for r in area['repeats'])
+        values = [r['original_to_fit_p95'] for r in area['repeats']
+                  if r.get('original_to_fit_p95') is not None]
+        forward = max(values) if values else None
         back = [r['fit_to_original_p95'] for r in area['repeats']
                 if r.get('fit_to_original_p95') is not None]
         reverse = max(back) if back else None
         rows.append(dict(region=area['region'], original_to_fit_p95=forward,
                          fit_to_original_p95=reverse,
-                         symmetric_tail=max(forward, reverse or 0)))
+                         symmetric_tail=max(forward or 0, reverse or 0)))
     return rows
 
 
@@ -117,7 +125,9 @@ def recover_whole(recipe, values, original_values, previous, quality, whole_tail
     """
     rows = quality.get('active_surface') or []
     tolerance = previous.get('protection_tolerance', 0)
-    marked = max((max(r['original_to_fit_p95'], r.get('fit_to_original_p95', np.inf))
+    marked = max((max(r.get('original_to_fit_p95') or 0,
+                      r.get('fit_to_original_p95') if r.get('fit_to_original_p95') is not None
+                      else np.inf)
                   for r in rows), default=np.inf)
     if (previous.get('phase') not in {'detail', 'whole_recovery'} or not tolerance
             or not quality.get('numerical_selection_suitable') or marked > tolerance

@@ -15,6 +15,7 @@ def _region_key(region):
             "radius",
             "purpose",
             "symptom",
+            "reconstruction",
         )
     )
 

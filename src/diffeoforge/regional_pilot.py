@@ -125,7 +125,8 @@ def proposal(snapshot, identifier, data, *, symptom=None):
                                 recipe=dict(previous_recipe),
                                 global_progress=0 < new_tail < old_tail*.95)
             def marked_tail(q):
-                return max((max(r['original_to_fit_p95'], r.get('fit_to_original_p95', 0))
+                return max((max(r.get('original_to_fit_p95') or 0,
+                                r.get('fit_to_original_p95') or 0)
                             for r in q.get('active_surface', [])), default=0)
             before_local, after_local = marked_tail(trusted), marked_tail(quality)
             retry_global['local_noise_ratio'] = (
@@ -162,6 +163,13 @@ def proposal(snapshot, identifier, data, *, symptom=None):
             "does not create or remove a topological connection.",
             "view": "Load original detail or change the view before judging the fit.",
         }[symptom]
+    if (any(r.get('reconstruction') for r in problem)
+            and (symptom in {'gap', 'position'} or any(
+                r.get('reconstruction') and r['symptom'] in {'gap', 'position'} for r in problem))):
+        available = False
+        blocked = ('Moving a reconstruction part while preserving its shape needs an explicit '
+                   'original-surface goal. Mark that goal on the original, or choose local '
+                   'surface correction for the reconstruction. Existing good areas stay saved.')
     # These are explicit hypotheses. Native controlled-case parity does not
     # qualify the full automatic search; each new result is checked again.
     noise_factor = 0.3 if level == 0 else 0.015
@@ -181,7 +189,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     )
     evidence = data.get('regional_capture')
     if evidence:
-        tail = evidence['original_to_fit_p95']
+        tail = evidence.get('symmetric_tail') or evidence['original_to_fit_p95'] or 0
         if seed == data['current_reference'] and quality.get('active_surface'):
             tail = max(r['original_to_fit_p95'] for r in quality['active_surface'])
         capture = tail > recipe['focus_width'] * 2
@@ -393,7 +401,14 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         if not available_contrast:
             blocked = ('This contrast reached its numerical weight guard. Keep the saved '
                        'fit and review the inputs, marked areas or movement scale.')
+    reconstruction_marks = any(r.get('reconstruction') for r in problem)
     reason = (
+        "Fit the marked reconstruction material toward nearby original surface support "
+        "and protect the retained shape outside it. The support is a geometric fitting "
+        "hypothesis, not an anatomical pairing. Inspect an extra bridge or different "
+        "opening in the template and original: a diffeomorphic fit cannot remove a true "
+        "topological connection. Check the local result, its transitions and the rest "
+        "separately. " if reconstruction_marks else
         "Fit the marked original surfaces directly and protect the retained shape "
         "outside them. Check the full marked area, its transitions and the rest "
         "separately. "
@@ -408,7 +423,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
             "The next stage strengthens local surface agreement to correct "
             "transition errors; later trials use a distinct detail scale. "
         )
-    if evidence:
+    if evidence and not reconstruction_marks:
         reason += ("First reach missing original surfaces, then refine their detail. "
                    "The measured mismatch determines the next capture scale; "
                    "new residual controls cover source and target. "

@@ -401,7 +401,15 @@ def prepare(
     target_centres = tv[tf].mean(1)
     inferred = []
     _patch(root / "focus-source.vtk", sv, sf, source_selected)
-    _patch(root / "focus-target.vtk", tv, tf, mask(target_centres, focus_regions))
+    target_support = []
+    if any(r.get("reconstruction") for r in focus_regions):
+        from diffeoforge.reconstruction_feedback import target_support as select_target_support
+
+        target_selected, target_support = select_target_support(
+            selection, sf, tv, tf, focus_regions)
+    else:
+        target_selected = mask(target_centres, focus_regions)
+    _patch(root / "focus-target.vtk", tv, tf, target_selected)
 
     def row(name):
         p = root / name
@@ -539,6 +547,9 @@ def prepare(
     )
     if fixed_protection:
         data["fixed_protection"] = fixed_protection
+    if any(r.get("reconstruction") for r in focus_regions):
+        data["focus_target_face_ids"] = np.flatnonzero(target_selected).tolist()
+        data["reconstruction_target_support"] = target_support
     if capture_measurement:
         data['patch_capture'] = capture_measurement
     if automatic_path:

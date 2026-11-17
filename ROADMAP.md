@@ -1,5 +1,20 @@
 # Roadmap
 
+## Collected pilot review follow-up — 17 November 2026
+
+- [x] Name both methods in saved-fit choices and keep equal priority when the
+  evidence has no clear winner or shows a local trade-off.
+- [x] Bind red corrections on reconstructed material to the inspected output
+  and material faces, including brushes without original surface. Keep reverse
+  evidence, preserved input identities and explicit target-support provenance.
+- [x] Keep the correction editor's side panel readable at small window sizes.
+- [x] Present eligible improving capped-fit continuation visibly, with the
+  existing source field, allowance and explicit preparation/Run steps.
+- [ ] Qualify faster individual fitting on complete scientific geometry. The
+  offline performance tools and reduced/full experiment contract do not enable
+  an unqualified production acceleration.
+  [Behavior and qualification boundary](docs/V218_PILOT_FOLLOWUP.md).
+
 ## Pilot iteration-budget transfer — 5 November 2026
 
 - [x] Include matching completed native checkpoint continuations as effort

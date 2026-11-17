@@ -23,6 +23,13 @@ def save(directory, identifier, decision):
         raise ValueError("Only this inspected form's areas can be edited")
     manifest = study._verify_manifest(snapshot.study_directory)
     validate(rows, {r["filename"]: r["sha256"] for r in manifest["inputs"]["subjects"]})
+    from diffeoforge.reconstruction_feedback import verify_review_regions
+
+    if any(r.get("reconstruction") for rr in rows.values() for r in rr):
+        parent = feedback.verify_reference(ref)
+        candidate = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
+        inherited, _ = feedback.region_state(snapshot, identifier, target)
+        verify_review_regions(parent, candidate, rows, previous_regions={target: inherited})
     study._append_event(snapshot.study_directory, "guided_starting_fit_selected", dict(
         reference=ref, editing_candidate_id=identifier, problem_regions=rows,
         inspected_subjects=[target], display_scopes={target: scope},

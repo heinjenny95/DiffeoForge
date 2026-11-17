@@ -206,7 +206,7 @@ class InteractiveMeshCanvas3D(QWidget):
         return self._zoom
 
     def set_model(self, model: MeshPreviewModel | None, *, surface_picker=None,
-                  view_bounds=None) -> None:
+                  view_bounds=None, pick_bounds=None) -> None:
         self.cancel_pending_pick()
         self._model = model
         self._surface_picker = surface_picker
@@ -231,7 +231,8 @@ class InteractiveMeshCanvas3D(QWidget):
         if not math.isfinite(self._scale) or self._scale <= 0:
             self._scale = 1.0
         if surface_picker is not None:
-            extent = np.max(np.abs(np.asarray(model.bounds).reshape(3, 2) - self._center[:, None]),
+            extent = np.max(np.abs(np.asarray(model.bounds if pick_bounds is None else pick_bounds)
+                                   .reshape(3, 2) - self._center[:, None]),
                             axis=1)
             self._ray_depth = max(1.0, 1.01 * float(np.linalg.norm(extent)) / self._scale)
         self.update()

@@ -6,7 +6,7 @@ import numpy as np
 
 
 def select(vertices, faces, target_vertices, target_faces, regions, fixed_ids=(), *,
-           infer=True, extend_partial=False):
+           infer=True, extend_partial=False, target_masks=None):
     """Exclude every fixed-incident face, including in absent-feature fallbacks.
 
     An absent feature gets one connected free patch, grown by edge distance until
@@ -28,9 +28,24 @@ def select(vertices, faces, target_vertices, target_faces, regions, fixed_ids=()
     areas = np.linalg.norm(np.cross(triangles[:, 1]-triangles[:, 0],
                                     triangles[:, 2]-triangles[:, 0]), axis=1)*.5
     for index, region in enumerate(regions):
-        target_selected = mask(target_centres, [region])
-        if not target_selected.any():
+        target_selected = (mask(target_centres, [region]) if target_masks is None
+                           else np.asarray(target_masks[index], bool))
+        reconstruction = region.get("reconstruction")
+        if not target_selected.any() and not reconstruction:
             raise ValueError('The marked original area contains no face centres; enlarge it')
+        if reconstruction:
+            from diffeoforge.reconstruction_feedback import material_mask
+
+            chosen = material_mask(v, f, [region])
+            if (chosen & blocked).any():
+                raise ValueError('The marked reconstruction material overlaps a Retain area. '
+                                 'Separate the correction and Retain areas.')
+            selected |= chosen
+            proposals.append(dict(region=index, source_faces=np.flatnonzero(chosen).tolist(),
+                method='inspected-reconstruction-material-v1',
+                reconstruction_sha256=reconstruction['sha256'],
+                biological_correspondence_claim=False))
+            continue
         brush = mask(centres, [region])
         if not infer and (brush & blocked).any():
             raise ValueError('Shape-preservation guides overlap a Retain area. '

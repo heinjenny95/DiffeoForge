@@ -13,7 +13,9 @@ from PySide6.QtWidgets import (
     QListWidget,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSlider,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
@@ -45,6 +47,7 @@ class RegionFeedbackDialog(QDialog):
         self.regions = None
         self.region = None  # Compatibility for a caller inspecting one saved patch.
         self._rows = deepcopy(list(regions))
+        self._initial_rows = deepcopy(self._rows)
         self._area_counts = {}
         self._had_rows = bool(self._rows)
         self.marking = marking
@@ -102,10 +105,28 @@ class RegionFeedbackDialog(QDialog):
             self.view.addItem("Fit", "fit")
             tools.addWidget(self.view)
         self.view.currentIndexChanged.connect(self._show_view)
-        body = QHBoxLayout()
-        layout.addLayout(body, 1)
+        picking = QHBoxLayout()
+        layout.addLayout(picking)
+        picking.addWidget(QLabel("Mark on:"))
+        self.pick_surface = QComboBox()
+        self.pick_surface.setAccessibleName("Surface to mark")
+        self.pick_surface.addItem("Original surface", "original")
+        if fit_preview is not None:
+            self.pick_surface.addItem("Reconstruction surface", "reconstruction")
+        self.pick_surface.setToolTip(
+            "Select which exact surface receives red corrections in the overlay. "
+            "Green protection uses the original surface.")
+        self.pick_surface.currentIndexChanged.connect(self._pick_surface_changed)
+        picking.addWidget(self.pick_surface)
+        self.pick_label = QLabel()
+        self.pick_label.setWordWrap(True)
+        self.pick_label.setMinimumWidth(0)
+        picking.addWidget(self.pick_label, 1)
+        self.body = body = QSplitter(Qt.Orientation.Horizontal)
+        layout.addWidget(body, 1)
         self.canvas = InteractiveMeshCanvas3D(progressive_navigation=True)
-        self.canvas.setMinimumHeight(330)
+        self.canvas.setMinimumSize(200, 240)
+        self.canvas.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.canvas.pick_instruction = "Click: add another area"
         self.canvas.set_model(model, surface_picker=marking.pick)
         if rotation is not None:
@@ -113,18 +134,28 @@ class RegionFeedbackDialog(QDialog):
         self.canvas.original_detail.setText("Load full surface detail (optional, slower)")
         self.canvas.original_detail.setToolTip(
             "Show fine structures on the active surface. Clicks use that surface's exact faces.")
-        body.addWidget(self.canvas, 1)
+        body.addWidget(self.canvas)
         panel = QWidget()
+        panel.setMinimumWidth(0)
+        panel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         controls = QVBoxLayout(panel)
-        side = QScrollArea()
+        self.side = side = QScrollArea()
         side.setFrameShape(QScrollArea.Shape.NoFrame)
         side.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         side.setWidgetResizable(True)
-        side.setFixedWidth(330)
+        side.setMinimumWidth(260)
+        side.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         side.setWidget(panel)
         body.addWidget(side)
+        body.setStretchFactor(0, 1)
+        body.setStretchFactor(1, 0)
+        body.setSizes([640, 330])
         controls.addWidget(QLabel("Points and instructions"))
         self.listing = QListWidget()
+        self.listing.setMinimumSize(0, 80)
+        self.listing.setWordWrap(True)
+        self.listing.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.listing.setResizeMode(QListWidget.ResizeMode.Adjust)
         self.listing.setAccessibleName("Marked points and their individual instructions")
         controls.addWidget(self.listing, 1)
         buttons = QHBoxLayout()
@@ -141,14 +172,27 @@ class RegionFeedbackDialog(QDialog):
         controls.addLayout(buttons)
         controls.addWidget(QLabel("Instruction for selected point"))
         self.action = QComboBox()
+        self.action.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.action.setMinimumContentsLength(16)
+        self.action.setMinimumWidth(0)
+        self.action.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.action.setAccessibleName("Instruction for selected point")
         for key, label in _INSTRUCTIONS.items():
             self.action.addItem(label, "problem:" + key)
         self.action.addItem("Retain this area in place", "fixed")
         self.action.addItem("Retain this part's shape; allow movement", "preserve")
         controls.addWidget(self.action)
+        self.action_full = QLabel()
+        self.action_full.setAccessibleName("Selected instruction in full")
+        self.action_full.setWordWrap(True)
+        self.action_full.setMinimumWidth(0)
+        self.action_full.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        controls.addWidget(self.action_full)
+        self.action.currentTextChanged.connect(self._show_full_instruction)
         note = QLabel("Retain in place fixes the location. Retain shape allows movement.")
         note.setWordWrap(True)
+        note.setMinimumWidth(0)
+        note.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         controls.addWidget(note)
         self.shape = QComboBox()
         self.shape.setAccessibleName("Shape of selected area")
@@ -173,9 +217,13 @@ class RegionFeedbackDialog(QDialog):
             self.axes.append(axis)
         self.status = QLabel()
         self.status.setWordWrap(True)
+        self.status.setMinimumWidth(0)
+        self.status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         controls.addWidget(self.status)
         self.finding = QLabel()
         self.finding.setWordWrap(True)
+        self.finding.setMinimumWidth(0)
+        self.finding.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.finding.setObjectName("status")
         self.finding.setVisible(fit_preview is not None)
         controls.addWidget(self.finding)
@@ -214,6 +262,25 @@ class RegionFeedbackDialog(QDialog):
             self._fit_loader.request_operation(fit_preview.sha256, lambda: load_region_marking_mesh(
                 fit_preview.path, fit_preview.sha256, fit_preview, pilot_cache,
             ))
+
+    def resizeEvent(self, event):  # noqa: N802 - Qt API
+        super().resizeEvent(event)
+        if hasattr(self, "body"):
+            orientation = (Qt.Orientation.Vertical if self.width() < 850
+                           else Qt.Orientation.Horizontal)
+            if self.body.orientation() != orientation:
+                self.body.setOrientation(orientation)
+                self.body.setSizes([360, 260] if orientation == Qt.Orientation.Vertical
+                                   else [max(200, self.width() - 370), 330])
+            QTimer.singleShot(0, self._show_full_instruction)
+
+    def _show_full_instruction(self, *_):
+        if not hasattr(self, "action_full"):
+            return
+        text = self.action.currentText()
+        self.action_full.setText(text)
+        self.action_full.setVisible(self.action.fontMetrics().horizontalAdvance(text)
+                                    > self.action.width() - 36)
 
     @staticmethod
     def _label(row):
@@ -260,23 +327,48 @@ class RegionFeedbackDialog(QDialog):
         self._move_mode(self._move)
 
     def _select_edit_surface(self, mode):
-        if (mode in {"problem:missing", "fixed", "preserve"}
-                and self.view.currentData() == "fit"):
-            self.view.setCurrentIndex(self.view.findData("original"))
-        elif mode == "problem:distortion" and self.view.findData("fit") >= 0:
-            self.view.setCurrentIndex(self.view.findData("fit"))
+        if mode in {"problem:missing", "fixed", "preserve"}:
+            self.pick_surface.setCurrentIndex(0)
+            if self.view.currentData() == "fit":
+                self.view.setCurrentIndex(self.view.findData("overlay"))
+        elif mode == "problem:distortion" and self.pick_surface.count() > 1:
+            self.pick_surface.setCurrentIndex(1)
+
+    def _pick_surface_changed(self, *_):
+        if self.pick_surface.currentData() == "reconstruction":
+            if self._click_mode == "fixed":
+                self.pick_surface.setCurrentIndex(0)
+                return
+            if self.view.currentData() == "original":
+                self.view.setCurrentIndex(self.view.findData("overlay"))
+        self._show_view()
+
+    def _active_surface(self):
+        if self.view.currentData() == "fit":
+            return "reconstruction"
+        if self.view.currentData() == "original":
+            return "original"
+        return self.pick_surface.currentData()
 
     def _show_view(self, *_):
         mode = self.view.currentData()
+        if mode == "fit" and self._click_mode == "fixed":
+            self.view.setCurrentIndex(self.view.findData("overlay"))
+            return
         data = self._fit_marking if mode == "fit" else self.marking
         visible = data.model if data is not None else self._fit_preview
+        picking = self._fit_marking if self._active_surface() == "reconstruction" else self.marking
         original_detail = self.canvas.original_detail.isChecked()
-        self.canvas.set_model(visible, surface_picker=data.pick if data else None,
-                              view_bounds=self.model.bounds)
+        self.canvas.set_model(visible, surface_picker=picking.pick if picking else None,
+                              view_bounds=self.model.bounds,
+                              pick_bounds=picking.model.bounds if picking else None)
         if original_detail and data is not None:
             self.canvas.original_detail.setChecked(True)
         self.canvas.set_fit_overlay(self._fit_preview if mode == "overlay" else None)
-        self.canvas.set_picking_enabled(data is not None)
+        self.canvas.set_picking_enabled(picking is not None)
+        self.pick_label.setText("Red clicks mark the reconstruction; no original face is required."
+            if self._active_surface() == "reconstruction" else
+            "Clicks mark the original surface.")
         self._move_mode(self._move)
         self._render()
 
@@ -285,10 +377,8 @@ class RegionFeedbackDialog(QDialog):
                 or marking.model.path != self._fit_preview.path):
             return
         self._fit_marking = marking
-        if self.view.currentData() == "fit":
-            self._show_view()
-        else:
-            self._queue_diagnosis()
+        self._area_counts.clear()
+        self._show_view()
 
     def _fit_failed(self, _key, message):
         self._fit_error = f"Fit inspection unavailable. {message}"
@@ -301,7 +391,8 @@ class RegionFeedbackDialog(QDialog):
         row = self._rows[index]
         if row.get("purpose", "problem") != "problem":
             return None, None
-        key = (index, tuple(row["center"]), row["radius"], tuple(row.get("bounds", ())))
+        key = (index, tuple(row["center"]), row["radius"], tuple(row.get("bounds", ())),
+               repr(row.get("reconstruction")))
         return key, row
 
     def _queue_diagnosis(self):
@@ -318,7 +409,7 @@ class RegionFeedbackDialog(QDialog):
             self._suggestion = None
         if self._fit_error:
             self.finding.setText(self._fit_error)
-        elif self.view.currentData() == "fit" and self._fit_marking is None:
+        elif self._active_surface() == "reconstruction" and self._fit_marking is None:
             self.finding.setText("Loading the fitted surface for precise clicks…")
         elif row is None:
             self.finding.setText("Click an area to compare the original and the fit."
@@ -389,7 +480,28 @@ class RegionFeedbackDialog(QDialog):
         else:
             self.status.setText("Eight areas marked. Edit or remove a point to add another.")
             return
+        if self._active_surface() == "reconstruction":
+            if self._fit_marking is None or self._rows[index].get("purpose") != "problem":
+                return
+            self._bind_reconstruction(self._rows[index])
+            if (self._rows[index]["symptom"] == "unsure"
+                    and self.marking.count(self._rows[index]) == 0):
+                self._rows[index]["symptom"] = "distortion"
+        else:
+            self._rows[index].pop("reconstruction", None)
         self._refresh_list(index)
+
+    def _bind_reconstruction(self, row):
+        from diffeoforge.reconstruction_feedback import bind, topology_sha256
+
+        try:
+            row["reconstruction"] = bind(row, self._fit_marking.model)
+        except ValueError:
+            # Retain the explicit picking role even for an empty draft brush.
+            # Such a draft cannot be saved or silently become an original mark.
+            model = self._fit_marking.model
+            row["reconstruction"] = dict(sha256=model.sha256, face_ids=[],
+                topology_sha256=topology_sha256(model.vertices, model.triangles))
 
     def _action_changed(self, *_):
         index = self.listing.currentRow()
@@ -398,6 +510,9 @@ class RegionFeedbackDialog(QDialog):
         row = self._rows[index]
         action = self.action.currentData()
         row["purpose"] = "problem" if action.startswith("problem:") else action
+        if row["purpose"] != "problem":
+            row.pop("reconstruction", None)
+            self._select_edit_surface(action)
         if action.startswith("problem:"):
             row["symptom"] = action.split(":", 1)[1]
         if row["version"] != BOX_VERSION:
@@ -419,6 +534,8 @@ class RegionFeedbackDialog(QDialog):
             row.pop("shape", None)
             row.pop("bounds", None)
             row.update(version=EDIT_VERSION, radius=self.diagonal * self.size.value() / 100)
+        if row.get("reconstruction") and self._fit_marking is not None:
+            self._bind_reconstruction(row)
         self._render()
 
     def _remove(self):
@@ -437,9 +554,21 @@ class RegionFeedbackDialog(QDialog):
         counts = []
         current_counts = {}
         for row in self._rows:
-            key = tuple(row["center"]), row["radius"], tuple(row.get("bounds", ()))
+            evidence = row.get("reconstruction")
+            key = (tuple(row["center"]), row["radius"], tuple(row.get("bounds", ())),
+                   repr(evidence))
             if key not in self._area_counts:
-                self._area_counts[key] = self.marking.count(row)
+                if evidence:
+                    from diffeoforge.reconstruction_feedback import material_mask
+
+                    try:
+                        self._area_counts[key] = (int(material_mask(
+                            self._fit_marking.model.vertices, self._fit_marking.model.triangles,
+                            [row]).sum()) if self._fit_marking else 0)
+                    except ValueError:
+                        self._area_counts[key] = 0
+                else:
+                    self._area_counts[key] = self.marking.count(row)
             current_counts[key] = self._area_counts[key]
             counts.append(current_counts[key])
         self._area_counts = current_counts
@@ -450,8 +579,9 @@ class RegionFeedbackDialog(QDialog):
         self.canvas.set_markers(markers, colors=colors)
         self.save.setEnabled(bool(self._rows) and all(counts) or self._had_rows and not self._rows)
         if index >= 0:
-            self.status.setText(f"{chr(65 + index)} · {counts[index]:,} original faces selected. "
-                + ("Include original surface in each correction. Enlarge or move empty areas."
+            surface = "reconstruction" if self._rows[index].get("reconstruction") else "original"
+            self.status.setText(f"{chr(65 + index)} · {counts[index]:,} {surface} faces selected. "
+                + ("Enlarge or move empty areas on the intended surface."
                    if not all(counts) else
                    f"{len(self._rows)} / {MAX_REGIONS} areas. Click to add another point."))
         else:
@@ -461,6 +591,16 @@ class RegionFeedbackDialog(QDialog):
     def _save(self):
         if not self.save.isEnabled():
             return
+        from diffeoforge.mesh import sha256_file
+
+        for row in self._rows:
+            if row.get("reconstruction") and row not in self._initial_rows:
+                if (self._fit_preview is None
+                        or row["reconstruction"]["sha256"] != self._fit_preview.sha256
+                        or sha256_file(self._fit_preview.path) != self._fit_preview.sha256):
+                    self.finding.setText("The inspected reconstruction changed. Reopen this fit "
+                                         "before saving its correction.")
+                    return
         self.regions = deepcopy(self._rows)
         self.region = self.regions[-1] if self.regions else None
         self.accept()

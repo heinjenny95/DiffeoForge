@@ -81,6 +81,16 @@ def _local_samples(row, key):
     return [item["tail"] for item in bins]
 
 
+def _has_local_regression(current, alternative):
+    """Check every measured local bin, including losses not selected as markers."""
+    for key in current["repeats"][0].get("regions", {}):
+        before, after = _local_samples(current, key), _local_samples(alternative, key)
+        if (before is not None and after is not None
+                and _lowers(after, before, current["diagonal"])):
+            return True
+    return False
+
+
 def _regions(current, alternative):
     """Show at most one clear contrast and one persistent large gap."""
     gains, losses, residual = [], [], []
@@ -387,11 +397,17 @@ def preview(snapshot, context):
                   alternative_p95=None, regions=[])
     if alternatives:
         other = min(alternatives, key=lambda row: max(_series(row, "p95")))
+        regions = _regions(current, other)
+        tradeoff = _has_local_regression(current, other)
         return dict(result, mode="compare", alternative=other["reference"],
+                    metric_preference=None if tradeoff else "alternative", tradeoff=tradeoff,
                     alternative_cp=other["cp"],
                     alternative_p95=max(_series(other, "p95")) * 100 / other["diagonal"],
-                    regions=_regions(current, other),
-                    reason="A saved fit with the other surface-matching method has lower "
+                    regions=regions,
+                    reason="The saved fit has lower whole-surface distances but a local "
+                           "area is farther away. Inspect the trade-off before choosing a fit."
+                    if tradeoff else
+                    "A saved fit with the other surface-matching method has lower "
                            "surface distances on both samples. Compare the same area before "
                            "choosing a new test.")
     tradeoffs = []
