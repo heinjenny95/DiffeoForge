@@ -250,7 +250,7 @@ def test_brush_highlights_actual_original_faces_and_cancel_does_not_commit(tmp_p
     dialog._picked(v[f[0]].mean(axis=0))
     layer = dialog.canvas._surface_layer(v, f)
     assert np.array_equal(
-        layer.face_colors[:, 0] == 242,
+        (layer.face_colors[:, :3] == (223, 94, 103)).all(axis=1),
         regions.face_mask(v, f, dialog.center, dialog.diagonal * 0.2),
     )
     assert dialog.save.isEnabled()

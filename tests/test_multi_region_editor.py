@@ -126,6 +126,7 @@ def test_correct_fit_clicks_original_and_fit_and_uses_only_confirmed_diagnosis(
     from diffeoforge.desktop.pilot_preview import load_pilot_preview
     from diffeoforge.desktop.region_feedback_dialog import RegionFeedbackDialog
     from diffeoforge.desktop.region_marking_geometry import load_region_marking_mesh
+    from diffeoforge.desktop.widgets import _STYLE
     from diffeoforge.mesh import sha256_file, write_vtk_polydata
 
     app = QApplication.instance() or QApplication([])
@@ -140,6 +141,8 @@ def test_correct_fit_clicks_original_and_fit_and_uses_only_confirmed_diagnosis(
     dialog = RegionFeedbackDialog(
         original, rotation=np.eye(3), fit_preview=load_pilot_preview(fit_path),
     )
+    dialog.setStyleSheet(_STYLE)
+    dialog.resize(900, 520)
     dialog.show()
 
     def click_centre(offset=0):
@@ -153,6 +156,8 @@ def test_correct_fit_clicks_original_and_fit_and_uses_only_confirmed_diagnosis(
     try:
         assert dialog.view.currentData() == "overlay"
         assert not dialog.canvas.original_detail.isChecked()
+        assert dialog.width() <= 900 and dialog.height() <= 520
+        assert dialog.save.isVisible() and dialog.save.geometry().bottom() <= dialog.height()
         click_centre()
         first = dialog._rows[0]
         assert first["center"][2] == pytest.approx(0)

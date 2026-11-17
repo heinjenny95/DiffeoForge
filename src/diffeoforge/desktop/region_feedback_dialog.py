@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QPushButton,
+    QScrollArea,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -93,8 +94,9 @@ class RegionFeedbackDialog(QDialog):
         tools.addStretch()
         self.view = QComboBox()
         self.view.setAccessibleName("Surface to display")
+        self.view.setToolTip("The overlay shows the fitted surface in purple.")
         if fit_preview is not None:
-            self.view.addItem("Original + fit (purple lines)", "overlay")
+            self.view.addItem("Overlay", "overlay")
         self.view.addItem("Original", "original")
         if fit_preview is not None:
             self.view.addItem("Fit", "fit")
@@ -113,9 +115,14 @@ class RegionFeedbackDialog(QDialog):
             "Show fine structures on the active surface. Clicks use that surface's exact faces.")
         body.addWidget(self.canvas, 1)
         panel = QWidget()
-        panel.setFixedWidth(310)
         controls = QVBoxLayout(panel)
-        body.addWidget(panel)
+        side = QScrollArea()
+        side.setFrameShape(QScrollArea.Shape.NoFrame)
+        side.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        side.setWidgetResizable(True)
+        side.setFixedWidth(330)
+        side.setWidget(panel)
+        body.addWidget(side)
         controls.addWidget(QLabel("Points and instructions"))
         self.listing = QListWidget()
         self.listing.setAccessibleName("Marked points and their individual instructions")
