@@ -21,8 +21,8 @@ class FullGeometryReviewMixin:
         self.mark_region_button.setObjectName("secondary")
         self.canvas.original_detail.setText("Load full detail (optional, slower)")
         self.canvas.original_detail.setToolTip(
-            "The preview is sufficient to approve, reject or compare this fit. "
-            "Load complete original and reconstruction geometry only when needed."
+            "You can review the preview. Load the complete original and reconstruction "
+            "to inspect small features that the preview may hide."
         )
         self.display_timer = QTimer(self)
         self.display_timer.setInterval(200)

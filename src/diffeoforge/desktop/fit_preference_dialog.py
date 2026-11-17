@@ -166,7 +166,7 @@ class _FitPreferencePanel(QWidget):
 
         def prepare():
             from diffeoforge.desktop.mesh_preview import load_mesh_preview
-            from diffeoforge.desktop.pilot_preview import load_pilot_preview
+            from diffeoforge.desktop.pilot_preview import load_study_preview
             from diffeoforge.desktop.reference_calibration_dialog import (
                 collect_calibration_qc_pairs,
             )
@@ -223,7 +223,7 @@ class _FitPreferencePanel(QWidget):
                 model = (
                     load_mesh_preview(path)
                     if detail
-                    else load_pilot_preview(path, cache_directory=self.directory / "display-cache")
+                        else load_study_preview(path, self.directory / "display-cache")
                 )
                 if model.sha256 != digest:
                     raise ValueError("A compared surface changed during loading")

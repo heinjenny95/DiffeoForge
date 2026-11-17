@@ -155,7 +155,7 @@ def preview_models(bound, *, full_detail=False):
     """Full native coordinates → bounded DISPLAY geometry, away from the UI thread."""
     from diffeoforge.desktop.display_proxy import build_display_proxy
     from diffeoforge.desktop.mesh_preview import MeshPreviewModel, load_mesh_preview
-    from diffeoforge.desktop.pilot_preview import load_pilot_preview
+    from diffeoforge.desktop.pilot_preview import PILOT_DISPLAY_FACES, load_pilot_preview
     from diffeoforge.surface_io import load_surface_mesh
 
     fresh = read_review(bound["run"])
@@ -189,7 +189,7 @@ def preview_models(bound, *, full_detail=False):
     proxy = (
         build_display_proxy(points, faces, budget=len(faces))
         if full_detail
-        else build_display_proxy(points, faces)
+        else build_display_proxy(points, faces, budget=PILOT_DISPLAY_FACES)
     )
     low, high = points.min(0), points.max(0)
     reconstruction = MeshPreviewModel(

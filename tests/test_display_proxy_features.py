@@ -43,13 +43,16 @@ def thin_protrusion():
     return points, faces, angle < width * 2, width
 
 
-def test_review_proxy_keeps_a_thin_protrusion_within_half_its_width():
+@pytest.mark.parametrize("budget, use_old_proxy", [(8000, False), (4000, False), (4000, True)])
+def test_review_proxy_keeps_a_thin_protrusion_within_half_its_width(budget, use_old_proxy):
     vtk = pytest.importorskip("vtk")
     from vtk.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
 
     points, faces, feature, width = thin_protrusion()
-    preview = build_display_proxy(points, faces)
-    assert len(preview.triangles) <= 8000
+    setup = build_display_proxy(points, faces) if use_old_proxy else None
+    preview = (build_display_proxy(setup.vertices, setup.triangles, budget=budget)
+               if setup else build_display_proxy(points, faces, budget=budget))
+    assert len(preview.triangles) <= budget
     mesh = vtk.vtkPolyData()
     vertices = vtk.vtkPoints()
     vertices.SetData(numpy_to_vtk(preview.vertices, deep=True))

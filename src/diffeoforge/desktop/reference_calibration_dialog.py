@@ -4337,12 +4337,13 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             root = self.study_directory
 
             def prefetch():
-                from diffeoforge.desktop.pilot_preview import load_pilot_preview
+                from diffeoforge.desktop.pilot_preview import load_study_preview
 
-                for pair in collect_calibration_qc_pairs(root, candidate):
-                    if pair.required:
-                        for path in (pair.original_path, pair.reconstruction_path):
-                            load_pilot_preview(path, cache_directory=root / "display-cache")
+                pair = next((p for p in collect_calibration_qc_pairs(root, candidate)
+                             if p.required), None)
+                if pair is not None:
+                    for path in (pair.original_path, pair.reconstruction_path):
+                        load_study_preview(path, root / "display-cache")
 
             self._preview_prefetch.request_operation(candidate_id, prefetch)
             subjects = ((candidate.metrics or {}).get('attachment_comparison', {})

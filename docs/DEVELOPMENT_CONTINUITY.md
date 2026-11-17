@@ -1,5 +1,19 @@
 # Development continuity — dev192 installed and verified
 
+## dev212 — faster display previews in the pilot
+
+Pilot overlays use a 4,000-face display budget per mesh. They can reuse a
+previously saved display proxy when its source hash matches. A shared cache in
+the calibration workspace carries that preview across attempts and reopening.
+Concurrent prefetch and foreground requests share one reduction. Prefetch
+prepares the first required pair. The fast reader parses validated classic
+binary VTK display geometry as arrays, including bounds and exact connectivity.
+
+Preview polygons are only for display. Optional full detail and exact original
+coordinates for region marking remain available. Fine openings and ridges may
+require full detail. A cold load still includes original-file verification and
+surface reduction. Numerical acceptance and scientific input checks are unchanged.
+
 ## dev211 — generate contextual Pilot chat answers in English
 
 Pilot chat uses English for its interface and replies. It accepts German and
