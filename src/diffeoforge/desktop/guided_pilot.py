@@ -335,12 +335,14 @@ def render(window, prepared):
                 break
 
     direction_pinned = False
+    direction = guidance.get("fit_direction")
+    marked_direction = bool(direction and direction["mode"] == "trial" and not common_flow
+                            and direction["request"]["goal"] == "regional")
     if not running and not unresolved and not common_failure:
         pin_recovery(
             window, snapshot, guidance.get("common_recovery"), current_target=info.get("target"),
         )
         pin_revision(window, snapshot, guidance, info.get("target"))
-        direction = guidance.get("fit_direction")
         if direction and not common_flow and not (review and review["pending"]):
             mode = direction["mode"]
             if mode == "compare":
@@ -365,24 +367,26 @@ def render(window, prepared):
             elif mode == "trial":
                 direction_pinned = pin_action(
                     window, snapshot, f"{direction['title']} · {direction['start_label']}",
-                    "adaptive_recover_start", direction["identifier"],
+                    direction.get("action", "adaptive_recover_start"), direction["identifier"],
                     "Prepare this one test. Fitting starts only when you choose Run.",
                     goal=direction["request"],
                 )
             if direction_pinned:
                 window.status.setText(direction["reason"])
         offers = guidance.get("density_comparisons", {})
-        identifier = next((key for key, row in offers.items()
-                           if row["reference"]["method"] == guidance["preferred"]), None)
-        identifier = identifier or next(iter(offers), None)
+        identifier = direction["identifier"] if marked_direction else None
+        if identifier not in offers:
+            identifier = next((key for key, row in offers.items()
+                               if row["reference"]["method"] == guidance["preferred"]),
+                              next(iter(offers), None))
         if identifier is not None:
             option = offers[identifier]
             low, high = option["initial_control_count"], option["denser_control_count"]
             label = f"Compare {low} and {high} control points"
             tooltip = "Prepare two short trials from the same saved fit. Run starts both."
-            density_pinned = pin_action(window, snapshot, label, "adaptive_density_comparison",
-                                        identifier, tooltip)
-            if direction_pinned and not density_pinned:
+            density_pinned = not marked_direction and pin_action(
+                window, snapshot, label, "adaptive_density_comparison", identifier, tooltip)
+            if (direction_pinned or marked_direction) and not density_pinned:
                 density = QPushButton(label)
                 density.setToolTip(tooltip)
                 density.clicked.connect(lambda _checked=False, selected=identifier:
@@ -392,11 +396,14 @@ def render(window, prepared):
                                                                density))
 
     def recovery_tools(candidate, layout):
-        if not direction_pinned:
+        if not (direction_pinned or marked_direction):
             _recovery(window, snapshot, candidate, layout, guidance)
             return
         panel = QWidget()
-        _recovery(window, snapshot, candidate, QVBoxLayout(panel), guidance)
+        pinned_request = (direction["request"]["request"] if direction_pinned and marked_direction
+                          and direction["identifier"] == candidate.candidate_id else None)
+        _recovery(window, snapshot, candidate, QVBoxLayout(panel), guidance,
+                  optional=marked_direction, pinned_request=pinned_request)
         layout.addWidget(InfoDisclosure("Other adjustments and input checks", panel))
 
     def action(layout, label, kind, identifier, *, goal=None, available=True, fixed=False):
@@ -418,7 +425,7 @@ def render(window, prepared):
         return button
 
     def emphasize_common_action():
-        if not (common_flow or direction_pinned):
+        if not (common_flow or direction_pinned or marked_direction):
             return
         primary = (
             window.review_next_button if review and review["pending"]
@@ -840,8 +847,10 @@ def render(window, prepared):
     emphasize_common_action()
 
 
-def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
+def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False,
+              pinned_request=None):
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
+    from diffeoforge.guided_strategy import default_recovery_symptom
     from diffeoforge.pilot_recovery import DESCRIPTIONS
     from diffeoforge.pilot_regions import SYMPTOMS
 
@@ -874,14 +883,8 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
     for key, label in SYMPTOMS.items():
         symptoms.addItem(label, key)
     saved_feedback = guidance.get("feedback", {}).get(identifier) or {}
-    recorded = saved_feedback.get("feedback") or {}
     regions = saved_feedback.get("problem_regions", {})
-    first = next((r for rows in regions.values() for r in rows), None)
-    symptom = recorded.get("symptom", "unsure")
-    if symptom == "unsure" and first:
-        symptom = first["symptom"]
-    symptoms.setCurrentIndex(symptoms.findData(
-        symptom))
+    symptoms.setCurrentIndex(symptoms.findData(default_recovery_symptom(saved_feedback)))
     layout.addWidget(symptoms)
     explanation = QLabel()
     explanation.setWordWrap(True)
@@ -937,10 +940,12 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False):
                          "no repeat is prepared.")
         )
         prepare.setText(proposed["title"] + " · prepare 1 trial on 1 specimen")
-        prepare.setEnabled(proposed["available"])
-        prepare.setVisible(proposed["available"])
-        _set_action_emphasis(prepare, proposed["available"] and not optional
-                             and not getattr(window, "_guided_common_flow", False))
+        duplicates_footer = request == pinned_request
+        explanation.setVisible(not duplicates_footer)
+        prepare.setEnabled(proposed["available"] and not duplicates_footer)
+        prepare.setVisible(proposed["available"] and not duplicates_footer)
+        _set_action_emphasis(prepare, proposed["available"] and not duplicates_footer
+                             and not optional and not getattr(window, "_guided_common_flow", False))
         data = guidance.get("feedback", {}).get(identifier)
         if data and data["needs_direction"]:
             prepare.setEnabled(False)

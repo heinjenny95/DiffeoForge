@@ -115,7 +115,7 @@ def test_saved_comparison_opens_from_the_fixed_footer_without_preparing_fit(tmp_
         app.processEvents()
 
 
-def _regional_trial(tmp_path, monkeypatch, *, base=None, mark_count=1):
+def _marked_fit(tmp_path, monkeypatch, *, base=None, mark_count=1, symptom="detail"):
     import shutil
     from types import SimpleNamespace
 
@@ -133,7 +133,7 @@ def _regional_trial(tmp_path, monkeypatch, *, base=None, mark_count=1):
     original = base.study_directory / manifest["inputs"]["subjects"][0]["copy"]
     vertices = load_surface_mesh(original).geometry.vertices
     marks = [patch(target.sha256, center=list(max(vertices, key=lambda point: point[axis])),
-                   radius=.25) for axis in range(mark_count)]
+                   radius=.25, symptom=symptom) for axis in range(mark_count)]
     base = study.record_reference_calibration_candidate_review(
         base.study_directory, candidate_id=identifier, approved=False,
         reviewed_subjects=(target.filename,), subject_decisions={target.filename: "fail"},
@@ -170,11 +170,109 @@ def _regional_trial(tmp_path, monkeypatch, *, base=None, mark_count=1):
         field_paths=dict(control_points=str(controls), momenta=str(momenta)),
         controls_sha256=sha256_file(controls), momenta_sha256=sha256_file(momenta),
     ))
+    return base, identifier
+
+
+def _regional_trial(tmp_path, monkeypatch, *, base=None, mark_count=1):
+    base, identifier = _marked_fit(tmp_path, monkeypatch, base=base, mark_count=mark_count)
     trial = guided.next_action(
         base.study_directory, "adaptive_recover", identifier, goal="regional:detail"
     )
     assert trial.attachment_comparison["regional_objective"]
     return base, trial, identifier
+
+
+@pytest.mark.parametrize("symptom", ["detail", "unsure", "distortion"])
+def test_marked_area_is_the_only_primary_next_action_and_does_not_run(
+    tmp_path, monkeypatch, symptom,
+):
+    import time
+    from dataclasses import replace
+
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtWidgets import QApplication, QPushButton
+    from test_guided_early_density import first_trial
+    from test_pilot_region_feedback import reject
+
+    from diffeoforge.desktop.info_disclosure import InfoDisclosure
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    app = QApplication.instance() or QApplication([])
+    _, snapshot = first_trial(tmp_path, monkeypatch)
+    snapshot = reject(snapshot, "guided-current")
+    snapshot, identifier = _marked_fit(tmp_path, monkeypatch, base=snapshot, symptom=symptom)
+    snapshot = guided.next_action(snapshot.study_directory, "adaptive_prefer", identifier)
+    journal = snapshot.study_directory / study.STUDY_EVENTS
+    journal_prefix = journal.read_bytes()
+    original = {p: sha256_file(p) for p in snapshot.study_directory.rglob("*") if p.is_file()}
+    target = snapshot.plan.selected_pilot_subjects[0]
+    calls = []
+    monkeypatch.setattr(study.ReferenceCalibrationStudyRunner, "run_current_stage",
+                        lambda *_a, **_k: calls.append("optimizer started"))
+    view = ReferenceCalibrationDialog(snapshot.study_directory)
+    view.show()
+    try:
+        wait_pilot_view(view)
+        assert view.next_step_button.isVisible() and view.next_step_button.isEnabled()
+        assert view.next_step_button.objectName() == "primary"
+        assert "marked areas" in view.next_step_button.text()
+        assert "local test that protects" in view.status.text()
+        assert view._guided_footer_action == (
+            snapshot.study_directory, "adaptive_recover", identifier,
+        )
+        goal = view._guided_footer_goal
+        assert goal["reference"] == guided_feedback.reference(snapshot, identifier)
+        assert goal["goal"] == "regional" and goal["request"] == "regional:" + symptom
+        assert [row["source_sha256"] for row in goal["regions"]] == [target.sha256]
+        secondary_titles = {
+            "Optional control-point test", "Other adjustments and input checks",
+        }
+        secondary = [w for w in view.content.findChildren(InfoDisclosure)
+                     if w.title in secondary_titles]
+        assert {w.title for w in secondary} == secondary_titles
+        for disclosure in secondary:
+            assert not disclosure.toggle_button.isChecked()
+            disclosure.toggle_button.setChecked(True)
+        density = next(w for w in secondary if w.title == "Optional control-point test")
+        assert any(b.isVisible() and b.text().endswith("control points")
+                   for b in density.findChildren(QPushButton))
+        assert [b for b in view.findChildren(QPushButton, "primary")
+                if b.isVisible() and b.isEnabled()] == [view.next_step_button]
+        assert not any(b.isVisible() and "Improve marked areas" in b.text()
+                       for b in view.content.findChildren(QPushButton))
+        with pytest.raises(ValueError, match="marked areas changed"):
+            guided.next_action(snapshot.study_directory, "adaptive_recover", identifier,
+                               goal=goal | {"regions": []})
+        with pytest.raises(ValueError, match="saved reviews changed"):
+            guided_strategy._plan_transition(
+                replace(snapshot, visual_reviews={identifier: False}),
+                "recover", identifier, goal=goal,
+            )
+
+        view.next_step_button.click()
+        deadline = time.monotonic() + 20
+        while (view._worker or view._view_loading) and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(.002)
+        wait_pilot_view(view)
+        assert view.study_directory != snapshot.study_directory, view.operation_error.text()
+        prepared = study.load_reference_calibration_study(view.study_directory)
+        record = prepared.attachment_comparison
+        assert record["regional_objective"]
+        assert record["guided"]["strategy"]["baseline"] == goal["reference"]
+        assert record["guided"]["feedback"]["regions"] == goal["regions"]
+        assert all(c.attempts == 0 for c in prepared.candidates)
+        assert not calls and all(sha256_file(p) == digest for p, digest in original.items()
+                                 if p != journal)
+        assert journal.read_bytes().startswith(journal_prefix)
+        events = study._load_events(snapshot.study_directory)
+        assert events[-1]["event"] == "guided_pilot_decision"
+        assert events[-1]["optimizer_started"] is False
+    finally:
+        view.close()
+        app.processEvents()
 
 
 def _complete_with_regions(snapshot, monkeypatch, outcome, *, failed_guard=False):

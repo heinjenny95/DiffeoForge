@@ -175,26 +175,41 @@ def test_restart_after_first_completed_arm_only_runs_the_missing_arm(tmp_path, m
     assert not completed.visual_reviews
 
 
-def test_density_offer_is_pinned_after_marked_rejection(tmp_path, monkeypatch):
+@pytest.mark.parametrize("pending_marked_review", [True, False])
+def test_density_offer_stays_accessible_when_review_or_local_repair_takes_priority(
+        tmp_path, monkeypatch, pending_marked_review):
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from pilot_view_helpers import wait_pilot_view
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QPushButton
 
+    from diffeoforge.desktop.info_disclosure import InfoDisclosure
     from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
 
     app = QApplication.instance() or QApplication([])
     _, snapshot = first_trial(tmp_path, monkeypatch)
-    snapshot = _marked_rejection(snapshot, monkeypatch)
+    snapshot = (_marked_rejection(snapshot, monkeypatch) if pending_marked_review
+                else reject(reject(snapshot, "guided-current"), METHOD))
+    offer = density_preview(snapshot)
+    label = (f"Compare {offer['initial_control_count']} and {offer['denser_control_count']} "
+             "control points")
     dialog = ReferenceCalibrationDialog(snapshot.study_directory)
     dialog.show()
     try:
         wait_pilot_view(dialog)
-        assert dialog.next_step_button.isVisible() and dialog.next_step_button.isEnabled()
-        assert dialog.next_step_button.text().endswith("control points")
-        assert dialog._guided_footer_action == (
-            snapshot.study_directory, "adaptive_density_comparison", METHOD,
-        )
+        if pending_marked_review:
+            assert dialog.review_next_button.isVisible() and dialog.review_next_button.isEnabled()
+            assert dialog.review_next_button.objectName() == "primary"
+            assert not dialog.next_step_button.isVisible()
+            optional = next(w for w in dialog.content.findChildren(InfoDisclosure)
+                            if w.title == "Optional control-point test")
+            optional.toggle_button.setChecked(True)
+            assert any(b.isVisible() and b.isEnabled() and b.text() == label
+                       for b in optional.findChildren(QPushButton))
+        else:
+            assert dialog.next_step_button.isVisible() and dialog.next_step_button.isEnabled()
+            assert dialog.next_step_button.text().endswith("control points")
+            assert dialog._guided_footer_action[1] == "adaptive_density_comparison"
     finally:
         dialog.close()
         app.processEvents()

@@ -163,8 +163,9 @@ class SurfaceFrameCache(QObject):
 
     changed = Signal()
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    def __init__(self, parent: QObject | None = None, *, progressive_navigation=False) -> None:
         super().__init__(parent)
+        self._progressive_navigation = progressive_navigation
         self._active: _FrameWorker | None = None
         self._pending: tuple[tuple, SurfaceScene] | None = None
         self._wanted: tuple | None = None
@@ -200,7 +201,9 @@ class SurfaceFrameCache(QObject):
             self._wanted = key
             self.error = ""
             self._pending = (key, scene)
-            if self._active is not None:
+            if self._active is not None and not (
+                self._progressive_navigation and scene.navigation and self._active.scene.navigation
+            ):
                 self._active.cancelled.set()
         if self._active is None and self._pending is not None:
             pending_key, pending_scene = self._pending
@@ -227,7 +230,11 @@ class SurfaceFrameCache(QObject):
         scene = self._active.scene if self._active is not None else None
         self._active = None
         self._mailbox.cancelled = None
-        if not cancelled and key == self._wanted and image is not None:
+        # Fast ongoing navigation can show the last completed motion frame.
+        # A settled view still requires the exact requested camera before picking.
+        moving = (self._progressive_navigation and scene is not None and scene.navigation
+                  and self._pending is not None and self._pending[1].navigation)
+        if not cancelled and (key == self._wanted or moving) and image is not None:
             self._image_key, self._image = key, image
             self._image_scene = scene
         if not cancelled and key == self._wanted:

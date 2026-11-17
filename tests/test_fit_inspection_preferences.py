@@ -182,12 +182,14 @@ def test_marked_3d_region_is_bound_to_original_without_approving_fit(tmp_path, m
     from PySide6.QtWidgets import QDialog
 
     from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
+    from diffeoforge.desktop.region_marking_geometry import prepare_region_marking_mesh
 
     app, dialog, _, original, *_ = inspection(tmp_path, monkeypatch, first=True, compare=False)
+    marking = prepare_region_marking_mesh(original)
 
     def mark(region_dialog):
         canvas = region_dialog.findChild(InteractiveMeshCanvas3D)
-        assert canvas._model is original
+        assert canvas._model is marking.model
         points = np.asarray(original.vertices)[np.asarray(original.triangles)[0]]
         canvas.surfacePointPicked.emit(points.mean(axis=0))
         region_dialog._save()
@@ -195,7 +197,7 @@ def test_marked_3d_region_is_bound_to_original_without_approving_fit(tmp_path, m
 
     monkeypatch.setattr(QDialog, "exec", mark)
     pair = dialog._pairs[0]
-    dialog._region_loaded(pair.pair_id, (original,))
+    dialog._region_loaded(pair.pair_id, marking)
     region = dialog.problem_regions[pair.original_path.name][0]
     assert region["source_sha256"] == pair.original_sha256
     assert region["space"] == "original_mesh_coordinates" and region["radius"] > 0

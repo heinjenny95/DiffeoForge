@@ -222,3 +222,40 @@ def test_repeated_render_completion_and_owner_destruction(app):
         delete(owner)
     assert QThreadPool.globalInstance().waitForDone(5000)
     app.processEvents()
+
+
+def test_progressive_navigation_displays_a_frame_while_drag_continues(app, monkeypatch):
+    first_started, second_started = threading.Event(), threading.Event()
+    release_first, release_second = threading.Event(), threading.Event()
+    original = rendering.render_surface_scene
+
+    def render(value, cancelled):
+        if value.zoom == 1:
+            first_started.set()
+            assert release_first.wait(4)
+            assert not cancelled.is_set()
+        elif value.zoom == 3:
+            second_started.set()
+            assert release_second.wait(4)
+        return original(value, cancelled)
+
+    monkeypatch.setattr(rendering, "render_surface_scene", render)
+    cache = rendering.SurfaceFrameCache(progressive_navigation=True)
+    try:
+        moving = replace(scene(), navigation=True)
+        cache.request((1,), moving)
+        wait_until(app, first_started.is_set)
+        cache.request((2,), replace(moving, zoom=2.0))
+        cache.request((3,), replace(moving, zoom=3.0))
+        release_first.set()
+        wait_until(app, second_started.is_set)
+        assert cache.image_scene.zoom == 1
+        assert not cache.ready((3,))
+        cache.request((4,), replace(scene(), zoom=3.0))
+        release_second.set()
+        wait_until(app, lambda: cache.ready((4,)))
+        assert not cache.image_scene.navigation and cache.image_scene.zoom == 3
+        assert cache.render_count == 3
+    finally:
+        release_first.set()
+        release_second.set()

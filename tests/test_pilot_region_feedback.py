@@ -236,15 +236,15 @@ def test_brush_highlights_actual_original_faces_and_cancel_does_not_commit(tmp_p
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from diffeoforge.desktop.mesh_preview import load_mesh_preview
     from diffeoforge.desktop.region_feedback_dialog import RegionFeedbackDialog
-    from diffeoforge.mesh import write_vtk_polydata
+    from diffeoforge.desktop.region_marking_geometry import load_region_marking_mesh
+    from diffeoforge.mesh import sha256_file, write_vtk_polydata
 
     app = QApplication.instance() or QApplication([])
     v, f = cube()
     path = tmp_path / "original.vtk"
     write_vtk_polydata(path, v, f, title="Synthetic region")
-    dialog = RegionFeedbackDialog(load_mesh_preview(path))
+    dialog = RegionFeedbackDialog(load_region_marking_mesh(path, sha256_file(path)))
     assert not dialog.save.isEnabled() and dialog.region is None
     dialog.size.setValue(20)
     dialog._picked(v[f[0]].mean(axis=0))

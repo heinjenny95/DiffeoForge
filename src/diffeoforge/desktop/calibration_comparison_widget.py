@@ -293,12 +293,12 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._emit_camera()
         self.update()
 
-    def _view_rotation(self) -> np.ndarray:
+    def view_rotation(self) -> np.ndarray:
         rotation = camera_rotation(self._yaw, self._pitch)
         return rotation if self._base_orientation is None else rotation @ self._base_orientation
 
     def _project(self, vertices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        rotation = self._view_rotation()
+        rotation = self.view_rotation()
         camera = ((vertices - self._center) / self._scale) @ rotation.T
         viewport = max(1.0, min(float(self.width()), float(self.height())) - 72.0)
         factor = 0.9 * viewport * self._zoom
@@ -428,7 +428,7 @@ class CalibrationComparisonCanvas3D(QWidget):
             self.height(),
             self._center,
             self._scale,
-            self._view_rotation(),
+            self.view_rotation(),
             self._zoom,
             self._pan,
             tuple(layers),

@@ -836,7 +836,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         self.decision_panel.setObjectName("card")
         decision_layout = QVBoxLayout(self.decision_panel)
         feature_layout.removeWidget(self.mark_region_button)
-        self.mark_region_button.setText("Show where this fit needs improvement…")
+        self.mark_region_button.setText("Correct this fit…")
         region_controls = QHBoxLayout()
         region_controls.addWidget(self.mark_region_button)
         self.clear_regions_button = QPushButton("Clear marked areas")
@@ -1218,12 +1218,18 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         index = self.mesh_combo.currentData()
         if index is None or not self.canvas.comparison_ready:
             return
-        pair = self._pairs[int(index)]
-        self.review_gate.setText("Loading original detail for precise area marking…")
-        self._region_loader.request_paths(pair.pair_id, (pair.original_path,),
-                                          expected=(pair.original_sha256,))
+        from diffeoforge.desktop.region_marking_geometry import load_region_marking_mesh
 
-    def _region_loaded(self, key, models) -> None:
+        pair = self._pairs[int(index)]
+        preview = self.canvas.original_model
+        cache = self._preview_cache
+        self.review_gate.setText("Preparing the marking view…")
+        self._region_loader.request_operation(
+            pair.pair_id, lambda: load_region_marking_mesh(
+                pair.original_path, pair.original_sha256, preview, cache),
+        )
+
+    def _region_loaded(self, key, marking) -> None:
         from diffeoforge.desktop.region_feedback_dialog import RegionFeedbackDialog
 
         index = self.mesh_combo.currentData()
@@ -1232,17 +1238,30 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         pair = self._pairs[int(index)]
         if key != pair.pair_id:
             return
-        if not self.canvas.comparison_ready or models[0].sha256 != pair.original_sha256:
+        if (not self.canvas.comparison_ready
+                or marking.model.path != pair.original_path.resolve()
+                or marking.model.sha256 != pair.original_sha256):
             return
         name = pair.original_path.name
-        dialog = RegionFeedbackDialog(models[0], self, regions=self.problem_regions.get(name, []))
-        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.regions is not None:
-            if dialog.regions:
-                self.problem_regions[name] = dialog.regions
-                self.cleared_region_subjects.discard(name)
-            else:
-                self.problem_regions.pop(name, None)
-                self.cleared_region_subjects.add(name)
+        fit_preview = self.canvas.reconstruction_model
+        if (not fit_preview or fit_preview.path != pair.reconstruction_path.resolve()
+                or fit_preview.sha256 != pair.reconstruction_sha256):
+            fit_preview = None
+        dialog = RegionFeedbackDialog(
+            marking, self, regions=self.problem_regions.get(name, []),
+            rotation=self.canvas.view_rotation(), fit_preview=fit_preview,
+            pilot_cache=self._preview_cache,
+        )
+        try:
+            if dialog.exec() == QDialog.DialogCode.Accepted and dialog.regions is not None:
+                if dialog.regions:
+                    self.problem_regions[name] = dialog.regions
+                    self.cleared_region_subjects.discard(name)
+                else:
+                    self.problem_regions.pop(name, None)
+                    self.cleared_region_subjects.add(name)
+        finally:
+            dialog.deleteLater()
         self._update_review_progress()
 
     def _clear_regions(self):
@@ -1390,8 +1409,16 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         self.clear_regions_button.setVisible(count > 0)
         self.manage_regions_button.setVisible(count > 0)
         self.region_summary.setVisible(count > 0)
-        self.region_summary.setText(f"{count} marked area(s) for this specimen. "
-                                    "Reject to request a guided follow-up; closing discards edits.")
+        self.region_summary.setText(
+            f"{count} marked area(s). Save the corrections to continue with this result."
+        )
+        if self._compact_review and total == 1 and not self._read_only:
+            label = "Save corrections → next step" if count else "Needs improvement"
+            self.fail_button.setText(label)
+            self.fail_button.setToolTip(
+                "Record a needs-improvement review with your marked corrections."
+                if count else "Record this fit as needing improvement."
+            )
         geometry = (id(self.canvas.original_model), id(self.canvas.reconstruction_model))
         if current_seen:
             self._decision_geometry = geometry

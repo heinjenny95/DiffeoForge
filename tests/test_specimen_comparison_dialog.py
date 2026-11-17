@@ -47,8 +47,8 @@ def test_verified_specimen_renders_both_surfaces_with_one_camera(
         assert left._scale == right._scale
         assert dialog.preset.currentText() == "PCA view"
         expected_rotation = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
-        np.testing.assert_array_equal(left._view_rotation(), expected_rotation)
-        np.testing.assert_array_equal(right._view_rotation(), expected_rotation)
+        np.testing.assert_array_equal(left.view_rotation(), expected_rotation)
+        np.testing.assert_array_equal(right.view_rotation(), expected_rotation)
         event = QWheelEvent(
             QPointF(100, 130), QPointF(100, 130), QPoint(), QPoint(0, 120),
             Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
@@ -65,7 +65,7 @@ def test_verified_specimen_renders_both_surfaces_with_one_camera(
         dialog.preset.setCurrentIndex(dialog.preset.findData("back"))
         assert left.camera_state()[:4] == right.camera_state()[:4]
         dialog.reset_button.click()
-        np.testing.assert_array_equal(right._view_rotation(), expected_rotation)
+        np.testing.assert_array_equal(right.view_rotation(), expected_rotation)
         assert left.camera_state()[2] == right.camera_state()[2] == 1.0
         _wait_for_qt(lambda: all(canvas._presented_key == canvas._frame_key()
                                 for canvas in (left, right)))

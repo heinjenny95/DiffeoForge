@@ -65,6 +65,10 @@ def screen_drag_rotation(dx: float, dy: float) -> np.ndarray:
     return np.eye(3) + math.sin(angle) * cross + (1 - math.cos(angle)) * (cross @ cross)
 
 
+def _projection_pixels(width: int, height: int, zoom: float) -> float:
+    return 0.9 * max(1.0, min(float(width), float(height)) - 64.0) * zoom
+
+
 def project_surface(
     vertices: np.ndarray,
     triangles: np.ndarray,
@@ -89,8 +93,7 @@ def project_surface(
         raise ValueError("scale must be finite and positive")
     rotation = camera_rotation(yaw, pitch) if rotation is None else rotation
     camera = ((vertices - center) / scale) @ rotation.T
-    viewport = max(1.0, min(float(width), float(height)) - 64.0)
-    factor = 0.9 * viewport * zoom
+    factor = _projection_pixels(width, height, zoom)
     screen = np.empty((vertices.shape[0], 2), dtype=np.float64)
     screen[:, 0] = float(width) / 2.0 + pan[0] + camera[:, 0] * factor
     screen[:, 1] = float(height) / 2.0 + pan[1] - camera[:, 1] * factor
@@ -138,12 +141,14 @@ class InteractiveMeshCanvas3D(QWidget):
 
     surfacePointPicked = Signal(object)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, progressive_navigation=False) -> None:
         super().__init__(parent)
         self._model: MeshPreviewModel | None = None
+        self._surface_picker = None
+        self._overlay = None
         self._vertices = np.empty((0, 3), dtype=np.float64)
         self._triangles = np.empty((0, 3), dtype=np.int64)
-        self._frames = SurfaceFrameCache(self)
+        self._frames = SurfaceFrameCache(self, progressive_navigation=progressive_navigation)
         self._frames.changed.connect(self.update)
         self._presented_key: tuple | None = None
         self._pick_view_key: tuple | None = None
@@ -159,10 +164,12 @@ class InteractiveMeshCanvas3D(QWidget):
         self._wheel_timer.timeout.connect(self.update)
         self._center = np.zeros(3, dtype=np.float64)
         self._scale = 1.0
+        self._ray_depth = 1.0
         self._rotation = camera_rotation(-0.55, 0.30)
         self._zoom = 1.0
         self._pan = (0.0, 0.0)
         self._markers: dict[str, tuple[float, float, float]] = {}
+        self._marker_colors: dict[str, str] = {}
         self._surface_region = None
         self._region_colors = None
         self._press_position: QPointF | None = None
@@ -198,9 +205,12 @@ class InteractiveMeshCanvas3D(QWidget):
     def zoom(self) -> float:
         return self._zoom
 
-    def set_model(self, model: MeshPreviewModel | None) -> None:
+    def set_model(self, model: MeshPreviewModel | None, *, surface_picker=None,
+                  view_bounds=None) -> None:
         self.cancel_pending_pick()
         self._model = model
+        self._surface_picker = surface_picker
+        self._overlay = None
         self._surface_region = None
         self._region_colors = None
         self._frames.clear()
@@ -214,19 +224,32 @@ class InteractiveMeshCanvas3D(QWidget):
             return
         self._vertices = np.asarray(model.vertices, dtype=np.float64)
         self._triangles = np.asarray(model.triangles, dtype=np.int64)
-        minimum = np.min(self._vertices, axis=0)
-        maximum = np.max(self._vertices, axis=0)
+        bounds = np.asarray(model.bounds if view_bounds is None else view_bounds).reshape(3, 2)
+        minimum, maximum = bounds.T
         self._center = (minimum + maximum) / 2.0
         self._scale = float(np.max(maximum - minimum))
         if not math.isfinite(self._scale) or self._scale <= 0:
             self._scale = 1.0
+        if surface_picker is not None:
+            extent = np.max(np.abs(np.asarray(model.bounds).reshape(3, 2) - self._center[:, None]),
+                            axis=1)
+            self._ray_depth = max(1.0, 1.01 * float(np.linalg.norm(extent)) / self._scale)
         self.update()
 
-    def set_markers(self, markers: dict[str, tuple[float, float, float]]) -> None:
+    def set_fit_overlay(self, model: MeshPreviewModel | None) -> None:
+        """Display a bounded fit wireframe in the current original-space view."""
+        self.cancel_pending_pick()
+        self._overlay = model
+        self._frames.clear()
+        self._presented_key = None
+        self.update()
+
+    def set_markers(self, markers: dict[str, tuple[float, float, float]], *, colors=None) -> None:
         # Also called on label changes, undo and clear: a delayed transfer must
         # never place a point under a different landmark label.
         self.cancel_pending_pick()
         self._markers = dict(markers)
+        self._marker_colors = dict(colors or {})
         self.update()
 
     def set_surface_region(self, center, radius) -> None:
@@ -259,7 +282,7 @@ class InteractiveMeshCanvas3D(QWidget):
             if self._surface_region[0] == "regions":
                 from diffeoforge.regional_fit import mask as region_mask
 
-                colors = np.tile((160, 208, 192, 255), (len(triangles), 1))
+                colors = np.tile((170, 194, 199, 255), (len(triangles), 1))
                 rows, selected = self._surface_region[1:]
                 centres = np.asarray(vertices)[triangles].mean(1)
                 order = [i for i in range(len(rows)) if i != selected]
@@ -269,9 +292,11 @@ class InteractiveMeshCanvas3D(QWidget):
                     shape, bounds, center, radius, purpose = rows[i]
                     chosen = region_mask(centres, [dict(
                         shape=shape, bounds=bounds, center=center, radius=radius)])
-                    colors[chosen] = ((242, 115, 45, 255) if i == selected else
-                                      (58, 119, 193, 255) if purpose != "problem" else
-                                      (220, 164, 64, 255))
+                    if purpose == "problem":
+                        active, inactive = (223, 94, 103, 255), (196, 137, 145, 255)
+                    else:
+                        active, inactive = (81, 170, 124, 255), (129, 170, 149, 255)
+                    colors[chosen] = active if i == selected else inactive
                 self._region_colors = key, colors
                 return SurfaceLayer(vertices, triangles, face_colors=colors)
             if self._surface_region[0] == "box":
@@ -307,6 +332,7 @@ class InteractiveMeshCanvas3D(QWidget):
             self._pan,
             self.original_detail.isChecked(),
             self._surface_region,
+            id(self._overlay),
             self._interacting or self._wheel_timer.isActive(),
         )
 
@@ -380,6 +406,11 @@ class InteractiveMeshCanvas3D(QWidget):
         self._pan = (0.0, 0.0)
         self.update()
 
+    def set_view_rotation(self, rotation: np.ndarray) -> None:
+        """Open a mesh at the orientation already used for its visual review."""
+        self._rotation = rotation.copy()
+        self.update()
+
     def rotate_view(self, dx: float, dy: float) -> None:
         """Apply a screen-axis drag without transforming any stored geometry."""
         self._rotation = screen_drag_rotation(dx, dy) @ self._rotation
@@ -415,8 +446,15 @@ class InteractiveMeshCanvas3D(QWidget):
         )
 
     def pick_at(self, position: QPointF) -> tuple[float, float, float] | None:
-        """Synchronous original-detail ray pick for deterministic verification."""
-
+        """Pick the foremost original triangle along this viewport ray."""
+        if self._surface_picker is not None:
+            width, height = self.width(), self.height()
+            factor = _projection_pixels(width, height, self._zoom)
+            x = (position.x() - width / 2 - self._pan[0]) / factor
+            y = (height / 2 + self._pan[1] - position.y()) / factor
+            ray = np.array(((x, y, self._ray_depth), (x, y, -self._ray_depth))) @ self._rotation
+            start, end = ray * self._scale + self._center
+            return self._surface_picker(start, end)
         surface = self._surface()
         if surface is None:
             return None
@@ -425,6 +463,22 @@ class InteractiveMeshCanvas3D(QWidget):
     def _pick_displayed_surface(self, position: QPointF) -> None:
         model = self._model
         if model is None or model.geometry_is_proxy:
+            return
+        if self._surface_picker is not None:
+            proxy = model.display_proxy
+            if not self.original_detail.isChecked() and proxy is not None and proxy.reduced:
+                # Require the click to be over the displayed mesh as well as a hit
+                # on the original. An opening in either surface stays unpickable.
+                surface = self._surface(displayed=True)
+                screen_point = position.x(), position.y()
+                if surface is None or pick_surface_point(surface, screen_point) is None:
+                    return
+            point = self.pick_at(position)
+            if point is not None:
+                self.surfacePointPicked.emit(point)
+            else:
+                self._pick_error = "No surface at this point. Try full detail or another view."
+                self.update()
             return
         surface = self._surface(displayed=True)
         if surface is None:
@@ -544,6 +598,19 @@ class InteractiveMeshCanvas3D(QWidget):
         navigation = self._interacting or self._wheel_timer.isActive()
         key = self._frame_key()
         vertices, triangles = self._display_geometry()
+        layers = [self._surface_layer(vertices, triangles)]
+        if self._overlay is not None:
+            overlay = self._overlay
+            proxy = overlay.display_proxy
+            if proxy is not None:
+                layers.append(SurfaceLayer(
+                    proxy.vertices, proxy.edges, wireframe=True, color=(102, 57, 142, 170),
+                ))
+            elif overlay.triangle_count <= DEFAULT_DISPLAY_FACES and hasattr(overlay, "edges"):
+                layers.append(SurfaceLayer(
+                    np.asarray(overlay.vertices), np.asarray(overlay.edges),
+                    wireframe=True, color=(102, 57, 142, 170),
+                ))
         scene = SurfaceScene(
             self.width(),
             self.height(),
@@ -552,7 +619,7 @@ class InteractiveMeshCanvas3D(QWidget):
             self._rotation.copy(),
             self._zoom,
             self._pan,
-            (self._surface_layer(vertices, triangles),),
+            tuple(layers),
             navigation=navigation,
             margin=64.0,
         )
@@ -587,8 +654,9 @@ class InteractiveMeshCanvas3D(QWidget):
                     else (
                         "Rendering selected display resolution in background…"
                         if not self._frames.ready(key)
-                        else f"Display proxy: {len(triangles):,} faces. "
-                        "Clicks snap to the original surface."
+                        else f"Preview: {len(triangles):,} faces. "
+                        + ("Points use the exact surface." if self._surface_picker is not None
+                           else "Clicks snap to the original surface.")
                     )
                 ),
             )
@@ -600,10 +668,12 @@ class InteractiveMeshCanvas3D(QWidget):
             self._displayed_marker_positions().items(), start=1
         ):
             painter.setPen(QPen(QColor("#ffffff"), 2.0))
-            painter.setBrush(QColor("#d9481c"))
+            marker_color = self._marker_colors.get(label)
+            painter.setBrush(QColor(marker_color or "#d9481c"))
             painter.drawEllipse(rendered, 6.5, 6.5)
-            painter.setPen(QPen(QColor("#702109"), 1.0))
-            painter.drawText(rendered + QPointF(9.0, -9.0), f"{marker_number}: {label}")
+            painter.setPen(QPen(QColor(marker_color or "#702109"), 1.0))
+            text = label if marker_color else f"{marker_number}: {label}"
+            painter.drawText(rendered + QPointF(9.0, -9.0), text)
 
         painter.setPen(QColor("#52666b"))
         painter.drawText(

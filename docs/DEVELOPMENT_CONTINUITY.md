@@ -1,5 +1,20 @@
 # Development continuity — dev192 installed and verified
 
+## dev214 — correct a fit by clicking the surface
+
+The pilot review opens the original and fitted surfaces in a shared view.
+Red points ask for a local correction. Green points ask the next test to keep
+the selected area in place. The viewport reuses bounded display geometry and
+resolves clicks against the active surface's original-resolution faces. Red
+areas are measured in both directions. When the evidence is clear the pilot
+offers a correction for the researcher to confirm. Full detail is optional.
+
+Saving corrections exposes the protected regional test in the fixed footer
+when the saved fit and marks can prepare that test. The previous fit remains
+available for comparison. Preparation, fitting, and visual approval remain
+explicit steps. The local test uses the existing optimizer and retains its
+quality checks and configured limits.
+
 ## dev213 — explain and recover from the next pilot decision
 
 Shared capture and detail check the configured scientific template before

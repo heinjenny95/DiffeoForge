@@ -72,7 +72,7 @@ def context_for_view(window, view):
         facts["expected_result"] = common.get("expected")
     elif direction and footer_action in {
         "fit_direction_compare", "fit_direction_inputs", "fit_direction_working",
-        "adaptive_recover_start",
+        "adaptive_recover", "adaptive_recover_start",
     }:
         facts["next_reason"] = direction["reason"]
     accepted = ((common.get("diagnosis") or {}).get("accepted")

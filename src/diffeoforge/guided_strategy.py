@@ -333,8 +333,77 @@ def prepare_proposals(snapshot, context):
                                                       verified=verified)
                 context["working_proposals"][identifier] = {
                     request: working.propose(parent, request, working_data) for request in requests}
-        context["fit_direction"] = _prepare_fit_direction(snapshot, context, chosen)
+        context["fit_direction"] = (_prepare_fit_direction(snapshot, context, chosen)
+                                    or _marked_trial_direction(snapshot, context, chosen))
     return context
+
+
+def default_recovery_symptom(feedback):
+    symptom = (feedback.get("feedback") or {}).get("symptom", "unsure")
+    if symptom != "unsure":
+        return symptom
+    return next((row["symptom"] for rows in feedback.get("problem_regions", {}).values()
+                 for row in rows if row.get("purpose", "problem") == "problem"), symptom)
+
+
+def _marked_trial_direction(snapshot, context, chosen):
+    """Offer an already verified local repair from the fit the user just marked."""
+    from diffeoforge.guided_feedback import local_region_edit
+    from diffeoforge.pilot_form_progress import is_common_check
+
+    info = guided.record(snapshot)
+    target = info.get("target")
+    if (not target or snapshot.plan.pilot_subject_count != 1 or info["phase"] == "joint"
+            or is_common_check(info) or any(snapshot.visual_reviews.values())):
+        return None
+    choices = []
+    for candidate in snapshot.candidates:
+        identifier = candidate.candidate_id
+        if (candidate.status != "completed" or snapshot.visual_reviews.get(identifier) is not False
+                or not context["allowed"].get(identifier)
+                or (chosen and chosen.get("editing_candidate_id") != identifier)):
+            continue
+        if (not chosen and context["preference"]
+                and snapshot.attachment_comparison["methods"][identifier] != context["preferred"]):
+            continue
+        subject = ((candidate.metrics or {}).get("attachment_comparison", {})
+                   .get("subjects", {}).get(target, {}))
+        if (subject.get("regional_quality") or {}).get("numerical_selection_suitable") is False:
+            continue  # A visually better result did not supersede its failed guard.
+        feedback = context["feedback"].get(identifier) or {}
+        regions = feedback.get("problem_regions", {}).get(target, [])
+        edit = local_region_edit(snapshot, identifier, target)
+        if (not edit or edit[1] != regions or edit[2] or feedback.get("needs_direction")
+                or not any(row.get("purpose", "problem") == "problem" for row in regions)):
+            continue
+        symptom = default_recovery_symptom(feedback)
+        if symptom in {"alignment", "topology", "view"}:
+            continue
+        request = "regional:" + symptom
+        working = context["working_proposals"].get(identifier)
+        proposal = (working or context["proposals"][identifier]).get(request)
+        if (not proposal or not proposal["available"] or proposal["goal"] != "regional"
+                or proposal["target"] != target):
+            continue
+        seed = proposal["initialization_reference"]
+        if not seed or (chosen and seed != chosen["reference"]):
+            continue
+        choice = next((row for row in feedback["choices"] if row["reference"] == seed), None)
+        if choice is None:
+            continue
+        choices.append((edit[0], dict(
+            mode="trial", identifier=identifier, current=seed,
+            action="adaptive_recover_start" if working else "adaptive_recover",
+            title=proposal["title"], start_label=choice["label"],
+            reason="You marked an area that needs work. Prepare one local test that protects "
+                   "the surrounding shape, then compare it with this saved fit.",
+            request=dict(request=request, reference=seed, values=proposal["values"],
+                         goal=proposal["goal"], regions=regions, marked_next=True),
+        )))
+    choices.sort(key=lambda row: row[0], reverse=True)
+    if choices and (len(choices) == 1 or choices[0][0] > choices[1][0]):
+        return choices[0][1]
+    return None
 
 
 def _prepare_fit_direction(snapshot, context, chosen):
@@ -599,6 +668,13 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         preference = None
         phase, goal = "refine", "density"
     elif action in {"recover", "recover_from_retained", "recover_start"}:
+        bound = action != "recover_from_retained" and isinstance(goal, dict)
+        if bound and goal.get("marked_next") and any(
+            snapshot.visual_reviews.get(c.candidate_id) is not False
+            for c in snapshot.candidates if c.status == "completed"
+        ):
+            raise ValueError("The saved reviews changed. Reopen the next-step guidance.")
+        request = goal["request"] if bound else goal or "unsure"
         if action == "recover_from_retained":
             from diffeoforge.guided_failed_parent import trial
 
@@ -606,17 +682,13 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         elif action == "recover_start":
             from diffeoforge.guided_working_fit import trial
 
-            if isinstance(goal, dict):
-                proposed = trial(snapshot, identifier, goal["request"])
-                if any(proposed[key] != goal[bound] for key, bound in (
-                    ("initialization_reference", "reference"), ("values", "values"),
-                    ("goal", "goal"),
-                )):
-                    raise ValueError("The suggested trial changed. Reopen the next-step guidance.")
-            else:
-                proposed = trial(snapshot, identifier, goal or "unsure")
+            proposed = trial(snapshot, identifier, request)
         else:
-            proposed = trial_proposal(snapshot, identifier, goal or "unsure")
+            proposed = trial_proposal(snapshot, identifier, request)
+        if bound and any(proposed[key] != goal[expected] for key, expected in (
+            ("initialization_reference", "reference"), ("values", "values"), ("goal", "goal"),
+        )):
+            raise ValueError("The suggested trial changed. Reopen the next-step guidance.")
         if not proposed["available"]:
             raise ValueError(proposed.get("blocked_reason", "This unchanged combination was "
                 "already tested. Inspect saved alternatives or choose another adjustment; "
@@ -634,7 +706,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         comparison = proposed["anchor"]
         comparison_snapshot = verify_reference(comparison)
         marked, cleared = region_state(snapshot, identifier, target)
-        if action == "recover_start" and isinstance(goal, dict) and goal["regions"] != marked:
+        if bound and goal["regions"] != marked:
             raise ValueError("The marked areas changed. Reopen the next-step guidance.")
         feedback = capture(comparison_snapshot, comparison["candidate_id"], target, regions=marked)
         feedback["regions_cleared"] = cleared

@@ -3,8 +3,9 @@
 from copy import deepcopy
 
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QComboBox,
     QDialog,
     QHBoxLayout,
@@ -17,44 +18,102 @@ from PySide6.QtWidgets import (
 )
 
 from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
+from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.pilot_regions import BOX_VERSION, EDIT_VERSION, MAX_REGIONS, SYMPTOMS, validate
-from diffeoforge.regional_fit import mask
+
+_CORRECT_COLOR = "#bc283d"
+_PROTECT_COLOR = "#137748"
+
+# Keep the journal values and scientific region handling from the pilot.
+_INSTRUCTIONS = SYMPTOMS | {
+    "unsure": "Check this area",
+    "missing": "Part of the original surface is missing",
+    "detail": "A fine feature is missing",
+    "distortion": "The fit adds surface, folds or bulges",
+}
 
 
 class RegionFeedbackDialog(QDialog):
-    def __init__(self, model, parent=None, *, regions=()):
+    def __init__(self, marking, parent=None, *, regions=(), rotation=None,
+                 fit_preview=None, pilot_cache=None):
         super().__init__(parent)
         self.setProperty("processRecordingPilotReview", True)
-        self.setWindowTitle("Mark areas — give each point its own instruction")
-        self.resize(1100, 790)
+        self.setWindowTitle("Correct fit · click an area")
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
+        self.resize(1000, 630)
         self.regions = None
         self.region = None  # Compatibility for a caller inspecting one saved patch.
         self._rows = deepcopy(list(regions))
+        self._area_counts = {}
         self._had_rows = bool(self._rows)
+        self.marking = marking
+        self.model = model = marking.model
         if self._rows:
             validate({"original": self._rows}, {"original": model.sha256})
-        self.model = model
-        self.diagonal = float(np.linalg.norm(np.ptp(model.vertices, axis=0)))
-        self._centres = np.asarray(model.vertices)[np.asarray(model.triangles, int)].mean(1)
+        self.diagonal = float(np.linalg.norm(np.ptp(np.asarray(model.bounds).reshape(3, 2),
+                                                   axis=1)))
         self._loading = False
         self._move = False
+        self._correction_mode = "problem:unsure" if fit_preview is not None else "problem:detail"
+        self._click_mode = self._correction_mode
+        self._fit_preview = fit_preview
+        self._fit_marking = None
+        self._fit_error = None
+        self._diagnosis_key = None
+        self._suggestion = None
+        self._diagnosis_loader = PreviewMeshLoader(self)
+        self._diagnosis_loader.loaded.connect(self._diagnosis_ready)
+        self._diagnosis_loader.failed.connect(self._diagnosis_failed)
+        self._diagnosis_timer = QTimer(self, singleShot=True, interval=180)
+        self._diagnosis_timer.timeout.connect(self._inspect_selected_area)
+        self.finished.connect(self._diagnosis_timer.stop)
+        self.finished.connect(self._diagnosis_loader.cancel)
         self.center = None
         layout = QVBoxLayout(self)
-        intro = QLabel("Click to add A, B, C… Select a point to change only its instruction "
-                       "or size. Drag to rotate; scroll to zoom. Save all areas together.")
+        intro = QLabel("Pick a tool and click the surface. Select a point to adjust its area.")
         intro.setWordWrap(True)
         layout.addWidget(intro)
+        tools = QHBoxLayout()
+        layout.addLayout(tools)
+        self.click_modes = QButtonGroup(self)
+        for text, action, color in (
+            ("Red · Correct here", self._correction_mode, _CORRECT_COLOR),
+            ("Green · Keep unchanged", "fixed", _PROTECT_COLOR),
+        ):
+            button = QPushButton(text)
+            button.setCheckable(True)
+            button.setChecked(action == self._click_mode)
+            button.setStyleSheet(
+                f"QPushButton {{ border: 2px solid {color}; }} "
+                f"QPushButton:checked {{ background: {color}; color: white; }}"
+            )
+            button.clicked.connect(lambda _checked=False, value=action: self._set_click_mode(value))
+            self.click_modes.addButton(button)
+            tools.addWidget(button)
+        tools.addStretch()
+        self.view = QComboBox()
+        self.view.setAccessibleName("Surface to display")
+        if fit_preview is not None:
+            self.view.addItem("Original + fit (purple lines)", "overlay")
+        self.view.addItem("Original", "original")
+        if fit_preview is not None:
+            self.view.addItem("Fit", "fit")
+            tools.addWidget(self.view)
+        self.view.currentIndexChanged.connect(self._show_view)
         body = QHBoxLayout()
         layout.addLayout(body, 1)
-        self.canvas = InteractiveMeshCanvas3D()
+        self.canvas = InteractiveMeshCanvas3D(progressive_navigation=True)
+        self.canvas.setMinimumHeight(330)
         self.canvas.pick_instruction = "Click: add another area"
-        self.canvas.set_model(model)
-        self.canvas.original_detail.setChecked(True)
-        self.canvas.original_detail.hide()
+        self.canvas.set_model(model, surface_picker=marking.pick)
+        if rotation is not None:
+            self.canvas.set_view_rotation(rotation)
+        self.canvas.original_detail.setText("Load full surface detail (optional, slower)")
+        self.canvas.original_detail.setToolTip(
+            "Show fine structures on the active surface. Clicks use that surface's exact faces.")
         body.addWidget(self.canvas, 1)
         panel = QWidget()
-        panel.setFixedWidth(max(340, self.fontMetrics().horizontalAdvance(
-            "Retain this part's shape; allow movement") + 40))
+        panel.setFixedWidth(310)
         controls = QVBoxLayout(panel)
         body.addWidget(panel)
         controls.addWidget(QLabel("Points and instructions"))
@@ -76,13 +135,12 @@ class RegionFeedbackDialog(QDialog):
         controls.addWidget(QLabel("Instruction for selected point"))
         self.action = QComboBox()
         self.action.setAccessibleName("Instruction for selected point")
-        for key, label in SYMPTOMS.items():
+        for key, label in _INSTRUCTIONS.items():
             self.action.addItem(label, "problem:" + key)
         self.action.addItem("Retain this area in place", "fixed")
         self.action.addItem("Retain this part's shape; allow movement", "preserve")
         controls.addWidget(self.action)
-        note = QLabel("Retain in place protects its current fitted position. Retain shape "
-                      "allows movement. These are fitting instructions, not fit approval.")
+        note = QLabel("Retain in place fixes the location. Retain shape allows movement.")
         note.setWordWrap(True)
         controls.addWidget(note)
         self.shape = QComboBox()
@@ -109,10 +167,16 @@ class RegionFeedbackDialog(QDialog):
         self.status = QLabel()
         self.status.setWordWrap(True)
         controls.addWidget(self.status)
-        legend = QLabel("Orange: selected area · Yellow: other improvements · "
-                        "Blue: retained areas. Letters identify point centres.")
-        legend.setWordWrap(True)
-        layout.addWidget(legend)
+        self.finding = QLabel()
+        self.finding.setWordWrap(True)
+        self.finding.setObjectName("status")
+        self.finding.setVisible(fit_preview is not None)
+        controls.addWidget(self.finding)
+        self.use_suggestion = QPushButton("Use suggested correction")
+        self.use_suggestion.clicked.connect(self._apply_suggestion)
+        self.use_suggestion.hide()
+        controls.addWidget(self.use_suggestion)
+        controls.addWidget(self.canvas.original_detail)
         footer = QHBoxLayout()
         cancel = QPushButton("Cancel")
         cancel.clicked.connect(self.reject)
@@ -130,14 +194,26 @@ class RegionFeedbackDialog(QDialog):
         self.action.currentIndexChanged.connect(self._action_changed)
         self.action.currentTextChanged.connect(self.action.setToolTip)
         self.finished.connect(self.canvas.cancel_pending_pick)
+        self._move_mode(False)
         self._refresh_list(0 if self._rows else -1)
+        if fit_preview is not None:
+            from diffeoforge.desktop.region_marking_geometry import load_region_marking_mesh
+
+            self._show_view()
+            self._fit_loader = PreviewMeshLoader(self)
+            self._fit_loader.loaded.connect(self._fit_ready)
+            self._fit_loader.failed.connect(self._fit_failed)
+            self.finished.connect(self._fit_loader.cancel)
+            self._fit_loader.request_operation(fit_preview.sha256, lambda: load_region_marking_mesh(
+                fit_preview.path, fit_preview.sha256, fit_preview, pilot_cache,
+            ))
 
     @staticmethod
     def _label(row):
         purpose = row.get("purpose", "problem")
         return ("Retain in place" if purpose == "fixed" else
                 "Retain shape; allow movement" if purpose == "preserve" else
-                SYMPTOMS[row["symptom"]])
+                _INSTRUCTIONS[row["symptom"]])
 
     def _refresh_list(self, selected):
         self.listing.blockSignals(True)
@@ -170,10 +246,120 @@ class RegionFeedbackDialog(QDialog):
         self._loading = False
         self._render()
 
+    def _set_click_mode(self, mode):
+        self._click_mode = mode
+        self.move.setChecked(False)
+        self._select_edit_surface(mode)
+        self._move_mode(self._move)
+
+    def _select_edit_surface(self, mode):
+        if (mode in {"problem:missing", "fixed", "preserve"}
+                and self.view.currentData() == "fit"):
+            self.view.setCurrentIndex(self.view.findData("original"))
+        elif mode == "problem:distortion" and self.view.findData("fit") >= 0:
+            self.view.setCurrentIndex(self.view.findData("fit"))
+
+    def _show_view(self, *_):
+        mode = self.view.currentData()
+        data = self._fit_marking if mode == "fit" else self.marking
+        visible = data.model if data is not None else self._fit_preview
+        original_detail = self.canvas.original_detail.isChecked()
+        self.canvas.set_model(visible, surface_picker=data.pick if data else None,
+                              view_bounds=self.model.bounds)
+        if original_detail and data is not None:
+            self.canvas.original_detail.setChecked(True)
+        self.canvas.set_fit_overlay(self._fit_preview if mode == "overlay" else None)
+        self.canvas.set_picking_enabled(data is not None)
+        self._move_mode(self._move)
+        self._render()
+
+    def _fit_ready(self, digest, marking):
+        if (digest != self._fit_preview.sha256 or marking.model.sha256 != digest
+                or marking.model.path != self._fit_preview.path):
+            return
+        self._fit_marking = marking
+        if self.view.currentData() == "fit":
+            self._show_view()
+        else:
+            self._queue_diagnosis()
+
+    def _fit_failed(self, _key, message):
+        self._fit_error = f"Fit inspection unavailable. {message}"
+        self._queue_diagnosis()
+
+    def _diagnosis_state(self):
+        index = self.listing.currentRow()
+        if index < 0 or self._fit_preview is None:
+            return None, None
+        row = self._rows[index]
+        if row.get("purpose", "problem") != "problem":
+            return None, None
+        key = (index, tuple(row["center"]), row["radius"], tuple(row.get("bounds", ())))
+        return key, row
+
+    def _queue_diagnosis(self):
+        if self._fit_preview is None:
+            return
+        key, row = self._diagnosis_state()
+        can_measure = row is not None and self._fit_marking is not None
+        requested = key if can_measure else None
+        changed = requested != self._diagnosis_key
+        if changed:
+            self._diagnosis_key = requested
+            self._diagnosis_loader.cancel()
+            self._diagnosis_timer.stop()
+            self._suggestion = None
+        if self._fit_error:
+            self.finding.setText(self._fit_error)
+        elif self.view.currentData() == "fit" and self._fit_marking is None:
+            self.finding.setText("Loading the fitted surface for precise clicks…")
+        elif row is None:
+            self.finding.setText("Click an area to compare the original and the fit."
+                                 if self.listing.currentRow() < 0 else
+                                 "This area is protected in the next local test.")
+        elif self._fit_marking is None:
+            self.finding.setText("Loading the fitted surface for local comparison…")
+        elif changed:
+            self.finding.setText("Checking the marked area…")
+            self._diagnosis_timer.start()
+        self.use_suggestion.setVisible(bool(row and self._suggestion
+                                           and self._suggestion != row["symptom"]))
+
+    def _inspect_selected_area(self):
+        from diffeoforge.desktop.marked_area_diagnosis import diagnose
+
+        key, row = self._diagnosis_state()
+        if row is None or self._fit_marking is None:
+            return
+        original, fit, region = self.marking, self._fit_marking, deepcopy(row)
+        self._diagnosis_loader.request_operation(key, lambda: diagnose(original, fit, region))
+
+    def _diagnosis_ready(self, key, result):
+        active, row = self._diagnosis_state()
+        if key == active and row is not None:
+            self._suggestion = result["symptom"]
+            self.finding.setText(result["message"])
+            self.use_suggestion.setVisible(bool(self._suggestion and
+                                               self._suggestion != row["symptom"]))
+
+    def _diagnosis_failed(self, key, _message):
+        active, _ = self._diagnosis_state()
+        if key == active:
+            self.finding.setText("Local comparison unavailable. You can choose a correction.")
+
+    def _apply_suggestion(self):
+        active, row = self._diagnosis_state()
+        if active == self._diagnosis_key and row is not None and self._suggestion:
+            choice = self.action.findData("problem:" + self._suggestion)
+            if choice >= 0:
+                self.action.setCurrentIndex(choice)
+
     def _move_mode(self, enabled):
         self._move = enabled
-        self.canvas.pick_instruction = ("Click: move selected point" if enabled else
-                                        "Click: add another area")
+        if enabled:
+            self._select_edit_surface(self.action.currentData())
+        mode = "keep unchanged" if self._click_mode == "fixed" else "correct here"
+        self.canvas.pick_instruction = "Click: move selected point" if enabled else f"Click: {mode}"
 
     def _picked(self, point):
         center = [float(v) for v in point]
@@ -187,10 +373,11 @@ class RegionFeedbackDialog(QDialog):
             row["center"] = center
             self.move.setChecked(False)
         elif len(self._rows) < MAX_REGIONS:
+            purpose, _, symptom = self._click_mode.partition(":")
             self._rows.append(dict(version=EDIT_VERSION, source_sha256=self.model.sha256,
                 space="original_mesh_coordinates", center=center,
                 radius=self.diagonal * self.size.value() / 100,
-                symptom="detail", purpose="problem"))
+                symptom=symptom or "unsure", purpose=purpose))
             index = len(self._rows) - 1
         else:
             self.status.setText("Eight areas marked. Edit or remove a point to add another.")
@@ -240,17 +427,29 @@ class RegionFeedbackDialog(QDialog):
         self.size.setVisible(not boxed)
         for axis in self.axes:
             axis.setVisible(boxed)
-        counts = [int(mask(self._centres, [r]).sum()) for r in self._rows]
+        counts = []
+        current_counts = {}
+        for row in self._rows:
+            key = tuple(row["center"]), row["radius"], tuple(row.get("bounds", ()))
+            if key not in self._area_counts:
+                self._area_counts[key] = self.marking.count(row)
+            current_counts[key] = self._area_counts[key]
+            counts.append(current_counts[key])
+        self._area_counts = current_counts
         self.canvas.set_surface_regions(self._rows, index if index >= 0 else None)
-        self.canvas.set_markers({chr(65 + i): tuple(r["center"])
-                                 for i, r in enumerate(self._rows)})
+        markers = {chr(65 + i): tuple(r["center"]) for i, r in enumerate(self._rows)}
+        colors = {label: _CORRECT_COLOR if row.get("purpose", "problem") == "problem"
+                  else _PROTECT_COLOR for label, row in zip(markers, self._rows, strict=True)}
+        self.canvas.set_markers(markers, colors=colors)
         self.save.setEnabled(bool(self._rows) and all(counts) or self._had_rows and not self._rows)
         if index >= 0:
             self.status.setText(f"{chr(65 + index)} · {counts[index]:,} original faces selected. "
-                + ("Enlarge or move any empty area before saving." if not all(counts) else
+                + ("Include original surface in each correction. Enlarge or move empty areas."
+                   if not all(counts) else
                    f"{len(self._rows)} / {MAX_REGIONS} areas. Click to add another point."))
         else:
-            self.status.setText("No areas yet. Click on the surface to add point A.")
+            self.status.setText("No corrections marked.")
+        self._queue_diagnosis()
 
     def _save(self):
         if not self.save.isEnabled():
