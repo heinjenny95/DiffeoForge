@@ -1,5 +1,15 @@
 # Development continuity — dev192 installed and verified
 
+## dev210 — answer questions about marked fit defects
+
+Pilot chat now explains the existing area instructions for extra surface in a
+cavity, a changed opening, a deformed cavity wall and a missing original
+feature. It answers those questions before suggesting a fit action, cites the
+exact editor options and leaves the review to the researcher. The distinction
+depends on the investigator's observation of the original and reconstruction.
+The chat does not infer surface connectivity from a text description or run a
+control-point comparison. No change to stored marks or scientific settings.
+
 ## dev209 — return to a partial fit and ask Pilot chat
 
 After a local review reduces the number of problem areas, the footer offers

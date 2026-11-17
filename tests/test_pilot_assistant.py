@@ -5,6 +5,7 @@ from time import monotonic, sleep
 import pytest
 
 from diffeoforge import pilot_assistant, pilot_assistant_model
+from diffeoforge.pilot_regions import SYMPTOMS
 
 
 @pytest.fixture
@@ -69,6 +70,43 @@ def test_model_falls_back_if_missing_or_tampered(tmp_path, monkeypatch):
     assert pilot_assistant_model.classify("Kann ich da wieder anknüpfen?", ()) is None
 
 
+@pytest.mark.parametrize("question, expected, not_selected", [
+    ("in den hohlräumen sind rekonstruktionen die im originalmesh nicht existieren, "
+     'ich hab die area markiert aber ich weiß nicht ob "details are missing" die richtige '
+     "auswahl dafür ist", ("topology", "distortion", "detail"), ()),
+    ("Die Öffnung ist frei, aber dieselbe Wand faltet sich in den Hohlraum. Was wähle ich?",
+     ("distortion",), ("topology", "detail")),
+    ("There is an extra surface bridging the opening. Which instruction should I select?",
+     ("topology", "distortion"), ("detail",)),
+    ('When should I choose "Details are missing" for the original surface?',
+     ("detail", "missing"), ("topology", "distortion")),
+])
+def test_marking_question_takes_priority_over_unrelated_cp_offer(
+        context, monkeypatch, question, expected, not_selected):
+    def unexpected_model(*_a):
+        pytest.fail("A question about an explicit fit symptom was routed to the model")
+
+    monkeypatch.setattr(pilot_assistant_model, "classify", unexpected_model)
+    context["facts"]["next_label"] = "Compare 270 and 405 control points"
+    response = pilot_assistant.reply(context, question)
+    assert all(SYMPTOMS[key] in response["message"] for key in expected)
+    assert all(SYMPTOMS[key] not in response["message"] for key in not_selected)
+    assert "control points" not in response["message"]
+    assert response["actions"] == ()
+    if "topology" in expected or "distortion" in expected:
+        assert "Save all marked areas" in response["message"]
+        assert "Needs improvement" in response["message"]
+
+
+def test_ambiguous_model_comparison_can_ask_for_the_missing_detail(context, monkeypatch):
+    monkeypatch.setattr(pilot_assistant_model, "classify", lambda *_: "compare")
+    context["facts"]["next_label"] = "Compare 270 and 405 control points"
+    response = pilot_assistant.reply(context, "ich komm mit der Auswahl nicht klar")
+    assert "passende Anweisung" in response["message"]
+    assert "control points" not in response["message"]
+    assert response["actions"] == ()
+
+
 def test_pilot_chat_button_opens_the_verified_earlier_fit_only_upon_click(tmp_path, monkeypatch):
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -103,6 +141,16 @@ def test_pilot_chat_button_opens_the_verified_earlier_fit_only_upon_click(tmp_pa
         state.pilot_assistant_button.click()
         chat = state.findChild(PilotAssistantDialog)
         assert chat and chat.isVisible()
+        chat.question.setPlainText(
+            'Zusätzliche Fläche im Hohlraum. Ist "Details are missing" richtig?')
+        chat.send.click()
+        end = monotonic() + 5
+        while not chat.question.isEnabled() and monotonic() < end:
+            app.processEvents()
+            sleep(.002)
+        assert SYMPTOMS["topology"] in chat.transcript.toPlainText()
+        assert SYMPTOMS["distortion"] in chat.transcript.toPlainText()
+        assert not chat._action_buttons and not dispatched
         chat.question.setPlainText("Wie komme ich zu meinem früheren Fit zurück?")
         chat.send.click()
         end = monotonic() + 5

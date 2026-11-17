@@ -38,10 +38,13 @@ def _language(message, history, default):
 
 def reply(context, message, history=()):
     """Interpret a question, then compose an answer from the current evidence only."""
+    from diffeoforge.pilot_assistant_marks import advice
     from diffeoforge.pilot_assistant_model import classify
 
     question = message.casefold().strip()
     german = _language(question, history, context.get("assistant_language", "en")) == "de"
+    if instructions := advice(question, german):
+        return {"message": instructions, "actions": ()}
     facts = context["facts"]
     topic = _topic(question)
     short_follow_up = len(question.split()) < 6 and re.search(
@@ -165,10 +168,15 @@ def reply(context, message, history=()):
                                   "joint fit and time resolution. ") + next_text, "next", "review")
 
     if topic == "compare":
+        if model_topic and "compare" not in context["assistant_actions"]:
+            return answer(say("Möchtest du zwei bestimmte Fits vergleichen, oder suchst du die "
+                              "passende Anweisung für eine markierte Stelle?",
+                              "Do you want to compare two specific fits, or choose the right "
+                              "instruction for a marked area?"))
         return answer(say("Vergleiche die gespeicherten Fits am selben Ausschnitt. Prüfe die "
-                          "offene Stelle und die Stellen, die schon gut waren. ",
+                          "offene Stelle und die Stellen, die schon gut waren.",
                           "Compare the saved fits in the same view. Check the remaining gap "
-                          "and the areas that already looked good. ") + next_text, "compare",
+                          "and the areas that already looked good."), "compare",
                       working_action, "history" if not working_action else None)
 
     if facts.get("running"):
