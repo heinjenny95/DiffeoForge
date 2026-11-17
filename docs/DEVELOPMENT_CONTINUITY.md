@@ -1,5 +1,15 @@
 # Development continuity — dev192 installed and verified
 
+## dev215 — one guided next action after reviewing a fit
+
+The fixed footer uses the reviewed starting fit's verified default adjustment.
+When it recommends a compatible surface-matching test, the footer offers that
+test and the paired control-point comparison is an optional tool. The pair is
+the main action when the same recommendation calls for more control points
+and the verified comparison uses that starting fit. Pending reviews and
+verified local or retained-fit actions keep priority. Preparing a test and
+starting its optimizer remain explicit steps.
+
 ## dev214 — correct a fit by clicking the surface
 
 The pilot review opens the original and fitted surfaces in a shared view.

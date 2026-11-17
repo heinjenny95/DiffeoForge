@@ -1,5 +1,7 @@
 """Test the path from a saved comparison to one explicitly prepared trial."""
 
+import time
+
 import pytest
 from test_guided_feedback import attempted
 from test_pilot_region_feedback import patch
@@ -115,6 +117,98 @@ def test_saved_comparison_opens_from_the_fixed_footer_without_preparing_fit(tmp_
         app.processEvents()
 
 
+def test_rejected_same_spacing_screen_prepares_finer_matching_from_the_only_primary(
+    tmp_path, monkeypatch,
+):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtWidgets import QApplication, QPushButton
+    from test_guided_early_density import METHOD, first_trial
+    from test_pilot_region_feedback import reject
+
+    from diffeoforge.desktop.info_disclosure import InfoDisclosure
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+    from diffeoforge.guided_density import controls_for
+
+    app = QApplication.instance() or QApplication([])
+    _, initial = first_trial(tmp_path, monkeypatch)
+    snapshot = reject(reject(initial, "guided-current"), METHOD)
+    snapshot = guided.next_action(snapshot.study_directory, "adaptive_prefer", METHOD)
+    values = snapshot.plan.effective_values
+    assert values["initial_control_point_spacing"] == values["deformation_kernel_width"]
+    guidance = guided_strategy.prepare_proposals(snapshot, guided_strategy.state(snapshot))
+    assert all(guidance["proposals"][key]["unsure"]["goal"] == "detail"
+               for key in snapshot.visual_reviews)
+    assert set(guidance["density_comparisons"]) == set(snapshot.visual_reviews)
+    journal = snapshot.study_directory / study.STUDY_EVENTS
+    journal_prefix = journal.read_bytes()
+    preserved = {p: sha256_file(p) for p in snapshot.study_directory.rglob("*")
+                 if p.is_file() and p != journal}
+    monkeypatch.setattr(study.ReferenceCalibrationStudyRunner, "run_current_stage",
+                        lambda *_a, **_k: pytest.fail("Preparation started an optimizer"))
+
+    view = ReferenceCalibrationDialog(snapshot.study_directory)
+    view.show()
+    try:
+        wait_pilot_view(view)
+        footer = view.next_step_button
+        assert footer.isVisible() and footer.isEnabled()
+        assert footer.text().startswith("Test finer surface matching")
+        start, action, identifier = view._guided_footer_action
+        assert start == snapshot.study_directory
+        assert identifier == METHOD
+        assert action in {"adaptive_recover", "adaptive_recover_start"}
+        goal = view._guided_footer_goal
+        assert goal["request"] == "unsure" and goal["goal"] == "detail"
+        assert goal["reference"] == guided_feedback.reference(snapshot, identifier)
+
+        optional = next(w for w in view.content.findChildren(InfoDisclosure)
+                        if w.title == "Optional control-point test")
+        assert not optional.toggle_button.isChecked()
+        optional.toggle_button.setChecked(True)
+        for detail in view.content.findChildren(InfoDisclosure):
+            if detail.title == "Other adjustments and input checks":
+                detail.toggle_button.setChecked(True)
+        density = [b for b in optional.findChildren(QPushButton)
+                   if b.isVisible() and b.isEnabled() and b.text().endswith("control points")]
+        assert density and all(b.objectName() != "primary" for b in density)
+        assert [b for b in view.findChildren(QPushButton, "primary")
+                if b.isVisible() and b.isEnabled()] == [footer]
+        assert not any(b.isVisible() and b.text().startswith("Test finer surface matching")
+                       for b in view.content.findChildren(QPushButton))
+        assert journal.read_bytes() == journal_prefix
+
+        footer.click()
+        deadline = time.monotonic() + 20
+        while view._worker and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(.002)
+        wait_pilot_view(view)
+        assert view.study_directory != snapshot.study_directory, view.operation_error.text()
+        prepared = study.load_reference_calibration_study(view.study_directory)
+        assert prepared.attachment_comparison["refinement"]["reference"] == goal["reference"]
+        assert guided.record(prepared)["goal"] == "detail"
+        assert len(prepared.candidates) == prepared.plan.pilot_subject_count == 1
+        candidate = prepared.candidates[0]
+        assert candidate.status == "pending" and candidate.attempts == 0
+        assert controls_for(prepared.attachment_comparison, candidate.candidate_id)["sha256"] == (
+            controls_for(snapshot.attachment_comparison, identifier)["sha256"])
+        after = dict(prepared.plan.effective_values)
+        assert after.pop("attachment_kernel_width") == pytest.approx(
+            values["attachment_kernel_width"] * .9)
+        assert after == {k: v for k, v in values.items() if k != "attachment_kernel_width"}
+        assert not prepared.visual_reviews
+        assert study.load_reference_calibration_study(snapshot.study_directory).visual_reviews == (
+            snapshot.visual_reviews)
+        assert all(sha256_file(path) == digest for path, digest in preserved.items())
+        assert journal.read_bytes().startswith(journal_prefix)
+        assert study._load_events(snapshot.study_directory)[-1]["optimizer_started"] is False
+    finally:
+        view.close()
+        app.processEvents()
+
+
 def _marked_fit(tmp_path, monkeypatch, *, base=None, mark_count=1, symptom="detail"):
     import shutil
     from types import SimpleNamespace
@@ -186,7 +280,6 @@ def _regional_trial(tmp_path, monkeypatch, *, base=None, mark_count=1):
 def test_marked_area_is_the_only_primary_next_action_and_does_not_run(
     tmp_path, monkeypatch, symptom,
 ):
-    import time
     from dataclasses import replace
 
     pytest.importorskip("PySide6")

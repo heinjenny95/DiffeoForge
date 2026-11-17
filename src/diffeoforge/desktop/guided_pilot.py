@@ -338,6 +338,7 @@ def render(window, prepared):
     direction = guidance.get("fit_direction")
     marked_direction = bool(direction and direction["mode"] == "trial" and not common_flow
                             and direction["request"]["goal"] == "regional")
+    offers = guidance.get("density_comparisons", {})
     if not running and not unresolved and not common_failure:
         pin_recovery(
             window, snapshot, guidance.get("common_recovery"), current_target=info.get("target"),
@@ -371,39 +372,39 @@ def render(window, prepared):
                     "Prepare this one test. Fitting starts only when you choose Run.",
                     goal=direction["request"],
                 )
+            elif mode == "density":
+                identifier = direction["identifier"]
+                direction_pinned = pin_action(
+                    window, snapshot, _density_label(offers[identifier]),
+                    "adaptive_density_comparison", identifier,
+                    "Prepare two short trials from the same saved fit. Run starts both.",
+                )
             if direction_pinned:
                 window.status.setText(direction["reason"])
-        offers = guidance.get("density_comparisons", {})
-        identifier = direction["identifier"] if marked_direction else None
+        identifier = direction["identifier"] if direction else None
         if identifier not in offers:
             identifier = next((key for key, row in offers.items()
                                if row["reference"]["method"] == guidance["preferred"]),
                               next(iter(offers), None))
-        if identifier is not None:
-            option = offers[identifier]
-            low, high = option["initial_control_count"], option["denser_control_count"]
-            label = f"Compare {low} and {high} control points"
-            tooltip = "Prepare two short trials from the same saved fit. Run starts both."
-            density_pinned = not marked_direction and pin_action(
-                window, snapshot, label, "adaptive_density_comparison", identifier, tooltip)
-            if (direction_pinned or marked_direction) and not density_pinned:
-                density = QPushButton(label)
-                density.setToolTip(tooltip)
-                density.clicked.connect(lambda _checked=False, selected=identifier:
-                    window._start_pilot(adaptive=False, guided_action=(
-                        "adaptive_density_comparison", selected, None)))
-                window.content_layout.addWidget(InfoDisclosure("Optional control-point test",
-                                                               density))
+        if (identifier is not None and not common_flow
+                and not (direction_pinned and direction["mode"] == "density")):
+            density = QPushButton(_density_label(offers[identifier]))
+            density.setToolTip("Prepare two short trials from the same saved fit. Run starts both.")
+            density.clicked.connect(lambda _checked=False, selected=identifier:
+                window._start_pilot(adaptive=False, guided_action=(
+                    "adaptive_density_comparison", selected, None)))
+            window.content_layout.addWidget(InfoDisclosure("Optional control-point test", density))
 
     def recovery_tools(candidate, layout):
         if not (direction_pinned or marked_direction):
             _recovery(window, snapshot, candidate, layout, guidance)
             return
         panel = QWidget()
-        pinned_request = (direction["request"]["request"] if direction_pinned and marked_direction
+        pinned_request = (direction["request"]["request"] if direction_pinned
+                          and direction["mode"] in {"trial", "density"}
                           and direction["identifier"] == candidate.candidate_id else None)
         _recovery(window, snapshot, candidate, QVBoxLayout(panel), guidance,
-                  optional=marked_direction, pinned_request=pinned_request)
+                  optional=True, pinned_request=pinned_request)
         layout.addWidget(InfoDisclosure("Other adjustments and input checks", panel))
 
     def action(layout, label, kind, identifier, *, goal=None, available=True, fixed=False):
@@ -424,8 +425,9 @@ def render(window, prepared):
         layout.addWidget(button)
         return button
 
-    def emphasize_common_action():
-        if not (common_flow or direction_pinned or marked_direction):
+    def emphasize_next_action():
+        if not (common_flow or window._guided_footer_action or marked_direction
+                or (review and review["pending"])):
             return
         primary = (
             window.review_next_button if review and review["pending"]
@@ -789,7 +791,7 @@ def render(window, prepared):
                 )
         window.content_layout.addWidget(card)
     if running or not completed:
-        emphasize_common_action()
+        emphasize_next_action()
         return
     approved = [c for c in completed if snapshot.visual_reviews.get(c.candidate_id) is True]
     if info["phase"] == "joint":
@@ -802,7 +804,7 @@ def render(window, prepared):
             available=len(approved) == 1,
             fixed=True,
         )
-        emphasize_common_action()
+        emphasize_next_action()
         return
     if len(snapshot.candidates) == 2 and not density_pair:
         covered = {r["filename"] for r in info["approved"]} | {info["target"]}
@@ -844,7 +846,12 @@ def render(window, prepared):
     )
     unsure.setWordWrap(True)
     window.content_layout.addWidget(InfoDisclosure("Help with visual assessment", unsure))
-    emphasize_common_action()
+    emphasize_next_action()
+
+
+def _density_label(option):
+    return (f"Compare {option['initial_control_count']} and {option['denser_control_count']} "
+            "control points")
 
 
 def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False,

@@ -175,9 +175,7 @@ def test_restart_after_first_completed_arm_only_runs_the_missing_arm(tmp_path, m
     assert not completed.visual_reviews
 
 
-@pytest.mark.parametrize("pending_marked_review", [True, False])
-def test_density_offer_stays_accessible_when_review_or_local_repair_takes_priority(
-        tmp_path, monkeypatch, pending_marked_review):
+def test_density_offer_stays_accessible_during_pending_review(tmp_path, monkeypatch):
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from pilot_view_helpers import wait_pilot_view
@@ -188,8 +186,7 @@ def test_density_offer_stays_accessible_when_review_or_local_repair_takes_priori
 
     app = QApplication.instance() or QApplication([])
     _, snapshot = first_trial(tmp_path, monkeypatch)
-    snapshot = (_marked_rejection(snapshot, monkeypatch) if pending_marked_review
-                else reject(reject(snapshot, "guided-current"), METHOD))
+    snapshot = _marked_rejection(snapshot, monkeypatch)
     offer = density_preview(snapshot)
     label = (f"Compare {offer['initial_control_count']} and {offer['denser_control_count']} "
              "control points")
@@ -197,19 +194,74 @@ def test_density_offer_stays_accessible_when_review_or_local_repair_takes_priori
     dialog.show()
     try:
         wait_pilot_view(dialog)
-        if pending_marked_review:
-            assert dialog.review_next_button.isVisible() and dialog.review_next_button.isEnabled()
-            assert dialog.review_next_button.objectName() == "primary"
-            assert not dialog.next_step_button.isVisible()
-            optional = next(w for w in dialog.content.findChildren(InfoDisclosure)
-                            if w.title == "Optional control-point test")
-            optional.toggle_button.setChecked(True)
-            assert any(b.isVisible() and b.isEnabled() and b.text() == label
-                       for b in optional.findChildren(QPushButton))
-        else:
-            assert dialog.next_step_button.isVisible() and dialog.next_step_button.isEnabled()
-            assert dialog.next_step_button.text().endswith("control points")
-            assert dialog._guided_footer_action[1] == "adaptive_density_comparison"
+        assert dialog.review_next_button.isVisible() and dialog.review_next_button.isEnabled()
+        assert dialog.review_next_button.objectName() == "primary"
+        assert not dialog.next_step_button.isVisible()
+        optional = next(w for w in dialog.content.findChildren(InfoDisclosure)
+                        if w.title == "Optional control-point test")
+        optional.toggle_button.setChecked(True)
+        assert any(b.isVisible() and b.isEnabled() and b.text() == label
+                   for b in optional.findChildren(QPushButton))
+    finally:
+        dialog.close()
+        app.processEvents()
+
+
+def test_wide_spacing_keeps_density_as_the_only_primary_trial(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtWidgets import QApplication, QPushButton
+    from test_reference_calibration_study import _project
+
+    from diffeoforge import reference_attachment_comparison as methods
+    from diffeoforge.config import validate_input_paths
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+    from diffeoforge.reference_calibration import build_reference_calibration_plan
+    from diffeoforge.reference_recommendation import recommend_reference_parameters
+
+    path = _project(tmp_path)
+    config = load_config(path)
+    inputs = validate_input_paths(config, path)
+    recommendation = recommend_reference_parameters(
+        (inputs.template, *inputs.subjects), alignment_basis="declared_gpa",
+        surface_detail_intent="balanced", deformation_scale_intent="balanced",
+        expected_shape_disparity="extreme",
+    )
+    plan = build_reference_calibration_plan(recommendation, coordinate_unit="unitless",
+                                            requested_pilot_subject_count=3)
+    config["project"]["parameter_provenance"].update(
+        recommendation=dict(recommendation.provenance, calibration_plan=plan.provenance),
+        attachment_selection=dict(version=methods.VERSION, mode="auto", state="pending",
+                                  workflow=guided.VERSION),
+    )
+    study._write_yaml(path, config, overwrite=True)
+    source = study.create_reference_calibration_study(path, tmp_path / "wide-pilot")
+    initial = run_batch(guided.prepare(source.study_directory), monkeypatch)
+    snapshot = reject(reject(initial, "guided-current"), METHOD)
+    snapshot = guided.next_action(snapshot.study_directory, "adaptive_prefer", METHOD)
+    values = snapshot.plan.effective_values
+    assert values["initial_control_point_spacing"] > 1.1 * values["deformation_kernel_width"]
+    guidance = guided_strategy.prepare_proposals(snapshot, guided_strategy.state(snapshot))
+    assert guidance["proposals"][METHOD]["unsure"]["goal"] == "density"
+    offer = guidance["density_comparisons"][METHOD]
+    label = (f"Compare {offer['initial_control_count']} and {offer['denser_control_count']} "
+             "control points")
+    app = QApplication.instance() or QApplication([])
+    dialog = ReferenceCalibrationDialog(snapshot.study_directory)
+    dialog.show()
+    try:
+        wait_pilot_view(dialog)
+        footer = dialog.next_step_button
+        assert footer.text() == label
+        assert dialog._guided_footer_action == (
+            snapshot.study_directory, "adaptive_density_comparison", METHOD,
+        )
+        assert "control spacing wider" in dialog.status.text()
+        assert [b for b in dialog.findChildren(QPushButton, "primary")
+                if b.isVisible() and b.isEnabled()] == [footer]
+        assert not any(b.isVisible() and b.text() == label
+                       for b in dialog.content.findChildren(QPushButton))
     finally:
         dialog.close()
         app.processEvents()

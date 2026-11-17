@@ -334,7 +334,8 @@ def prepare_proposals(snapshot, context):
                 context["working_proposals"][identifier] = {
                     request: working.propose(parent, request, working_data) for request in requests}
         context["fit_direction"] = (_prepare_fit_direction(snapshot, context, chosen)
-                                    or _marked_trial_direction(snapshot, context, chosen))
+                                    or _marked_trial_direction(snapshot, context, chosen)
+                                    or _default_trial_direction(snapshot, context, chosen))
     return context
 
 
@@ -344,6 +345,52 @@ def default_recovery_symptom(feedback):
         return symptom
     return next((row["symptom"] for rows in feedback.get("problem_regions", {}).values()
                  for row in rows if row.get("purpose", "problem") == "problem"), symptom)
+
+
+def _default_trial_direction(snapshot, context, chosen):
+    """Use the verified default adjustment for the reviewed starting method."""
+    from diffeoforge.pilot_form_progress import is_common_check
+
+    info = guided.record(snapshot)
+    if (not info.get("target") or snapshot.plan.pilot_subject_count != 1
+            or info["phase"] == "joint" or is_common_check(info)
+            or snapshot.attachment_comparison.get("regional_objective")
+            or any(c.status != "completed"
+                   or snapshot.visual_reviews.get(c.candidate_id) is not False
+                   for c in snapshot.candidates)):
+        return None
+    methods = snapshot.attachment_comparison["methods"]
+    identifiers = ([chosen["editing_candidate_id"]] if chosen else
+                   [key for key, method in methods.items() if method == context["preferred"]])
+    if len(identifiers) != 1:
+        return None
+    identifier = identifiers[0]
+    feedback = context["feedback"].get(identifier) or {}
+    if (feedback.get("needs_direction") or any(feedback.get("problem_regions", {}).values())
+            or not context["allowed"].get(identifier)):
+        return None
+    request = default_recovery_symptom(feedback)
+    working = context["working_proposals"].get(identifier)
+    proposal = (working or context["proposals"].get(identifier, {})).get(request)
+    if (not proposal or not proposal["available"] or proposal["goal"] == "regional"
+            or proposal["target"] != info["target"]):
+        return None
+    seed = proposal["initialization_reference"]
+    if not seed or (chosen and seed != chosen["reference"]):
+        return None
+    choice = next((row for row in feedback["choices"] if row["reference"] == seed), None)
+    if choice is None:
+        return None
+    option = context["density_comparisons"].get(identifier)
+    # High disparity alone does not make the optional paired test a recommendation.
+    paired = proposal["goal"] == "density" and option and option["reference"] == seed
+    return dict(
+        mode="density" if paired else "trial", identifier=identifier, current=seed,
+        action="adaptive_recover_start" if working else "adaptive_recover",
+        title=proposal["title"], start_label=choice["label"], reason=proposal["reason"],
+        request=dict(request=request, reference=seed, values=proposal["values"],
+                     goal=proposal["goal"], regions=[], reviewed_next=True),
+    )
 
 
 def _marked_trial_direction(snapshot, context, chosen):
@@ -398,7 +445,7 @@ def _marked_trial_direction(snapshot, context, chosen):
             reason="You marked an area that needs work. Prepare one local test that protects "
                    "the surrounding shape, then compare it with this saved fit.",
             request=dict(request=request, reference=seed, values=proposal["values"],
-                         goal=proposal["goal"], regions=regions, marked_next=True),
+                         goal=proposal["goal"], regions=regions, reviewed_next=True),
         )))
     choices.sort(key=lambda row: row[0], reverse=True)
     if choices and (len(choices) == 1 or choices[0][0] > choices[1][0]):
@@ -669,7 +716,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         phase, goal = "refine", "density"
     elif action in {"recover", "recover_from_retained", "recover_start"}:
         bound = action != "recover_from_retained" and isinstance(goal, dict)
-        if bound and goal.get("marked_next") and any(
+        if bound and goal.get("reviewed_next") and any(
             snapshot.visual_reviews.get(c.candidate_id) is not False
             for c in snapshot.candidates if c.status == "completed"
         ):
