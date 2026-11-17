@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from diffeoforge.config import load_config, validate_input_paths
 from diffeoforge.desktop.activity import ActivityPool
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
+from diffeoforge.desktop.reference_holdout_review import ReferenceHoldoutReviewDialog
 from diffeoforge.desktop.reference_runtime_estimate import estimate_reference_runtime
 from diffeoforge.desktop.validation_preparation import check_cancelled
 from diffeoforge.reference_holdout_study import (
@@ -224,6 +225,8 @@ class ReferenceValidationDialog(QDialog):
         self.cancel_button.clicked.connect(self._cancel)
         self.report_button = QPushButton("Open validation report")
         self.report_button.clicked.connect(self._open_report)
+        self.anatomy_button = QPushButton("Review holdout anatomy")
+        self.anatomy_button.clicked.connect(self._open_holdout_review)
         self.run_button = QPushButton("Run complete validation comparison")
         self.run_button.clicked.connect(self._run)
         self.close_button = QPushButton("Close")
@@ -231,6 +234,7 @@ class ReferenceValidationDialog(QDialog):
         actions.addWidget(self.cancel_button)
         actions.addStretch()
         actions.addWidget(self.report_button)
+        actions.addWidget(self.anatomy_button)
         actions.addWidget(self.close_button)
         actions.addWidget(self.run_button)
         root.addLayout(actions)
@@ -278,6 +282,7 @@ class ReferenceValidationDialog(QDialog):
             self.cancel_button.setEnabled(self._preparing and not self._cancel_requested)
             self.close_button.setEnabled(not self._preparing)
             self.report_button.setVisible(False)
+            self.anatomy_button.setVisible(False)
             return
         snapshot = self._display_snapshot()
         plan = self._snapshot.plan
@@ -408,6 +413,8 @@ class ReferenceValidationDialog(QDialog):
         all_complete = (
             self._holdout_snapshot is not None and self._holdout_snapshot.status == "completed"
         )
+        self.anatomy_button.setVisible(all_complete)
+        self.anatomy_button.setEnabled(all_complete and not running)
         self.run_button.setVisible(not all_complete)
         self.run_button.setEnabled(not running and not all_complete)
         if self._snapshot.status != "completed":
@@ -651,6 +658,14 @@ class ReferenceValidationDialog(QDialog):
         path = self._report_path()
         if path is not None:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    @Slot()
+    def _open_holdout_review(self) -> None:
+        snapshot = self._holdout_snapshot
+        if self._worker is None and snapshot is not None and snapshot.status == "completed":
+            dialog = ReferenceHoldoutReviewDialog(snapshot, self)
+            dialog.exec()
+            dialog.deleteLater()
 
     def _display_snapshot(
         self,

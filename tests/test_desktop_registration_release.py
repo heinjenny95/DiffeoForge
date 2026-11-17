@@ -395,6 +395,61 @@ def test_cached_mesh_is_reverified_and_modified_file_is_rejected(review_window):
     assert "verification or loading failed" in window.result_atlas_status_label.text()
 
 
+def test_local_surface_check_marks_selected_pair_without_approval(review_window, monkeypatch):
+    from diffeoforge.desktop import registration_surface_review as surface_review
+
+    flag = surface_review.SurfaceFlag((0.1, 0.2, 0.3), "Original surface missed", 0.02, 8)
+    monkeypatch.setattr(surface_review, "screen_surface_misses", lambda *args, **kwargs: (flag,))
+    window = review_window
+    panel = window.result_registration_surface_review
+    assert panel.button.isEnabled()
+    panel.button.click()
+    _wait_for_qt(lambda: panel._worker is None)
+    assert panel.canvas._inspection_markers == {"1": flag.center}
+    assert "Original surface missed" in panel.status.text()
+    assert not window._registration_qc_decisions
+    assert not window.result_qc_inspected_check.isChecked()
+
+    active = window._result_review
+    subject = active.registration_qc_item(window._loaded_qc_subject)
+    active.artifact(subject.original_artifact_key).path.write_text("changed", encoding="ascii")
+    panel.button.click()
+    _wait_for_qt(lambda: panel._worker is None)
+    assert not panel.canvas._inspection_markers
+    assert "unavailable" in panel.status.text()
+
+
+def test_local_surface_check_cannot_mark_a_different_selected_pair(review_window, monkeypatch):
+    import threading
+
+    from diffeoforge.desktop import registration_surface_review as surface_review
+
+    entered, release = threading.Event(), threading.Event()
+    flag = surface_review.SurfaceFlag((0.1, 0.2, 0.3), "Original surface missed", 0.02, 8)
+
+    def delayed_check(*args, **kwargs):
+        entered.set()
+        release.wait(5)
+        return (flag,)
+
+    monkeypatch.setattr(surface_review, "screen_surface_misses", delayed_check)
+    window = review_window
+    panel = window.result_registration_surface_review
+    panel.button.click()
+    try:
+        _wait_for_qt(entered.is_set)
+        old_subject = window._loaded_qc_subject
+        window.result_atlas_mesh_combo.setCurrentIndex(1)
+        _wait_for_view(window)
+        assert window._loaded_qc_subject != old_subject
+    finally:
+        release.set()
+    _wait_for_qt(lambda: panel._worker is None)
+    assert not panel.canvas._inspection_markers
+    assert not window._registration_qc_decisions
+    assert panel.button.isEnabled()
+
+
 def test_mesh_changed_after_display_cannot_be_approved(review_window):
     window = review_window
     item = window._result_review.registration_qc_item(window._loaded_qc_subject)

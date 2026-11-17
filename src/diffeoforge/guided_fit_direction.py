@@ -83,7 +83,7 @@ def _local_samples(row, key):
 
 def _regions(current, alternative):
     """Show at most one clear contrast and one persistent large gap."""
-    difference, residual = [], []
+    gains, losses, residual = [], [], []
     diagonal = current["diagonal"]
     for key in current["repeats"][0].get("regions", {}):
         prefix, _, index = key.partition(":")
@@ -99,12 +99,17 @@ def _regions(current, alternative):
                    current_p95=max(x) * 100 / diagonal,
                    alternative_p95=max(y) * 100 / diagonal)
         if _lowers(x, y, diagonal):
-            difference.append((min(x) - max(y), dict(row, change="improved")))
+            gains.append((min(x) - max(y), dict(row, change="improved")))
         elif _lowers(y, x, diagonal):
-            difference.append((min(y) - max(x), dict(row, change="regressed")))
+            losses.append((min(y) - max(x), dict(row, change="regressed")))
         if min(*x, *y) > diagonal * 1e-6:
             residual.append((min(*x, *y), dict(row, change="remaining")))
-    rows = [max(difference, key=lambda item: item[0])[1]] if difference else []
+    rows = [max(gains, key=lambda item: item[0])[1]] if gains else []
+    competing = [item for item in losses if not rows or item[1]["cell"] != rows[0]["cell"]]
+    if competing:
+        rows.append(max(competing, key=lambda item: item[0])[1])
+    if len(rows) == 2:
+        return rows
     other = [item for item in residual if not rows or item[1]["cell"] != rows[0]["cell"]]
     if other:
         rows.append(max(other, key=lambda item: item[0])[1])
@@ -306,28 +311,34 @@ def _input_direction(snapshot, context, target):
     if retained is not None:
         return retained
     return dict(
-        mode="inputs", current=reference,
+        mode="inputs", identifier=reference["candidate_id"], current=reference,
         reason=reason + " Check the pose and the corresponding structure in the original "
         "template and specimen before preparing another fit.",
     )
 
 
 def _reviewed_alignment(snapshot, context, target):
-    """Route explicit alignment concerns to the exact saved input overlay."""
+    """Route a suspected pose or anatomy mismatch to the saved input overlay."""
     for identifier, data in context["feedback"].items():
         if (not data or not context["allowed"].get(identifier)
                 or snapshot.visual_reviews.get(identifier) is not False):
             continue
         feedback = data.get("feedback") or {}
         problems = _problem_marks(data.get("problem_regions", {}).get(target, []))
-        if feedback.get("symptom") == "alignment" or any(
-                row["symptom"] == "alignment" for row in problems):
-            current = next((row["reference"] for row in data["choices"] if row["current"]), None)
-            if current is not None:
-                return dict(mode="inputs", current=current,
-                            reason="Your review flags a possible alignment issue. Compare the "
-                                   "starting template and specimen in their saved coordinates "
-                                   "before changing the fitting settings.")
+        concerns = {feedback.get("symptom"), *(row["symptom"] for row in problems)}
+        if not concerns.intersection({"alignment", "topology"}):
+            continue
+        current = next((row["reference"] for row in data["choices"] if row["current"]), None)
+        if current is None:
+            continue
+        reason = (
+            "Check whether the opening or connection exists in both the starting template "
+            "and the original specimen. A mismatch there may limit fitting."
+            if "topology" in concerns else
+            "Your review flags a possible alignment issue. Compare the starting template "
+            "and specimen in their saved coordinates before changing the fitting settings."
+        )
+        return dict(mode="inputs", identifier=identifier, current=current, reason=reason)
     return None
 
 
@@ -383,6 +394,27 @@ def preview(snapshot, context):
                     reason="A saved fit with the other surface-matching method has lower "
                            "surface distances on both samples. Compare the same area before "
                            "choosing a new test.")
+    tradeoffs = []
+    for other in saved.values():
+        if (
+            other is current or other["warnings"] or other["outcome"] == "worse"
+            or not isclose(other["diagonal"], current["diagonal"], rel_tol=1e-9)
+        ):
+            continue
+        regions = _regions(current, other)
+        if {row["change"] for row in regions} == {"improved", "regressed"}:
+            strength = min(abs(row["current_p95"] - row["alternative_p95"]) for row in regions)
+            tradeoffs.append((strength, other, regions))
+    if tradeoffs:
+        _, other, regions = max(tradeoffs, key=lambda item: item[0])
+        return dict(
+            result, mode="compare", tradeoff=True, alternative=other["reference"],
+            alternative_cp=other["cp"],
+            alternative_p95=max(_series(other, "p95")) * 100 / other["diagonal"],
+            regions=regions,
+            reason="Each saved fit is closer in a different area. Inspect both marked areas "
+                   "and decide which structure matters before preparing another test.",
+        )
     if _progress_stalled(saved.values(), current):
         return dict(result, mode="inputs",
                     reason="Several reviewed changes on this form did not help. Compare "

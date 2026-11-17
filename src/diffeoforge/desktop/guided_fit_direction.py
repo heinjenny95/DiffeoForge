@@ -89,9 +89,10 @@ class _ComparisonDialog(_FullscreenPilotDialog):
             left.original_sha256, left.reconstruction_sha256, right.reconstruction_sha256,
         )
         self.cache = origin / "display-cache"
-        self._alternative = direction["alternative"]
+        self._references = direction["current"], direction["alternative"]
         self._regions = direction["regions"]
         self._markers = ()
+        self._overview = None
         self._loaded_detail = None
         self.working_view = None
         self.setWindowTitle("Compare saved pilot fits")
@@ -133,6 +134,20 @@ class _ComparisonDialog(_FullscreenPilotDialog):
                              "repeated measurements. Check their anatomy in both views.")
             caption.setWordWrap(True)
             layout.addWidget(caption)
+            if direction.get("tradeoff"):
+                question = QLabel(
+                    "Which area contains the structure your study needs to preserve?"
+                )
+                question.setWordWrap(True)
+                layout.addWidget(question)
+                navigation = QHBoxLayout()
+                areas = [f"Area {i}" for i in range(1, len(self._regions) + 1)]
+                for name in ("Whole shape", *areas):
+                    button = QPushButton(name)
+                    button.clicked.connect(lambda _checked=False, key=name: self._focus(key))
+                    navigation.addWidget(button)
+                navigation.addStretch()
+                layout.addLayout(navigation)
         self.status = QLabel()
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -144,9 +159,14 @@ class _ComparisonDialog(_FullscreenPilotDialog):
         close = QPushButton("Close comparison")
         close.clicked.connect(self.reject)
         actions.addWidget(close)
+        self.keep_left = QPushButton("Work from left fit…")
+        self.keep_left.setEnabled(False)
+        self.keep_left.setVisible(bool(direction.get("tradeoff")))
+        self.keep_left.clicked.connect(lambda: self._choose_fit(0))
+        actions.addWidget(self.keep_left)
         self.work = QPushButton(f"Work from {labels[1]}…")
         self.work.setObjectName("primary")
-        self.work.clicked.connect(self._choose_alternative)
+        self.work.clicked.connect(lambda: self._choose_fit(1))
         self.work.setEnabled(False)
         actions.addWidget(self.work)
         layout.addLayout(actions)
@@ -164,7 +184,7 @@ class _ComparisonDialog(_FullscreenPilotDialog):
 
     def _request(self, detail):
         self._loaded_detail = None
-        self.work.setEnabled(False)
+        self._update_actions()
         self.status.setText("Loading both saved overlays…")
         self.loader.request_paths(
             detail, self.paths, expected=self.hashes, pilot_cache=None if detail else self.cache,
@@ -182,9 +202,10 @@ class _ComparisonDialog(_FullscreenPilotDialog):
         low, high = bounds[:, ::2].min(axis=0), bounds[:, 1::2].max(axis=0)
         markers = _markers(original.bounds, self._regions)
         self._markers = tuple(markers.items())
+        self._overview = ((low + high) / 2, float(max(high - low)))
         for canvas, reconstruction in zip(self.canvases, (left, right), strict=True):
             canvas.set_models(original, reconstruction)
-            canvas.set_comparison_extent((low + high) / 2, float(max(high - low)))
+            canvas.set_comparison_extent(*self._overview)
             canvas.set_inspection_markers(markers)
             if detail:
                 canvas.original_detail.setChecked(True)
@@ -193,22 +214,36 @@ class _ComparisonDialog(_FullscreenPilotDialog):
                             "diagonal. Your visual review determines suitability.")
         self._update_actions()
 
+    def _focus(self, area):
+        if self._overview is None or self._loaded_detail != self.detail.isChecked():
+            return
+        center, scale = self._overview
+        if area != "Whole shape":
+            center = np.asarray(dict(self._markers)[area])
+            scale *= 0.55
+        state = self.canvases[0].camera_state()
+        centered = (*state[:2], 1.0, (0.0, 0.0), False, *state[5:])
+        for canvas in self.canvases:
+            canvas.set_comparison_extent(center, scale)
+            canvas.set_linked_camera(centered)
+
     def _failed(self, detail, message):
         if detail == self.detail.isChecked():
             self.status.setText("Comparison unavailable. " + message)
 
     def _update_actions(self):
-        self.work.setEnabled(
-            self._loaded_detail == self.detail.isChecked()
-            and all(canvas.comparison_ready for canvas in self.canvases))
+        ready = (self._loaded_detail == self.detail.isChecked()
+                 and all(canvas.comparison_ready for canvas in self.canvases))
+        self.work.setEnabled(ready)
+        self.keep_left.setEnabled(ready)
 
-    def _choose_alternative(self):
+    def _choose_fit(self, position):
         self._update_actions()
         if self.work.isEnabled():
-            camera = self.canvases[1].camera_state()
+            camera = self.canvases[position].camera_state()
             self.working_view = dict(
-                reference=self._alternative,
-                hashes=(self.hashes[0], self.hashes[2]),
+                reference=self._references[position],
+                hashes=(self.hashes[0], self.hashes[position + 1]),
                 camera=(*camera[:4], False, *camera[5:]),
                 markers=self._markers,
             )
@@ -224,5 +259,5 @@ def show_comparison(window, direction, prepared):
         dialog.deleteLater()
     if chosen and window.study_directory == origin and not window._worker:
         window._open_guided_working_fit(
-            direction["identifier"], direction["alternative"], view_hint=chosen,
+            direction["identifier"], chosen["reference"], view_hint=chosen,
         )

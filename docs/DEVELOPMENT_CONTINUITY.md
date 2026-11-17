@@ -1,5 +1,18 @@
 # Development continuity — dev192 installed and verified
 
+## dev217 — inspect scientific sensitivity across saved atlases
+
+Compare one declared metadata contrast on verified paired specimens across
+saved atlases. The report compares all retained PCA dimensions and PC1–PC2,
+paired distance ranks, and mean displacements on proven shared material vertices.
+An exact template-point view shows both endpoints for the selected specimen.
+The pilot opens local trade-offs and compares joint geometry to the preserved
+approved individual fit. The pre-atlas check prepares a fixed basis for new
+surfaces, with execution via CLI. Validation Lab and final visual review show
+local surface inspection markers. The known-deformation benchmark
+prepares copied meshes and measures recovery at declared doses with zero controls.
+See [atlas sensitivity and the prospective validation study](ATLAS_BIOLOGICAL_SENSITIVITY.md).
+
 ## dev216 — lightweight live preview during a pilot fit
 
 While an eligible guided fit runs, the pilot can display a reduced overlay

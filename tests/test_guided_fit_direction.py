@@ -146,3 +146,40 @@ def test_alignment_review_promotes_input_overlay_before_the_next_experiment():
     assert direction._reviewed_alignment(snapshot, context, target) is None
     data["problem_regions"] = {target: [dict(symptom="alignment", purpose="fixed")]}
     assert direction._reviewed_alignment(snapshot, context, target) is None
+
+
+
+def test_compare_exposes_two_competing_anatomical_areas():
+    current = dict(diagonal=1, repeats=[{"regions": {
+        "0:1": {"count": 12, "tail": .14},
+        "1:3": {"count": 12, "tail": .05},
+        "0:6": {"count": 12, "tail": .21},
+    }}] * 2)
+    alternative = dict(diagonal=1, repeats=[{"regions": {
+        "0:1": {"count": 12, "tail": .07},
+        "1:3": {"count": 12, "tail": .12},
+        "0:6": {"count": 12, "tail": .21},
+    }}] * 2)
+    result = direction._regions(current, alternative)
+    assert [(row["cell"], row["change"]) for row in result] == [
+        ([0, 0, 1], "improved"), ([0, 0, 3], "regressed"),
+    ]
+
+
+def test_topology_flag_requests_inspection_before_another_parameter_trial():
+    from types import SimpleNamespace
+
+    name = "shape.vtk"
+    identifier = "trial"
+    reference = {"target": name, "candidate_id": identifier}
+    snapshot = SimpleNamespace(visual_reviews={identifier: False})
+    data = dict(feedback={"symptom": "unsure"},
+                problem_regions={name: [{"symptom": "topology", "purpose": "problem"}]},
+                choices=[{"reference": reference, "current": True}])
+    result = direction._reviewed_alignment(
+        snapshot, dict(allowed={identifier: True}, feedback={identifier: data}), name,
+    )
+    assert result["mode"] == "inputs"
+    assert result["identifier"] == identifier
+    assert result["current"] == reference
+    assert "opening or connection" in result["reason"]

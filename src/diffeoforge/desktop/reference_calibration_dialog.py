@@ -586,6 +586,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         compact_review: bool = False,
         guided_feedback_context: dict | None = None,
         preview_cache: Path | None = None,
+        joint_transfer: bool = False,
     ) -> None:
         super().__init__(parent)
         if candidate.run_directory is None and not (read_only and pairs):
@@ -595,6 +596,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             pairs if pairs is not None else collect_calibration_qc_pairs(study_directory, candidate)
         )
         self._preview_cache = preview_cache or study_directory / "display-cache"
+        self._joint_transfer_source = (study_directory, candidate.candidate_id)
         self.display_scopes: dict[str, str] = {}
         self._fit = dict(subject_fit or {})
         self._pairs = tuple(
@@ -723,6 +725,13 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         reset.clicked.connect(lambda: self.canvas.reset_view())
         _set_action_emphasis(reset, False)
         toggles.addWidget(reset)
+        self.joint_transfer_button = None
+        if joint_transfer:
+            self.joint_transfer_button = QPushButton("Compare with approved individual fit…")
+            self.joint_transfer_button.setObjectName("secondary")
+            self.joint_transfer_button.clicked.connect(self._open_joint_transfer)
+            self.joint_transfer_button.setEnabled(False)
+            toggles.addWidget(self.joint_transfer_button)
         layout.addLayout(toggles)
         self.status = QLabel()
         self.status.setObjectName("statusSuccess")
@@ -1229,6 +1238,27 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
                 pair.original_path, pair.original_sha256, preview, cache),
         )
 
+    def _open_joint_transfer(self) -> None:
+        from copy import deepcopy
+
+        from diffeoforge.desktop.joint_pilot_transfer import JointPilotTransferDialog
+
+        index = self.mesh_combo.currentData()
+        if index is None:
+            return
+        pair = self._pairs[int(index)]
+        if not pair.required:
+            return
+        name = pair.original_path.name
+        marks = deepcopy(self.problem_regions.get(name))
+        if name in self.cleared_region_subjects:
+            marks = []
+        dialog = JointPilotTransferDialog(self, *self._joint_transfer_source, pair, marks)
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
+
     def _region_loaded(self, key, marking) -> None:
         from diffeoforge.desktop.region_feedback_dialog import RegionFeedbackDialog
 
@@ -1402,6 +1432,8 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         self.next_specimen_button.setEnabled(total > 1)
         pair = self._pairs[int(pair_index)] if pair_index is not None else None
         current_seen = bool(pair and pair.required and self.canvas.comparison_ready)
+        if self.joint_transfer_button is not None:
+            self.joint_transfer_button.setEnabled(bool(pair and pair.required))
         if self.guided_feedback:
             self.guided_feedback.set_ready(current_seen and self._valid_individual)
         self.mark_region_button.setEnabled(current_seen)
@@ -5027,6 +5059,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         try:
             from diffeoforge.reference_guided_pilot import record as guided_record
 
+            guided_info = guided_record(reviewed_snapshot) or {}
             dialog = CalibrationCandidateViewerDialog(
                 root,
                 candidate,
@@ -5036,7 +5069,12 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                 pairs=pairs,
                 alternative_pairs=prepared[3] if len(prepared) >= 4 else (),
                 guided_feedback_context=prepared[4] if len(prepared) >= 5 else None,
-                compact_review=bool(guided_record(reviewed_snapshot)),
+                compact_review=bool(guided_info),
+                joint_transfer=bool(
+                    guided_info.get("phase") == "joint"
+                    and (guided_info.get("strategy") or {}).get("form_progress")
+                    and candidate.status == "completed"
+                ),
                 allow_plan_b=self._individual_checkpoint()
                 and Path(root).resolve() == self.study_directory.resolve(),
                 compare_preferences=self._individual_checkpoint()

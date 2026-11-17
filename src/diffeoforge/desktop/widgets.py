@@ -147,6 +147,7 @@ from diffeoforge.desktop.registration_release import (
     require_visual_review,
     required_registration_inspections,
 )
+from diffeoforge.desktop.registration_surface_review import RegistrationSurfaceReview
 from diffeoforge.desktop.remote_atlas_controller import (
     DesktopRemoteAtlasController,
     DesktopRemoteAtlasDeletionController,
@@ -2571,9 +2572,13 @@ class DiffeoForgeWindow(QMainWindow):
         self.early_atlas_review_check = QCheckBox(
             "Pause after 10 joint iterations for an optional anatomical check"
         )
+        self.prepare_pilot_holdout_button = QPushButton("Prepare a held-out check…")
+        self.prepare_pilot_holdout_button.setObjectName("secondary")
+        self.prepare_pilot_holdout_button.clicked.connect(self._prepare_pilot_holdout)
         for widget in (
             start_title, self.pilot_atlas_start_combo, self.pilot_atlas_start_detail,
             self.initial_fit_review_check, self.early_atlas_review_check,
+            self.prepare_pilot_holdout_button,
         ):
             start_layout.addWidget(widget)
         self.pilot_atlas_start_card.hide()
@@ -3317,6 +3322,10 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.result_registration_qc_canvas.setMinimumHeight(440)
         self.result_registration_qc_canvas.hide()
+        self.result_registration_surface_review = RegistrationSurfaceReview(
+            self.result_registration_qc_canvas,
+            lambda: (self._result_review, self._loaded_qc_subject),
+        )
         atlas_viewer_layout.addWidget(atlas_viewer_title)
         atlas_viewer_layout.addWidget(atlas_viewer_hint)
         visual_body = QHBoxLayout()
@@ -3331,6 +3340,7 @@ class DiffeoForgeWindow(QMainWindow):
         controls_layout.addLayout(atlas_view_controls)
         controls_layout.addLayout(overlay_controls)
         controls_layout.addWidget(self.result_atlas_status_label)
+        controls_layout.addWidget(self.result_registration_surface_review)
         controls_layout.addStretch()
         for combo in (self.result_atlas_mesh_group_combo, self.result_atlas_mesh_combo):
             combo.setMinimumContentsLength(10)
@@ -3727,6 +3737,10 @@ class DiffeoForgeWindow(QMainWindow):
         self.create_pca_metadata_button.setObjectName("primary")
         self.create_pca_metadata_button.clicked.connect(self._create_pca_metadata)
         self.create_pca_metadata_button.setEnabled(False)
+        self.compare_atlas_groups_button = QPushButton("Compare group effects across atlases…")
+        self.compare_atlas_groups_button.setObjectName("secondary")
+        self.compare_atlas_groups_button.clicked.connect(self._compare_atlas_groups)
+        self.compare_atlas_groups_button.setEnabled(False)
         metadata_layout.addWidget(metadata_title)
         metadata_layout.addWidget(metadata_summary)
         metadata_layout.addWidget(
@@ -3743,6 +3757,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         metadata_layout.addWidget(self.pca_metadata_status_label)
         metadata_layout.addWidget(self.create_pca_metadata_button)
+        metadata_layout.addWidget(self.compare_atlas_groups_button)
         layout.addWidget(metadata_card)
 
         artifacts = QFrame()
@@ -10700,6 +10715,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.pilot_atlas_start_card.setVisible(visible)
         direct = self.pilot_atlas_start_combo.currentData()
         self.pilot_atlas_start_combo.setEnabled(self._worker is None)
+        self.prepare_pilot_holdout_button.setEnabled(visible and self._worker is None)
         for control in (self.initial_fit_review_check, self.early_atlas_review_check):
             control.setVisible(not direct)
             control.setEnabled(self._worker is None and not direct)
@@ -10724,6 +10740,19 @@ class DiffeoForgeWindow(QMainWindow):
                 else "Continue to supervised Deformetrica execution"
             )
             self.show_run_button.setEnabled(True)
+
+    @Slot()
+    def _prepare_pilot_holdout(self) -> None:
+        path = self._pilot_atlas_start_source()
+        if path is None or self._worker is not None:
+            return
+        from diffeoforge.desktop.pilot_holdout_check_dialog import PilotHoldoutCheckDialog
+
+        dialog = PilotHoldoutCheckDialog(path, self)
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
 
     @Slot()
     def _prepare_preserved_atlas(self) -> None:
@@ -12632,6 +12661,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.create_scientific_report_button.setEnabled(True)
         self.create_publication_bundle_button.setEnabled(True)
         self.create_pca_metadata_button.setEnabled(True)
+        self.compare_atlas_groups_button.setEnabled(True)
         self.scientific_report_status_label.setObjectName("status")
         self.scientific_report_status_label.setStyleSheet("")
         self.scientific_report_status_label.setText(
@@ -12713,6 +12743,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.create_scientific_report_button.setEnabled(False)
         self.create_publication_bundle_button.setEnabled(False)
         self.create_pca_metadata_button.setEnabled(False)
+        self.compare_atlas_groups_button.setEnabled(False)
         self.create_shape_space_comparison_button.setEnabled(False)
         self._shape_space_comparison_result = None
         self.open_shape_space_pdf_button.hide()
@@ -13508,6 +13539,7 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _sync_visual_decision_controls(self) -> None:
         canvas = self.result_registration_qc_canvas
+        self.result_registration_surface_review.sync_selection()
         enabled = bool(
             self._worker is None
             and self._loaded_qc_subject is not None
@@ -13731,6 +13763,21 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self._thread_pool.start(worker)
 
+    @Slot()
+    def _compare_atlas_groups(self) -> None:
+        if self._worker is not None or not self._ensure_results_released():
+            return
+        review = self._result_review
+        if review is None:
+            return
+        from diffeoforge.desktop.group_atlas_comparison_dialog import GroupAtlasComparisonDialog
+
+        dialog = GroupAtlasComparisonDialog(review.run_directory, self)
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
+
     @Slot(object)
     def _pca_metadata_succeeded(self, artifact: PCAMetadataArtifact) -> None:
         self._worker = None
@@ -13838,6 +13885,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.create_scientific_report_button.setEnabled(False)
         self.create_publication_bundle_button.setEnabled(False)
         self.create_pca_metadata_button.setEnabled(False)
+        self.compare_atlas_groups_button.setEnabled(False)
         self._sync_reference_pca_deformation_action(None)
         self.run_back_button.setEnabled(True)
         self.run_state_label.setObjectName("statusError")
@@ -13942,6 +13990,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.create_scientific_report_button.setEnabled(released)
         self.create_publication_bundle_button.setEnabled(released)
         self.create_pca_metadata_button.setEnabled(released)
+        self.compare_atlas_groups_button.setEnabled(released)
         for button in self.result_artifact_buttons:
             button.setEnabled(released)
         self.open_shape_space_pdf_button.setEnabled(released)
@@ -14286,6 +14335,7 @@ class DiffeoForgeWindow(QMainWindow):
         if self.process_recorder.handle_close():
             event.ignore()
             return
+        self.result_registration_surface_review.cancel()
         self._result_mesh_loader.cancel()
         self._pilot_status_loader.cancel()
         self.result_atlas_canvas.set_model(None)

@@ -64,12 +64,12 @@ def _canonical_json(value: object) -> str:
     )
 
 
-def _review(directory: Path | str) -> ModernResultReview:
+def _review(directory: Path | str, *, create_pca_if_missing: bool = True) -> ModernResultReview:
     try:
         return review_modern_result(directory)
     except (ModernResultReviewError, OSError, RuntimeError, TypeError, ValueError):
         try:
-            return review_reference_result(directory)
+            return review_reference_result(directory, create_pca_if_missing=create_pca_if_missing)
         except (ModernResultReviewError, OSError, RuntimeError, TypeError, ValueError) as error:
             raise AtlasComparisonError(
                 f"Could not verify atlas/PCA result {Path(directory)}: {error}"

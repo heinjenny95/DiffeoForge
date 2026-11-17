@@ -348,7 +348,8 @@ def render(window, prepared):
             mode = direction["mode"]
             if mode == "compare":
                 direction_pinned = pin_action(
-                    window, snapshot, "Compare saved fits",
+                    window, snapshot, ("Compare affected areas" if direction.get("tradeoff")
+                                       else "Compare saved fits"),
                     "fit_direction_compare", direction,
                     "Open both saved fits at the same scale. Starts no fitting.",
                 )
