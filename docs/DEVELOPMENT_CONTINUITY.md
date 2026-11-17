@@ -1,5 +1,22 @@
 # Development continuity — dev192 installed and verified
 
+## dev211 — generate contextual Pilot chat answers in English
+
+Pilot chat uses English for its interface and replies. It accepts German and
+English questions. The local model generates a short answer from the question,
+the previous two turns and relevant pilot guidance. For marking questions, the
+model explains the user's observation and the distinction to check. DiffeoForge
+renders the exact editor choices, including the cavity-opening and wall-shape
+alternatives. Review and fit actions still bind to the verified pilot view.
+
+The Windows sidecar accepts the pinned [Qwen3-4B Q4_K_M](https://huggingface.co/Qwen/Qwen3-4B-GGUF/tree/bc640142c66e1fdd12af0bd68f40445458f3869b)
+and the existing Qwen2.5-1.5B weights, with Qwen3 preferred when both are present.
+The model stays on the CPU, uses the pinned executable and runs offline. The
+interface labels generated replies and falls back to built-in guidance during
+fitting or when the local model is unavailable or its reply fails validation.
+The normal installer contains the chat integration. Model weights are staged
+separately. Read-only chat never changes a saved review or dispatches a fit.
+
 ## dev210 — answer questions about marked fit defects
 
 Pilot chat now explains the existing area instructions for extra surface in a

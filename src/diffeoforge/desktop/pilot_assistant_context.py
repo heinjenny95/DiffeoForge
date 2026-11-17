@@ -1,6 +1,5 @@
 """Bind pilot chat replies to the verified view and its real review actions."""
 
-from PySide6.QtCore import QLocale
 from PySide6.QtWidgets import QInputDialog
 
 from diffeoforge.guided_density import controls_for
@@ -13,8 +12,7 @@ def open_chat(window):
     view = window._prepared_view
     if not view or window._view_loading or window._view_closed:
         return
-    language = "de" if QLocale.system().language() == QLocale.Language.German else "en"
-    context, callbacks = context_for_view(window, view, language=language)
+    context, callbacks = context_for_view(window, view)
 
     def invoke(action):
         if (window._prepared_view is not view
@@ -28,7 +26,7 @@ def open_chat(window):
     return show(window, context, reply=reply, invoke=invoke)
 
 
-def context_for_view(window, view, *, language):
+def context_for_view(window, view):
     snapshot, guidance = view.snapshot, view.guidance
     running = window._worker is not None or window._restoring_search
     record = snapshot.attachment_comparison
@@ -69,8 +67,8 @@ def context_for_view(window, view, *, language):
         for row in feedback.get("choices", []):
             reference, label = row["reference"], row["label"]
             action = f"work:{len(history)}"
-            offer(action, ("Ausgangsfit öffnen · " if language == "de" else "Open starting fit · ")
-                  + label, lambda ref=reference: window._open_guided_working_fit(candidate_id, ref))
+            offer(action, "Open starting fit · " + label,
+                  lambda ref=reference: window._open_guided_working_fit(candidate_id, ref))
             history.append(action)
             facts["saved_tests"].setdefault(row["trial_index"], []).append((label, action))
             if reference == working:
@@ -78,16 +76,14 @@ def context_for_view(window, view, *, language):
                 facts["working_quality_warning"] = direction.get("quality_warning")
 
         def choose_saved():
-            title = "Gespeicherte Fits" if language == "de" else "Saved fits"
-            prompt = "Ausgangsfit wählen" if language == "de" else "Choose a starting fit"
             options = [labels[key] for key in history]
-            selected, ok = QInputDialog.getItem(window, title, prompt, options, editable=False)
+            selected, ok = QInputDialog.getItem(
+                window, "Saved fits", "Choose a starting fit", options, editable=False)
             if ok:
                 callbacks[history[options.index(selected)]]()
 
         if history:
-            label = "Gespeicherte Fits" if language == "de" else "Saved fits"
-            offer("history", label, choose_saved)
+            offer("history", "Saved fits", choose_saved)
         if working and "inputs" not in labels:
             from diffeoforge.desktop.guided_diagnosis import inspect_inputs
 
@@ -107,4 +103,4 @@ def context_for_view(window, view, *, language):
         from diffeoforge.guided_progress import iteration_limited
 
         facts["iteration_limit"] = iteration_limited(candidate)
-    return dict(assistant_actions=labels, assistant_language=language, facts=facts), callbacks
+    return dict(assistant_actions=labels, facts=facts), callbacks

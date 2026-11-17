@@ -2,6 +2,7 @@
 
 from threading import Event, get_ident
 from time import monotonic, sleep
+from types import SimpleNamespace
 
 import pytest
 
@@ -116,10 +117,14 @@ def test_chat_hides_backend_errors_and_can_retry(desktop):
         assert not history
         if len(attempts) == 1:
             raise RuntimeError("private model diagnostic")
-        return {"message": "Der bessere Fit ist weiterhin gespeichert.", "actions": []}
+        return {"message": "The previous fit is still saved.", "actions": []}
 
-    dialog = show(window, {}, reply=reply, invoke=lambda _: pytest.fail("Unexpected action"))
+    dialog = show(window, {"assistant_language": "de"}, reply=reply,
+                  invoke=lambda _: pytest.fail("Unexpected action"))
     try:
+        assert dialog.windowTitle() == "Pilot chat"
+        assert dialog.send.text() == "Send"
+        assert dialog.question.accessibleName() == "Your question"
         dialog.question.setPlainText("x" * 1201)
         assert not dialog.send.isEnabled()
         assert "1200" in dialog.status.text()
@@ -128,17 +133,58 @@ def test_chat_hides_backend_errors_and_can_retry(desktop):
         _wait(app, dialog.question.isEnabled)
         assert dialog.send.isEnabled()
         assert dialog.question.toPlainText() == "Wie komme ich zurück?"
-        assert "erneut senden" in dialog.status.text()
+        assert "You can send the question again." in dialog.status.text()
         assert "private model diagnostic" not in dialog.transcript.toPlainText()
         dialog.send.click()
         _wait(app, dialog.question.isEnabled)
-        assert "weiterhin gespeichert" in dialog.transcript.toPlainText()
+        assert "You\nWie komme ich zurück?" in dialog.transcript.toPlainText()
+        assert "The previous fit is still saved." in dialog.transcript.toPlainText()
         assert not dialog._action_buttons and dialog.status.isHidden()
         assert attempts == ["Wie komme ich zurück?"] * 2
     finally:
         if isValid(dialog):
             dialog.close()
         app.processEvents()
+
+
+def test_pilot_chat_context_offers_english_actions(desktop, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    from diffeoforge.desktop.pilot_assistant_context import context_for_view
+
+    dispatched = []
+    fit = {"directory": "earlier-fit", "candidate_id": "kept"}
+    window = SimpleNamespace(
+        _worker=None,
+        _restoring_search=False,
+        _guided_review_target=None,
+        _guided_footer_action=None,
+        review_next_button=SimpleNamespace(isHidden=lambda: True),
+        next_step_button=SimpleNamespace(isHidden=lambda: True),
+        start_button=SimpleNamespace(isHidden=lambda: True),
+        _open_guided_working_fit=lambda *args: dispatched.append(args),
+    )
+    view = SimpleNamespace(
+        snapshot=SimpleNamespace(attachment_comparison={}, candidates=[]),
+        guidance={"checked": 1, "total": 2,
+                  "feedback": {"candidate": {"choices": [
+                      {"reference": fit, "label": "Test 1", "trial_index": 1},
+                  ]}}},
+    )
+    options_seen = []
+
+    def pick(_window, title, label, items, *, editable):
+        options_seen.append((title, label, items, editable))
+        return items[0], True
+
+    monkeypatch.setattr(QInputDialog, "getItem", pick)
+    context, callbacks = context_for_view(window, view)
+    assert context["assistant_actions"] == {
+        "work:0": "Open starting fit · Test 1", "history": "Saved fits"}
+    callbacks["history"]()
+    assert options_seen == [("Saved fits", "Choose a starting fit",
+                             ["Open starting fit · Test 1"], False)]
+    assert dispatched == [("candidate", fit)]
 
 
 def test_chat_can_close_while_waiting_for_a_reply(desktop):

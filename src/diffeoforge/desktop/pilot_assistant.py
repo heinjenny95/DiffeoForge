@@ -17,38 +17,7 @@ from PySide6.QtWidgets import (
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 
 _MAX_QUESTION = 1200
-_TEXT = {
-    "de": {
-        "title": "Pilot-Chat",
-        "scope": "Lokal · Empfehlungen zum aktuellen Pilotstand",
-        "welcome": "Beschreibe kurz, was am Fit passt und was noch fehlt.",
-        "history": "Chatverlauf",
-        "you": "Du",
-        "assistant": "Pilot",
-        "question": "Deine Frage",
-        "placeholder": "Zwei Stellen passen. Wie bessere ich die dritte nach?",
-        "send": "Senden",
-        "close": "Schließen",
-        "busy": "Ich prüfe den Pilotstand …",
-        "error": "Die Antwort konnte nicht erstellt werden. Du kannst die Frage erneut senden.",
-        "length": "Bitte kürze deine Frage auf höchstens 1200 Zeichen.",
-    },
-    "en": {
-        "title": "Pilot chat",
-        "scope": "Local · Recommendations for this pilot stage",
-        "welcome": "Describe what fits well and what still needs work.",
-        "history": "Chat history",
-        "you": "You",
-        "assistant": "Pilot",
-        "question": "Your question",
-        "placeholder": "Two areas look good. How do I improve the third?",
-        "send": "Send",
-        "close": "Close",
-        "busy": "Checking the pilot stage …",
-        "error": "The reply could not be generated. You can send the question again.",
-        "length": "Please shorten your question to 1200 characters or fewer.",
-    },
-}
+_LENGTH_WARNING = f"Please shorten your question to {_MAX_QUESTION} characters or fewer."
 
 
 class PilotAssistantDialog(QDialog):
@@ -58,7 +27,6 @@ class PilotAssistantDialog(QDialog):
         self._reply = reply
         self._invoke = invoke
         self._labels = dict(context.get("assistant_actions", {}))
-        self._text = _TEXT.get(context.get("assistant_language", "de"), _TEXT["en"])
         self._history = []
         self._pending = None
         self._action_buttons = []
@@ -66,19 +34,19 @@ class PilotAssistantDialog(QDialog):
         self._loader.loaded.connect(self._show_reply)
         self._loader.failed.connect(self._show_error)
         self.finished.connect(self._loader.cancel)
-        self.setWindowTitle(self._text["title"])
+        self.setWindowTitle("Pilot chat")
         self.resize(570, 455)
 
         layout = QVBoxLayout(self)
-        caption = QLabel(self._text["scope"])
+        caption = QLabel("Local · Recommendations for this pilot stage")
         caption.setObjectName("sectionTitle")
         caption.setWordWrap(True)
         layout.addWidget(caption)
         self.transcript = QPlainTextEdit()
         self.transcript.setReadOnly(True)
-        self.transcript.setAccessibleName(self._text["history"])
+        self.transcript.setAccessibleName("Chat history")
         layout.addWidget(self.transcript, 1)
-        self._append(self._text["assistant"], self._text["welcome"])
+        self._append("Pilot", "Describe what fits well and what still needs work.")
 
         self._actions = QWidget()
         self._actions_layout = QVBoxLayout(self._actions)
@@ -92,20 +60,20 @@ class PilotAssistantDialog(QDialog):
         layout.addWidget(self.status)
 
         self.question = QPlainTextEdit()
-        self.question.setAccessibleName(self._text["question"])
-        self.question.setPlaceholderText(self._text["placeholder"])
+        self.question.setAccessibleName("Your question")
+        self.question.setPlaceholderText("The fit bridges an opening. How should I mark it?")
         self.question.setMaximumHeight(self.question.fontMetrics().lineSpacing() * 3 + 20)
         self.question.textChanged.connect(self._update_controls)
         layout.addWidget(self.question)
 
         row = QHBoxLayout()
         row.addStretch()
-        self.send = QPushButton(self._text["send"])
+        self.send = QPushButton("Send")
         self.send.setObjectName("primary")
         self.send.setAutoDefault(False)
         self.send.clicked.connect(self._send)
         row.addWidget(self.send)
-        close = QPushButton(self._text["close"])
+        close = QPushButton("Close")
         close.setAutoDefault(False)
         close.clicked.connect(self.reject)
         row.addWidget(close)
@@ -128,8 +96,8 @@ class PilotAssistantDialog(QDialog):
         length = len(self.question.toPlainText().strip())
         self.send.setEnabled(self._pending is None and 0 < length <= _MAX_QUESTION)
         if length > _MAX_QUESTION:
-            self._set_status(self._text["length"])
-        elif self.status.text() == self._text["length"]:
+            self._set_status(_LENGTH_WARNING)
+        elif self.status.text() == _LENGTH_WARNING:
             self._set_status("")
 
     def _send(self):
@@ -138,11 +106,11 @@ class PilotAssistantDialog(QDialog):
         message = self.question.toPlainText().strip()
         self._pending = message
         self._show_actions(())
-        self._set_status(self._text["busy"])
+        self._set_status("Checking the pilot stage …")
         self.question.clear()
         self.question.setEnabled(False)
         self._update_controls()
-        self._append(self._text["you"], message)
+        self._append("You", message)
         reply, context, history = self._reply, self._context, tuple(self._history)
         self._loader.request_operation(message, lambda: reply(context, message, history))
 
@@ -152,14 +120,14 @@ class PilotAssistantDialog(QDialog):
             self._show_error(question, "")
             return
         self._history.append((question, result["message"]))
-        self._append(self._text["assistant"], result["message"])
+        self._append("Pilot", result["message"])
         status = result.get("status", "")
         self._set_status(status if isinstance(status, str) else "")
         self._show_actions(result.get("actions", ()))
         self._finish_request()
 
     def _show_error(self, question, _detail):
-        self._set_status(self._text["error"])
+        self._set_status("The reply could not be generated. You can send the question again.")
         self.question.setPlainText(question)
         self._finish_request()
 
