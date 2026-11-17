@@ -70,7 +70,7 @@ def test_rejected_candidate_cannot_offer_model_adoption(tmp_path, monkeypatch):
 
 
 def test_exhausted_family_keeps_review_and_saved_fit_choice_without_repeat(tmp_path, monkeypatch):
-    from PySide6.QtWidgets import QLabel, QPushButton
+    from PySide6.QtWidgets import QPushButton
     from test_guided_pilot import run_batch
     from test_pilot_common_candidate import compared
     from test_pilot_region_feedback import reject
@@ -101,8 +101,12 @@ def test_exhausted_family_keeps_review_and_saved_fit_choice_without_repeat(tmp_p
     app, dialog = dialog_for(current, monkeypatch)
     try:
         assert dialog.review_next_button.isVisible() and dialog.review_next_button.isEnabled()
-        assert "bounded iteration" in " ".join(
-            label.text() for label in dialog.content.findChildren(QLabel))
+        assert dialog.status.text() == choice['reason']
+        assert dialog.next_step_button.text() == choice['label']
+        retained = []
+        monkeypatch.setattr(dialog, '_open_guided_saved_fit', retained.append)
+        dialog.next_step_button.click()
+        assert retained == [choice['retained_reference']]
         toggle = next(button for button in dialog.content.findChildren(QPushButton)
                       if button.text() == "Choose / inspect an earlier fit…")
         assert toggle.isVisible() and toggle.isEnabled()
