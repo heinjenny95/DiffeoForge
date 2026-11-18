@@ -42,6 +42,12 @@ saved state verifies the exact selected source and local action without changing
 inputs, reviews or native evidence. These engineering checks do not establish
 anatomical improvement, independent first-use acceptance or scientific validity.
 
+Combined scoped verification covers 228 distinct cases. Two older expectations
+looked for a duplicated body preparation button; they were updated to verify the
+fixed footer or explicitly open the optional adjustment disclosure. The affected
+paths passed follow-up checks. This test/documentation follow-up changes no
+runtime code; the dev220 binary remains bound to its tested feature commit.
+
 Two additional common-feedback tests expect an older broad/detail recovery
 label instead of the current candidate-refinement route. The same failures were
 reproduced against the verified dev219 package, with its strategy-state reader

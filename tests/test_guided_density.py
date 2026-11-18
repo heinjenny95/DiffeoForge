@@ -103,6 +103,12 @@ def test_unsuitable_density_still_offers_parameter_tests_and_input_checks(tmp_pa
     dialog.show()
     try:
         wait_pilot_view(dialog)
+        # The qualified next step lives in the fixed footer. Optional parameter
+        # tests and input checks remain reachable in the adjustment disclosure.
+        assert dialog.next_step_button.isVisible() and dialog.next_step_button.isEnabled()
+        for disclosure in dialog.findChildren(InfoDisclosure):
+            if disclosure.title == "Other adjustments and input checks":
+                disclosure.toggle_button.setChecked(True)
         assert any(b.isVisible() and "prepare 1 trial" in b.text()
                        for b in dialog.content.findChildren(QPushButton))
         diagnostic = next(d for d in dialog.findChildren(InfoDisclosure)
