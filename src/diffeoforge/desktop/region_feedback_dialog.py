@@ -195,10 +195,17 @@ class RegionFeedbackDialog(QDialog):
         note.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         controls.addWidget(note)
         self.shape = QComboBox()
-        self.shape.setAccessibleName("Shape of selected area")
+        self.shape.setAccessibleName("Area shape for new points or the selected area")
         self.shape.addItem("Surface brush", "sphere")
         self.shape.addItem("3D box", "box")
         controls.addWidget(self.shape)
+        self.shape_hint = QLabel(
+            "Choose the area shape, then click the surface to set its centre. "
+            "A 3D box uses the X, Y and Z size sliders; drag rotates the view.")
+        self.shape_hint.setObjectName("areaShapeHint")
+        self.shape_hint.setWordWrap(True)
+        self.shape_hint.setMinimumWidth(0)
+        controls.addWidget(self.shape_hint)
         self.size = QSlider(Qt.Orientation.Horizontal)
         self.size.setRange(1, 40)
         self.size.setValue(8)
@@ -206,15 +213,22 @@ class RegionFeedbackDialog(QDialog):
         controls.addWidget(QLabel("Area size · smaller ← → larger"))
         controls.addWidget(self.size)
         self.axes = []
+        self.axis_rows = []
         for label in ["X", "Y", "Z"]:
+            axis_row = QWidget()
+            axis_layout = QHBoxLayout(axis_row)
+            axis_layout.setContentsMargins(0, 0, 0, 0)
+            axis_layout.addWidget(QLabel(label))
             axis = QSlider(Qt.Orientation.Horizontal)
             axis.setRange(1, 60)
             axis.setValue(8)
             axis.setAccessibleName(label + " box half extent as percentage of original size")
             axis.setToolTip(label + " box half extent")
-            controls.addWidget(axis)
+            axis_layout.addWidget(axis, 1)
+            controls.addWidget(axis_row)
             axis.valueChanged.connect(self._update)
             self.axes.append(axis)
+            self.axis_rows.append(axis_row)
         self.status = QLabel()
         self.status.setWordWrap(True)
         self.status.setMinimumWidth(0)
@@ -301,7 +315,7 @@ class RegionFeedbackDialog(QDialog):
     def _selected(self, index):
         self._loading = True
         row = self._rows[index] if 0 <= index < len(self._rows) else None
-        for control in [self.action, self.shape, self.size, *self.axes, self.move, self.remove]:
+        for control in [self.action, self.move, self.remove]:
             control.setEnabled(row is not None)
         if row:
             self.center = tuple(row["center"])
@@ -474,10 +488,12 @@ class RegionFeedbackDialog(QDialog):
             self.move.setChecked(False)
         elif len(self._rows) < MAX_REGIONS:
             purpose, _, symptom = self._click_mode.partition(":")
-            self._rows.append(dict(version=EDIT_VERSION, source_sha256=self.model.sha256,
+            row = dict(version=EDIT_VERSION, source_sha256=self.model.sha256,
                 space="original_mesh_coordinates", center=center,
                 radius=self.diagonal * self.size.value() / 100,
-                symptom=symptom or "unsure", purpose=purpose))
+                symptom=symptom or "unsure", purpose=purpose)
+            self._set_area_shape(row)
+            self._rows.append(row)
             index = len(self._rows) - 1
         else:
             self.status.setText("Eight areas marked. Edit or remove a point to add another.")
@@ -523,9 +539,18 @@ class RegionFeedbackDialog(QDialog):
 
     def _update(self, *_):
         index = self.listing.currentRow()
-        if self._loading or index < 0:
+        if self._loading:
+            return
+        if index < 0:
+            self._render()  # Preselect shape/extent without creating or changing a mark.
             return
         row = self._rows[index]
+        self._set_area_shape(row)
+        if row.get("reconstruction") and self._fit_marking is not None:
+            self._bind_reconstruction(row)
+        self._render()
+
+    def _set_area_shape(self, row):
         if self.shape.currentData() == "box":
             half = self.diagonal * np.array([x.value() for x in self.axes]) / 100
             bounds = np.column_stack((np.asarray(row["center"]) - half,
@@ -536,9 +561,6 @@ class RegionFeedbackDialog(QDialog):
             row.pop("shape", None)
             row.pop("bounds", None)
             row.update(version=EDIT_VERSION, radius=self.diagonal * self.size.value() / 100)
-        if row.get("reconstruction") and self._fit_marking is not None:
-            self._bind_reconstruction(row)
-        self._render()
 
     def _remove(self):
         index = self.listing.currentRow()
@@ -551,8 +573,8 @@ class RegionFeedbackDialog(QDialog):
         index = self.listing.currentRow()
         boxed = self.shape.currentData() == "box"
         self.size.setVisible(not boxed)
-        for axis in self.axes:
-            axis.setVisible(boxed)
+        for axis_row in self.axis_rows:
+            axis_row.setVisible(boxed)
         counts = []
         current_counts = {}
         for row in self._rows:

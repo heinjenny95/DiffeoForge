@@ -2205,6 +2205,10 @@ def _launch_request(
     manifest: Mapping[str, Any],
     candidate: CalibrationStudyCandidateState,
 ) -> DesktopReferenceLaunchRequest:
+    from diffeoforge.pilot_adaptive_run import authorize_launch, marker
+
+    if marker(manifest.get("attachment_comparison", {})):
+        authorize_launch(root, manifest, candidate.candidate_id)
     from diffeoforge.reference_guard_failure import for_candidate
 
     failure = for_candidate(candidate)
@@ -2281,6 +2285,13 @@ class ReferenceCalibrationStudyRunner:
         snapshot = load_reference_calibration_study(self.study_directory)
         initial = _read_json(self.study_directory / STUDY_MANIFEST, "study")
         initial_config = load_config(self.study_directory / initial["source_config"]["copy"])
+        from diffeoforge.pilot_adaptive_run import marker as adaptive_marker
+
+        if (not getattr(self, "_bounded_adaptive_dispatch", False)
+                and adaptive_marker(initial.get("attachment_comparison", {}))):
+            from diffeoforge.pilot_adaptive_run import run as run_adaptive
+
+            return run_adaptive(self, event_callback, candidate_ids=candidate_ids)
         if not getattr(self, "_method_comparison_dispatch", False) and (
             pending(initial_config) or (
                 initial.get("attachment_comparison")
@@ -2360,6 +2371,12 @@ class ReferenceCalibrationStudyRunner:
             iteration_offset = (
                 0 if native_continuation else offset(manifest, candidate.candidate_id)
             )
+            from diffeoforge.pilot_adaptive_run import marker as adaptive_stage
+
+            if adaptive_stage(manifest.get("attachment_comparison", {})):
+                # This separately declared action starts its own cumulative
+                # budget. Effort in its incoming saved field is provenance.
+                iteration_offset = 0
             pipeline_started = time.monotonic()
             qualification_context = {}
             if checks_run is not None:

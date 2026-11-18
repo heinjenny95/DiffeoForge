@@ -508,8 +508,16 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     if retention and (not retention["available"] or not retention["automatic_start_allowed"]):
         available = False
         blocked = retention["reason"]
+    from diffeoforge.pilot_adaptive_native import eligible_seed
+
+    selected_parent = data["references"].get(seed["directory"])
+    if selected_parent is None and Path(seed["directory"]).resolve() == snapshot.study_directory:
+        selected_parent = snapshot
+    bounded_available = bool(selected_parent is not None and eligible_seed(
+        selected_parent, seed["candidate_id"]))
     return dict(
         goal="regional",
+        bounded_fit_available=bounded_available,
         title=("Improve remaining areas while retaining local detail" if recovery else
                "Improve marked areas and protect the rest"),
         reason=reason,
@@ -718,6 +726,9 @@ def bind(root, manifest, record):
                                        source=original['path'])
             verify_source(anchor_evaluation)
             retained = anchor_evaluation['endpoint']['path']
+    from diffeoforge.pilot_adaptive_run import marker as adaptive_marker
+
+    bounded = adaptive_marker(record)
     declaration = prepare(
         root / "regional-objective",
         fit_source,
@@ -735,7 +746,8 @@ def bind(root, manifest, record):
         guide_points=recipe["guide_points"],
         protection_close_distance=recipe.get('protection_close_distance'),
         protection_tolerance=recipe.get('protection_tolerance'),
-        **(dict(capture_profile=True, fixed_noise_divisor=recipe['fixed_noise_divisor'])
+        **(dict(capture_profile=not bool(bounded),
+                fixed_noise_divisor=recipe['fixed_noise_divisor'])
            if recipe.get('protected_capture') else {}),
     )
     import json

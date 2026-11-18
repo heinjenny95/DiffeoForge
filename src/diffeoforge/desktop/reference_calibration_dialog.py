@@ -2173,6 +2173,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         self.status.show()
         self._assessment = None
         self._snapshot = prepared.snapshot
+        from diffeoforge.pilot_adaptive_run import marker as adaptive_marker
+
+        if not adaptive_marker(self._snapshot.attachment_comparison):
+            self._bounded_adaptive_progress = None
         if not self._presentation_initialized:
             self.advanced_mode.blockSignals(True)
             self.advanced_mode.setChecked(bool(
@@ -3136,6 +3140,8 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                     self._open_common_saved_fit(identifier)
                 elif action == "common_retained":
                     self._open_guided_saved_fit(identifier)
+                elif action == "bounded_retained":
+                    self._open_guided_working_fit(*identifier)
                 elif action == "inspect_failed_template":
                     from diffeoforge.desktop.guided_diagnosis import inspect_template
 
@@ -4193,10 +4199,36 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
 
     @Slot(object)
     def _event(self, event: Mapping[str, object]) -> None:
+        if event["event"] == "bounded_adaptive_progress":
+            self._bounded_adaptive_progress = dict(event)
+            if event.get("snapshot") is not None:
+                self.study_directory = event["snapshot"].study_directory
+                self._render(event["snapshot"])
+            self.status.setText(str(event.get("message") or (
+                f"Adaptive correction: {event['spent']} / {event['total']} iterations "
+                f"used · {str(event['purpose']).replace('_', ' ')}.")))
+            self._thread_pool.indicator.label.setText(self.status.text())
+            return
+        if event["event"] == "adaptive_fit_finished":
+            self._bounded_adaptive_progress = None
+            self.study_directory = event["snapshot"].study_directory
+            self._render(event["snapshot"])
+            self.status.setText(
+                f"Adaptive correction stopped: {event['spent']} / {event['total']} "
+                f"iterations used. {event['reason']} Review the retained fit.")
+            self._thread_pool.indicator.label.setText(self.status.text())
+            return
         if event["event"] == "attachment_comparison_started":
             self.study_directory = event["snapshot"].study_directory
             self._render(event["snapshot"])
-            self.status.setText("Comparing two matching methods · 3 settings each. Review follows.")
+            if getattr(self, "_bounded_adaptive_progress", None):
+                progress = self._bounded_adaptive_progress
+                self.status.setText(
+                    f"Adaptive correction: {progress['spent']} / {progress['total']} "
+                    f"iterations used · {str(progress['purpose']).replace('_', ' ')}.")
+            else:
+                self.status.setText(
+                    "Comparing two matching methods · 3 settings each. Review follows.")
             return
         if (
             self._worker is not None
@@ -4383,6 +4415,13 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                     + (f" New optimizer: {payload['iteration']} of "
                        f"{payload['maximum_iterations']}; saved field retained." if offset else "")
                 )
+                bounded = getattr(self, "_bounded_adaptive_progress", None)
+                if bounded:
+                    used = int(bounded["spent"]) + int(payload["iteration"])
+                    self.status.setText(
+                        f"Adaptive correction: {used} / {bounded['total']} total iterations "
+                        f"· {str(bounded['purpose']).replace('_', ' ')} "
+                        f"({payload['iteration']} / {payload['maximum_iterations']}).")
             elif worker["kind"] == "phase":
                 self._progress_context.update(
                     candidate=candidate_id, phase=payload["message"], iteration=None

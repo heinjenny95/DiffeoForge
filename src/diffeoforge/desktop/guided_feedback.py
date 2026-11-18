@@ -286,14 +286,20 @@ def render_starting_fits(window, snapshot, identifier, layout, data):
                    r["reference"]["method"] ==
                    snapshot.attachment_comparison["methods"][identifier]]
     if same_method:
-        first = min(same_method, key=lambda r: r.get("trial_index", 0))["reference"]
+        first_choice = min(same_method, key=lambda r: r.get("trial_index", 0))
+        first = first_choice["reference"]
         if first != selected:
             inspect_first = QPushButton("Inspect first fit on this form")
             inspect_first.clicked.connect(lambda: window._open_guided_saved_fit(first))
             layout.addWidget(inspect_first)
             restore_first = QPushButton("Return to first fit as starting point")
-            restore_first.clicked.connect(lambda: window._start_pilot(adaptive=False,
-                guided_action=("adaptive_select_start", identifier, first)))
+            if first_choice.get("inspected", True):
+                restore_first.clicked.connect(lambda: window._start_pilot(adaptive=False,
+                    guided_action=("adaptive_select_start", identifier, first)))
+            else:
+                restore_first.setText("Inspect first fit before choosing it…")
+                restore_first.clicked.connect(lambda: window._open_guided_working_fit(
+                    identifier, first))
             layout.addWidget(restore_first)
     toggle = QPushButton("Choose / inspect an earlier fit…")
     toggle.setCheckable(True)
@@ -304,7 +310,8 @@ def render_starting_fits(window, snapshot, identifier, layout, data):
         row = QFrame()
         body = QVBoxLayout(row)
         caption = QLabel(choice["label"] + (
-            " · suitable" if choice["approved"] else " · inspected, not approved"))
+            " · suitable" if choice["approved"] else " · inspected, not approved"
+            if choice.get("inspected", True) else " · numerical result; anatomical review needed"))
         caption.setWordWrap(True)
         body.addWidget(caption)
         actions = QHBoxLayout()

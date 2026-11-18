@@ -1,9 +1,152 @@
 """Bound, endpoint-only dense evaluation of a regional pilot's learned field."""
 
+import copy
+import hashlib
 import json
 from pathlib import Path
 
 from diffeoforge.mesh import sha256_file
+
+
+def _cancellation(cancelled):
+    from diffeoforge.mesh_filter_worker import current_cancellation
+
+    callback = cancelled if cancelled is not None else current_cancellation()
+    if callback is not None and not callable(callback):
+        raise TypeError("Fixed-field cancellation must be callable")
+    callback = callback or (lambda: False)
+    if callback():
+        raise InterruptedError("Fixed-field checks cancelled; saved fields retained")
+    return callback
+
+
+def _prefix_identity(receipt):
+    if receipt is None:
+        return None
+    return dict(
+        source_run=str(Path(receipt["source_run"]).resolve()),
+        source_manifest_sha256=sha256_file(Path(receipt["source_run"]) / "manifest.json"),
+        controls_sha256=receipt["controls_sha256"], momenta_sha256=receipt["momenta_sha256"],
+        source_template_sha256=receipt.get("source_template_sha256"),
+        reference_source_sha256=receipt.get("reference_source", {}).get("sha256"),
+        endpoint_sha256=receipt["endpoint"]["sha256"], timepoints=receipt["timepoints"],
+        precision=receipt.get("precision", "float64"), integrator=receipt["integrator"],
+        prefix=_prefix_identity(receipt["prefix"]),
+    )
+
+
+def _native_key(config, inputs, seed, count, prefix, point_cloud):
+    run = Path(seed["source_run_directory"])
+    paths = [run / name for name in ("manifest.json", "result.json", "output-inventory.json",
+                                    "engine/model.xml", "engine/optimization_parameters.xml")]
+    paths.extend([inputs.control_points_path, inputs.momenta_path])
+    paths.extend(run / name for name in inputs.source_hashes)
+    for row in seed["files"].values():
+        if sha256_file(Path(row["copy"])) != row["sha256"]:
+            raise ValueError("Fixed Shooting source changed before endpoint reuse")
+    identity = dict(config=config, run=str(run.resolve()),
+        fields=[(str(Path(path).resolve()), sha256_file(path)) for path in paths],
+        source_files={role: row["sha256"] for role, row in seed["files"].items()},
+        subjects=seed["subject_labels"], prefix=_prefix_identity(prefix), count=count,
+        precision="float64", integrator="rk2", point_cloud=point_cloud,
+        surface_only=config["model"]["object_id"])
+    encoded = json.dumps(identity, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    return ("regional-native-endpoint-v1", hashlib.sha256(encoded).hexdigest())
+
+
+def _check_artifact(root, relative, digest):
+    path = root / relative
+    if (path.is_symlink() or not path.is_file()
+            or not path.resolve().is_relative_to(root.resolve()) or sha256_file(path) != digest):
+        raise ValueError("A cached fixed Shooting artifact changed or is missing")
+    return path
+
+
+def _snapshot_native(destination, paths, protected):
+    """Seal only fixed Shooting artifacts, never an Atlas run or later QC files."""
+    allowed = {"source", "engine", "output", "endpoints"}
+    files = {}
+    for path in destination.rglob("*"):
+        relative = path.relative_to(destination)
+        if path.is_symlink() or not path.resolve().is_relative_to(destination.resolve()):
+            raise ValueError("Fixed Shooting cache cannot contain linked artifacts")
+        if path.is_dir():
+            continue
+        if (relative.parts[0] not in allowed
+                and relative.as_posix() not in {"stdout.log", "stderr.log"}):
+            raise ValueError("Unexpected fixed Shooting artifact; cannot cache this scope")
+        files[relative.as_posix()] = sha256_file(path)
+    endpoints = {label: path.relative_to(destination).as_posix() for label, path in paths.items()}
+    if (not endpoints or any(name not in files for name in endpoints.values())
+            or any(files.get(name.replace("\\", "/")) != digest
+                   for name, digest in protected.items())):
+        raise ValueError("Fixed Shooting cache lacks its bound endpoint or protected inputs")
+    return dict(directory=destination.resolve(), files=files, endpoints=endpoints,
+                protected=copy.deepcopy(protected))
+
+
+def _copy_native(entry, destination, cancelled):
+    source = entry["directory"]
+    if destination.exists():
+        raise FileExistsError(destination)
+    if (destination.resolve().is_relative_to(source)
+            or source.is_relative_to(destination.resolve())):
+        raise ValueError("Cached fixed Shooting destinations must remain separate")
+    for relative, digest in entry["files"].items():
+        _check_artifact(source, relative, digest)
+    if cancelled():
+        raise InterruptedError("Fixed-field evaluation cancelled before endpoint reuse")
+    destination.mkdir(parents=True, exist_ok=False)
+    for relative, digest in entry["files"].items():
+        origin = _check_artifact(source, relative, digest)
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with origin.open("rb") as incoming, target.open("xb") as outgoing:
+            while data := incoming.read(1024 * 1024):
+                if cancelled():
+                    raise InterruptedError("Fixed-field endpoint reuse cancelled")
+                outgoing.write(data)
+        _check_artifact(destination, relative, digest)
+    paths = {label: destination / relative for label, relative in entry["endpoints"].items()}
+    return paths, copy.deepcopy(entry["protected"])
+
+
+def _shoot(config, inputs, seed, destination, count, prefix, *, point_cloud, cache,
+           cancelled, event_callback):
+    from diffeoforge.reference_fixed_shooting import shoot
+
+    def identity():
+        # A prefix replay can take time. Recheck every field after recursion,
+        # not only before it, and never trust the memoized endpoint's path alone.
+        field_inputs(Path(seed["source_run_directory"]), cache)
+        previous = prefix
+        while previous:
+            field_inputs(Path(previous["source_run"]), cache)
+            row = previous["endpoint"]
+            if sha256_file(Path(row["path"])) != row["sha256"]:
+                raise ValueError("A cached prefix endpoint changed")
+            previous = previous["prefix"]
+        return _native_key(config, inputs, seed, count, prefix, point_cloud)
+
+    key = identity() if cache is not None else None
+    if key is not None and key in cache:
+        entry = cache[key]
+        paths, protected = _copy_native(entry, destination, cancelled)
+        if identity() != key:
+            raise ValueError("Fixed Shooting inputs changed during endpoint reuse")
+        return paths, protected, dict(version=key[0], source=str(entry["directory"]),
+            identity=key[1], native_process_started=False,
+            scope="Byte-verified fixed Shooting artifact reuse, not a new native run")
+    options = dict(surface_only=config["model"]["object_id"], precision="float64", use_rk2=True,
+                   cancelled=cancelled, event_callback=event_callback)
+    if point_cloud:
+        options["point_cloud"] = True
+    paths, protected = shoot(config, Path("/"), seed, destination, count, **options)
+    if key is not None:
+        if identity() != key:
+            raise ValueError("Fixed Shooting inputs changed during evaluation")
+        cache[key] = _snapshot_native(destination, paths, protected)
+    return paths, protected, None
 
 
 def field_inputs(run, cache):
@@ -76,14 +219,14 @@ def evaluate_points(
     destination,
     *,
     count,
-    cancelled=lambda: False,
+    cancelled=None,
     event_callback=None,
     _seen=(),
     _cache=None,
 ):
     """Evaluate new material points only; controls/momenta never depend on their batch."""
+    cancelled = _cancellation(cancelled)
     from diffeoforge.mesh import read_vtk_points
-    from diffeoforge.reference_fixed_shooting import shoot
     from diffeoforge.regional_fit import _save, read_plan
 
     run, destination = Path(run), Path(destination)
@@ -126,21 +269,10 @@ def evaluate_points(
             ]
         },
     )
-    paths, protected = shoot(
-        config,
-        Path("/"),
-        seed,
-        destination,
-        count,
-        surface_only=config["model"]["object_id"],
-        precision="float64",
-        point_cloud=True,
-        use_rk2=True,
-        cancelled=cancelled,
-        event_callback=event_callback,
-    )
+    paths, protected, reuse = _shoot(config, inputs, seed, destination, count, prefix,
+        point_cloud=True, cache=_cache, cancelled=cancelled, event_callback=event_callback)
     path = paths[inputs.subject_labels[0]]
-    return dict(
+    receipt = dict(
         source_run=str(run),
         timepoints=count,
         prefix=prefix,
@@ -151,6 +283,9 @@ def evaluate_points(
         integrator="rk2",
         endpoint=dict(path=str(path), sha256=sha256_file(path)),
     )
+    if reuse:
+        receipt["native_endpoint_reuse"] = reuse
+    return receipt
 
 
 def evaluate(
@@ -158,14 +293,13 @@ def evaluate(
     destination,
     *,
     count=73,
-    cancelled=lambda: False,
+    cancelled=None,
     event_callback=None,
     _source=None,
     _seen=(),
     _cache=None,
 ):
-    from diffeoforge.reference_fixed_shooting import shoot
-
+    cancelled = _cancellation(cancelled)
     run, destination = Path(run), Path(destination)
     if run.resolve() in _seen or len(_seen) >= 12:
         raise ValueError("Cyclic or excessive residual field chain")
@@ -217,18 +351,8 @@ def evaluate(
             ]
         },
     )
-    endpoints, protected = shoot(
-        config,
-        Path("/"),
-        seed,
-        destination,
-        count,
-        surface_only=config["model"]["object_id"],
-        precision="float64",
-        use_rk2=True,
-        cancelled=cancelled,
-        event_callback=event_callback,
-    )
+    endpoints, protected, reuse = _shoot(config, inputs, seed, destination, count, prefix,
+        point_cloud=False, cache=_cache, cancelled=cancelled, event_callback=event_callback)
     path = endpoints[inputs.subject_labels[0]]
     receipt = dict(
         version="regional-field-evaluation-v1",
@@ -249,5 +373,7 @@ def evaluate(
         prefix=prefix,
         reference_source=reference_source,
     )
+    if reuse:
+        receipt["native_endpoint_reuse"] = reuse
     (destination / "evaluation.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt

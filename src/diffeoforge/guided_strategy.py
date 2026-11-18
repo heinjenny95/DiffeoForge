@@ -59,6 +59,10 @@ def _verify_reference(reference):
     if sha256_file(root / study.STUDY_MANIFEST) != reference["manifest_sha256"]:
         raise ValueError("Starting-method source manifest changed")
     parent = study.load_reference_calibration_study(root)
+    from diffeoforge.pilot_adaptive_run import trusted_reference
+
+    if trusted_reference(parent, reference):
+        return parent
     if _reference(parent, reference["candidate_id"], reference["target"]) != reference:
         raise ValueError("Starting-method fit, review or settings binding changed")
     return parent
@@ -67,9 +71,11 @@ def _verify_reference(reference):
 def _preference(snapshot):
     for event in reversed(study._load_events(snapshot.study_directory)):
         if event["event"] == "guided_starting_fit_selected":
-            from diffeoforge.guided_feedback import _same_source
+            from diffeoforge.guided_feedback import verify_choice_event
 
-            _same_source(snapshot, event["reference"])
+            verify_choice_event(snapshot,
+                                event.get("editing_candidate_id")
+                                or event["reference"]["candidate_id"], event)
             return event["reference"]
         if event["event"] == "guided_method_preference":
             reference = event["preference"]
@@ -611,7 +617,8 @@ def _marked_trial_direction(snapshot, context, chosen, *, fresh_only=False):
             reason="You marked an area that needs work. Prepare one local test that protects "
                    "the surrounding shape, then compare it with this saved fit.",
             request=dict(request=request, reference=seed, values=proposal["values"],
-                         goal=proposal["goal"], regions=regions, reviewed_next=True),
+                         goal=proposal["goal"], regions=regions, reviewed_next=True,
+                         bounded_fit_available=proposal.get("bounded_fit_available", False)),
         )))
     choices.sort(key=lambda row: row[0], reverse=True)
     if choices and (len(choices) == 1 or choices[0][0] > choices[1][0]):
@@ -659,7 +666,8 @@ def _prepare_fit_direction(snapshot, context, chosen):
             reason="This test compares the same marked areas on the selected saved fit. "
                    "Review the affected areas and the rest of the shape after the test.",
             request=dict(request=request, reference=selected, values=proposal["values"],
-                         goal=proposal["goal"], regions=regions),
+                         goal=proposal["goal"], regions=regions,
+                         bounded_fit_available=proposal.get("bounded_fit_available", False)),
         )
     if symptoms & {"alignment", "topology"}:
         return dict(direction, mode="inputs", current=selected,
@@ -708,7 +716,8 @@ def _prepare_return_direction(context, direction, chosen):
             "Review the new result before deciding if it is suitable.", quality,
         ))),
         request=dict(request=request, reference=reference, values=proposal["values"],
-                     goal=proposal["goal"], regions=regions),
+                     goal=proposal["goal"], regions=regions,
+                     bounded_fit_available=proposal.get("bounded_fit_available", False)),
     )
 
 
@@ -724,6 +733,11 @@ def trial_proposal(snapshot, identifier, symptom, *, context=None):
 def verify_strategy(info, record, manifest, study_root=None):
     """A new protocol has per-action scope, provenance and QC gates, not a total cap."""
     strategy = info.get("strategy")
+    from diffeoforge.pilot_adaptive_run import marker, verify_declaration
+
+    bounded = marker(record)
+    if bounded:
+        verify_declaration(study_root, manifest, record)
     if (not isinstance(strategy, dict) or info.get("coverage_extension")
             or info["screen_trial_limit"] is not None
             or type(info["screen_trials_spent"]) is not int or info["screen_trials_spent"] < 2):
@@ -756,7 +770,7 @@ def verify_strategy(info, record, manifest, study_root=None):
 
         verify_marker(strategy["failure_parent_recovery"], info, record, manifest)
     optimization = strategy.get("optimization")
-    if optimization:
+    if optimization and not bounded:
         from diffeoforge.guided_feedback import verify_reference
         from diffeoforge.guided_progress import iteration_limited
 
@@ -789,7 +803,7 @@ def verify_strategy(info, record, manifest, study_root=None):
                 or manifest["plan"]["baseline_effective_values"]
                 != optimization["reference"]["values"]):
             return False
-    elif info.get("goal") == "optimize":
+    elif info.get("goal") == "optimize" and not bounded:
         return False
     if strategy.get("regional_continuation"):
         if (not optimization or not strategy.get("regional_recipe")
@@ -854,6 +868,9 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     strategy.pop("common_candidate_step", None)
     strategy.pop("common_multiscale", None)
     strategy.pop("control_capacity_request", None)
+    # Every separately requested action needs its own declared budget. An old
+    # action marker must never leak into an ordinary or newly prepared successor.
+    strategy.pop("adaptive_fit", None)
     strategy["previous"] = dict(directory=str(snapshot.study_directory),
         manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))
     history = [*info["history"], dict(**strategy["previous"], outcome="adaptive_" + action)]
@@ -1089,8 +1106,21 @@ def transition(snapshot, action, identifier, *, goal=None):
         raise ValueError("Review the joint fit, or refine a failed form before continuing")
     with study.calibration_verification_scope():
         verified = study.load_reference_calibration_study(snapshot.study_directory)
-        plan = _plan_transition(verified, action, identifier, goal=goal)
-    result = guided._batch(**plan)
+        actual_action, actual_goal = action, goal
+        if action == "bounded_fit":
+            if (not isinstance(goal, dict)
+                    or goal.get("bounded_action") not in {
+                        "adaptive_recover", "adaptive_recover_start"} or "goal" not in goal):
+                raise ValueError("Choose the current reviewed adaptive correction first")
+            actual_action = goal["bounded_action"].removeprefix("adaptive_")
+            actual_goal = goal["goal"]
+        plan = _plan_transition(verified, actual_action, identifier, goal=actual_goal)
+    if action == "bounded_fit":
+        from diffeoforge.pilot_adaptive_run import prepare
+
+        result = prepare(plan)
+    else:
+        result = guided._batch(**plan)
     study._append_event(snapshot.study_directory, "guided_pilot_decision", dict(
         action="adaptive_" + action, candidate_id=identifier, goal=plan["goal"],
         next_directory=str(result.study_directory),

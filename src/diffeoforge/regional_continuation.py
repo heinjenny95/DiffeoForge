@@ -50,8 +50,78 @@ def physics(config):
     return dict(model=model, optimization=optimization, runtime=config["runtime"])
 
 
-def bundle(run):
+def bundle(run, *, require_cap=True):
     """Recheck prior actual staged geometry, accepted coefficients and input basis."""
+    return _verified_bundle(run, require_cap=require_cap, expected_scope=GUARD, regional=True)
+
+
+def ordinary_bundle(run, *, require_cap=False):
+    """Same finite-state proof for an explicitly NEW ordinary singleton scope.
+
+    This is a seed verifier only, not same-objective regional continuation.
+    The old public bundle() remains strictly regional and cap-only by default.
+    """
+    from diffeoforge.reference_ordinary_guard import DECLARATION
+
+    frozen = _verified_bundle(
+        run, require_cap=require_cap, expected_scope=DECLARATION, regional=False
+    )
+    from diffeoforge.pilot_adaptive_native import _normal_stop
+
+    _normal_stop(run, frozen)
+    return frozen
+
+
+def _ordinary_assets(run, config, inputs):
+    """Verify prepared ordinary scope and every protected input/runtime asset."""
+    from diffeoforge.reference_guard_assets import C5_SOURCE
+    from diffeoforge.reference_ordinary_guard import (
+        DECLARATION,
+        SCOPE,
+        runtime_source,
+        validate,
+    )
+
+    validate(config, len(inputs.subject_labels))
+    if _json(run / "engine/ordinary-scope.json") != SCOPE:
+        raise ValueError("The ordinary objective scope changed")
+    expected = {
+        "engine/finite_accepted_guard.py": C5_SOURCE,
+        "engine/ordinary_guard_runtime.py": runtime_source(),
+    }
+    policy = _json(run / "engine/guard-policy.json")
+    if policy.get("scope") != DECLARATION or any(
+        policy.get("modules", {}).get(Path(name).name) != hashlib.sha256(raw).hexdigest()
+        or (run / name).read_bytes() != raw
+        for name, raw in expected.items()
+    ):
+        raise ValueError("The ordinary accepted-field observer differs from its qualified scope")
+    rows = inputs.run_report.manifest.get("protected_artifacts") or []
+    required = set(expected) | {"engine/ordinary-scope.json", "engine/guard-policy.json"}
+    seen, assets = set(), []
+    for row in rows:
+        name = row["path"]
+        relative = Path(name)
+        path = (run / relative).resolve()
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or name in seen
+            or not path.is_relative_to(run)
+            or (run / relative).is_symlink()
+            or not path.is_file()
+            or path.stat().st_size != row["bytes"]
+            or sha256_file(path) != row["sha256"]
+        ):
+            raise ValueError("An ordinary protected input or runtime asset changed")
+        seen.add(name)
+        assets.append((path, relative, row["sha256"]))
+    if not required <= seen:
+        raise ValueError("The ordinary scope is missing protected runtime evidence")
+    return assets
+
+
+def _verified_bundle(run, *, require_cap, expected_scope, regional):
     from diffeoforge.regional_evaluation import field_inputs
     from diffeoforge.regional_fit import assets, read_plan
 
@@ -60,24 +130,29 @@ def bundle(run):
     config = inputs.run_report.manifest["effective_config"]
     provenance = config["project"].get("parameter_provenance", {})
     if (
-        provenance.get("finite_accepted_guard") != GUARD
+        provenance.get("finite_accepted_guard") != expected_scope
         or len(inputs.subject_labels) != 1
         or config["optimization"]["method"] != "lbfgs"
         or not config["optimization"]["freeze_template"]
         or not config["optimization"]["freeze_control_points"]
     ):
         raise ValueError("Same-objective continuation needs a newly guarded frozen singleton")
-    declaration = provenance.get("regional_fit")
-    if not declaration:
-        raise ValueError("Same-objective continuation needs a bound regional objective")
-    staged = run / "input/regional/plan.json"
-    if sha256_file(staged) != declaration["sha256"]:
-        raise ValueError("The actual staged regional plan differs from its declaration")
-    bound_config = copy.deepcopy(config)
-    bound_config["project"]["parameter_provenance"]["regional_fit"] = dict(
-        declaration, manifest=str(staged)
-    )
-    plan = read_plan(bound_config)
+    plan, staged, verified_assets = None, None, None
+    if regional:
+        declaration = provenance.get("regional_fit")
+        if not declaration:
+            raise ValueError("Same-objective continuation needs a bound regional objective")
+        staged = run / "input/regional/plan.json"
+        if sha256_file(staged) != declaration["sha256"]:
+            raise ValueError("The actual staged regional plan differs from its declaration")
+        bound_config = copy.deepcopy(config)
+        bound_config["project"]["parameter_provenance"]["regional_fit"] = dict(
+            declaration, manifest=str(staged)
+        )
+        plan = read_plan(bound_config)
+        verified_assets = assets(bound_config)
+    else:
+        verified_assets = _ordinary_assets(run, config, inputs)
     guard = run / "output/numerical-guard"
     if (guard / "violation.json").exists():
         raise ValueError("A failed guard cannot authorize numerical recovery")
@@ -92,7 +167,7 @@ def bundle(run):
         or basis.get("dtype") != cp.dtype.str
         or basis.get("sha256") != hashlib.sha256(cp.tobytes()).hexdigest()
         or basis.get("basis") != "staged_control_points"
-        or native.get("scope") != GUARD
+        or native.get("scope") != expected_scope
         or not isinstance(native.get("objective_fingerprint"), str)
     ):
         raise ValueError("Exact original native input control basis is not bound")
@@ -158,12 +233,22 @@ def bundle(run):
         or result.get("execution_error") is not None
         or type(cap) is not int
         or cap < 1
-        or not re.search(r"STOP:\s*TOTAL\s+NO\.\s*of\s+ITERATIONS\s+EXCEEDS\s+LIMIT", log, re.I)
+        or (
+            require_cap
+            and not re.search(
+                r"STOP:\s*TOTAL\s+NO\.\s*of\s+ITERATIONS\s+EXCEEDS\s+LIMIT", log, re.I
+            )
+        )
         or not iterations
-        or int(iterations[-1]) < cap
+        or (bool(iterations) and int(iterations[-1]) > cap)
+        or (require_cap and int(iterations[-1]) < cap)
         or re.search(
-            r"tolerance threshold met|number of line search loops exceeded|"
-            r"Traceback \(most recent call last\)|FloatingPointError:|RuntimeError:",
+            (
+                r"tolerance threshold met|number of line search loops exceeded|"
+                if require_cap
+                else ""
+            )
+            + r"Traceback \(most recent call last\)|FloatingPointError:|RuntimeError:",
             log,
             re.I,
         )
@@ -248,17 +333,23 @@ def bundle(run):
         folder / "receipt.json",
     ]
     files += [folder / name for name in receipt["files"]]
-    files += [source for source, _, _ in assets(bound_config)]
+    files += [source for source, _, _ in verified_assets]
     seals = {str(path): sha256_file(path) for path in files}
+    if any(seals[str(source)] != expected for source, _, expected in verified_assets):
+        raise ValueError("A staged objective or protected asset changed during field verification")
     identity = dict(
-        physics=physics(config), staged_plan_sha256=sha256_file(staged), actual_control_basis=basis
+        physics=physics(config),
+        staged_plan_sha256=sha256_file(staged) if staged else None,
+        actual_control_basis=basis,
     )
+    if not regional:
+        identity["ordinary_scope"] = expected_scope
     return dict(
         config=config,
         plan=plan,
         inputs=inputs,
         accepted=x.reshape(1, len(cp), 3),
-        assets=assets(bound_config),
+        assets=verified_assets,
         seals=seals,
         objective_sha256=_digest(identity),
         guard_objective_fingerprint=native["objective_fingerprint"],
@@ -267,6 +358,7 @@ def bundle(run):
         accepted_gradient_nonzero=bool(np.any(gradient != 0)),
         last_logged_native_iteration=int(iterations[-1]),
         accepted_native_iteration=accepted[-1]["native_iteration"],
+        objective_evaluations=len(evaluations),
     )
 
 
@@ -454,6 +546,27 @@ def marker(record):
     return (record.get("guided", {}).get("strategy") or {}).get("regional_continuation")
 
 
+def _bundle_for_record(record, run):
+    """Only a newly declared bounded action may reuse a normal tolerance stop.
+
+    Legacy prepared and running continuations retain their original cap-only
+    eligibility. The new marker cannot promote unknown or line-search stops.
+    """
+    adaptive = (record.get("guided", {}).get("strategy") or {}).get("adaptive_fit")
+    if adaptive is None:
+        return bundle(run)
+    from diffeoforge.pilot_adaptive_fit import VERSION as ADAPTIVE_VERSION
+    from diffeoforge.pilot_adaptive_fit import _contract
+    from diffeoforge.pilot_adaptive_native import _normal_stop
+
+    if adaptive.get("version") != ADAPTIVE_VERSION:
+        raise ValueError("Unsupported bounded native-stage declaration")
+    _contract(adaptive["contract"])
+    frozen = bundle(run, require_cap=False)
+    _normal_stop(run, frozen)
+    return frozen
+
+
 def bind(root, manifest, record):
     """Copy the actual old objective, never generate a finer mesh/new recipe/basis."""
     from diffeoforge.guided_feedback import verify_reference
@@ -470,7 +583,7 @@ def bind(root, manifest, record):
     parent = verify_reference(ref)
     candidate = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
     run = calibration_candidate_run_directory(candidate)
-    frozen = bundle(run)
+    frozen = _bundle_for_record(record, run)
     from diffeoforge import reference_guided_pilot as guided
 
     previous_recipe = (guided.record(parent).get("strategy") or {}).get("regional_recipe")
@@ -538,7 +651,7 @@ def verify(root, manifest, record):
     current = next(
         c for c in parent.candidates if c.candidate_id == continuation["reference"]["candidate_id"]
     )
-    frozen = bundle(calibration_candidate_run_directory(current))
+    frozen = _bundle_for_record(record, calibration_candidate_run_directory(current))
     from diffeoforge import reference_guided_pilot as guided
 
     previous_recipe = (guided.record(parent).get("strategy") or {}).get("regional_recipe")
@@ -577,7 +690,7 @@ def configure(config, record):
     candidate = next(
         c for c in parent.candidates if c.candidate_id == continuation["reference"]["candidate_id"]
     )
-    frozen = bundle(calibration_candidate_run_directory(candidate))
+    frozen = _bundle_for_record(record, calibration_candidate_run_directory(candidate))
     if (
         frozen["seals"] != continuation["source_seals"]
         or frozen["objective_sha256"] != continuation["objective_sha256"]

@@ -379,6 +379,19 @@ def _batch(
     if not selected or (phase != "joint" and len(selected) != 1):
         raise ValueError("A screening batch must bind exactly one independent pilot target")
     methods = tuple(methods)
+    from diffeoforge.pilot_adaptive_run import marker as adaptive_marker
+
+    bounded = adaptive_marker(dict(guided=dict(strategy=strategy or {})))
+    if bounded:
+        from diffeoforge.pilot_adaptive_fit import MAX_ITERATIONS
+        from diffeoforge.pilot_adaptive_fit import VERSION as BOUNDED_VERSION
+
+        cap = bounded.get("plan", {}).get("iterations")
+        if (bounded.get("version") != BOUNDED_VERSION or phase != "refine"
+                or type(cap) is not int or not 1 <= cap <= MAX_ITERATIONS
+                or len(methods) != 1 or len(selected) != 1):
+            raise ValueError("Invalid newly declared bounded single-form stage")
+        iterations = cap
     if not methods or not set(methods) <= {"current", "varifold"}:
         raise ValueError("Unknown matching method")
     limit = (screening_limit(source.plan) + (
@@ -392,7 +405,8 @@ def _batch(
     candidates = tuple(
         CalibrationCandidate(
             "guided-" + method,
-            method.title() + (" · " + multiscale["stage"] + " · shared broad/detail"
+            method.title() + (" · adaptive " + bounded["plan"]["purpose"] if bounded else
+                              " · " + multiscale["stage"] + " · shared broad/detail"
                               if multiscale else " · joint confirmation" if phase == "joint" else
                               " · protected local fit" if goal == "regional" else
                               " · atlas-model check" if goal == "shared_check" else ""),

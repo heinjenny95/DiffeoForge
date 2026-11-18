@@ -629,6 +629,8 @@ def preview_inputs(case, monkeypatch):
     study._write_yaml(case.candidate.config_path, case.config, overwrite=True)
 
     case.snapshot.study_directory = case.tmp / "preview-study"
+    case.snapshot.study_directory.mkdir()
+    study._append_event(case.snapshot.study_directory, "study_created", {})
     context = dict(case.data["context"], allowed={case.identifier: True})
     monkeypatch.setattr(guided_feedback, "selection", lambda *_: case.ref)
     monkeypatch.setattr(guided_feedback, "regions", lambda *_: case.data["regions"])

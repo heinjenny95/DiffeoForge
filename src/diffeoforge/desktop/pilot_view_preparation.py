@@ -83,6 +83,9 @@ def _guidance(snapshot, manifest):
         }
         context["input_topology"] = prepare_for_snapshot(snapshot, manifest)
         result = prepare_proposals(snapshot, context)
+        from diffeoforge.pilot_adaptive_run import presentation as adaptive_presentation
+
+        result['bounded_adaptive'] = adaptive_presentation(snapshot)
         result['qualification_pending'] = context['qualification_pending']
         declaration = snapshot.attachment_comparison.get('regional_objective')
         if declaration:

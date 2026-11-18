@@ -71,9 +71,13 @@ def verify_reference(ref):
     if sha256_file(root / study.STUDY_MANIFEST) != ref["manifest_sha256"]:
         raise ValueError("Preferred starting-fit manifest changed")
     parent = study.load_reference_calibration_study(root)
-    if (reference(parent, ref["candidate_id"], ref["target"]) != ref
-            or not inspected(parent, ref["candidate_id"])):
+    if reference(parent, ref["candidate_id"], ref["target"]) != ref:
         raise ValueError("Preferred starting fit or inspection binding changed")
+    if not inspected(parent, ref["candidate_id"]):
+        from diffeoforge.pilot_adaptive_run import trusted_reference
+
+        if not trusted_reference(parent, ref):
+            raise ValueError("Preferred starting fit or inspection binding changed")
     return parent
 
 
@@ -140,6 +144,40 @@ def _starting_warning_reasons(snapshot, identifier):
     return tuple(dict.fromkeys(reasons))
 
 
+def verify_choice_event(snapshot, identifier, event):
+    """A numerically reusable field is not, by itself, a human-inspected choice."""
+    kind = event["event"]
+    ref = event["preference" if kind == "guided_method_preference" else "reference"]
+    parent = _same_source(snapshot, ref)
+    from diffeoforge.pilot_adaptive_run import marker
+
+    # Historical ordinary choices already inherit verify_reference's inspection
+    # requirement. Only the new internal-field exception needs another witness.
+    if not marker(getattr(parent, "attachment_comparison", {})) or inspected(
+            parent, ref["candidate_id"]):
+        return parent
+    target = ref["target"]
+    scope = (event.get("display_scopes") or {}).get(target)
+    edit = event.get("region_edit") or {}
+    if (kind != "guided_starting_fit_selected"
+            or event.get("editing_candidate_id") != identifier
+            or event.get("inspected_subjects") != [target]
+            or not isinstance(scope, str) or not scope
+            or edit.get("version") != 2
+            or type(edit.get("recorded_at")) is not int or edit["recorded_at"] <= 0
+            or event.get("anatomical_approval_created") is not False
+            or event.get("optimizer_started") is not False):
+        raise ValueError("Inspect this internal field in the settled working-fit viewer first")
+    from diffeoforge.guided_working_fit import edits
+
+    rows = list(edits(snapshot, identifier, target))
+    expected = (edit["recorded_at"], (event.get("problem_regions") or {}).get(target, []),
+                target in edit.get("cleared", []))
+    if expected not in rows:
+        raise ValueError("The internal starting-fit choice has no verified inspected area edit")
+    return parent
+
+
 def starting_fit_choice(snapshot, identifier):
     """Expose a Better/quality conflict without silently choosing a different field.
 
@@ -167,7 +205,7 @@ def starting_fit_choice(snapshot, identifier):
             chosen = verify_selection(snapshot, identifier, event)
         elif kind in {"guided_starting_fit_selected", "guided_method_preference"}:
             chosen = event["reference" if kind == "guided_starting_fit_selected" else "preference"]
-            _same_source(snapshot, chosen)
+            verify_choice_event(snapshot, identifier, event)
             if (event.get("anatomical_approval_created") is not False
                     or event.get("optimizer_started") is not False
                     or chosen not in [row["reference"] for row in choices(snapshot, identifier)]):
@@ -208,7 +246,7 @@ def selection(snapshot, identifier):
         return retention["reference"]
     for event in reversed(study._load_events(snapshot.study_directory)):
         if event["event"] == "guided_method_preference":
-            _same_source(snapshot, event["preference"])
+            verify_choice_event(snapshot, identifier, event)
             return event["preference"]
         if (event["event"] == "guided_joint_starting_fit_selected"
                 and event["current"]["candidate_id"] == identifier):
@@ -216,7 +254,7 @@ def selection(snapshot, identifier):
 
             return verify_selection(snapshot, identifier, event)
         if event["event"] == "guided_starting_fit_selected":
-            _same_source(snapshot, event["reference"])
+            verify_choice_event(snapshot, identifier, event)
             return event["reference"]
         if (event["event"] == "guided_fit_feedback"
                 and event["current"]["candidate_id"] == identifier):
@@ -246,15 +284,20 @@ def choices(snapshot, identifier):
         if Path(other_info["origin"]).resolve() != Path(info["origin"]).resolve():
             raise ValueError("Pilot history belongs to another cohort")
         for candidate in other.candidates:
-            if not inspected(other, candidate.candidate_id):
-                continue
             try:
                 ref = reference(other, candidate.candidate_id)
             except ValueError:
                 continue
+            was_inspected = inspected(other, candidate.candidate_id)
+            if not was_inspected:
+                from diffeoforge.pilot_adaptive_run import trusted_reference
+
+                if not trusted_reference(other, ref):
+                    continue
             label = f"Test {other_info['screen_trials_spent']} · {candidate.label}"
             result.append(dict(reference=ref, label=label,
                 trial_index=other_info["screen_trials_spent"],
+                inspected=was_inspected,
                 approved=other.visual_reviews.get(candidate.candidate_id) is True,
                 current=other.study_directory == snapshot.study_directory
                         and identifier == candidate.candidate_id))
@@ -421,7 +464,9 @@ def region_state(snapshot, identifier, target, *, _seen=None, _search_history=Tr
 
 def select(directory, identifier, ref):
     snapshot = study.load_reference_calibration_study(directory)
-    _same_source(snapshot, ref)
+    parent = _same_source(snapshot, ref)
+    if not inspected(parent, ref["candidate_id"]):
+        raise ValueError("Inspect this saved field before selecting it as a working source")
     if ref not in [r["reference"] for r in choices(snapshot, identifier)]:
         raise ValueError("Choose a verified inspected fit from this form's saved history")
     study._append_event(snapshot.study_directory, "guided_starting_fit_selected", dict(

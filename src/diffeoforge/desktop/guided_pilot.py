@@ -30,6 +30,7 @@ def render(window, prepared):
     window.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
     info = record(snapshot)
     guidance = prepared.guidance
+    bounded_action = guidance.get("bounded_adaptive")
     starting_choice = next((row for row in guidance.get("feedback", {}).values()
                             if row and row.get("starting_fit_choice")), None)
     density_pair = snapshot.attachment_comparison.get("early_density_comparison")
@@ -124,6 +125,21 @@ def render(window, prepared):
     explanation.setObjectName("pilotScope")
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
+    if bounded_action:
+        effort = QLabel(
+            f"Adaptive correction · {bounded_action['spent']} / {bounded_action['total']} "
+            f"iterations used across all attempts · "
+            f"{bounded_action['stage_iterations']} maximum in this stage. "
+            f"{bounded_action['wall_seconds'] / 3600:g} h deadline includes preparation "
+            "and checks. Saved fits and approvals stay available.")
+        effort.setObjectName("adaptiveEffort")
+        effort.setWordWrap(True)
+        window.content_layout.addWidget(effort)
+        if bounded_action["closed"]:
+            note = QLabel(bounded_action["reason"] + " Anatomical review is still required.")
+            note.setObjectName("adaptiveResult")
+            note.setWordWrap(True)
+            window.content_layout.addWidget(note)
     if starting_choice and not running:
         from diffeoforge.desktop.guided_feedback import render_starting_choice
 
@@ -274,6 +290,10 @@ def render(window, prepared):
     if common_flow and not common_failure and info["phase"] != "joint" and info.get("target"):
         window.start_button.setText(f"{window.start_button.text()} · {info['target']}")
     can_run = bool(pending) and not failure_inspection
+    if bounded_action:
+        can_run = can_run and not bounded_action["closed"]
+        window.start_button.setText(
+            f"Run adaptive correction · ≤{bounded_action['total']} total iterations")
     window.start_button.setVisible(can_run)
     window.start_button.setEnabled(can_run and not running and not retry_blocked)
     window.start_button.setToolTip(
@@ -378,11 +398,23 @@ def render(window, prepared):
                     goal=direction.get("partial", False),
                 )
             elif mode == "trial":
+                from diffeoforge.pilot_adaptive_run import eligible as adaptive_eligible
+
+                bounded = (not common_flow
+                           and direction["request"].get("bounded_fit_available") is True
+                           and adaptive_eligible(direction["request"]))
                 direction_pinned = pin_action(
-                    window, snapshot, f"{direction['title']} · {direction['start_label']}",
-                    direction.get("action", "adaptive_recover_start"), direction["identifier"],
-                    "Prepare this one test. Fitting starts only when you choose Run.",
-                    goal=direction["request"],
+                    window, snapshot,
+                    ("Adaptive correction · ≤600 total iterations · " if bounded else
+                     direction['title'] + " · ") + direction['start_label'],
+                    "adaptive_bounded_fit" if bounded else direction.get(
+                        "action", "adaptive_recover_start"), direction["identifier"],
+                    ("Prepare short sealed stages under one 600-iteration and two-hour "
+                     "action limit. All comparison arms count; Run starts fitting." if bounded
+                     else "Prepare this one test. Fitting starts only when you choose Run."),
+                    goal=(dict(bounded_action=direction.get(
+                        "action", "adaptive_recover_start"), goal=direction["request"])
+                        if bounded else direction["request"]),
                 )
             elif mode == "density":
                 identifier = direction["identifier"]
@@ -469,6 +501,18 @@ def render(window, prepared):
                    "the starting fit and its red/green areas. Starts no fitting.")
         window.status.setText("Starting fit not selected. Review the reported checks, then "
                               "choose the exact saved fit to continue from.")
+
+    if bounded_action and not running and bounded_action.get("recommendation"):
+        retained = bounded_action["recommendation"]
+        # A numerical recommendation is viewable; it is not a saved human choice.
+        review = None
+        window.review_next_button.hide()
+        window._guided_footer_action = None
+        pin_action(window, snapshot, "Review retained adaptive fit · mark / edit areas…",
+                   "bounded_retained", (snapshot.candidates[0].candidate_id, retained),
+                   "Inspect the verified retained field. Save a starting fit and its marks "
+                   "explicitly before preparing another action.")
+        window.status.setText(bounded_action["reason"] + " Review the retained fit.")
 
     # Candidate identity is captured by each card's callbacks, never a shared selector.
     for candidate in snapshot.candidates:
@@ -956,6 +1000,11 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False,
         state.clear()
         state.update(proposed)
         state["request"] = request
+        from diffeoforge.pilot_adaptive_run import eligible as adaptive_eligible
+
+        state["bounded"] = (not common and selected is None
+                            and proposed.get("bounded_fit_available") is True
+                            and adaptive_eligible(proposed))
         explanation.setText(
             f"{proposed['reason']} "
             + ("Reuse a compatible saved single-form deformation on the same basis. "
@@ -979,7 +1028,14 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False,
                          "Inspect saved alternatives or select another adjustment below; "
                          "no repeat is prepared.")
         )
-        prepare.setText(proposed["title"] + " · prepare 1 trial on 1 specimen")
+        prepare.setText("Prepare adaptive correction · ≤600 total iterations"
+                        if state["bounded"] else
+                        proposed["title"] + " · prepare 1 trial on 1 specimen")
+        if state["bounded"]:
+            explanation.setText(
+                "Adaptive correction: ≤600 total iterations, including comparison tests; "
+                "2 h deadline from preparation. Check every red area and protect green "
+                "areas. Earlier fits stay saved. Anatomical review is required.")
         duplicates_footer = request == pinned_request
         explanation.setVisible(not duplicates_footer)
         prepare.setEnabled(proposed["available"] and not duplicates_footer)
@@ -998,12 +1054,15 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False,
 
     symptoms.currentIndexChanged.connect(update)
     alternatives.currentIndexChanged.connect(update)
-    prepare.clicked.connect(
-        lambda: window._start_pilot(
-            adaptive=False, guided_action=("adaptive_recover_start" if working else
-                                          "adaptive_recover", identifier, state["request"])
-        )
-    )
+    def prepare_selected():
+        action = "adaptive_recover_start" if working else "adaptive_recover"
+        payload = state["request"]
+        if state.get("bounded"):
+            payload = dict(bounded_action=action, goal=payload)
+            action = "adaptive_bounded_fit"
+        window._start_pilot(adaptive=False, guided_action=(action, identifier, payload))
+
+    prepare.clicked.connect(prepare_selected)
     update()
     if common:
         local = QPushButton("Prepare optional protected individual repair · "

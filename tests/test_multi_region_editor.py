@@ -80,11 +80,38 @@ def test_independent_boxes_and_all_areas_are_visible(editor):
     editor.axes[0].setValue(12)
     box = deepcopy(editor._rows[0])
     add(editor, (.5, 0, 0))
-    assert editor._rows[0] == box and editor._rows[1].get("shape") is None
+    assert editor._rows[0] == box and editor._rows[1].get("shape") == "box"
     v, f = np.asarray(editor.model.vertices), np.asarray(editor.model.triangles)
     colors = editor.canvas._surface_layer(v, f).face_colors
     assert np.any(np.all(colors[:, :3] == (129, 170, 149), axis=1))
     assert np.any(np.all(colors[:, :3] == (223, 94, 103), axis=1))
+
+
+@pytest.mark.parametrize("shape", ["sphere", "box"])
+def test_area_shape_can_be_preselected_and_reused_without_editing_earlier_marks(editor, shape):
+    assert editor.shape.isEnabled() and editor.size.isEnabled()
+    assert all(axis.isEnabled() for axis in editor.axes)
+    assert "click the surface to set its centre" in editor.shape_hint.text()
+    assert "X, Y and Z" in editor.shape_hint.text()
+    editor.shape.setCurrentIndex(editor.shape.findData(shape))
+    editor.size.setValue(5)
+    for axis, value in zip(editor.axes, (12, 8, 4), strict=True):
+        axis.setValue(value)
+    assert not editor._rows and not editor.save.isEnabled()
+    add(editor, (-.5, 0, 0))
+    previous = deepcopy(editor._rows[0])
+    add(editor, (.5, 0, 0))
+    assert editor._rows[0] == previous
+    assert editor.shape.currentData() == shape
+    if shape == "box":
+        assert all(mark["shape"] == "box" for mark in editor._rows)
+        first, second = [np.asarray(mark["bounds"]).reshape(3, 2) for mark in editor._rows]
+        np.testing.assert_allclose(np.diff(first), np.diff(second))
+        np.testing.assert_allclose(np.diff(first).ravel(),
+                                   editor.diagonal * np.array([.24, .16, .08]))
+    else:
+        assert all("shape" not in mark for mark in editor._rows)
+        assert editor._rows[1]["radius"] == previous["radius"]
 
 
 def test_empty_patch_blocks_batch_save_and_limit_still_allows_editing(editor):

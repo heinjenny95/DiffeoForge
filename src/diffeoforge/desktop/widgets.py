@@ -2003,6 +2003,9 @@ class DiffeoForgeWindow(QMainWindow):
             self._feature_mesh_loader, "Loading feature preview"
         )
         self._form_control_wheel_guard = _FormControlWheelGuard(self)
+        from diffeoforge.desktop.combo_wheel import install_combo_wheel_guard
+
+        install_combo_wheel_guard()
         for control_type in (QComboBox, QSpinBox, QDoubleSpinBox):
             for control in self.findChildren(control_type):
                 control.installEventFilter(self._form_control_wheel_guard)
@@ -6380,7 +6383,8 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.reference_calibration_status.setText(
             plan.summary_text() + "\n\nAutomatic coverage suggestion (heuristic):\n"
-            f"Suggested {suggestion['recommended_count']} subjects with a budget of {suggestion['budget']}. "
+            f"Suggested {suggestion['recommended_count']} subjects "
+            f"with a budget of {suggestion['budget']}. "
             f"Maximum remaining descriptor distance {suggestion['maximum_uncovered_distance']:.3g} "
             f"at a coverage radius of {suggestion['redundancy_threshold']:.3g}.\n"
             + coverage_text
@@ -9638,7 +9642,8 @@ class DiffeoForgeWindow(QMainWindow):
             and self.already_gpa_check.isChecked()
         )
         existing_alignment_sources = (
-            tuple((item.filename, item.sha256) for item in self._reference_recommendation.observations)
+            tuple((item.filename, item.sha256)
+                  for item in self._reference_recommendation.observations)
             if use_existing_alignment and recommendation_inputs_are_current
             and self._reference_recommendation is not None
             else None
@@ -10223,6 +10228,8 @@ class DiffeoForgeWindow(QMainWindow):
                 resolved, resolved / "events.jsonl", resolved / "study.json",
                 series_root / "visual-reviews.json", series_root / "specimen-sequence.json",
             )
+            if snapshot.final_config_path is not None:
+                watches += (snapshot.final_config_path,)
             return snapshot, watches
 
         self._pilot_status_loader.request_operation(key, inspect)
@@ -10283,11 +10290,9 @@ class DiffeoForgeWindow(QMainWindow):
                 "Inspect pilot calibration issue" if self._pilot_status_error
                 else "Checking saved pilot…"
             )
-        if snapshot.status == "completed":
+        if snapshot.status == "completed" and snapshot.final_config_path is not None:
             return "Apply completed pilot calibration"
-        if snapshot.status == "awaiting_review":
-            return "Review pilot results & choose parameters"
-        return "Continue pilot calibration"
+        return "Open saved pilot…"
 
     def _refresh_reference_calibration_execution_card(self) -> None:
         reference = self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
@@ -10400,11 +10405,11 @@ class DiffeoForgeWindow(QMainWindow):
                 and self._reference_readiness is not None and self._reference_readiness.ready
             )
             return
+        apply_ready = snapshot.status == "completed" and snapshot.final_config_path is not None
         self.reference_calibration_execution_status.setObjectName(
-            "statusSuccess" if snapshot.status == "completed" else "status"
-        )
+            "statusSuccess" if apply_ready else "status")
         self.reference_calibration_execution_status.setStyleSheet("")
-        if snapshot.status == "completed":
+        if apply_ready:
             self.open_reference_calibration_button.setText(
                 "Apply completed pilot-selected parameters…"
             )
@@ -10415,18 +10420,16 @@ class DiffeoForgeWindow(QMainWindow):
             )
         elif snapshot.status == "awaiting_review":
             assert snapshot.current_stage is not None
-            self.open_reference_calibration_button.setText(
-                "Review pilot results & choose parameters…"
-            )
+            self.open_reference_calibration_button.setText("Open saved pilot…")
             complete = sum(candidate.status == "completed" for candidate in snapshot.candidates)
             message = (
                 f"Stage {snapshot.current_stage.order}/"
-                f"{len(snapshot.plan.stages)} finished running · {complete}/"
-                f"{len(snapshot.candidates)} candidates complete. No candidate will be "
-                "rerun: open the review to choose the parameter set and continue."
+                f"{len(snapshot.plan.stages)} · {complete}/"
+                f"{len(snapshot.candidates)} candidates complete. Open the saved pilot "
+                "to inspect its current result and continue its remaining checks."
             )
         else:
-            self.open_reference_calibration_button.setText("Continue pilot calibration…")
+            self.open_reference_calibration_button.setText("Open saved pilot…")
             assert snapshot.current_stage is not None
             complete = sum(candidate.status == "completed" for candidate in snapshot.candidates)
             message = (

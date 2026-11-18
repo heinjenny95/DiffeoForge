@@ -17,6 +17,11 @@ import numpy as np
 _CANCELLATION = ContextVar("mesh_filter_cancellation", default=None)
 
 
+def current_cancellation():
+    """Share one operation's cooperative stop with nested fixed-field checks."""
+    return _CANCELLATION.get()
+
+
 @contextmanager
 def mesh_filter_cancellation(cancelled):
     """Bind cancellation to one operation/thread, including nested surface checks."""

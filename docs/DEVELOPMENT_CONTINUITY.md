@@ -1,5 +1,18 @@
 # Development continuity
 
+## dev224 — bounded adaptive correction and pilot interaction stabilization
+
+New eligible individual red/fixed corrections can share a durable allowance of
+at most 600 optimizer updates across continuation and controlled residual tests.
+The exact selected field and physical objective remain bound; failed quality
+results do not silently become new seeds. Preparation and checks share the
+declared deadline. The interface reports cumulative effort and opens the verified
+retained result for explicit review. Existing contracts and approvals stay intact.
+Unfinished-pilot emphasis, closed-dropdown wheel handling, pre-first-point 3D box
+settings and exact repeated endpoint reuse accompany this stabilization. See
+[behavior, acceptance and limits](BOUNDED_ADAPTIVE_CORRECTION.md). Native scientific
+validation and tested package installation remain separate completion gates.
+
 ## dev223 — make a provisional starting-fit choice explicit
 
 Better feedback with unresolved quality checks no longer silently selects an

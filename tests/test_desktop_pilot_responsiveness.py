@@ -61,8 +61,10 @@ def test_slow_pilot_status_keeps_event_loop_live_and_is_not_repeated(
 ):
     app, window, snapshot = pilot_window
     real_load = module.load_reference_calibration_study
+    real_resolve = module.latest_reference_calibration_search_extension_directory
     started, release = threading.Event(), threading.Event()
     calls = []
+    resolution_calls = []
     gui_thread = threading.get_ident()
 
     def slow_load(directory):
@@ -71,7 +73,12 @@ def test_slow_pilot_status_keeps_event_loop_live_and_is_not_repeated(
         assert release.wait(5)
         return real_load(directory)
 
+    def resolve(directory):
+        resolution_calls.append(threading.get_ident())
+        return real_resolve(directory)
+
     monkeypatch.setattr(module, "load_reference_calibration_study", slow_load)
+    monkeypatch.setattr(module, "latest_reference_calibration_search_extension_directory", resolve)
     ticks = []
     timer = QTimer()
     timer.timeout.connect(lambda: ticks.append(time.monotonic()))
@@ -107,7 +114,10 @@ def test_slow_pilot_status_keeps_event_loop_live_and_is_not_repeated(
     assert window._reference_calibration_action_text() == "Inspect pilot calibration issue"
     for _ in range(20):
         window._saved_pilot_status(window._reference_calibration_context())
-    assert len(calls) == 2
+    # Tampered source manifests fail during verified successor resolution,
+    # before the final study loader. The rejected lookup is still cached.
+    assert len(resolution_calls) == 2 and gui_thread not in resolution_calls
+    assert len(calls) == 1
 
 
 def test_old_status_cannot_follow_a_project_switch(pilot_window):
@@ -129,13 +139,13 @@ def test_explicit_open_reverifies_tampered_evidence_despite_cached_status(
     assert window._pilot_status_snapshot is not None
     (snapshot.study_directory / "study.json").write_text("{}", encoding="utf-8")
     failures, finished, threads = [], [], []
-    real_load = module.load_reference_calibration_study
+    real_resolve = module.latest_reference_calibration_search_extension_directory
 
-    def load(directory):
+    def resolve(directory):
         threads.append(threading.get_ident())
-        return real_load(directory)
+        return real_resolve(directory)
 
-    monkeypatch.setattr(module, "load_reference_calibration_study", load)
+    monkeypatch.setattr(module, "latest_reference_calibration_search_extension_directory", resolve)
     monkeypatch.setattr(module.QMessageBox, "warning", lambda *args: failures.append(args[2]))
     monkeypatch.setattr(window, "_finish_reference_calibration", finished.append)
     window._open_reference_calibration()
