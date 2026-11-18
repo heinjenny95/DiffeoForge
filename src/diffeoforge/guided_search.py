@@ -11,12 +11,14 @@ def inputs(snapshot, identifier, context, *, regions_override=None, allow_contin
     from diffeoforge.guided_feedback import (
         local_strategy_reference,
         regions,
+        require_starting_fit_choice,
         selection,
         severe_regression,
         verify_reference,
     )
     from diffeoforge.guided_strategy import _candidate, _reference, _target
 
+    require_starting_fit_choice(snapshot, identifier)
     anchor = selection(snapshot, identifier)
     current = _candidate(snapshot, identifier, allow_unreviewed=bool(anchor))
     target = _target(snapshot, identifier)

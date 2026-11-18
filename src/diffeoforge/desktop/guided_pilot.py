@@ -30,6 +30,8 @@ def render(window, prepared):
     window.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
     info = record(snapshot)
     guidance = prepared.guidance
+    starting_choice = next((row for row in guidance.get("feedback", {}).values()
+                            if row and row.get("starting_fit_choice")), None)
     density_pair = snapshot.attachment_comparison.get("early_density_comparison")
     common_flow = (
         info["phase"] == "joint"
@@ -122,6 +124,15 @@ def render(window, prepared):
     explanation.setObjectName("pilotScope")
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
+    if starting_choice and not running:
+        from diffeoforge.desktop.guided_feedback import render_starting_choice
+
+        choice_card = QFrame(window.content)
+        choice_card.setObjectName("card")
+        choice_card.setProperty("startingFitChoice", True)
+        render_starting_choice(window, starting_choice["starting_fit_choice"]["identifier"],
+                               QVBoxLayout(choice_card), starting_choice)
+        window.content_layout.addWidget(choice_card)
     if review and review["pending"]:
         target_note = QLabel(review["label"] if common_flow else review["explanation"])
         target_note.setObjectName("pilotReviewTarget")
@@ -313,7 +324,7 @@ def render(window, prepared):
         elif common_failure.get("reference"):
             pin_action(window, snapshot, common_failure["label"], "common_retained",
                        common_failure["reference"], common_failure["message"])
-    if not running and not unresolved and not common_failure:
+    if not running and not unresolved and not common_failure and not starting_choice:
         for identifier, following in next_forms.items():
             if following.get("available"):
                 if ((following.get("common_reuse") or {}).get("mode") in {"review", "feedback"}
@@ -335,11 +346,11 @@ def render(window, prepared):
                 break
 
     direction_pinned = False
-    direction = guidance.get("fit_direction")
+    direction = None if starting_choice else guidance.get("fit_direction")
     marked_direction = bool(direction and direction["mode"] == "trial" and not common_flow
                             and direction["request"]["goal"] == "regional")
     offers = guidance.get("density_comparisons", {})
-    if not running and not unresolved and not common_failure:
+    if not running and not unresolved and not common_failure and not starting_choice:
         pin_recovery(
             window, snapshot, guidance.get("common_recovery"), current_target=info.get("target"),
         )
@@ -397,6 +408,8 @@ def render(window, prepared):
             window.content_layout.addWidget(InfoDisclosure("Optional control-point test", density))
 
     def recovery_tools(candidate, layout):
+        if starting_choice:
+            return  # No parameter adjustment may silently select an older field.
         if (direction and direction.get("explicit_start")
                 and direction["identifier"] != candidate.candidate_id):
             # Choosing the other method is still explicit on its card. Do not
@@ -414,7 +427,7 @@ def render(window, prepared):
         layout.addWidget(InfoDisclosure("Other adjustments and input checks", panel))
 
     def action(layout, label, kind, identifier, *, goal=None, available=True, fixed=False):
-        enabled = not running and not unresolved and available
+        enabled = not running and not unresolved and available and not starting_choice
         dispatch = kind if kind == "finish_joint" else "adaptive_" + kind
         if fixed and enabled and pin_action(
             window, snapshot, label, dispatch, identifier, "Prepare the next pilot step.",
@@ -432,10 +445,11 @@ def render(window, prepared):
         return button
 
     def emphasize_next_action():
-        if not (common_flow or window._guided_footer_action or marked_direction
+        if not (starting_choice or common_flow or window._guided_footer_action or marked_direction
                 or (review and review["pending"])):
             return
         primary = (
+            window.next_step_button if starting_choice else
             window.review_next_button if review and review["pending"]
             and not window.review_next_button.isHidden()
             else window.next_step_button if window._guided_footer_action
@@ -446,6 +460,15 @@ def render(window, prepared):
         for button in (window.review_next_button, window.next_step_button, window.start_button):
             _set_action_emphasis(button, button is primary and not button.isHidden()
                                  and button.isEnabled())
+
+    if starting_choice and not running and not unresolved:
+        pending_choice = starting_choice["starting_fit_choice"]
+        pin_action(window, snapshot, "Choose starting fit…", "fit_direction_choose_start",
+                   dict(starting_fit_choice=pending_choice, choices=starting_choice["choices"]),
+                   "Inspect the latest fit or the earlier comparison, then explicitly save "
+                   "the starting fit and its red/green areas. Starts no fitting.")
+        window.status.setText("Starting fit not selected. Review the reported checks, then "
+                              "choose the exact saved fit to continue from.")
 
     # Candidate identity is captured by each card's callbacks, never a shared selector.
     for candidate in snapshot.candidates:
@@ -591,6 +614,9 @@ def render(window, prepared):
                 + ", ".join(failures)
                 + ". Atlas checks remain separate."
                 if decision is True and failures else
+                "This attempt reports: " + ", ".join(failures)
+                + ". Choose the saved starting fit explicitly before another correction."
+                if failures and starting_choice else
                 "This attempt fails: " + ", ".join(failures)
                 + ". It will not replace your retained starting fit."
                 if failures else
@@ -672,7 +698,7 @@ def render(window, prepared):
                 layout.addWidget(reason)
             accepted_fit(window, candidate.candidate_id, layout,
                          guidance.get("accepted_fits", {}).get(candidate.candidate_id)
-                         if decision is not True else None)
+                         if decision is not True and not starting_choice else None)
             if decision is True and snapshot.attachment_comparison.get("regional_objective"):
                 check = guidance.get("shared_model_checks", {}).get(candidate.candidate_id)
                 if check and check["available"]:

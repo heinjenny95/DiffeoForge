@@ -114,10 +114,95 @@ def local_strategy_reference(snapshot, role):
     return ref
 
 
+def _starting_warning_reasons(snapshot, identifier):
+    candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
+    subjects = (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
+    flags = (
+        ("no_new_intersection_flags", "New surface-intersection flags need review."),
+        ("spatial_resolution_sufficient", "Source-surface resolution checks did not pass."),
+        ("temporal_grid_stable", "Saved-field time-resolution checks did not pass."),
+        ("outside_preserved", "The surrounding shape was not preserved by the numerical checks."),
+        ("explicit_fixed_preserved",
+         "An explicitly retained area did not pass its position check."),
+        ("transition_preserved", "The marked area's transition did not pass its surface check."),
+        ("shape_preserved", "A retained shape did not pass its shape check."),
+    )
+    reasons = []
+    for row in subjects.values():
+        if row.get("refinement_guard", {}).get("severe") is True:
+            reasons.append("The full-surface comparison reports a substantial regression.")
+        for kind in ("regional_quality", "ordinary_quality", "cohort_quality"):
+            quality = row.get(kind)
+            if not quality or quality.get("numerical_selection_suitable") is not False:
+                continue
+            found = [message for flag, message in flags if quality.get(flag) is False]
+            reasons.extend(found or ["The saved fit did not pass its numerical selection checks."])
+    return tuple(dict.fromkeys(reasons))
+
+
+def starting_fit_choice(snapshot, identifier):
+    """Expose a Better/quality conflict without silently choosing a different field.
+
+    Existing feedback journals remain unchanged. Only a newer, verified explicit
+    inspected starting-fit choice resolves the conflict; a Better rating itself
+    never changes numerical eligibility or creates anatomical approval.
+    """
+    feedback = list(_local_events(snapshot, identifier))
+    if (not feedback or feedback[-1]["outcome"] != "better"
+            or not severe_regression(snapshot, identifier)):
+        return None
+    latest = feedback[-1]
+    current, comparison = latest["current"], latest["comparison"]
+    _same_source(snapshot, current)
+    previous = _same_source(snapshot, comparison)
+    events = study._load_events(snapshot.study_directory)
+    position = next(i for i in reversed(range(len(events))) if events[i] == latest)
+    for event in reversed(events[position + 1:]):
+        kind = event["event"]
+        if kind == "guided_joint_starting_fit_selected":
+            if event["current"]["candidate_id"] != identifier:
+                continue
+            from diffeoforge.guided_accepted_fit import verify_selection
+
+            chosen = verify_selection(snapshot, identifier, event)
+        elif kind in {"guided_starting_fit_selected", "guided_method_preference"}:
+            chosen = event["reference" if kind == "guided_starting_fit_selected" else "preference"]
+            _same_source(snapshot, chosen)
+            if (event.get("anatomical_approval_created") is not False
+                    or event.get("optimizer_started") is not False
+                    or chosen not in [row["reference"] for row in choices(snapshot, identifier)]):
+                raise ValueError("The explicit starting-fit choice is not a verified inspected fit")
+        else:
+            continue
+        return None
+    reasons = _starting_warning_reasons(snapshot, identifier)
+    info = guided.record(snapshot)
+    earlier = guided.record(previous)
+    return dict(
+        choice_required=True, identifier=identifier, current=current, latest=current,
+        comparison=comparison, target=current["target"], reasons=reasons, warnings=reasons,
+        latest_label=f"{current['method'].title()} · Test {info['screen_trials_spent']}",
+        comparison_label=f"{comparison['method'].title()} · Test {earlier['screen_trials_spent']}",
+        feedback_sequence=latest.get("sequence", position),
+        reason="You rated the latest fit Better, but its quality checks still need review. "
+               "Choose the inspected starting fit explicitly before preparing another test. "
+               "No earlier fit has been selected automatically.",
+    )
+
+
+def require_starting_fit_choice(snapshot, identifier):
+    """Fresh preparation gate; presentation state cannot authorize a seed choice."""
+    pending = starting_fit_choice(snapshot, identifier)
+    if pending:
+        raise ValueError(pending["reason"])
+
+
 def selection(snapshot, identifier):
     """Latest explicit preference wins; no geometry metric invents a human preference."""
     from diffeoforge.retained_mark_source import context as retained_context
 
+    if starting_fit_choice(snapshot, identifier):
+        return None
     retention = retained_context(snapshot, identifier)
     if retention and retention["available"] and retention["automatic_start_allowed"]:
         return retention["reference"]
@@ -184,6 +269,7 @@ def presentation(snapshot, identifier):
         return None
     with study.calibration_verification_scope():
         rows = choices(snapshot, identifier)
+        pending_choice = starting_fit_choice(snapshot, identifier)
         comparison = local_strategy_reference(snapshot, "baseline")
         selected = selection(snapshot, identifier)
         current = None
@@ -202,6 +288,7 @@ def presentation(snapshot, identifier):
         joint_blocked = rejected_joint(snapshot, selected) if selected and any(
             row["reference"] == selected and row["approved"] for row in rows) else None
         return dict(choices=rows, comparison=comparison, selected=selected,
+                    starting_fit_choice=pending_choice,
                     retention_context=retained_context(snapshot, identifier),
                     joint_blocked=joint_blocked,
                     current_inspected=bool(current and inspected(snapshot, identifier)),
@@ -210,7 +297,8 @@ def presentation(snapshot, identifier):
                     cleared_region_subjects=[info["target"]] if region_state(
                         snapshot, identifier, info["target"])[1] else [],
                     # An old chain without feedback starts with an explicit user choice.
-                    needs_direction=bool(comparison and not feedback and not explicitly_selected))
+                    needs_direction=bool(pending_choice or comparison and not feedback
+                                         and not explicitly_selected))
 
 
 def save_feedback(directory, identifier, decision):

@@ -202,11 +202,16 @@ def _read_state(snapshot):
                           for c in snapshot.candidates if c.status == "completed"},
                 allowed={c.candidate_id: starting_allowed(snapshot, c.candidate_id)
                          for c in snapshot.candidates if c.status == "completed"})
+    pending_starts = [data["starting_fit_choice"] for data in result["feedback"].values()
+                      if data and data.get("starting_fit_choice")]
+    result["starting_fit_choice"] = max(
+        pending_starts, key=lambda row: row["feedback_sequence"], default=None)
     result["provisional_comparison"] = provisional_comparison(snapshot, context=result)
     from diffeoforge.guided_early_density import preview as density_comparison
 
     result["density_comparisons"] = {
         c.candidate_id: option for c in snapshot.candidates
+        if not (result["feedback"].get(c.candidate_id) or {}).get("starting_fit_choice")
         if (option := density_comparison(snapshot, c.candidate_id, result)) is not None
     }
     from diffeoforge.guided_failed_parent import preview
@@ -312,6 +317,8 @@ def prepare_proposals(snapshot, context):
         chosen = _explicit_start(snapshot, context)
         for candidate in snapshot.candidates:
             identifier = candidate.candidate_id
+            if (context["feedback"].get(identifier) or {}).get("starting_fit_choice"):
+                continue  # No cached adjustment may silently invent a working source.
             if candidate.status == "failed":
                 if (context.get("failed_parents", {}).get(identifier) or {}).get("available"):
                     from diffeoforge.guided_failed_parent import inputs as parent_inputs
@@ -347,7 +354,9 @@ def prepare_proposals(snapshot, context):
                     request: working.propose(parent, request, working_data) for request in requests}
         from diffeoforge.pilot_capped_direction import preview as capped_direction
 
-        context["fit_direction"] = (capped_direction(snapshot, context, chosen)
+        pending = context.get("starting_fit_choice")
+        context["fit_direction"] = (dict(pending, mode="choose_start") if pending else
+                                    capped_direction(snapshot, context, chosen)
                                     or _selected_start_direction(snapshot, context, chosen)
                                     or _marked_trial_direction(snapshot, context, chosen,
                                                                fresh_only=True)
@@ -1030,6 +1039,13 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
 
 def transition(snapshot, action, identifier, *, goal=None):
     """Called under the existing transition lock; never dispatch an optimizer."""
+    if action not in {"restore_accepted", "working_start", "select_start", "feedback", "prefer"}:
+        from diffeoforge.guided_feedback import require_starting_fit_choice
+
+        identifiers = ([identifier] if identifier is not None else
+                       [candidate.candidate_id for candidate in snapshot.candidates])
+        for current_id in identifiers:
+            require_starting_fit_choice(snapshot, current_id)
     if action == "multiscale_detail":
         from diffeoforge.pilot_multiscale_study import prepare_detail
 

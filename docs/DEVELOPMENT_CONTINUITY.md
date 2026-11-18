@@ -1,5 +1,16 @@
 # Development continuity
 
+## dev223 — make a provisional starting-fit choice explicit
+
+Better feedback with unresolved quality checks no longer silently selects an
+older comparison. The pilot lists the reasons and both saved sources, then asks
+the researcher to inspect and explicitly save a starting fit. Cached proposals,
+fresh preparation and direct transition paths all respect that decision gate.
+Narrower local reviews can offer editable green preservation drafts; overlapping
+removed regions are explained rather than silently converted. Numerical checks,
+existing prepared/running contracts and saved approvals remain unchanged. See
+[starting-fit choice and retained areas](PILOT_STARTING_FIT_CHOICE.md).
+
 ## dev222 — selectable live preview detail
 
 The pilot's live display offers Light (1,600 triangles per surface), Balanced

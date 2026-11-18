@@ -172,26 +172,46 @@ def partial_mark_draft(snapshot, reference):
     """Draft Retain marks from an explicit narrower review of this exact saved fit."""
     identifier, target = reference["candidate_id"], reference["target"]
     if (not snapshot.attachment_comparison.get("regional_objective")
-            or snapshot.visual_reviews.get(identifier) is not False):
+            or snapshot.visual_reviews.get(identifier) is True):
+        return None
+    from diffeoforge.guided_feedback import inspected, region_state
+    from diffeoforge.guided_feedback import reference as bound_reference
+
+    # A feedback-only Better inspection can narrow its marks just like a formal
+    # unsuitable review. Suggestions are tied to that exact inspected endpoint;
+    # merely deleting a mark still records no preservation instruction.
+    if (not inspected(snapshot, identifier)
+            or bound_reference(snapshot, identifier, target) != reference):
         return None
     prepared = (guided.record(snapshot).get("feedback") or {}).get("regions", [])
-    reviewed = snapshot.problem_regions.get(identifier, {}).get(target, [])
+    reviewed, cleared = region_state(snapshot, identifier, target)
+    if cleared:
+        return None
     problems = _problem_marks(reviewed)
     if not 0 < len(problems) < len(_problem_marks(prepared)):
         return None
     draft = list(reviewed)
     suggested = 0
+    skipped_overlap = 0
     for area in _problem_marks(prepared):
         if len(draft) >= MAX_REGIONS:
             break
+        if any(area.get("center") is not None
+               and area.get("center") == marked.get("center")
+               and area.get("space") == marked.get("space")
+               and area.get("source_sha256") == marked.get("source_sha256")
+               for marked in reviewed):
+            continue  # The same marked point is still present, possibly resized.
         if any(_overlaps(area, marked) for marked in draft):
+            skipped_overlap += 1
             continue
         retained = dict(area, purpose="fixed")
         if retained["version"] == VERSION:
             retained["version"] = EDIT_VERSION
         draft.append(retained)
         suggested += 1
-    return dict(marks=draft, suggested=suggested, remaining=len(problems))
+    return dict(marks=draft, suggested=suggested, remaining=len(problems),
+                skipped_overlap=skipped_overlap)
 
 
 def _return_direction(snapshot, context, identifier, reference, reason, *, draft=None):

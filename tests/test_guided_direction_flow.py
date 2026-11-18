@@ -592,7 +592,11 @@ def test_rejected_protected_fit_offers_bound_input_check(
     direction = guidance["fit_direction"]
     assert sha256_file(journal) == digest
     if not offers_inputs:
-        assert direction is None
+        # Better plus failed quality no longer silently keeps the earlier field.
+        assert direction["mode"] == "choose_start"
+        assert direction["latest"] == guided_feedback.reference(reopened, identifier)
+        assert guided_feedback.selection(reopened, identifier) is None
+        assert guided_feedback.severe_regression(reopened, identifier)
         return
     assert direction["mode"] == "inputs"
     assert direction["current"] == guided_feedback.reference(reopened, identifier)
@@ -688,9 +692,11 @@ def test_return_to_the_partial_local_fit_after_worse_control_point_trials(tmp_pa
     base_endpoint = regional_evaluation.endpoint
     monkeypatch.setattr(result_report, "collect_run_report",
                         lambda path: local_report if path == local_run else base_report(path))
+    # The receipt-only controller has a native reconstruction, but its minimal
+    # regional-quality metrics contain no dense evaluation receipt. Exercise
+    # the verified native-output fallback rather than inventing an evaluation.
     monkeypatch.setattr(regional_evaluation, "endpoint", lambda candidate, subject=None:
-        dict(path=str(endpoint), sha256=local_report.inventory[0]["sha256"])
-        if candidate.run_directory == local_run else base_endpoint(candidate, subject))
+        None if candidate.run_directory == local_run else base_endpoint(candidate, subject))
     local_pins = {p: sha256_file(p) for p in local.study_directory.rglob("*") if p.is_file()}
     draft = guided_fit_direction.partial_mark_draft(local, retained)
     assert draft["remaining"] == 1 and draft["suggested"] == 2

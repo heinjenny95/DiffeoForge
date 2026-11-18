@@ -3153,6 +3153,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                         self._open_guided_working_fit(*identifier, restore_partial=True)
                     else:
                         self._open_guided_working_fit(*identifier)
+                elif action == "fit_direction_choose_start":
+                    from diffeoforge.desktop.guided_feedback import choose_starting_fit
+
+                    choose_starting_fit(self, identifier)
                 else:
                     self._start_pilot(adaptive=False, guided_action=(
                         action, identifier, getattr(self, "_guided_footer_goal", None)))
@@ -4892,9 +4896,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         )
 
     def _open_guided_working_fit(self, identifier, reference, *, view_hint=None,
-                                 restore_partial=False):
+                                 restore_partial=False, expected_starting_choice=None):
         self._open_guided_saved_fit(reference, working_for=identifier, view_hint=view_hint,
-                                    restore_partial=restore_partial)
+                                    restore_partial=restore_partial,
+                                    expected_starting_choice=expected_starting_choice)
 
     def _open_common_saved_fit(self, reference):
         if self._view_loading or self._view_closed or self._review_saving or self._worker:
@@ -4933,7 +4938,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         self._viewer_preparation.request_operation(("guided-common", origin, reference), prepare)
 
     def _open_guided_saved_fit(self, reference, *, working_for=None, view_hint=None,
-                               restore_partial=False):
+                               restore_partial=False, expected_starting_choice=None):
         if self._view_loading or self._view_closed or self._review_saving or self._worker:
             return
         origin = self.study_directory
@@ -4950,10 +4955,19 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                     from diffeoforge.guided_feedback import presentation
 
                     current = load_reference_calibration_study(origin)
+                    if expected_starting_choice is not None:
+                        from diffeoforge.guided_feedback import starting_fit_choice
+
+                        if starting_fit_choice(current, working_for) != expected_starting_choice:
+                            raise ValueError(
+                                "The starting-fit decision changed; reopen the current choice."
+                            )
                     context = presentation(current, working_for)
                     choice = next(r for r in context["choices"] if r["reference"] == reference)
                     context.update(reference=reference, label=choice["label"],
                                    target=reference["target"], view_hint=view_hint)
+                    if expected_starting_choice is not None:
+                        context["expected_starting_choice"] = expected_starting_choice
                     if restore_partial:
                         from diffeoforge.guided_fit_direction import partial_mark_draft
 

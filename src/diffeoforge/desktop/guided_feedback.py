@@ -4,6 +4,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
+    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -16,6 +17,108 @@ from PySide6.QtWidgets import (
 
 from diffeoforge.guided_feedback import OUTCOMES
 from diffeoforge.pilot_regions import SYMPTOMS
+
+MARK_RETENTION_HINT = (
+    "Deleting a red mark does not protect that area. Add a green mark to keep it unchanged."
+)
+
+
+def _starting_choice_options(data):
+    """Name both verified alternatives without ranking either scientific result."""
+    pending = data.get("starting_fit_choice") or data
+    choices = data.get("choices", ())
+    result = []
+    for role, title, reference in (
+        ("latest", "Latest fit", pending["latest"]),
+        ("comparison", "Earlier comparison", pending["comparison"]),
+    ):
+        choice = next((r for r in choices if r["reference"] == reference), None)
+        trial = choice.get("trial_index") if choice else None
+        label = (f"{reference['method'].title()} · Test {trial}" if trial is not None else
+                 pending.get(role + "_label") or
+                 next((r["label"] for r in choices if r["reference"] == reference),
+                      reference["method"].title()))
+        result.append((role, title, label, reference))
+    return tuple(result)
+
+
+def _starting_choice_message(pending):
+    return ("You rated the latest fit Better, but its checks need review: "
+            + "; ".join(reason.rstrip(".") for reason in pending["reasons"]) + ". "
+            "Choose and inspect the exact fit to continue from. Neither fit is selected "
+            "automatically; this choice does not approve its anatomy or numerical checks.")
+
+
+class StartingFitChoiceDialog(QDialog):
+    """A source-inspection handoff only; closing this dialog records no preference."""
+
+    def __init__(self, data, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Choose starting fit")
+        self.resize(620, 330)
+        self.chosen_reference = None
+        self.restore_partial = False
+        layout = QVBoxLayout(self)
+        pending = data.get("starting_fit_choice") or data
+        warning = QLabel(_starting_choice_message(pending))
+        warning.setObjectName("startingFitChoiceWarning")
+        warning.setWordWrap(True)
+        layout.addWidget(warning)
+        self.choice_buttons = []
+        for role, title, label, reference in _starting_choice_options(data):
+            button = QPushButton(f"Inspect {title.lower()} · {label}…")
+            button.setObjectName("secondary")
+            button.setAutoDefault(False)
+            button.setDefault(False)
+            button.setProperty("startingFitRole", role)
+            button.clicked.connect(lambda _checked=False, r=reference, latest=role == "latest":
+                                   self._choose(r, latest))
+            self.choice_buttons.append(button)
+            layout.addWidget(button)
+        hint = QLabel(MARK_RETENTION_HINT + " Review suggested green areas before saving.")
+        hint.setWordWrap(True)
+        hint.setObjectName("redGreenRetentionHint")
+        layout.addWidget(hint)
+        cancel = QPushButton("Cancel")
+        cancel.setAutoDefault(False)
+        cancel.clicked.connect(self.reject)
+        layout.addWidget(cancel)
+
+    def _choose(self, reference, latest):
+        self.chosen_reference = reference
+        self.restore_partial = latest
+        self.accept()
+
+
+def choose_starting_fit(window, data):
+    """Open the normal verified saved-fit editor, without selecting or fitting here."""
+    pending = data.get("starting_fit_choice") or data
+    dialog = StartingFitChoiceDialog(data, window)
+    if dialog.exec() == QDialog.DialogCode.Accepted and dialog.chosen_reference is not None:
+        window._open_guided_working_fit(pending["identifier"], dialog.chosen_reference,
+                                        restore_partial=dialog.restore_partial,
+                                        expected_starting_choice=pending)
+
+
+def render_starting_choice(window, identifier, layout, data):
+    pending = data["starting_fit_choice"]
+    warning = QLabel(_starting_choice_message(pending))
+    warning.setObjectName("startingFitChoiceWarning")
+    warning.setWordWrap(True)
+    layout.addWidget(warning)
+    for role, title, label, reference in _starting_choice_options(data):
+        button = QPushButton(f"Inspect {title.lower()} · {label}…")
+        button.setObjectName("secondary")
+        button.setAutoDefault(False)
+        button.setProperty("startingFitRole", role)
+        button.clicked.connect(lambda _checked=False, r=reference, latest=role == "latest":
+            window._open_guided_working_fit(identifier, r, restore_partial=latest,
+                                            expected_starting_choice=pending))
+        layout.addWidget(button)
+    hint = QLabel(MARK_RETENTION_HINT)
+    hint.setObjectName("redGreenRetentionHint")
+    hint.setWordWrap(True)
+    layout.addWidget(hint)
 
 
 def prepare_context(snapshot, identifier):
@@ -81,6 +184,10 @@ class GuidedFeedbackControls(QWidget):
         self.save.setObjectName("primary")
         self.save.setEnabled(False)
         layout.addWidget(self.save)
+        mark_hint = QLabel(MARK_RETENTION_HINT)
+        mark_hint.setWordWrap(True)
+        mark_hint.setObjectName("redGreenRetentionHint")
+        layout.addWidget(mark_hint)
         if data.get('require_fit_decision'):
             self.save.hide()
             hint = QLabel("Choose how this changed, then Suitable fit or Needs improvement "
@@ -121,6 +228,8 @@ def render_starting_fits(window, snapshot, identifier, layout, data):
     """The escape route is a visible button; no optimizer or automatic approval."""
     if not data or not data["choices"]:
         return
+    if data.get("starting_fit_choice"):
+        return  # The pending decision is already visible above the method cards.
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
 
     selected = data["selected"]

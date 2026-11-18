@@ -8,6 +8,10 @@ from diffeoforge import reference_calibration_study as study
 
 def save(directory, identifier, decision):
     snapshot = study.load_reference_calibration_study(directory)
+    if (decision.get("expected_starting_choice") is not None
+            and feedback.starting_fit_choice(snapshot, identifier)
+            != decision["expected_starting_choice"]):
+        raise ValueError("The starting-fit decision changed; reopen the current choice.")
     ref = decision["reference"]
     feedback._same_source(snapshot, ref)
     if ref not in [r["reference"] for r in feedback.choices(snapshot, identifier)]:
@@ -65,6 +69,7 @@ def edits(snapshot, identifier, target):
 def inputs(snapshot, identifier, context, *, verified=None):
     from diffeoforge.guided_search import inputs as search_inputs
 
+    feedback.require_starting_fit_choice(snapshot, identifier)
     data = dict(verified) if verified is not None else search_inputs(
         snapshot, identifier, context, allow_continuation=False)
     data.pop("_regional_continuation_preview", None)

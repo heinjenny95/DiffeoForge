@@ -27,12 +27,25 @@ def viewer(window, origin, parent, candidate, pairs, fit, context):
         "Orange: original · Blue: saved reconstruction. Use Improve on the areas that "
         "still need work and Retain on the areas that now look right. Save this fit and "
         "the marks as the starting point for your next test.")
+    from diffeoforge.desktop.guided_feedback import MARK_RETENTION_HINT
+
+    retention_hint = QLabel(MARK_RETENTION_HINT)
+    retention_hint.setWordWrap(True)
+    retention_hint.setObjectName("redGreenRetentionHint")
+    dialog.layout().addWidget(retention_hint)
     if draft := context.get("partial_draft"):
         detail = (f" · {draft['suggested']} suggested Retain"
                   if draft["suggested"] else "")
         dialog._comparison_intro.setText(
             f"{draft['remaining']} remaining Improve{detail}. Review the proposed areas "
-            "on this saved fit and edit them if needed. Saving confirms the displayed marks.")
+            "on this saved fit and edit them if needed. Green areas are suggestions only; "
+            "saving confirms the displayed marks. Cancel keeps the prior instructions.")
+        if overlap := draft.get("skipped_overlap", 0):
+            dialog._comparison_intro.setText(
+                dialog._comparison_intro.text() +
+                f" {overlap} removed area(s) overlap existing instructions and were not "
+                "converted to green. Mark smaller green areas if those parts should stay fixed."
+            )
     if hint:
         # The normal initial pair load resets the camera before the hand-off.
         # Later full-detail loads must keep the user's new view.
@@ -73,6 +86,9 @@ def viewer(window, origin, parent, candidate, pairs, fit, context):
             problem_regions={target: deepcopy(dialog.problem_regions[target])}
                 if dialog.problem_regions.get(target) else {},
             inspected_subjects=[target], display_scopes={target: dialog.display_scopes[target]})
+        if context.get("expected_starting_choice") is not None:
+            dialog.working_decision["expected_starting_choice"] = deepcopy(
+                context["expected_starting_choice"])
         dialog.accept()
 
     save.clicked.connect(accept)

@@ -585,6 +585,18 @@ def _next_action(directory, action, candidate_id=None, *, goal=None):
         raise ValueError("A newer prepared batch exists; reopen the current pilot")
     if any(c.status not in {"completed", "failed", "interrupted"} for c in snapshot.candidates):
         raise ValueError("Complete or resolve the current batch before preparing more work")
+    # Inspection and explicit selection must stay accessible. Every new batch
+    # rechecks the live journal, so cached guidance cannot silently restore an
+    # older field after Better feedback with unresolved quality warnings.
+    local_action = action.removeprefix("adaptive_")
+    if local_action not in {"working_start", "select_start", "feedback", "prefer",
+                            "restore_accepted"}:
+        from diffeoforge.guided_feedback import require_starting_fit_choice
+
+        identifiers = ([candidate_id] if candidate_id is not None else
+                       [candidate.candidate_id for candidate in snapshot.candidates])
+        for identifier in identifiers:
+            require_starting_fit_choice(snapshot, identifier)
     if action == "finish_joint":
         return finish_joint(snapshot, candidate_id)
     if action.startswith("adaptive_") or info["version"] == ADAPTIVE_VERSION:
