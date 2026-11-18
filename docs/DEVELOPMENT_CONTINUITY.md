@@ -12,6 +12,10 @@ Unfinished-pilot emphasis, closed-dropdown wheel handling, pre-first-point 3D bo
 settings and exact repeated endpoint reuse accompany this stabilization. See
 [behavior, acceptance and limits](BOUNDED_ADAPTIVE_CORRECTION.md). Native scientific
 validation and tested package installation remain separate completion gates.
+An explicit marker in newly prepared bounded configurations isolates later
+compiler-helper Python imports from the active run's startup hooks. Historical
+unmarked startup assets retain their exact bytes; fixed-field derivatives clear
+the marker on a copy.
 
 ## dev223 — make a provisional starting-fit choice explicit
 

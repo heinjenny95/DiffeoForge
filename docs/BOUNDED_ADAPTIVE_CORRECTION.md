@@ -24,6 +24,14 @@ failed stage retains its reservation. Reopening, cancellation or a process failu
 does not grant a fresh allowance or authorize a silent rerun. Line-search
 evaluations and elapsed time remain separate from optimizer iteration counts.
 
+New bounded candidate configurations also declare isolation of compiler-helper
+Python processes. After installing its protected hooks, the parent removes the
+run-local `PYTHONPATH` environment value. Its current import paths and hooks stay
+loaded, while a later compiler query cannot initialize that active run again.
+The declaration has an exact schema value. Unknown or mis-scoped declarations
+fail closed. Without it, legacy startup assets render byte for byte as before.
+Derived fixed-field evaluations clear the declaration on a configuration copy.
+
 ## Preservation and review
 
 The incoming deformation is verified against finite accepted native state and

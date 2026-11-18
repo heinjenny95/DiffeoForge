@@ -112,6 +112,13 @@ def shoot(
 ):
     if type(count) is not int or count < 2:
         raise ValueError("Shooting needs at least two timepoints")
+    if "python_child_isolation" in config.get("project", {}).get("parameter_provenance", {}):
+        from copy import deepcopy
+
+        from diffeoforge.reference_finite_accepted_guard import clear_runtime_markers
+
+        config = deepcopy(config)
+        clear_runtime_markers(config)
     destination.mkdir(parents=True, exist_ok=False)
     source = destination / "source"
     engine = destination / "engine"

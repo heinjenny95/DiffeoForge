@@ -22,10 +22,13 @@ def declaration(config):
 
 def clear_runtime_markers(config):
     """Remove the complete regional runtime contract from a cohort staging config."""
+    from diffeoforge.reference_python_child_isolation import declaration as child_isolation
+
+    child_isolation(config)
     provenance = config.get("project", {}).get("parameter_provenance", {})
     for name in (
         "finite_accepted_guard", "pilot_review", "pilot_live_preview",
-        "surface_gather", "regional_conditioning",
+        "surface_gather", "regional_conditioning", "python_child_isolation",
     ):
         provenance.pop(name, None)
 
@@ -69,6 +72,9 @@ def mark_new_configuration(config):
 
 
 def extend_engine_files(config, subject_count, rendered):
+    from diffeoforge.reference_python_child_isolation import validate as validate_children
+
+    validate_children(config)
     entry = declaration(config)
     from diffeoforge.reference_ordinary_guard import DECLARATION as ORDINARY
 
@@ -186,6 +192,9 @@ def extend_engine_files(config, subject_count, rendered):
         result["pilot_review_runtime.py"] = SOURCE
         body += "from pilot_review_runtime import install as _df_review_install\n"
         body += "_df_review_install(_df_guard_context, _df_guard)\n"
+    from diffeoforge.reference_python_child_isolation import after_parent_setup
+
+    body = after_parent_setup(config, body)
     result["sitecustomize.py"] = (
         '"""New regional finite accepted guard v1; fail-closed setup."""\ntry:\n'
         + "\n".join("    " + line for line in body.splitlines())

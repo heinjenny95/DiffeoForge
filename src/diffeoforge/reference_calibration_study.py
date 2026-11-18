@@ -637,6 +637,9 @@ def _prepare_stage(
         from diffeoforge.reference_finite_accepted_guard import mark_new_configuration
 
         mark_new_configuration(config)
+        from diffeoforge.reference_python_child_isolation import mark as isolate_children
+
+        isolate_children(config, manifest.get("attachment_comparison") or {})
         from diffeoforge.regional_continuation import marker as numerical_successor
         from diffeoforge.regional_coordinates import prepare_new as prepare_coordinates
 

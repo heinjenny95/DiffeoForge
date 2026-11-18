@@ -80,6 +80,9 @@
           "additionalProperties": false,
           "required": ["profile", "scale_reference", "ratios", "sources"],
           "properties": {
+            "python_child_isolation": {"enum": [
+              {"version": "bounded-child-pythonpath-isolation-v1"}
+            ]},
             "pilot_live_preview": {"enum": [
               {"version": "pilot-live-preview-v1"},
               {"version": "pilot-live-preview-v2"}
