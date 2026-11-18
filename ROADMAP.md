@@ -2,6 +2,12 @@
 
 ## Successor pilot guidance stabilization — 18 November 2026
 
+- [x] Source fix: allow exact reconstruction marking in an overlay without
+  requiring an original-preview face under the click. Verify actual visible
+  mouse picking, saved material bindings and original/green source switching.
+  Runtime delivery remains pending the owner's active pilot.
+  [Behavior and qualification](docs/OVERLAY_RECONSTRUCTION_PICKING.md).
+
 - [x] Carry a verified Better successor choice through local correction and
   actual next-test preparation, including inspected feedback-only fits. Give
   fresh actionable marks priority over passive historical comparisons. Preserve

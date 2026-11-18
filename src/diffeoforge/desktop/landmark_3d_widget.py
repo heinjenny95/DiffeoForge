@@ -145,6 +145,7 @@ class InteractiveMeshCanvas3D(QWidget):
         super().__init__(parent)
         self._model: MeshPreviewModel | None = None
         self._surface_picker = None
+        self._pick_display_model = None
         self._overlay = None
         self._vertices = np.empty((0, 3), dtype=np.float64)
         self._triangles = np.empty((0, 3), dtype=np.int64)
@@ -206,10 +207,11 @@ class InteractiveMeshCanvas3D(QWidget):
         return self._zoom
 
     def set_model(self, model: MeshPreviewModel | None, *, surface_picker=None,
-                  view_bounds=None, pick_bounds=None) -> None:
+                  view_bounds=None, pick_bounds=None, pick_display_model=None) -> None:
         self.cancel_pending_pick()
         self._model = model
         self._surface_picker = surface_picker
+        self._pick_display_model = model if pick_display_model is None else pick_display_model
         self._overlay = None
         self._surface_region = None
         self._region_colors = None
@@ -334,6 +336,7 @@ class InteractiveMeshCanvas3D(QWidget):
             self.original_detail.isChecked(),
             self._surface_region,
             id(self._overlay),
+            id(self._pick_display_model),
             self._interacting or self._wheel_timer.isActive(),
         )
 
@@ -432,6 +435,9 @@ class InteractiveMeshCanvas3D(QWidget):
         vertices, triangles = (
             self._display_geometry() if displayed else (self._vertices, self._triangles)
         )
+        return self._project_geometry(vertices, triangles)
+
+    def _project_geometry(self, vertices, triangles):
         return project_surface(
             vertices,
             triangles,
@@ -466,8 +472,29 @@ class InteractiveMeshCanvas3D(QWidget):
         if model is None or model.geometry_is_proxy:
             return
         if self._surface_picker is not None:
-            proxy = model.display_proxy
-            if not self.original_detail.isChecked() and proxy is not None and proxy.reduced:
+            active = self._pick_display_model
+            proxy = active.display_proxy
+            if active is not model:
+                # An overlay can pick its fitted layer while the base model is
+                # still the original. Gate against what that active layer draws,
+                # then intersect its exact surface; never require original faces.
+                if proxy is not None:
+                    vertices, triangles = proxy.vertices, proxy.triangles
+                elif (active.triangle_count <= DEFAULT_DISPLAY_FACES
+                      and hasattr(active, "edges") and len(active.edges)):
+                    vertices = np.asarray(active.vertices, dtype=np.float64)
+                    triangles = np.asarray(active.triangles, dtype=np.int64)
+                else:
+                    self._pick_error = "The active surface preview is not ready."
+                    self.update()
+                    return
+                surface = self._project_geometry(vertices, triangles)
+                if (surface is None
+                        or pick_surface_point(surface, (position.x(), position.y())) is None):
+                    self._pick_error = "No active surface at this point. Try another view."
+                    self.update()
+                    return
+            elif not self.original_detail.isChecked() and proxy is not None and proxy.reduced:
                 # Require the click to be over the displayed mesh as well as a hit
                 # on the original. An opening in either surface stays unpickable.
                 surface = self._surface(displayed=True)
@@ -476,6 +503,7 @@ class InteractiveMeshCanvas3D(QWidget):
                     return
             point = self.pick_at(position)
             if point is not None:
+                self._pick_error = ""
                 self.surfacePointPicked.emit(point)
             else:
                 self._pick_error = "No surface at this point. Try full detail or another view."

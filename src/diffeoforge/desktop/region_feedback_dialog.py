@@ -361,7 +361,9 @@ class RegionFeedbackDialog(QDialog):
         original_detail = self.canvas.original_detail.isChecked()
         self.canvas.set_model(visible, surface_picker=picking.pick if picking else None,
                               view_bounds=self.model.bounds,
-                              pick_bounds=picking.model.bounds if picking else None)
+                              pick_bounds=picking.model.bounds if picking else None,
+                              pick_display_model=(self._fit_preview if mode == "overlay"
+                                  and self._active_surface() == "reconstruction" else None))
         if original_detail and data is not None:
             self.canvas.original_detail.setChecked(True)
         self.canvas.set_fit_overlay(self._fit_preview if mode == "overlay" else None)

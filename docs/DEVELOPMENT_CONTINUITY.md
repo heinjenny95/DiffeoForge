@@ -1,5 +1,16 @@
 # Development continuity
 
+## Pending delivery — reconstruction points in overlays
+
+The correction editor now tests a reconstruction click against the displayed
+reconstruction layer before resolving its exact surface point. It no longer
+requires an original-preview face at that pixel. Real mouse journeys cover
+visible overlay material inside an original opening, its exact face binding,
+save/reopen, active-preview misses and original/green source switching.
+This is a source fix after the dev220 delivery. The owner's active pilot and
+installed runtime remain untouched; a subsequent qualified build is needed for
+local delivery. See [click behavior and verification](OVERLAY_RECONSTRUCTION_PICKING.md).
+
 ## dev220 — follow reviewed successors through the next preparation
 
 A verified Better rating of a completed individual successor now supplies the
