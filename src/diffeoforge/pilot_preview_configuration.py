@@ -1,6 +1,7 @@
 """Select and stage the display observer only for new eligible guided trials."""
 
-DECLARATION = {"version": "pilot-live-preview-v1"}
+DECLARATION = {"version": "pilot-live-preview-v2"}
+LEGACY_DECLARATION = {"version": "pilot-live-preview-v1"}
 ASSET = "pilot_preview_runtime.py"
 
 
@@ -34,10 +35,10 @@ def mark(config, manifest):
 
 
 def extend_engine_files(config, subjects, rendered):
-    if (config["project"].get("parameter_provenance", {}).get("pilot_live_preview")
-            != DECLARATION or not _supported(config, subjects)):
+    declaration = config["project"].get("parameter_provenance", {}).get("pilot_live_preview")
+    if declaration not in (DECLARATION, LEGACY_DECLARATION) or not _supported(config, subjects):
         return rendered
-    from diffeoforge.pilot_preview_assets import SOURCE
+    from diffeoforge.pilot_preview_assets import LEGACY_SOURCE, SOURCE
 
     method = config["optimization"]["method"]
     body = (
@@ -50,6 +51,6 @@ def extend_engine_files(config, subjects, rendered):
         "    pass  # A display-only observer cannot stop estimation.\n"
     )
     return dict(rendered, **{
-        ASSET: SOURCE,
+        ASSET: LEGACY_SOURCE if declaration == LEGACY_DECLARATION else SOURCE,
         "sitecustomize.py": rendered.get("sitecustomize.py", b"") + body.encode("utf-8"),
     })

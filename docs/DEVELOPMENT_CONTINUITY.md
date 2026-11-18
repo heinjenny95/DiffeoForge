@@ -1,5 +1,17 @@
 # Development continuity
 
+## dev222 — selectable live preview detail
+
+The pilot's live display offers Light (1,600 triangles per surface), Balanced
+(6,000) and Detailed (16,000). Resolution switches prepare a new request without
+refitting, preserve the last labelled snapshot and camera, and reject stale
+generations. Actual fit/target triangle counts are shown. The passive observer
+keeps its 20-second publication limit, bounded samples and short viewer lease.
+Higher detail adds display work; it does not change scientific geometry or
+optimizer settings. Existing version 1 trials retain their original protected
+publisher and explicit Light-only support. See
+[live preview resolution](PILOT_LIVE_RESOLUTION.md).
+
 ## dev221 — keep marked material when post-fit checks refine the grid
 
 Reconstruction marks now follow verified exact child-face ancestry when spatial

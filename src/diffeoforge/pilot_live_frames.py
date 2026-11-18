@@ -19,12 +19,17 @@ import numpy as np
 from diffeoforge.desktop.display_proxy import DisplayProxy
 from diffeoforge.desktop.mesh_preview import MeshPreviewModel
 
-VERSION = "pilot-live-preview-v1"
-FACE_BUDGET = 1_600
-POINT_LIMIT = 4_096
+VERSION = "pilot-live-preview-v2"
+LEGACY_VERSION = "pilot-live-preview-v1"
+FACE_BUDGETS = (1_600, 6_000, 16_000)
+FACE_BUDGET = 6_000
+POINT_LIMIT = 48_000
 CONTROL_LIMIT = 128
-_FRAME_LIMIT = 128 * 1024
-_REQUEST_LIMIT = 64 * 1024
+_FRAME_LIMIT = 2 * 1024 * 1024
+_REQUEST_LIMIT = 1024 * 1024
+_LEGACY_FRAME_LIMIT = 128 * 1024
+_LEGACY_REQUEST_LIMIT = 64 * 1024
+_LEGACY_POINT_LIMIT = 4_096
 _MESH_LIMIT = 128 * 1024 * 1024
 _RENEW_INTERVAL = 5
 
@@ -38,6 +43,12 @@ class Binding:
     faces: np.ndarray
     edges: np.ndarray
     source_faces: int
+    face_budget: int = FACE_BUDGET
+    requested_face_budget: int = FACE_BUDGET
+    legacy_runtime: bool = False
+    protocol_version: str = VERSION
+    point_limit: int = FACE_BUDGET * 3
+    frame_limit: int = _FRAME_LIMIT
 
 
 @dataclass(frozen=True, eq=False)
@@ -90,7 +101,7 @@ def _geometry(path, raw):
     return loaded.geometry.vertices, loaded.geometry.triangles
 
 
-def _reduced_geometry(vertices, faces):
+def _reduced_geometry(vertices, faces, *, face_budget=FACE_BUDGET, point_limit=None):
     """Reduce once, retaining verified original vertex indices across all frames."""
     from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray, vtk_to_numpy
     from vtkmodules.vtkCommonCore import vtkPoints
@@ -99,7 +110,8 @@ def _reduced_geometry(vertices, faces):
 
     points = np.ascontiguousarray(vertices, dtype=np.float64)
     topology = np.ascontiguousarray(faces, dtype=np.int64)
-    if len(topology) <= FACE_BUDGET:
+    point_limit = face_budget * 3 if point_limit is None else point_limit
+    if len(topology) <= face_budget and len(np.unique(topology)) <= point_limit:
         mapped = topology
     else:
         surface = vtkPolyData()
@@ -123,12 +135,12 @@ def _reduced_geometry(vertices, faces):
         if not np.isfinite(span) or span <= 0:
             raise ValueError("The live preview source has no finite spatial extent")
         longest /= span
-        for bins in (24, 16, 10, 6, 4):
+        for bins in (128, 112, 96, 84, 72, 64, 56, 48, 40, 32, 24, 16, 10, 6, 4):
             reducer.SetNumberOfDivisions(*np.maximum(1, np.ceil(longest * bins)).astype(int))
             reducer.Update()
             output = reducer.GetOutput()
             count = output.GetNumberOfPolys()
-            if 0 < count <= FACE_BUDGET:
+            if 0 < count <= face_budget and output.GetNumberOfPoints() <= point_limit:
                 break
         else:
             raise ValueError("The source surface cannot make a bounded pilot preview")
@@ -148,7 +160,7 @@ def _reduced_geometry(vertices, faces):
     valid = (canonical[:, 0] != canonical[:, 1]) & (canonical[:, 1] != canonical[:, 2])
     _, first = np.unique(canonical[valid], axis=0, return_index=True)
     indices, remap = np.unique(mapped[valid][np.sort(first)], return_inverse=True)
-    if not 0 < len(indices) <= POINT_LIMIT or not len(remap):
+    if not 0 < len(indices) <= point_limit or not len(remap):
         raise ValueError("Invalid sampled pilot display mesh")
     triangles = remap.reshape(-1, 3)
     edges = _edges(triangles)
@@ -162,9 +174,9 @@ def _edges(faces):
     return np.unique(np.sort(pairs, axis=1), axis=0)
 
 
-def _model(path, sha256, points, faces, edges, source_faces):
+def _model(path, sha256, points, faces, edges, source_faces, face_budget=FACE_BUDGET):
     low, high = points.min(0), points.max(0)
-    proxy = DisplayProxy(points, faces, edges, source_faces, FACE_BUDGET,
+    proxy = DisplayProxy(points, faces, edges, source_faces, face_budget,
                          "sampled native surface; display only")
     return MeshPreviewModel(
         path=path, sha256=sha256,
@@ -176,8 +188,11 @@ def _model(path, sha256, points, faces, edges, source_faces):
     )
 
 
-def prepare(run: Path, request_id: str) -> Binding | None:
+def prepare(run: Path, request_id: str, *, face_budget=FACE_BUDGET) -> Binding | None:
     """Prepare one small request for an eligible, freshly staged pilot run."""
+    if type(face_budget) is not int or face_budget not in FACE_BUDGETS:
+        raise ValueError("Choose a supported live preview resolution")
+    requested_face_budget = face_budget
     run = run.resolve()
     if not (run / "engine/pilot_preview_runtime.py").is_file():
         return None
@@ -188,10 +203,18 @@ def prepare(run: Path, request_id: str) -> Binding | None:
         raise ValueError("Prepared pilot preview manifest checksum changed")
     manifest = json.loads(manifest_raw)
     provenance = manifest["effective_config"]["project"]["parameter_provenance"]
-    if provenance.get("pilot_live_preview") != {"version": VERSION}:
+    declaration = provenance.get("pilot_live_preview")
+    if declaration not in ({"version": VERSION}, {"version": LEGACY_VERSION}):
         return None
+    legacy_runtime = declaration == {"version": LEGACY_VERSION}
+    version = LEGACY_VERSION if legacy_runtime else VERSION
+    if legacy_runtime:
+        face_budget = FACE_BUDGETS[0]
+    point_limit = _LEGACY_POINT_LIMIT if legacy_runtime else face_budget * 3
     protected = {row["path"]: row["sha256"] for row in manifest["protected_artifacts"]}
-    _protected_file(run, "engine/pilot_preview_runtime.py", protected, 1024 * 1024)
+    runtime = _protected_file(run, "engine/pilot_preview_runtime.py", protected, 1024 * 1024)
+    if not legacy_runtime and b"VERSION = 'pilot-live-preview-v2'" not in runtime:
+        raise ValueError("The staged publisher lacks the declared live preview capability")
     model = ET.fromstring(_protected_file(run, "engine/model.xml", protected, 1024 * 1024))
     object_id = manifest["effective_config"]["model"]["object_id"]
     sources = [obj for obj in model.findall("template/object") if obj.get("id") == object_id]
@@ -206,7 +229,8 @@ def prepare(run: Path, request_id: str) -> Binding | None:
     relative = source.relative_to(run).as_posix()
     raw = _protected_file(run, relative, protected, _MESH_LIMIT)
     vertices, faces = _geometry(source, raw)
-    indices, triangles, edges = _reduced_geometry(vertices, faces)
+    indices, triangles, edges = _reduced_geometry(
+        vertices, faces, face_budget=face_budget, point_limit=point_limit)
     vertex_count, source_faces = len(vertices), len(faces)
     del raw, vertices, faces
     subjects = [row for row in manifest["inputs"] if row["role"] == "subject"]
@@ -216,28 +240,36 @@ def prepare(run: Path, request_id: str) -> Binding | None:
     target_path = run / relative
     raw = _protected_file(run, relative, protected, _MESH_LIMIT)
     vertices, faces = _geometry(target_path, raw)
-    target_indices, target_faces, target_edges = _reduced_geometry(vertices, faces)
+    target_indices, target_faces, target_edges = _reduced_geometry(
+        vertices, faces, face_budget=face_budget, point_limit=point_limit)
     target_points = np.asarray(vertices)[target_indices]
     target_points.setflags(write=False)
     target = _model(target_path, protected[relative], target_points,
-                    target_faces, target_edges, len(faces))
+                    target_faces, target_edges, len(faces), face_budget)
     folder = run / "pilot-preview"
     folder.mkdir(exist_ok=True)
     if folder.resolve() != folder or folder.is_symlink():
         raise ValueError("Invalid live preview directory")
     identifier = request_id if re.fullmatch(r"[a-f0-9]{32}", request_id) else uuid4().hex
     request = dict(
-        version=VERSION, id=identifier, object_id=object_id, vertex_count=vertex_count,
+        version=version, id=identifier, object_id=object_id, vertex_count=vertex_count,
         manifest_sha256=manifest_sha256, indices=indices.tolist(),
     )
+    if not legacy_runtime:
+        request["face_budget"] = face_budget
+    encoded = json.dumps(request, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    if len(encoded) > (_LEGACY_REQUEST_LIMIT if legacy_runtime else _REQUEST_LIMIT):
+        raise ValueError("Oversized live preview request")
     temporary = folder / (".request-" + uuid4().hex)
     try:
-        with temporary.open("x", encoding="utf-8") as handle:
-            json.dump(request, handle, separators=(",", ":"), allow_nan=False)
+        with temporary.open("xb") as handle:
+            handle.write(encoded)
         os.replace(temporary, folder / "request.json")
     finally:
         temporary.unlink(missing_ok=True)
-    return Binding(folder, identifier, target, indices, triangles, edges, source_faces)
+    return Binding(folder, identifier, target, indices, triangles, edges, source_faces,
+                   face_budget, requested_face_budget, legacy_runtime, version, point_limit,
+                   _LEGACY_FRAME_LIMIT if legacy_runtime else _FRAME_LIMIT)
 
 
 def release(binding: Binding) -> None:
@@ -253,7 +285,8 @@ def _renew(binding):
     request = binding.folder / "request.json"
     if time.time() - request.stat().st_mtime >= _RENEW_INTERVAL:
         data = json.loads(_bounded_file(request, _REQUEST_LIMIT))
-        if data.get("id") == binding.identifier and data.get("version") == VERSION:
+        if (data.get("id") == binding.identifier
+                and data.get("version") == binding.protocol_version):
             os.utime(request, None)
 
 
@@ -280,11 +313,19 @@ def read_frame(binding: Binding, after_iteration: int) -> Frame | None:
         if (binding.folder / ("stop-" + binding.identifier)).exists():
             return None
         _renew(binding)
-        payload = _bounded_file(path, _FRAME_LIMIT)
+        payload = _bounded_file(path, binding.frame_limit)
         with ZipFile(io.BytesIO(payload)) as archive:
             expected = ["controls.npy", "id.npy", "iteration.npy", "points.npy"]
-            if sorted(archive.namelist()) != expected:
+            if not binding.legacy_runtime:
+                expected += ["face_budget.npy", "version.npy"]
+            if sorted(archive.namelist()) != sorted(expected):
                 return None
+            if not binding.legacy_runtime:
+                version = _array(archive, "version", lambda s, d: not s and d == np.dtype("U32"))
+                budget = _array(archive, "face_budget", lambda s, d: not s and d == np.int64)
+                if (version.item() != binding.protocol_version
+                        or budget.item() != binding.face_budget):
+                    return None
             identifier = _array(archive, "id", lambda s, d: not s and d == np.dtype("U32"))
             if identifier.item() != binding.identifier:
                 return None
@@ -301,5 +342,5 @@ def read_frame(binding: Binding, after_iteration: int) -> Frame | None:
     except (OSError, ValueError, KeyError, EOFError, BadZipFile):
         return None
     fit = _model(path, hashlib.sha256(payload).hexdigest(), points,
-                 binding.faces, binding.edges, binding.source_faces)
+                 binding.faces, binding.edges, binding.source_faces, binding.face_budget)
     return Frame(iteration, binding.target, fit, controls)

@@ -80,7 +80,10 @@
           "additionalProperties": false,
           "required": ["profile", "scale_reference", "ratios", "sources"],
           "properties": {
-            "pilot_live_preview": {"const": {"version": "pilot-live-preview-v1"}},
+            "pilot_live_preview": {"enum": [
+              {"version": "pilot-live-preview-v1"},
+              {"version": "pilot-live-preview-v2"}
+            ]},
             "surface_gather": {
               "type": "object", "additionalProperties": false,
               "required": ["version"],

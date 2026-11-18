@@ -1,6 +1,6 @@
 """Passive display samples from an already computed native pilot flow."""
 
-SOURCE = br'''"""Run-local publisher for the optional pilot live preview."""
+LEGACY_SOURCE = br'''"""Run-local publisher for the optional pilot live preview."""
 import functools
 import hashlib
 import inspect
@@ -274,3 +274,72 @@ def install(engine, guard_module=None, method='gradient_ascent'):
 
         _attach_gradient_ascent(publisher, GradientAscent)
 '''
+
+
+def _tiered_source():
+    """Keep the sealed v1 renderer byte-exact while declaring the new protocol."""
+    changes = (
+        (b"VERSION = 'pilot-live-preview-v1'\nMAX_POINTS = 4096",
+         b"VERSION = 'pilot-live-preview-v2'\nLEGACY_VERSION = 'pilot-live-preview-v1'\n"
+         b"FACE_BUDGETS = (1600, 6000, 16000)\nMAX_POINTS = 48000\n"
+         b"MAX_REQUEST_BYTES = 1048576\nMAX_FRAME_BYTES = 2097152"),
+        (b"request = json.loads(_read_bounded(self.request_path, 65536))",
+         b"request = json.loads(_read_bounded(self.request_path, MAX_REQUEST_BYTES))"),
+        (b"""        if (
+            not isinstance(request, dict)
+            or set(request) != {
+                'version', 'id', 'manifest_sha256', 'object_id', 'vertex_count', 'indices',
+            }
+            or request['version'] != VERSION
+""",
+         b"""        if not isinstance(request, dict):
+            return None
+        version = request.get('version')
+        fields = {'version', 'id', 'manifest_sha256', 'object_id', 'vertex_count', 'indices'}
+        if version == VERSION:
+            fields.add('face_budget')
+            if (type(request.get('face_budget')) is not int
+                    or request['face_budget'] not in FACE_BUDGETS):
+                return None
+            point_limit = request['face_budget'] * 3
+        elif version == LEGACY_VERSION:
+            if info.st_size > 65536:
+                return None
+            point_limit = 4096
+        else:
+            return None
+        if (
+            set(request) != fields
+"""),
+        (b"not isinstance(rows, list) or not 3 <= len(rows) <= MAX_POINTS",
+         b"not isinstance(rows, list) or not 3 <= len(rows) <= min(MAX_POINTS, point_limit)"),
+        (b"""            with temporary.open('xb') as stream:
+                np.savez(stream,
+                         id=np.asarray(request['id'], dtype='U32'),
+                         iteration=np.asarray(iteration, dtype=np.int64),
+                         points=points, controls=controls)
+            if self._request() == request:
+""",
+         b"""            frame = dict(id=np.asarray(request['id'], dtype='U32'),
+                         iteration=np.asarray(iteration, dtype=np.int64),
+                         points=points, controls=controls)
+            if request['version'] == VERSION:
+                frame.update(version=np.asarray(VERSION, dtype='U32'),
+                             face_budget=np.asarray(request['face_budget'], dtype=np.int64))
+            with temporary.open('xb') as stream:
+                np.savez(stream, **frame)
+            limit = MAX_FRAME_BYTES if request['version'] == VERSION else 131072
+            if temporary.stat().st_size > limit:
+                return
+            if self._request() == request:
+"""),
+    )
+    body = LEGACY_SOURCE
+    for old, new in changes:
+        if body.count(old) != 1:
+            raise RuntimeError("The preserved live-preview protocol renderer changed")
+        body = body.replace(old, new, 1)
+    return body
+
+
+SOURCE = _tiered_source()

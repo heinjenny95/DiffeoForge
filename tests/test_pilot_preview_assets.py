@@ -11,7 +11,7 @@ from types import ModuleType, SimpleNamespace
 import numpy as np
 import pytest
 
-from diffeoforge.pilot_preview_assets import SOURCE
+from diffeoforge.pilot_preview_assets import LEGACY_SOURCE, SOURCE
 
 
 @pytest.fixture
@@ -128,6 +128,56 @@ def test_native_frame_samples_object_offset_and_caps_controls(runtime, monkeypat
         np.testing.assert_array_equal(frame["controls"][[0, -1]], controls[[0, -1]])
     assert copies == [3, 128]
     assert not publisher.busy
+
+
+def test_original_v1_publisher_remains_byte_exact_and_python38_compatible():
+    assert hashlib.sha256(LEGACY_SOURCE).hexdigest() == (
+        "8370142f54b38981df0d196c4e7ee460a6704b7f421e4cdda061bb014b69cdf5")
+    ast.parse(LEGACY_SOURCE.decode(), feature_version=(3, 8))
+
+
+@pytest.mark.parametrize("budget", [1600, 6000, 16000])
+def test_v2_requests_use_explicit_tier_point_bounds(runtime, budget):
+    module, publisher = runtime
+    limit = budget * 3
+    request = _request(publisher, version=module.VERSION, face_budget=budget,
+                       vertex_count=limit + 1, indices=list(range(limit)))
+    assert publisher._request() == request
+    _request(publisher, version=module.VERSION, face_budget=budget,
+             vertex_count=limit + 1, indices=list(range(limit + 1)))
+    assert publisher._request() is None
+    # A new publisher must also retain the old request's original 4096-point bound.
+    _request(publisher, vertex_count=limit + 1, indices=list(range(4097)))
+    assert publisher._request() is None
+
+
+@pytest.mark.parametrize("values", [dict(face_budget=16001), dict(face_budget=True),
+                                    dict(face_budget=6000.0), dict(face_budget=None)])
+def test_publisher_rejects_unbounded_or_missing_v2_tier(runtime, values):
+    module, publisher = runtime
+    _request(publisher, version=module.VERSION, **values)
+    assert publisher._request() is None
+
+
+def test_v2_publisher_tags_large_frames_without_copying_the_whole_native_surface(runtime):
+    module, publisher = runtime
+    count, copied = 20000, []
+    request = _request(publisher, version=module.VERSION, face_budget=16000,
+                       vertex_count=count, indices=list(range(0, count, 2)))
+    vertices = np.arange((count + 2) * 3).reshape(count + 2, 3).astype(np.float64)
+    controls = np.arange(900).reshape(300, 3).astype(np.float64)
+    stamp = module._identity(publisher.request_path.lstat())
+    publisher.busy = True
+    publisher._publish(stamp, 21, _Tensor(vertices, copied), 2, count,
+                       _Tensor(controls, copied))
+    path = publisher.directory / "frame.npz"
+    assert 131072 < path.stat().st_size <= module.MAX_FRAME_BYTES
+    with np.load(path, allow_pickle=False) as frame:
+        assert str(frame["version"]) == module.VERSION
+        assert int(frame["face_budget"]) == 16000
+        assert str(frame["id"]) == request["id"] and int(frame["iteration"]) == 21
+        np.testing.assert_array_equal(frame["points"], vertices[2::2])
+    assert copied == [10000, 128] and not publisher.busy
 
 
 def test_accepted_callback_does_not_wait_for_request_validation(runtime, monkeypatch):
