@@ -155,7 +155,8 @@ def preview(snapshot, context, chosen):
     if (not info or not info.get("target") or info["phase"] == "joint"
             or snapshot.plan.pilot_subject_count != 1 or is_common_check(info)
             or any(c.status != "completed"
-                   or snapshot.visual_reviews.get(c.candidate_id) is not False
+                   or snapshot.visual_reviews.get(c.candidate_id) is True
+                   or not context["allowed"].get(c.candidate_id)
                    for c in snapshot.candidates)):
         return None
     choices = []

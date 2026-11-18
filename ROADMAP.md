@@ -1,5 +1,15 @@
 # Roadmap
 
+## Successor pilot guidance stabilization — 18 November 2026
+
+- [x] Carry a verified Better successor choice through local correction and
+  actual next-test preparation, including inspected feedback-only fits. Give
+  fresh actionable marks priority over passive historical comparisons. Preserve
+  numerical, retained-area and anatomical approval boundaries.
+- [x] Clear saved-comparison preparation on error, cancellation, close and
+  replacement, with actionable missing-metadata failures and stale-result guards.
+  [Journey checks and remaining acceptance](docs/PILOT_SUCCESSOR_JOURNEYS.md).
+
 ## Collected pilot review follow-up — 17 November 2026
 
 - [x] Name both methods in saved-fit choices and keep equal priority when the

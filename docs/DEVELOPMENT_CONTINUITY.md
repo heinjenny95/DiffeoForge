@@ -1,5 +1,16 @@
 # Development continuity
 
+## dev220 — follow reviewed successors through the next preparation
+
+A verified Better rating of a completed individual successor now supplies the
+same working field to selection and next-action guidance. A newly marked local
+problem takes priority over a passive historical fit comparison. Inspected
+feedback-only fits use the same eligibility checks in presentation and fresh
+preparation; Better does not create anatomical approval. Existing iteration,
+geometry and retained-area safeguards remain in force. Comparison preparation
+handles errors, cancellation, replacement and closing without stale loading text
+or applying a choice to a newer view. See [journeys and limits](PILOT_SUCCESSOR_JOURNEYS.md).
+
 ## dev219 — follow the selected pilot field
 
 Choosing a saved comparison fit or its method card now supplies the same

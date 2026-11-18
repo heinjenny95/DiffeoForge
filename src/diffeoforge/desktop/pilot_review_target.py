@@ -25,7 +25,6 @@ def choose(snapshot, guidance, info):
                      completed[0] if completed else None)
     if candidate is None:
         return None
-    pending = candidate.candidate_id not in snapshot.visual_reviews
     strategy = info.get("strategy") or {}
     optimization = strategy.get("optimization") or {}
     common_current = (not snapshot.attachment_comparison.get("regional_objective")
@@ -36,12 +35,34 @@ def choose(snapshot, guidance, info):
              or optimization.get("common_model") is True))
     scope = ("joint" if info["phase"] == "joint" else "common-model"
              if common_current else "individual")
+    from diffeoforge.pilot_form_progress import is_common_check
+
+    direction = guidance.get("fit_direction") or {}
+    repair = next((row for row in completed
+                   if row.candidate_id == direction.get("identifier")), None)
+    feedback_only = bool(
+        scope == "individual" and not is_common_check(info)
+        and direction.get("mode") in {"trial", "density", "return", "inputs"}
+        and snapshot.plan.pilot_subject_count == 1
+        and repair is not None and repair.candidate_id not in snapshot.visual_reviews
+        and guidance.get("allowed", {}).get(repair.candidate_id)
+        and (guidance.get("feedback", {}).get(repair.candidate_id) or {}).get(
+            "current_inspected") is True
+    )
+    if feedback_only:
+        # A verified inspected field can seed a separate repair. It still needs
+        # Suitable fit before it can contribute anatomical coverage or advance.
+        candidate = repair
+    pending = candidate.candidate_id not in snapshot.visual_reviews and not feedback_only
     name = info["target"] or f"{snapshot.plan.pilot_subject_count} forms"
     method = " · " + candidate.label if len(completed) > 1 else ""
     return dict(root=snapshot.study_directory, kind="current", candidate_id=candidate.candidate_id,
-        pending=pending, label=("Review " if pending else "Reopen reviewed ") + scope
+        pending=pending, label=("Review " if pending else "Reopen inspected "
+                               if feedback_only else "Reopen reviewed ") + scope
             + f" result · Test {info['screen_trials_spent']}" + method + " · " + name,
         explanation="Check this result, then choose Suitable fit or Needs improvement. "
                     "Earlier starting fits remain separate."
-                    if pending else "Your decision remains saved. Reopening this exact result "
-                    "starts no fitting; use the next-step action to continue.")
+                    if pending else "Your feedback remains saved. Use the next-step action "
+                    "to prepare the qualified repair. Suitable fit is a separate decision."
+                    if feedback_only else "Your decision remains saved. Reopening this exact "
+                    "result starts no fitting; use the next-step action to continue.")

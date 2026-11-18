@@ -133,12 +133,13 @@ def test_earlier_start_is_visible_and_works_before_rating_latest_attempt(tmp_pat
         selected = feedback.selection(dialog._snapshot, "guided-varifold")
         assert selected["directory"] == str(base.study_directory)
         assert dialog.content.findChild(QLabel, "guidedStartingFit").isVisible()
-        prepare = next(
-            b
-            for b in dialog.content.findChildren(QPushButton)
-            if "prepare 1 trial on 1 specimen" in b.text()
-        )
-        assert prepare.isEnabled()
+        # Qualified feedback-only inspection now exposes the same working-field
+        # preparation in the fixed footer; the duplicate body action is secondary.
+        prepare = dialog.next_step_button
+        assert prepare.isVisible() and prepare.isEnabled()
+        assert dialog._guided_footer_action == (
+            trial.study_directory, "adaptive_recover_start", "guided-varifold")
+        assert dialog._guided_footer_goal["reference"] == selected
         proposed = strategy.trial_proposal(dialog._snapshot, "guided-varifold", "goal:weight")
         assert (
             proposed["values"]["attachment_kernel_width"]

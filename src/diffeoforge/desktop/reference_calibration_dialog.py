@@ -1582,6 +1582,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         self._viewer_preparation = PreviewMeshLoader(self)
         self._viewer_preparation.loaded.connect(self._candidate_prepared)
         self._viewer_preparation.failed.connect(self._candidate_prepare_failed)
+        self._viewer_preparation.cancelled.connect(self._candidate_preparation_cancelled)
         self._preview_prefetch = PreviewMeshLoader(self)
         self._saved_search_loader = PreviewMeshLoader(self)
         self._saved_search_loader.loaded.connect(self._saved_search_loaded)
@@ -4985,11 +4986,40 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         self._viewer_preparation.request_operation(("early-screen", origin, child), prepare)
 
     @Slot(object, str)
-    def _candidate_prepare_failed(self, _key: object, message: str) -> None:
+    def _candidate_prepare_failed(self, key: object, message: str) -> None:
+        if key[0] == "guided-fit-direction":
+            from diffeoforge.desktop.guided_fit_direction import preparation_failed
+
+            preparation_failed(self, key, message)
+            return
+        from diffeoforge.desktop.guided_fit_direction import preparation_replaced
+
+        preparation_replaced(self)
+        origin = key[1] if key[0] in {
+            "guided-working", "guided-saved", "guided-common", "guided-inputs",
+            "early-screen", "compare-plan-b",
+        } else key[0]
+        if (self._view_closed or self._review_saving or self._worker
+                or origin != self.study_directory):
+            return
         self.status.setText("Comparison unavailable: " + message)
+
+    @Slot()
+    def _candidate_preparation_cancelled(self) -> None:
+        from diffeoforge.desktop.guided_fit_direction import preparation_cancelled
+
+        preparation_cancelled(self)
 
     @Slot(object, object)
     def _candidate_prepared(self, key: object, prepared: object) -> None:
+        if key[0] == "guided-fit-direction":
+            from diffeoforge.desktop.guided_fit_direction import show_comparison
+
+            show_comparison(self, key[2], prepared, request_key=key)
+            return
+        from diffeoforge.desktop.guided_fit_direction import preparation_replaced
+
+        preparation_replaced(self)
         if self._view_closed or self._review_saving:
             return
         if key[0] == "guided-working":
@@ -4997,12 +5027,6 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                 from diffeoforge.desktop.guided_working_fit import show
 
                 show(self, key, prepared)
-            return
-        if key[0] == "guided-fit-direction":
-            if key[1] == self.study_directory and not self._worker:
-                from diffeoforge.desktop.guided_fit_direction import show_comparison
-
-                show_comparison(self, key[2], prepared)
             return
         if key[0] == "guided-inputs":
             if key[1] != self.study_directory or self._worker:

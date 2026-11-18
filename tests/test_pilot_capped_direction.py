@@ -66,6 +66,8 @@ def test_ineligible_results_do_not_get_a_primary_continuation(monkeypatch, chang
         candidate.metrics["final_iteration"] = 599
     elif change in {"unreviewed", "suitable"}:
         snapshot.visual_reviews[identifier] = None if change == "unreviewed" else True
+        if change == "unreviewed":
+            context["allowed"][identifier] = False  # No inspection, including feedback-only review.
     elif change == "uninspected":
         context["allowed"][identifier] = False
     elif change == "needs_direction":

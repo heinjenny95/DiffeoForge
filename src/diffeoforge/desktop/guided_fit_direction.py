@@ -1,5 +1,7 @@
 """View a bound pair of saved pilot fits with the same original and camera."""
 
+from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +23,59 @@ from diffeoforge.desktop.reference_calibration_dialog import (
     collect_calibration_qc_pairs,
 )
 
+_PREPARING = "Preparing both saved overlays…"
+_OPEN = "Saved-fit comparison open. Close it to return to the pilot."
+
+
+@dataclass
+class _ComparisonRequest:
+    origin: Path
+    direction: dict
+    previous_status: str
+    loader_token: int | None = None
+
+
+def _request_current(window, request, *, check_generation=True):
+    return (getattr(window, "_guided_comparison_request", None) is request
+            and not window._view_closed and not window._review_saving
+            and window.study_directory == request.origin and not window._worker
+            and (not check_generation or request.loader_token is None
+                 or window._viewer_preparation.is_current_request(request.loader_token)))
+
+
+def _finish_request(window, key, *, error=None, cancelled=False):
+    request = key[3] if len(key) > 3 else None
+    if request is None or getattr(window, "_guided_comparison_request", None) is not request:
+        return
+    current = _request_current(window, request, check_generation=not cancelled)
+    window._guided_comparison_request = None
+    if not current:
+        return
+    if error is not None:
+        message = str(error).strip() or type(error).__name__
+        window.status.setText("Comparison unavailable: " + message)
+    elif window.status.text() in {_PREPARING, _OPEN}:
+        window.status.setText(request.previous_status or "Return to the saved fit's next step.")
+
+
+def preparation_failed(window, key, message):
+    """Discard stale-origin failures and release the explicit comparison request."""
+    _finish_request(window, key, error=message)
+
+
+def preparation_cancelled(window):
+    request = getattr(window, "_guided_comparison_request", None)
+    if request is not None:
+        _finish_request(window, ("guided-fit-direction", request.origin,
+                                 request.direction, request), cancelled=True)
+
+
+def preparation_replaced(window):
+    request = getattr(window, "_guided_comparison_request", None)
+    if (request is not None and request.loader_token is not None
+            and not window._viewer_preparation.is_current_request(request.loader_token)):
+        preparation_cancelled(window)
+
 
 def _prepare(origin, direction):
     from diffeoforge import reference_calibration_study as study
@@ -36,7 +91,11 @@ def _prepare(origin, direction):
             raise ValueError("The current pilot form changed. Reopen the comparison.")
         allowed = {str(active.study_directory), *(row["directory"] for row in info["history"])}
         active_inputs = study._verify_manifest(active.study_directory)["inputs"]
-        subject = next(row for row in active_inputs["subjects"] if row["filename"] == target)
+        subject = next((row for row in active_inputs["subjects"]
+                        if row["filename"] == target), None)
+        if subject is None:
+            raise ValueError(f"The current pilot inputs do not contain {target}. "
+                             "Reopen this specimen's saved result.")
         source = (subject["sha256"], active_inputs["template"]["sha256"])
         bindings = []
         for name in ("current", "alternative"):
@@ -45,14 +104,22 @@ def _prepare(origin, direction):
                 raise ValueError("The comparison fits do not belong to this pilot form.")
             parent = verify_reference(reference)
             saved = record(parent)
-            if (Path(saved["origin"]).resolve() != Path(info["origin"]).resolve()
+            if (not saved or Path(saved["origin"]).resolve() != Path(info["origin"]).resolve()
                     or parent.plan.pilot_subject_count != 1):
                 raise ValueError("The comparison requires two saved single-form results.")
-            candidate = next(c for c in parent.candidates
-                             if c.candidate_id == reference["candidate_id"])
+            candidate = next((c for c in parent.candidates
+                              if c.candidate_id == reference["candidate_id"]), None)
+            if candidate is None:
+                raise ValueError(f"Saved {reference['method']} fit "
+                                 f"{reference['candidate_id']} is missing for {target}. "
+                                 "Reopen the saved result before comparing it.")
             manifest = study._verify_manifest(parent.study_directory)
-            pair = next(p for p in collect_calibration_qc_pairs(parent.study_directory, candidate)
-                        if p.required and p.original_path.name == target)
+            pair = next((p for p in collect_calibration_qc_pairs(parent.study_directory, candidate)
+                         if p.required and p.original_path.name == target), None)
+            if pair is None:
+                raise ValueError(f"Saved {reference['method']} fit "
+                                 f"{reference['candidate_id']} has no original/reconstruction "
+                                 f"pair for {target}. Reopen its saved export for inspection.")
             template_sha = manifest["inputs"]["template"]["sha256"]
             if (not all(source) or (pair.original_sha256, template_sha) != source
                     or not pair.reconstruction_sha256):
@@ -71,10 +138,25 @@ def open_comparison(window, direction):
     if window._worker or window._view_loading or window._view_closed or window._review_saving:
         return
     origin = window.study_directory
-    window.status.setText("Preparing both saved overlays…")
-    window._viewer_preparation.request_operation(
-        ("guided-fit-direction", origin, direction), lambda: _prepare(origin, direction),
-    )
+    previous = getattr(window, "_guided_comparison_request", None)
+    if (previous is not None and previous.origin == origin and previous.direction == direction
+            and _request_current(window, previous)):
+        return  # Repeated clicks must not queue another full evidence verification.
+    previous_status = (previous.previous_status if previous is not None
+                       and previous.origin == origin and window.status.text() == _PREPARING
+                       else window.status.text())
+    if previous_status in {_PREPARING, _OPEN}:
+        previous_status = "Saved-fit comparison closed. Return to the next pilot step."
+    request = _ComparisonRequest(origin, deepcopy(direction), previous_status)
+    window._guided_comparison_request = request
+    window.status.setText(_PREPARING)
+    key = ("guided-fit-direction", origin, request.direction, request)
+    try:
+        request.loader_token = window._viewer_preparation.request_operation(
+            key, lambda: _prepare(origin, request.direction),
+        )
+    except Exception as error:
+        _finish_request(window, key, error=error)
 
 
 def _markers(original_bounds, regions):
@@ -277,14 +359,33 @@ class _ComparisonDialog(_FullscreenPilotDialog):
             self.accept()
 
 
-def show_comparison(window, direction, prepared):
+def show_comparison(window, direction, prepared, *, request_key=None):
     origin = window.study_directory
-    dialog = _ComparisonDialog(window, origin, direction, prepared)
+    if request_key is not None and not _request_current(window, request_key[3]):
+        _finish_request(window, request_key)
+        return
+    dialog = None
+    chosen = None
+    choice_current = False
     try:
+        dialog = _ComparisonDialog(window, origin, direction, prepared)
+        if request_key is not None:
+            window.status.setText(_OPEN)
         chosen = dialog.working_view if dialog.exec() == QDialog.DialogCode.Accepted else None
+        choice_current = request_key is None or _request_current(window, request_key[3])
+    except Exception as error:
+        if request_key is not None:
+            _finish_request(window, request_key, error=error)
+        elif window.study_directory == origin and not window._worker:
+            window.status.setText("Comparison unavailable: " + (
+                str(error).strip() or type(error).__name__))
     finally:
-        dialog.deleteLater()
-    if chosen and window.study_directory == origin and not window._worker:
+        if dialog is not None:
+            dialog.deleteLater()
+        if request_key is not None:
+            _finish_request(window, request_key)
+    if (chosen and choice_current and window.study_directory == origin and not window._worker
+            and not window._view_closed and not window._review_saving):
         window._open_guided_working_fit(
             direction["identifier"], chosen["reference"], view_hint=chosen,
         )

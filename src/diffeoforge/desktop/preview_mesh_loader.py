@@ -26,7 +26,11 @@ class _Worker(QRunnable):
         try:
             result = self.operation()
         except Exception as exception:
-            error = str(exception)
+            # Some exceptions (notably StopIteration and ValueError()) have an
+            # empty string. Empty means success in the terminal signal contract.
+            error = str(exception).strip() or (
+                f"{type(exception).__name__}: background preparation failed"
+            )
         try:
             self.signals.finished.emit(self.token, self.key, result, error)
         except RuntimeError:
@@ -35,6 +39,7 @@ class _Worker(QRunnable):
 
 class PreviewMeshLoader(QObject):
     activity_changed = Signal(bool)
+    cancelled = Signal()
     loaded = Signal(object, object)
     failed = Signal(object, str)
 
@@ -48,6 +53,11 @@ class PreviewMeshLoader(QObject):
         self._token += 1
         self._pending = None
         self.activity_changed.emit(self._active is not None)
+        self.cancelled.emit()
+
+    def is_current_request(self, token: int) -> bool:
+        """Whether a consumer's request has survived replacement/cancellation."""
+        return token == self._token
 
     def request_paths(
         self,
@@ -72,10 +82,12 @@ class PreviewMeshLoader(QObject):
 
         self.request_operation(key, load)
 
-    def request_operation(self, key: object, operation: Callable) -> None:
+    def request_operation(self, key: object, operation: Callable) -> int:
         self._token += 1
-        self._pending = self._token, key, operation
+        token = self._token
+        self._pending = token, key, operation
         self._start()
+        return token
 
     def _start(self) -> None:
         if self._active is not None or self._pending is None:

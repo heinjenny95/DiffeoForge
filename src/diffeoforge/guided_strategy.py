@@ -343,6 +343,8 @@ def prepare_proposals(snapshot, context):
 
         context["fit_direction"] = (capped_direction(snapshot, context, chosen)
                                     or _selected_start_direction(snapshot, context, chosen)
+                                    or _marked_trial_direction(snapshot, context, chosen,
+                                                               fresh_only=True)
                                     or _prepare_fit_direction(snapshot, context, chosen)
                                     or _marked_trial_direction(snapshot, context, chosen)
                                     or _default_trial_direction(snapshot, context, chosen))
@@ -350,11 +352,40 @@ def prepare_proposals(snapshot, context):
 
 
 def _explicit_start(snapshot, context):
-    """Normalize both explicit selection buttons without rewriting their journals."""
-    from diffeoforge.guided_feedback import _same_source
+    """Use the latest verified human starting choice, including a Better successor.
+
+    Relative feedback already selects the current field in ``selection``. The
+    next-action policy must consume the same choice; otherwise a later passive
+    geometry comparison can send the user back to an older method indefinitely.
+    Better remains an inspection/preference, never anatomical approval.
+    """
+    from diffeoforge.guided_feedback import _local_events, _same_source
+    from diffeoforge.pilot_form_progress import is_common_check
+
+    info = guided.record(snapshot)
+    individual = (bool(info.get("target")) and info["phase"] != "joint"
+                  and snapshot.plan.pilot_subject_count == 1 and not is_common_check(info))
 
     for event in reversed(study._load_events(snapshot.study_directory)):
         kind = event["event"]
+        if kind == "guided_fit_feedback" and individual:
+            if event["outcome"] != "better":
+                # A newer review is a decision boundary, even on another arm.
+                # Do not resurrect an older Better or method-button choice.
+                return None
+            reference = event["current"]
+            identifier = reference["candidate_id"]
+            data = context["feedback"].get(identifier) or {}
+            # The selection layer retains numerical and green-area safeguards.
+            # A Better rating cannot bypass either by inventing a new seed.
+            list(_local_events(snapshot, identifier))
+            if data.get("selected") != reference:
+                return None
+            if not any(row["reference"] == reference for row in data.get("choices", [])):
+                return None
+            _same_source(snapshot, reference)
+            return dict(event, reference=reference, editing_candidate_id=identifier,
+                        confirm_retention=False)
         if kind not in {"guided_starting_fit_selected", "guided_method_preference"}:
             continue
         reference = event["reference" if kind == "guided_starting_fit_selected" else "preference"]
@@ -459,7 +490,8 @@ def _default_trial_direction(snapshot, context, chosen):
             or info["phase"] == "joint" or is_common_check(info)
             or snapshot.attachment_comparison.get("regional_objective")
             or any(c.status != "completed"
-                   or snapshot.visual_reviews.get(c.candidate_id) is not False
+                   or snapshot.visual_reviews.get(c.candidate_id) is True
+                   or not context["allowed"].get(c.candidate_id)
                    for c in snapshot.candidates)):
         return None
     methods = snapshot.attachment_comparison["methods"]
@@ -496,7 +528,7 @@ def _default_trial_direction(snapshot, context, chosen):
     )
 
 
-def _marked_trial_direction(snapshot, context, chosen):
+def _marked_trial_direction(snapshot, context, chosen, *, fresh_only=False):
     """Offer an already verified local repair from the fit the user just marked."""
     from diffeoforge.guided_feedback import local_region_edit
     from diffeoforge.pilot_form_progress import is_common_check
@@ -509,7 +541,7 @@ def _marked_trial_direction(snapshot, context, chosen):
     choices = []
     for candidate in snapshot.candidates:
         identifier = candidate.candidate_id
-        if (candidate.status != "completed" or snapshot.visual_reviews.get(identifier) is not False
+        if (candidate.status != "completed" or snapshot.visual_reviews.get(identifier) is True
                 or not context["allowed"].get(identifier)
                 or (chosen and chosen.get("editing_candidate_id") != identifier)):
             continue
@@ -529,6 +561,10 @@ def _marked_trial_direction(snapshot, context, chosen):
             continue  # A visually better result did not supersede its failed guard.
         feedback = context["feedback"].get(identifier) or {}
         regions = feedback.get("problem_regions", {}).get(target, [])
+        if fresh_only and regions == (info.get("feedback") or {}).get("regions", []):
+            # Saving unchanged inherited marks is not a new local instruction.
+            # Preserve the existing failed/stalled-result diagnosis in that case.
+            continue
         edit = local_region_edit(snapshot, identifier, target)
         if (not edit or edit[1] != regions or edit[2] or feedback.get("needs_direction")
                 or not any(row.get("purpose", "problem") == "problem" for row in regions)):
@@ -547,6 +583,11 @@ def _marked_trial_direction(snapshot, context, chosen):
             continue
         choice = next((row for row in feedback["choices"] if row["reference"] == seed), None)
         if choice is None:
+            continue
+        if fresh_only and not choice["current"]:
+            # A rejected arm can retain an older comparison as its working seed.
+            # New edits on this arm do not silently choose that older field or
+            # supersede the existing partial-fit restoration/confirmation path.
             continue
         choices.append((edit[0], dict(
             mode="trial", identifier=identifier, current=seed,
@@ -578,8 +619,8 @@ def _prepare_fit_direction(snapshot, context, chosen):
     working = context["working_proposals"].get(identifier)
     if not working or selected not in (direction["current"], direction["alternative"]):
         return direction
-    # Merely restoring a view or saving relative feedback is not an explicit
-    # choice to proceed from one of the compared fields.
+    # Merely restoring a view supplies no working choice. The latest verified
+    # Better feedback or starting-fit action is normalized before this fallback.
     if (not chosen or chosen.get("editing_candidate_id") != identifier
             or chosen["reference"] != selected or feedback["needs_direction"]):
         return direction
@@ -827,7 +868,8 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     elif action in {"recover", "recover_from_retained", "recover_start"}:
         bound = action != "recover_from_retained" and isinstance(goal, dict)
         if bound and goal.get("reviewed_next") and any(
-            snapshot.visual_reviews.get(c.candidate_id) is not False
+            snapshot.visual_reviews.get(c.candidate_id) is True
+            or not starting_allowed(snapshot, c.candidate_id)
             for c in snapshot.candidates if c.status == "completed"
         ):
             raise ValueError("The saved reviews changed. Reopen the next-step guidance.")
