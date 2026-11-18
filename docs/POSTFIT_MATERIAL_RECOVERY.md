@@ -52,12 +52,18 @@ to another fit. A failure before any run was prepared keeps its normal failure
 diagnosis. Existing cancelled-check receipts remain supported with current native
 completion verification.
 
-The explicit action is **Resume checks on saved fit · no new fitting**. This route
-does not construct a native controller, run the optimizer, restore a failed field
-or overwrite the completed native result. It appends study events and writes fresh
-evaluation directories. Native checkpoint-continuation ancestry and cumulative
-effort are retained independently of the check-only request context. Saved reviews
-remain unchanged; completing checks does not create anatomical approval.
+The explicit action is **Resume checks on saved fit · no new fitting**. Recovery
+of that completed candidate does not construct a native controller or restart its
+optimizer, restore a failed field or overwrite its completed native result. It
+appends study events and writes fresh evaluation directories. Native
+checkpoint-continuation ancestry and cumulative effort are retained independently
+of the check-only request context. Saved reviews remain unchanged; completing
+checks does not create anatomical approval.
+
+An explicitly declared capture→detail workflow retains its original two-stage
+Run contract. After the saved capture's checks complete, the workflow may proceed
+to the distinct detail stage, which has its own optimizer and existing limits and
+review requirements.
 
 The view describes incomplete checks and suppresses the unrelated failed-backend
 recovery message for these verified saved fits. Genuine numerical failures retain
