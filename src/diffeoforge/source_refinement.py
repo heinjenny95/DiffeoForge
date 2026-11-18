@@ -203,6 +203,10 @@ def refine_evaluation(run, receipt, destination, plan, *, cancelled, event_callb
         grid = folder / "original-source-grid.vtk"
         _save(grid, refined, faces)
         np.save(folder / "parent-faces.npy", parents)
+        chosen = f[selected]
+        split_edges = np.unique(np.sort(np.concatenate(
+            (chosen[:, [0, 1]], chosen[:, [1, 2]], chosen[:, [2, 0]])), axis=1), axis=0)
+        np.save(folder / "split-edges.npy", split_edges)
         before = receipt
         added = evaluate_points(
             run,
@@ -214,6 +218,11 @@ def refine_evaluation(run, receipt, destination, plan, *, cancelled, event_callb
             _cache=cache,
         )
         receipt = augment(receipt, added, grid, faces, folder / "full-composition")
+        from diffeoforge.reconstruction_material_lineage import append_stage
+
+        receipt = append_stage(
+            before, receipt, folder / "parent-faces.npy", folder / "split-edges.npy",
+            old_geometry=(v, f), new_geometry=(refined, faces))
         stages.append(
             dict(
                 original_vertices=len(v),

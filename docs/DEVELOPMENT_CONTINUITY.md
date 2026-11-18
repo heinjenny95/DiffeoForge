@@ -1,15 +1,27 @@
 # Development continuity
 
-## Pending delivery — reconstruction points in overlays
+## dev221 — keep marked material when post-fit checks refine the grid
+
+Reconstruction marks now follow verified exact child-face ancestry when spatial
+qualification refines their original material grid. The current and retained
+surfaces, feedback measurements and later baseline capture use that support
+without rewriting mark journals. Missing or changed ancestry still fails closed.
+Normally completed fits whose later checks failed can resume checks explicitly,
+without another optimizer launch or native-output mutation. The view identifies
+incomplete checks instead of offering unrelated failed-backend recovery. Native
+continuation effort, numerical gates and saved approvals retain their meaning.
+See [material verification and recovery](POSTFIT_MATERIAL_RECOVERY.md).
+
+## Reconstruction points in overlays
 
 The correction editor now tests a reconstruction click against the displayed
 reconstruction layer before resolving its exact surface point. It no longer
 requires an original-preview face at that pixel. Real mouse journeys cover
 visible overlay material inside an original opening, its exact face binding,
 save/reopen, active-preview misses and original/green source switching.
-This is a source fix after the dev220 delivery. The owner's active pilot and
-installed runtime remain untouched; a subsequent qualified build is needed for
-local delivery. See [click behavior and verification](OVERLAY_RECONSTRUCTION_PICKING.md).
+This source fix follows the dev220 delivery. Source qualification and local
+package/installation evidence remain separate. See
+[click behavior and verification](OVERLAY_RECONSTRUCTION_PICKING.md).
 
 ## dev220 — follow reviewed successors through the next preparation
 

@@ -27,7 +27,8 @@ def _local_improved(current, before):
     return max(map(symmetric_mean, current)) < min(map(symmetric_mean, before))*.95
 
 
-def _distances(target, target_faces, fitted, fitted_faces, areas, *, target_face_ids=None):
+def _distances(target, target_faces, fitted, fitted_faces, areas, *, target_face_ids=None,
+               material_lineage=None):
     from diffeoforge.reference_fit_search import grouped_surface_distances, surface_samples
 
     rows = []
@@ -38,7 +39,7 @@ def _distances(target, target_faces, fitted, fitted_faces, areas, *, target_face
     if any(r.get("reconstruction") for r in areas):
         from diffeoforge.reconstruction_feedback import material_mask
 
-        chosen |= material_mask(fitted, fitted_faces, areas)
+        chosen |= material_mask(fitted, fitted_faces, areas, lineage=material_lineage)
     b = fitted_faces[chosen]
     if not len(a):
         raise ValueError("Regional surface verification needs faces in the marked original")
@@ -66,7 +67,7 @@ def _distances(target, target_faces, fitted, fitted_faces, areas, *, target_face
 
 
 def measure(config, fitted_path, *, source_path=None, baseline_path=None,
-            automatic_baseline_path=None):
+            automatic_baseline_path=None, material_lineage=None):
     from diffeoforge.surface_io import load_surface_mesh
 
     plan = read_plan(config)
@@ -95,7 +96,8 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None,
         raise ValueError("Regional verification requires full, unchanged source connectivity")
     diagonal = float(np.linalg.norm(np.ptp(tv, axis=0)))
     current = _distances(tv, tf, fv, ff, plan["focus_regions"],
-                         target_face_ids=plan.get("focus_target_face_ids"))
+                         target_face_ids=plan.get("focus_target_face_ids"),
+                         material_lineage=material_lineage)
     before = None
     retained = plan.get("retained_reference")
     if retained:
@@ -109,6 +111,7 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None,
             np.asarray(original.triangles, int),
             plan["focus_regions"],
             target_face_ids=plan.get("focus_target_face_ids"),
+            material_lineage=material_lineage,
         )
     p95 = max(max(r["original_to_fit_p95"], r["fit_to_original_p95"]) for r in current)
     old_p95 = (
@@ -354,6 +357,12 @@ def _evaluate_and_measure(
                 event_callback=event_callback,
                 _cache=cache,
             )
+            if coarse.get("material_lineage"):
+                # A time-grid replay changes positions, not original material
+                # identities. Preserve the bound spatial ancestry for later QC.
+                if receipt["reference_source"] != coarse["reference_source"]:
+                    raise ValueError("Temporal replay changed the refined material grid")
+                receipt["material_lineage"] = coarse["material_lineage"]
             # A finer time grid can reveal extra spatial curvature. Recheck the
             # original material mesh at that grid; an older refinement receipt
             # cannot qualify this new endpoint by being copied onto it.
@@ -402,12 +411,17 @@ def _evaluate_and_measure(
                 count=receipt['timepoints'], _source=grid, _cache=cache,
                 cancelled=cancelled, event_callback=event_callback)
     source = receipt["prefix"]["endpoint"]["path"] if receipt["prefix"] else str(grid)
+    from diffeoforge.reconstruction_material_lineage import from_evaluation
+
+    lineage = from_evaluation(receipt, cancelled=cancelled, event_callback=event_callback)
+    material_options = dict(material_lineage=lineage) if lineage is not None else {}
     quality = measure(
         config,
         receipt["endpoint"]["path"],
         source_path=source,
         baseline_path=baseline["endpoint"]["path"] if baseline else None,
         automatic_baseline_path=automatic['endpoint']['path'] if automatic else None,
+        **material_options,
     )
     if baseline:
         quality["baseline_evaluation"] = baseline

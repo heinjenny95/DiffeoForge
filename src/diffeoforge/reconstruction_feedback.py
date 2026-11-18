@@ -28,7 +28,7 @@ def validate_evidence(value):
         raise ValueError("Invalid inspected reconstruction material binding")
 
 
-def material_mask(vertices, faces, rows):
+def material_mask(vertices, faces, rows, *, lineage=None):
     """Follow explicitly selected material; never identify target anatomy by proximity."""
     f = np.asarray(faces, int)
     selected = np.zeros(len(f), bool)
@@ -40,9 +40,18 @@ def material_mask(vertices, faces, rows):
         validate_evidence(evidence)
         if digest is None:
             digest = topology_sha256(vertices, f)
-        if evidence["topology_sha256"] != digest or evidence["face_ids"][-1] >= len(f):
+        if evidence["topology_sha256"] == digest and evidence["face_ids"][-1] < len(f):
+            selected[evidence["face_ids"]] = True
+        elif lineage is not None:
+            # Qualification may conformingly subdivide the original material
+            # grid. Only its verified exact ancestry can transport these IDs;
+            # a nearby surface or a display proxy is never a substitute.
+            descendants = np.asarray(lineage.material_mask(vertices, f, evidence))
+            if descendants.dtype != np.bool_ or descendants.shape != selected.shape:
+                raise ValueError("Invalid marked reconstruction material lineage mask")
+            selected |= descendants
+        else:
             raise ValueError("The marked reconstruction material connectivity changed")
-        selected[evidence["face_ids"]] = True
     return selected
 
 

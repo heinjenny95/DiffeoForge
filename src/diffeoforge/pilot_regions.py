@@ -94,7 +94,7 @@ def face_mask(vertices, faces, center, radius):
     return np.linalg.norm(centres - np.asarray(center, float), axis=1) <= radius
 
 
-def measure(original, reconstruction, regions):
+def measure(original, reconstruction, regions, *, material_lineage=None):
     """Sample every marked patch directly, including patches missed by a global sample.
 
     Each direction samples the faces selected by the same original-space brush
@@ -120,7 +120,7 @@ def measure(original, reconstruction, regions):
         if row.get("reconstruction"):
             from diffeoforge.reconstruction_feedback import material_mask
 
-            reverse_chosen = material_mask(bv, bf, [row])
+            reverse_chosen = material_mask(bv, bf, [row], lineage=material_lineage)
         else:
             reverse_chosen = region_mask(bv[bf].mean(1), [row])
         repeats = []

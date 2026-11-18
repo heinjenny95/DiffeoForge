@@ -4455,7 +4455,13 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             )
         elif kind in {"candidate_failed", "candidate_interrupted"}:
             self._live_fit_preview.clear()
-            self.status.setText(f"{candidate_id}: {event['error']}")
+            self.status.setText(
+                f"{candidate_id}: fit saved; checks incomplete. "
+                "Resume checks without fitting again."
+                if event.get("phase") == "qualification"
+                and event.get("completed_native_fit", {}).get("optimizer_restart") is False
+                else f"{candidate_id}: {event['error']}"
+            )
 
     @Slot(object)
     def _succeeded(self, snapshot: ReferenceCalibrationStudySnapshot) -> None:

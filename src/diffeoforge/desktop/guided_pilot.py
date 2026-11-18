@@ -287,7 +287,7 @@ def render(window, prepared):
         if common_failure
         else "Numerical check stopped a trial. Inspect the retained fit and failure details."
         if retry_blocked
-        else "Saved fit retained. Choose Resume checks; no new fitting is needed."
+        else "Fit saved; checks incomplete. Resume checks without fitting again."
         if resume_checks
         else "A trial failed. Inspect details, retry, or choose an approved alternative."
         if failed
@@ -500,7 +500,7 @@ def render(window, prepared):
         decision = snapshot.visual_reviews.get(candidate.candidate_id)
         already_inspected = bool(feedback and feedback.get("current_inspected"))
         state = (
-            "Fit saved · checks cancelled"
+            "Fit saved · checks incomplete"
             if candidate.candidate_id in checks_pending
             else candidate.status.title()
             if candidate.status in {"failed", "interrupted"}
@@ -649,7 +649,8 @@ def render(window, prepared):
             else:
                 layout.addWidget(InfoDisclosure('Technical failure', failure['reason'] if failure
                                  else candidate.error or 'No usable result'))
-            if not running and candidate.status == "failed":
+            if (not running and candidate.status == "failed"
+                    and candidate.candidate_id not in checks_pending):
                 from diffeoforge.desktop.guided_failed_parent import render as failed_actions
 
                 failed_actions(window, snapshot, candidate, layout, guidance, action)

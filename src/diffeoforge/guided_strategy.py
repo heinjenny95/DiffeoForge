@@ -212,15 +212,20 @@ def _read_state(snapshot):
     from diffeoforge.guided_failed_parent import preview
     from diffeoforge.pilot_multiscale_failure import diagnose as stage_failure
     from diffeoforge.pilot_multiscale_study import marker as multiscale_marker
+    from diffeoforge.reference_qualification_resume import pending as pending_checks
 
     multiscale = multiscale_marker(snapshot.attachment_comparison)
+    checks_pending = pending_checks(snapshot)
+    result["qualification_pending"] = checks_pending
     result["failed_parents"] = {
         c.candidate_id: preview(snapshot, c.candidate_id)
         for c in snapshot.candidates if c.status == "failed" and not multiscale
+        and c.candidate_id not in checks_pending
     }
     result["common_stage_failures"] = {
         c.candidate_id: failure for c in snapshot.candidates
-        if (failure := stage_failure(snapshot, c)) is not None
+        if (failure := stage_failure(snapshot, c,
+            checks_available=True if c.candidate_id in checks_pending else None)) is not None
     }
     from diffeoforge.guided_accepted_fit import preview as accepted_fit
 
@@ -256,7 +261,8 @@ def _read_state(snapshot):
 
         result["common_revision"] = {}
         failure = (result["common_recovery"] or {}).get("stage_failure")
-        if failure and failure["directory"] == snapshot.study_directory:
+        if (failure and failure["directory"] == snapshot.study_directory
+                and failure["candidate_id"] not in checks_pending):
             result["common_stage_failures"][failure["candidate_id"]] = failure
         if (snapshot.plan.pilot_subject_count == 1 and info["phase"] != "joint"
                 and not snapshot.attachment_comparison.get("regional_objective")

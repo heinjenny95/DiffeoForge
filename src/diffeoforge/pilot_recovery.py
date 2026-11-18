@@ -152,8 +152,21 @@ def capture(snapshot, identifier, target, *, regions=None):
 
     evaluated = endpoint(candidate, subject=target)
     fitted_hash = rows[0]["sha256"]
+    material_options = {}
     if evaluated:
         fitted_path, fitted_hash = Path(evaluated["path"]), evaluated["sha256"]
+        subject = (candidate.metrics or {}).get("attachment_comparison", {}).get(
+            "subjects", {}).get(target, {})
+        evaluations = [subject[kind]["evaluation"] for kind in
+                       ("regional_quality", "ordinary_quality", "cohort_quality")
+                       if subject.get(kind)]
+        if len(evaluations) != 1 or evaluations[0].get("endpoint") != evaluated:
+            raise ValueError("Regional feedback has no unique matching evaluated material grid")
+        from diffeoforge.reconstruction_material_lineage import from_evaluation
+
+        lineage = from_evaluation(evaluations[0])
+        if lineage is not None:
+            material_options["material_lineage"] = lineage
     validate({target: regions} if regions else {}, {target: row["sha256"]})
     original_source = load_surface_mesh(snapshot.study_directory / row["copy"])
     fitted_source = load_surface_mesh(fitted_path)
@@ -168,7 +181,7 @@ def capture(snapshot, identifier, target, *, regions=None):
         binding=study._candidate_review_binding(candidate),
         target=target,
         regions=regions,
-        baseline=measure(original, fitted, regions),
+        baseline=measure(original, fitted, regions, **material_options),
         global_baseline=(candidate.metrics or {}).get("attachment_comparison", {}).get(
             "subjects", {}).get(target) or compare_geometry(
                 original, fitted, original_key=row["sha256"]),

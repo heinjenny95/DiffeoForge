@@ -2192,6 +2192,14 @@ def _load_verified_calibration_study(
     )
 
 
+def _checkpoint_continuation(root, identifier):
+    """Read the declared native counter ancestry independently of a launch request."""
+    return next((e for e in _load_events(root)
+                 if e["event"] == "pilot_qualification_declared"
+                 and e["candidate"]["candidate_id"] == identifier
+                 and e.get("checkpoint_continuation")), None)
+
+
 def _launch_request(
     root: Path,
     manifest: Mapping[str, Any],
@@ -2203,10 +2211,7 @@ def _launch_request(
     if failure:
         raise ReferenceCalibrationStudyError(failure["message"])
     attempt = candidate.attempts + 1
-    continuation = next((e for e in _load_events(root)
-                         if e["event"] == "pilot_qualification_declared"
-                         and e["candidate"]["candidate_id"] == candidate.candidate_id
-                         and e.get("checkpoint_continuation")), None)
+    continuation = _checkpoint_continuation(root, candidate.candidate_id)
     if continuation:
         from diffeoforge.reference_pilot_continuation import launch
 
@@ -2326,15 +2331,44 @@ class ReferenceCalibrationStudyRunner:
                 )
                 if failure and failure["action"] not in {"retry", "checks"}:
                     raise ReferenceCalibrationStudyError(failure["message"])
-            request = _launch_request(self.study_directory, manifest, candidate)
-            if checks_run is not None:
-                request = replace(request, destination=checks_run, run_id=checks_run.name)
+            if checks_run is None:
+                request = _launch_request(self.study_directory, manifest, candidate)
+            else:
+                # verified_run has proved a normally completed immutable native
+                # result. This is a check-only context, never a backend retry of
+                # a candidate whose later qualification happened to fail.
+                launcher = manifest["launcher"]
+                request = DesktopReferenceLaunchRequest(
+                    request_id=f"calibration-checks-{uuid4().hex}",
+                    config_path=candidate.config_path,
+                    destination=checks_run,
+                    run_id=checks_run.name,
+                    expected_config_sha256=sha256_file(candidate.config_path),
+                    launcher_engine=launcher.get("engine"),
+                    launcher_image=launcher.get("image"),
+                    launcher_type=str(launcher["type"]),
+                    launcher_distribution=launcher.get("distribution"),
+                    launcher_executable=launcher.get("executable"),
+                )
             from diffeoforge.pilot_iteration_accounting import annotate, offset
 
+            continuation_record = (
+                _checkpoint_continuation(self.study_directory, candidate.candidate_id)
+                if checks_run is not None else None
+            )
+            native_continuation = bool(request.resume_source) or continuation_record is not None
             iteration_offset = (
-                0 if request.resume_source else offset(manifest, candidate.candidate_id)
+                0 if native_continuation else offset(manifest, candidate.candidate_id)
             )
             pipeline_started = time.monotonic()
+            qualification_context = {}
+            if checks_run is not None:
+                from diffeoforge.reference_qualification_resume import binding
+
+                qualification_context = dict(
+                    phase="qualification",
+                    completed_native_fit=binding(checks_run, candidate.config_path),
+                )
             started = _append_event(
                 self.study_directory,
                 "candidate_started",
@@ -2346,6 +2380,7 @@ class ReferenceCalibrationStudyRunner:
                     "run_directory": _relative_path(self.study_directory, request.destination),
                     "iteration_offset": iteration_offset,
                     "qualification_only": checks_run is not None,
+                    **qualification_context,
                 },
             )
             if event_callback is not None:
@@ -2400,10 +2435,9 @@ class ReferenceCalibrationStudyRunner:
                     from diffeoforge.pilot_multiscale_study import annotate_effort
 
                     annotate_effort(measured, manifest)
-                    if request.resume_source is not None:
-                        record = next(e for e in _load_events(self.study_directory)
-                                      if e["event"] == "pilot_qualification_declared"
-                                      and e["candidate"]["candidate_id"] == candidate.candidate_id)
+                    if native_continuation:
+                        record = continuation_record or _checkpoint_continuation(
+                            self.study_directory, candidate.candidate_id)
                         measured["pilot_continuation"] = {
                             **record["checkpoint_continuation"],
                             "source_candidate_id": record["source"]["candidate_id"],
@@ -2495,16 +2529,18 @@ class ReferenceCalibrationStudyRunner:
                         failure=dict(code="template_preflight_cancelled"),
                     )
                 interrupted = {}
-                if cancelled_checks:
+                if native_completed:
                     from diffeoforge.reference_qualification_resume import binding
 
                     try:
                         interrupted = dict(phase='qualification', completed_native_fit=binding(
                             request.destination, candidate.config_path))
                     except Exception as binding_error:
-                        cancelled_checks = False
-                        error = ValueError('Unable to bind the completed fit after cancellation: '
-                                           + str(binding_error))
+                        if cancelled_checks:
+                            cancelled_checks = False
+                            error = ValueError(
+                                'Unable to bind the completed fit after cancellation: '
+                                + str(binding_error))
                 terminal = _append_event(
                     self.study_directory,
                     "candidate_interrupted"

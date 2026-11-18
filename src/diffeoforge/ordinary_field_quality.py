@@ -157,6 +157,10 @@ def _qualify(run, destination, *, cancelled, event_callback, preflight_study):
             event_callback=event_callback,
             _cache=cache,
         )
+        if parent and parent.get("material_lineage"):
+            if result["reference_source"] != parent["reference_source"]:
+                raise ValueError("Time-grid replay changed the refined material source")
+            result["material_lineage"] = parent["material_lineage"]
         result["whole_surface_sampling"] = True
         verify_bindings()
         verify_evaluations(*lineage, result)

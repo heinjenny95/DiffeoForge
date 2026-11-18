@@ -521,7 +521,16 @@ def measure(root, manifest, candidate, run, *, cancelled=lambda: False, event_ca
             from diffeoforge.pilot_regions import comparison
             from diffeoforge.pilot_regions import measure as measure_regions
 
-            regional = measure_regions(original, fitted, feedback["regions"])
+            material_options = {}
+            if quality:
+                from diffeoforge.reconstruction_material_lineage import from_evaluation
+
+                lineage = from_evaluation(quality["evaluation"], cancelled=cancelled,
+                                          event_callback=event_callback)
+                if lineage is not None:
+                    material_options["material_lineage"] = lineage
+            regional = measure_regions(original, fitted, feedback["regions"],
+                                       **material_options)
             if feedback["regions"]:
                 subjects[row["filename"]]["marked_regions"] = dict(
                 measurements=regional,

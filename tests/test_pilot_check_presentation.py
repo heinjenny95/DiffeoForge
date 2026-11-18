@@ -22,7 +22,7 @@ def test_cancelled_checks_offer_resume_without_a_new_fit(panel):
     from PySide6.QtWidgets import QLabel
 
     texts = [w.text() for w in panel.window.content.findChildren(QLabel)]
-    assert 'Fit saved · checks cancelled' in texts
+    assert 'Fit saved · checks incomplete' in texts
     assert not any('Optimize longer with the same settings' in text for text in texts)
     panel.window.start_button.click()
     assert len(panel.invoked) == 1 and not panel.snapshot.visual_reviews
