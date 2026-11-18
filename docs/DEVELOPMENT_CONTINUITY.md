@@ -1,5 +1,14 @@
 # Development continuity
 
+## dev225 — recommend continuation after a productive adaptive fit
+
+After the initial adaptive 600-iteration allowance is spent, the pilot can
+offer **Prepare +300 iterations** when the retained fit still makes measurable
+progress on every open red area and passes protection and qualification.
+The extra allowance requires a separate Run and uses the exact saved field and
+regional objective. The footer explains the measured improvement and leaves the
+retained fit available for review. See [eligibility and workflow](BOUNDED_ADAPTIVE_CORRECTION.md#evidence-for-an-extra-300-iterations).
+
 ## dev224 — bounded adaptive correction and pilot interaction stabilization
 
 New eligible individual red/fixed corrections can share a durable allowance of

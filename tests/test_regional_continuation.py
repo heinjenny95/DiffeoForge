@@ -348,7 +348,7 @@ def test_ineligible_states_never_auto_continue(case, change):
     assert continuation.proposal(case.snapshot, case.identifier, case.data) is None
 
 
-def prepared(case, *, iterations=8):
+def prepared(case, *, iterations=8, additional_allowance=False):
     proposal = continuation.proposal(case.snapshot, case.identifier, case.data)
     marker = proposal["regional_continuation"]
     root = case.tmp / "new-study"
@@ -363,6 +363,20 @@ def prepared(case, *, iterations=8):
             strategy=dict(regional_recipe=case.recipe, regional_continuation=marker),
         ),
     )
+    if additional_allowance:
+        from diffeoforge import pilot_adaptive_fit as policy
+
+        record["guided"]["strategy"]["adaptive_fit"] = dict(
+            version=policy.VERSION,
+            contract=policy.create_contract(
+                action_id="extension-300",
+                seed_sha256="1" * 64, objective_sha256="2" * 64,
+                marks_sha256=policy.digest(case.marks), evaluation_sha256="3" * 64,
+                red_tolerances={"R0": 0.01}, green_limits={}, outside_limit=0.01,
+                wall_seconds=7200, total_iterations=300, warm_iterations=300,
+                extension_of="4" * 64,
+            ),
+        )
     manifest = dict(
         plan=dict(baseline_effective_values=case.ref["values"]),
         inputs=dict(
@@ -410,7 +424,10 @@ def test_pilot_reopens_regional_successor_with_its_declared_allowance(
     assert guided_strategy.verify_strategy(info, record, manifest, root) is expected
 
 
-def test_real_prepare_and_render_keep_all_geometry_prefix_basis_and_physics(case, monkeypatch):
+@pytest.mark.parametrize("allowance", [8, 300])
+def test_real_prepare_and_render_keep_all_geometry_prefix_basis_and_physics(
+    case, monkeypatch, allowance,
+):
     # Any regeneration, prefix replay, refinement qualification or fitting is a failure.
     import diffeoforge.regional_fit as fit
     import diffeoforge.regional_frame as frame
@@ -422,7 +439,9 @@ def test_real_prepare_and_render_keep_all_geometry_prefix_basis_and_physics(case
             name,
             lambda *_a, **_k: pytest.fail("Unchanged objective was regenerated/replayed"),
         )
-    root, manifest, record, seals = prepared(case)
+    root, manifest, record, seals = prepared(
+        case, iterations=allowance, additional_allowance=allowance == 300,
+    )
     new = copy.deepcopy(case.config)
     # Pretend the ordinary configure hook tried its usual numerical defaults;
     # the final same-objective hook must keep the actual old 37-grid and L-BFGS.
@@ -435,7 +454,7 @@ def test_real_prepare_and_render_keep_all_geometry_prefix_basis_and_physics(case
     new["optimization"]["max_line_search_iterations"] = 30
     regional_pilot.configure(new, record)
     assert continuation.physics(new) == continuation.physics(case.config)
-    assert new["optimization"]["max_iterations"] == 8
+    assert new["optimization"]["max_iterations"] == allowance
     assert new["model"]["deformation"]["timepoints"] == 37
     assert new["optimization"]["max_line_search_iterations"] == 27
     assert sha256_file(root / "continuation-controls.txt") == sha256_file(
@@ -474,7 +493,7 @@ def test_real_prepare_and_render_keep_all_geometry_prefix_basis_and_physics(case
         ET.fromstring(rows["optimization_parameters.xml"]) for rows in (old_xml, new_xml)
     ]
     assert old_opt.find("max-iterations").text == "4"
-    assert new_opt.find("max-iterations").text == "8"
+    assert new_opt.find("max-iterations").text == str(allowance)
     new_opt.find("max-iterations").text = "4"
     assert ET.tostring(old_opt) == ET.tostring(new_opt)
     assert all(sha256_file(Path(path)) == digest for path, digest in seals.items())

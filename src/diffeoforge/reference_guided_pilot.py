@@ -613,6 +613,12 @@ def _next_action(directory, action, candidate_id=None, *, goal=None):
             require_starting_fit_choice(snapshot, identifier)
     if action == "finish_joint":
         return finish_joint(snapshot, candidate_id)
+    if action == "adaptive_extend_bounded":
+        from diffeoforge.pilot_adaptive_run import prepare_extension
+
+        if len(snapshot.candidates) != 1 or candidate_id != snapshot.candidates[0].candidate_id:
+            raise ValueError("Select the retained adaptive fit before preparing a continuation")
+        return prepare_extension(snapshot, goal)
     if action.startswith("adaptive_") or info["version"] == ADAPTIVE_VERSION:
         from diffeoforge.guided_strategy import transition
 

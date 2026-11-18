@@ -49,6 +49,27 @@ but is distinct from an inspected starting-fit choice and anatomical approval.
 The retained result is offered for explicit review even if the latest child
 failed. Earlier fields, journals and approvals remain unchanged.
 
+## Evidence for an extra 300 iterations
+
+After a normally completed 600-iteration action, the pilot can recommend one
+extra block of up to 300 optimizer iterations. The last stage must have reached
+its optimizer cap and produced the retained fit by continuing the same
+objective, control basis and movement scale. Each red area that still exceeds
+its target must have reduced its worst bidirectional P95 surface distance by
+more than the existing 2% progress floor. The fit must also pass the numerical
+qualification and protection checks, including explicit green regions and the
+surrounding surface. A stalled or regressed area, a failed stage, an unverified
+check or an exhausted wall deadline alone provides no recommendation.
+
+**Prepare +300 iterations** names this next step in the fixed footer and the
+pilot explains the measured gains. The retained fit is also available for
+review. Preparation verifies the saved field and the evidence again, recording
+one separate continuation with the same marks and settings. The optimizer
+starts when the researcher selects **Run +300 continuation**. The original
+action keeps its 600-iteration ceiling; the extension has its own allowance,
+normal cancellation and full fit checks. The extension leads back to review
+after it finishes.
+
 ## Related interface and evaluation fixes
 
 An unfinished saved pilot emphasizes Open saved pilot. Review/apply is primary

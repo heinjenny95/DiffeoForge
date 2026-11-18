@@ -112,6 +112,76 @@ def test_closed_failed_child_disables_run_and_reviews_exact_retained_field(panel
     panel.window._worker = None
 
 
+def test_adaptive_extension_is_the_primary_preparation_and_review_remains_available(panel):
+    from PySide6.QtWidgets import QPushButton
+
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    reference = retained_reference(panel.snapshot.study_directory)
+    offer = dict(
+        iterations=300,
+        remaining_regions=[
+            dict(label="A", improvement_percent=14.3),
+            dict(label="C", improvement_percent=5.5),
+        ],
+    )
+    panel.snapshot.visual_reviews.clear()
+    result = bounded(closed=True, recommendation=reference)
+    result.update(spent=600, extension=offer)
+    panel.guidance.update(bounded_adaptive=result, feedback={}, proposals={})
+    panel.window.layout().addWidget(panel.window.start_button)
+    panel.window.next_step_button.clicked.connect(
+        lambda: ReferenceCalibrationDialog._perform_final_next_step(panel.window)
+    )
+    panel.window.review_next_button.clicked.connect(
+        lambda: ReferenceCalibrationDialog._open_next_review(panel.window)
+    )
+    opened = []
+    panel.window._snapshot = panel.snapshot
+    panel.window._open_guided_working_fit = lambda *args: opened.append(args)
+    panel.render()
+
+    assert panel.window.start_button.isHidden()
+    assert panel.window.next_step_button.text() == "Prepare +300 iterations"
+    primaries = [
+        button for button in panel.window.findChildren(QPushButton)
+        if button.isVisible() and button.isEnabled() and button.objectName() == "primary"
+    ]
+    assert primaries == [panel.window.next_step_button]
+    assert "Area A (14.3%), Area C (5.5%)" in panel.window.status.text()
+    assert "Protection checks passed" in panel.window.status.text()
+    assert not panel.invoked
+    panel.window.review_next_button.click()
+    assert opened == [(panel.candidate.candidate_id, reference)]
+    assert not panel.invoked
+
+    panel.window.next_step_button.click()
+    assert panel.invoked == [((), dict(adaptive=False, guided_action=(
+        "adaptive_extend_bounded", panel.candidate.candidate_id, offer,
+    )))]
+    assert panel.snapshot.visual_reviews == {}
+
+
+def test_prepared_extension_requires_a_separate_run(panel):
+    from PySide6.QtWidgets import QLabel
+
+    panel.candidate.status = "pending"
+    panel.candidate.metrics = None
+    panel.snapshot.visual_reviews.clear()
+    result = bounded()
+    result.update(total=300, stage_iterations=300, purpose="continue", extension_from=600)
+    panel.guidance.update(bounded_adaptive=result, feedback={}, proposals={})
+    panel.window.layout().addWidget(panel.window.start_button)
+    panel.render()
+    assert panel.window.start_button.isVisible() and panel.window.start_button.isEnabled()
+    assert panel.window.start_button.text() == "Run +300 continuation"
+    assert "Continuation after 600 iterations · 0 / 300" in (
+        panel.window.findChild(QLabel, "adaptiveEffort").text()
+    )
+    assert "Prepare +300" not in panel.window.next_step_button.text()
+    assert not panel.invoked
+
+
 def test_open_expired_action_without_recommendation_cannot_restart_it(panel):
     panel.candidate.status = "pending"
     panel.candidate.metrics = None

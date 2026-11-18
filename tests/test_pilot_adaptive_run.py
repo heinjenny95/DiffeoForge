@@ -108,7 +108,9 @@ def action(tmp_path, monkeypatch):
                 count=len(cp),
                 spacing=mark["basis_source"]["spacing"],
             ),
-            guided=dict(strategy=args["strategy"], feedback=args["feedback"], target="target.vtk"),
+            guided=dict(version=guided.ADAPTIVE_VERSION, strategy=args["strategy"],
+                        feedback=args["feedback"], target="target.vtk",
+                        history=args["history"], screen_trials_spent=args["spent"] + 1),
         )
         manifest = dict(
             attachment_comparison=record, plan=dict(execution_scope="single_specimen_probe")
@@ -138,9 +140,13 @@ def action(tmp_path, monkeypatch):
             ],
             plan=SimpleNamespace(effective_values=copy.deepcopy(args["values"])),
             visual_reviews={},
+            current_stage=SimpleNamespace(order=1),
+            region_edits={},
+            problem_regions={},
         )
         states[root] = snapshot
         orchestration.verify_declaration(root, manifest, record)
+        guided._pointer(args["previous"].study_directory, root)
         return snapshot
 
     original = tmp_path / "original"
@@ -187,7 +193,7 @@ def action(tmp_path, monkeypatch):
         values=values,
         approved=[],
         history=[],
-        spent=0,
+        spent=2,
         feedback=feedback,
         strategy=dict(regional_recipe=recipe, baseline=seed, anchor=seed, control_basis=seed),
     )
@@ -242,6 +248,7 @@ def action(tmp_path, monkeypatch):
         f = field(snapshot, identifier)
         mark = orchestration.marker(snapshot.attachment_comparison)
         index = int(mark["plan"]["stage_id"].split("-")[-1]) - 1
+        red_error = 2.0 if contract.get("extension_of") else red_by_stage[index]
         return dict(
             {
                 k: f[k]
@@ -263,10 +270,12 @@ def action(tmp_path, monkeypatch):
             iterations=mark["plan"]["iterations"],
             evaluations=2,
             duration_seconds=0.1,
-            red_errors={"R0": red_by_stage[index]},
+            red_errors={"R0": red_error},
             green_errors={"G1": 0.0},
             outside_error=0.0,
             child_manifest_sha256=sha256_file(snapshot.study_directory / "study.json"),
+            native_accepted=True,
+            quality_warnings=[],
         )
 
     monkeypatch.setattr(native, "stage_receipt", scalar)
@@ -365,6 +374,165 @@ def test_full_policy_run_reserves_every_arm_and_stays_within600(action):
         finish["spent"] == 600 and finish["requires_review"] and not finish["anatomical_approval"]
     )
     assert orchestration.finished_reference(result) == state.best_feasible["reference"]
+    assert [args["spent"] for args in action.args_seen] == list(range(2, 10))
+    assert [len(args["history"]) for args in action.args_seen] == list(range(8))
+
+
+def test_finished_adaptive_can_prepare_exact_single300_with_normal_saved_pointer(action):
+    from diffeoforge.reference_sequential_fit import resume_directory
+
+    original = orchestration.prepare(action.arguments)
+    finished = orchestration.run(action.Runner(original.study_directory))
+    origin = finished.study_directory.parent
+    prior = {p: sha256_file(p) for p in origin.rglob("*") if p.is_file()}
+    offer = orchestration.presentation(finished)["extension"]
+    assert offer["iterations"] == 300
+    assert offer["remaining_regions"] == [
+        dict(label="A", before=4.0, after=3.0, improvement_percent=25.0)
+    ]
+    assert all(sha256_file(path) == digest for path, digest in prior.items())
+    assert sum(action.launches) == 600
+    result = guided.next_action(finished.study_directory, "adaptive_extend_bounded",
+                                "guided-varifold", goal=offer)
+    assert sum(action.launches) == 600
+    assert all(sha256_file(path) == digest for path, digest in prior.items())
+    assert resume_directory(original.study_directory) == result.study_directory
+    assert not orchestration.presentation(finished)["extension"]
+    assert orchestration.presentation(result)["extension_from"] == 600
+    assert not result.visual_reviews and result.candidates[0].attempts == 0
+    stage = orchestration.marker(result.attachment_comparison)
+    original_strategy = finished.attachment_comparison["guided"]["strategy"]
+    strategy = result.attachment_comparison["guided"]["strategy"]
+    assert stage["plan"]["iterations"] == 300 and stage["plan"]["purpose"] == "continue"
+    assert stage["contract"]["extension_of"] == offer["state_head"]
+    assert stage["plan"]["seed"]["reference"] == strategy["baseline"] == offer["reference"]
+    assert strategy["regional_recipe"] == original_strategy["regional_recipe"]
+    assert strategy["regional_continuation"]["marks"] == action.marks
+    assert result.plan.effective_values == finished.plan.effective_values
+    with pytest.raises(ValueError, match="newer prepared batch"):
+        guided.next_action(finished.study_directory, "adaptive_extend_bounded",
+                           "guided-varifold", goal=offer)
+    final = orchestration.run(action.Runner(result.study_directory))
+    assert sum(action.launches) == 900 and action.launches[-1:] == [300]
+    assert not orchestration.presentation(final)["extension"] and not final.visual_reviews
+    ledger = policy.load_ledger(stage["ledger"])
+    assert ledger.spent == 300 and len(ledger.stages) == 1
+
+
+def test_extension_stale_marks_or_protection_recheck_fail_without_reservation(action, monkeypatch):
+    from diffeoforge import guided_feedback
+
+    first = orchestration.prepare(action.arguments)
+    original = orchestration.run(action.Runner(first.study_directory))
+    identifier = "guided-varifold"
+    offer = orchestration.presentation(original)["extension"]
+    with monkeypatch.context() as altered:
+        altered.setattr(guided_feedback, "region_state", lambda *_: ([], True))
+        assert not orchestration.presentation(original)["extension"]
+        with pytest.raises(ValueError, match="recommendation changed"):
+            guided.next_action(original.study_directory, "adaptive_extend_bounded",
+                               identifier, goal=offer)
+    with monkeypatch.context() as altered:
+        altered.setitem(original.visual_reviews, identifier, True)
+        assert not orchestration.presentation(original)["extension"]
+
+    fresh = native.stage_receipt
+    child = guided.next_action(original.study_directory, "adaptive_extend_bounded",
+                               identifier, goal=offer)
+
+    def failed_protection(*args):
+        return fresh(*args) | {"accepted": False, "quality_warnings": ["outside_preserved"]}
+
+    monkeypatch.setattr(native, "stage_receipt", failed_protection)
+    manifest = study._verify_manifest(child.study_directory)
+    with pytest.raises(ValueError, match="changed before continuation"):
+        orchestration.authorize_launch(child.study_directory, manifest, identifier)
+    state = policy.load_ledger(orchestration.marker(child.attachment_comparison)["ledger"])
+    assert state.spent == state.held == 0 and sum(action.launches) == 600
+
+
+def test_extension_tolerance_stop_releases_unused_effort_without_another_child(action, monkeypatch):
+    first = orchestration.prepare(action.arguments)
+    original = orchestration.run(action.Runner(first.study_directory))
+    offer = orchestration.presentation(original)["extension"]
+    child = orchestration.prepare_extension(original, offer)
+    original_receipt = native.stage_receipt
+
+    def stopped_normally(*args):
+        row = original_receipt(*args)
+        return row | {"stop": "tolerance", "iterations": 41}
+
+    # Only the new child stopped early. The older native evidence stays the same.
+    monkeypatch.setattr(native, "stage_receipt", lambda *args: (
+        stopped_normally(*args) if args[2].get("extension_of") else original_receipt(*args)))
+    result = orchestration.run(action.Runner(child.study_directory))
+    state = policy.load_ledger(orchestration.marker(result.attachment_comparison)["ledger"])
+    assert state.spent == 41 and state.held == 0 and len(state.stages) == 1
+    assert not orchestration.presentation(result)["extension"] and action.launches[-1:] == [300]
+
+
+def test_interrupted_extension_pointer_recovers_only_its_verified_preparation(action, monkeypatch):
+    first = orchestration.prepare(action.arguments)
+    original = orchestration.run(action.Runner(first.study_directory))
+    offer = orchestration.presentation(original)["extension"]
+    with monkeypatch.context() as blocked:
+        def incomplete_pointer(*_):
+            raise OSError("Interrupted before publishing latest-search pointer")
+
+        blocked.setattr(guided, "_pointer", incomplete_pointer)
+        with pytest.raises(OSError, match="Interrupted before publishing"):
+            orchestration.prepare_extension(original, offer)
+    created = len(action.args_seen)
+    assert orchestration.presentation(original)["extension"] == offer
+    child = orchestration.prepare_extension(original, offer)
+    assert len(action.args_seen) == created and child.candidates[0].attempts == 0
+    assert not orchestration.presentation(original)["extension"] and sum(action.launches) == 600
+
+
+def test_incomplete_extension_preparation_does_not_keep_suggesting_unusable_action(
+    action, monkeypatch,
+):
+    first = orchestration.prepare(action.arguments)
+    original = orchestration.run(action.Runner(first.study_directory))
+    offer = orchestration.presentation(original)["extension"]
+
+    def incomplete(*_):
+        raise OSError("The extra stage could not be prepared")
+
+    monkeypatch.setattr(orchestration, "_next_child", incomplete)
+    with pytest.raises(OSError, match="could not be prepared"):
+        orchestration.prepare_extension(original, offer)
+    presentation = orchestration.presentation(original)
+    assert presentation["extension"] is None
+    assert "cannot be safely reopened" in presentation["reason"]
+    assert presentation["recommendation"] == offer["reference"] and sum(action.launches) == 600
+
+
+@pytest.mark.parametrize("terminal_change", [
+    {"red_errors": {"R0": 3.99}},  # Less than the existing two-percent improvement floor.
+    {"red_errors": {"R0": 1.0}},  # All declared targets reached.
+    {"outside_error": 2.0},
+    {"green_errors": {"G1": 2.0}},
+    {"accepted": False, "quality_warnings": ["spatial_resolution_sufficient"]},
+    {"native_accepted": False},
+    {"stop": "tolerance"},
+])
+def test_budget_exhaustion_alone_does_not_offer_a_continuation(
+    action, monkeypatch, terminal_change,
+):
+    first = orchestration.prepare(action.arguments)
+    scalar = native.stage_receipt
+
+    def final_check(snapshot, identifier, contract):
+        row = scalar(snapshot, identifier, contract)
+        stage = orchestration.marker(snapshot.attachment_comparison)["plan"]["stage_id"]
+        return row | terminal_change if stage == "stage-0008" else row
+
+    monkeypatch.setattr(native, "stage_receipt", final_check)
+    finished = orchestration.run(action.Runner(first.study_directory))
+    observed = orchestration.presentation(finished)
+    assert observed["closed"] and observed["spent"] == 600
+    assert observed["extension"] is None and observed["recommendation"]
 
 
 def test_changed_native_cap_is_rejected_before_any_reservation(action):

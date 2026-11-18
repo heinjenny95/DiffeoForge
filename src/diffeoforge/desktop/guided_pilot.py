@@ -17,6 +17,17 @@ from diffeoforge.guided_strategy import remaining_forms
 from diffeoforge.reference_guided_pilot import record
 
 
+def _extension_reason(offer):
+    areas = ", ".join(
+        f"Area {area['label']} ({area['improvement_percent']:.1f}%)"
+        for area in offer["remaining_regions"]
+    )
+    return (
+        f"600 iterations used. Surface error fell in every open area in the last stage ({areas}). "
+        "Protection checks passed."
+    )
+
+
 def render(window, prepared):
     from diffeoforge.desktop.pilot_common_model import pin_action, pin_recovery, pin_revision
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
@@ -126,8 +137,13 @@ def render(window, prepared):
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
     if bounded_action:
+        extension_from = bounded_action.get("extension_from")
+        effort_label = (
+            f"Continuation after {extension_from} iterations" if extension_from
+            else "Adaptive correction"
+        )
         effort = QLabel(
-            f"Adaptive correction · {bounded_action['spent']} / {bounded_action['total']} "
+            f"{effort_label} · {bounded_action['spent']} / {bounded_action['total']} "
             f"iterations used across all attempts · "
             f"{bounded_action['stage_iterations']} maximum in this stage. "
             f"{bounded_action['wall_seconds'] / 3600:g} h deadline includes preparation "
@@ -293,6 +309,7 @@ def render(window, prepared):
     if bounded_action:
         can_run = can_run and not bounded_action["closed"]
         window.start_button.setText(
+            "Run +300 continuation" if bounded_action.get("extension_from") else
             f"Run adaptive correction · ≤{bounded_action['total']} total iterations")
     window.start_button.setVisible(can_run)
     window.start_button.setEnabled(can_run and not running and not retry_blocked)
@@ -335,6 +352,8 @@ def render(window, prepared):
         if completed and inspected_feedback
         else "Result ready for review."
         if completed
+        else "Continuation prepared. Select Run to continue from the saved fit."
+        if bounded_action and bounded_action.get("extension_from")
         else "Test prepared. Select Run when ready."
     )
     if not running and common_failure:
@@ -504,15 +523,34 @@ def render(window, prepared):
 
     if bounded_action and not running and bounded_action.get("recommendation"):
         retained = bounded_action["recommendation"]
+        identifier = snapshot.candidates[0].candidate_id
         # A numerical recommendation is viewable; it is not a saved human choice.
         review = None
+        window._guided_review_target = None
         window.review_next_button.hide()
         window._guided_footer_action = None
-        pin_action(window, snapshot, "Review retained adaptive fit · mark / edit areas…",
-                   "bounded_retained", (snapshot.candidates[0].candidate_id, retained),
-                   "Inspect the verified retained field. Save a starting fit and its marks "
-                   "explicitly before preparing another action.")
-        window.status.setText(bounded_action["reason"] + " Review the retained fit.")
+        extension = bounded_action.get("extension")
+        if extension and not starting_choice:
+            pin_action(window, snapshot, "Prepare +300 iterations",
+                       "adaptive_extend_bounded", identifier,
+                       "Continue from this exact saved fit with the same areas and settings. "
+                       "Fitting starts when you select Run.",
+                       goal=extension)
+            window._guided_review_target = dict(
+                root=snapshot.study_directory, kind="bounded_retained",
+                candidate_id=identifier, reference=retained,
+            )
+            window.review_next_button.setText("Review retained fit · mark / edit areas…")
+            window.review_next_button.setToolTip("Inspect the saved reconstruction and its areas.")
+            window.review_next_button.setEnabled(True)
+            window.review_next_button.show()
+            window.status.setText(_extension_reason(extension))
+        else:
+            pin_action(window, snapshot, "Review retained adaptive fit · mark / edit areas…",
+                       "bounded_retained", (identifier, retained),
+                       "Inspect the verified retained field. Save a starting fit and its marks "
+                       "explicitly before preparing another action.")
+            window.status.setText(bounded_action["reason"] + " Review the retained fit.")
 
     # Candidate identity is captured by each card's callbacks, never a shared selector.
     for candidate in snapshot.candidates:

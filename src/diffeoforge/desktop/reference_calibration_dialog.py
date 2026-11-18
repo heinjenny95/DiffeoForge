@@ -3887,7 +3887,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         if target:
             if target["root"] != self.study_directory:
                 return
-            if target["kind"] == "common":
+            if target["kind"] == "bounded_retained":
+                if self._worker is None and not self._restoring_search and not self._review_saving:
+                    self._open_guided_working_fit(target["candidate_id"], target["reference"])
+            elif target["kind"] == "common":
                 self._open_common_saved_fit(target["reference"])
             else:
                 candidate = next((c for c in self._snapshot.candidates
@@ -4185,6 +4188,8 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             if finish_candidate_id
             else "Recording provisional selection and preserving the saved fit… No fit is running."
             if provisional_candidate_id
+            else "Verifying the saved fit and preparing the +300 continuation…"
+            if guided_action and guided_action[0] == "adaptive_extend_bounded"
             else "Preparing the next attempt…"
         )
         self._thread_pool.start(worker)

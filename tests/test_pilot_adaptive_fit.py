@@ -197,6 +197,22 @@ def test_iterations_of_progressive_stages_never_exceed_600(tmp_path):
     assert stop["requires_review"] and not stop["anatomical_approval"]
 
 
+def test_extra_iterations_require_progress_in_each_unresolved_area(tmp_path):
+    root, state = create(tmp_path)
+    for _ in range(5):
+        stage, state = reserve(root, state)
+        red = {key: value * 0.8 for key, value in stage["plan"]["seed"]["red_errors"].items()}
+        state = finish(root, state, stage, red, native_accepted=True)
+    final, state = reserve(root, state)
+    before = final["plan"]["seed"]["red_errors"]
+    # A and C improve substantially. B still misses its target and is unchanged.
+    state = finish(root, state, final, {"A": before["A"] * 0.7,
+        "B": before["B"], "C": before["C"] * 0.8}, native_accepted=True)
+    assert state.spent == 600
+    assert state.best_feasible["stage_id"] == final["stage_id"]
+    assert adaptive.extension_progress(state) is None
+
+
 @pytest.mark.parametrize(
     "changes", [dict(green=0.02), dict(outside=0.03), dict(finite=False), dict(accepted=False)]
 )

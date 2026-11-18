@@ -21,6 +21,8 @@ from diffeoforge import pilot_adaptive_fit as policy
 from diffeoforge.mesh import sha256_file
 
 WALL_SECONDS = 7200
+_EXTENSION_DIRECTORY = "extension-300"
+_LATEST_SEARCH = "fit-search-latest.json"
 _LIMIT = 4 * 1024 * 1024
 _PROBES = {"baseline_probe", "cp_probe", "motion_probe"}
 _RECIPE_MECHANISM = {
@@ -161,6 +163,8 @@ def _context(mark):
         "preparation_sha256"
     ):
         raise ValueError("Adaptive action preparation or contract changed")
+    if state.contract.get("extension_of"):
+        _verify_extension_parent(ledger, state, context)
     return ledger, state, context
 
 
@@ -429,7 +433,7 @@ def authorize_launch(root, manifest, candidate_id):
     if not mark:
         return
     verify_declaration(root, manifest, record)
-    ledger, state, _ = _context(mark)
+    ledger, state, context = _context(mark)
     if state.now >= state.deadline:
         raise ValueError("The adaptive action deadline ended; no native child can launch")
     if any(row["event"] == "adaptive_fit_finished" for row in study._load_events(Path(root))):
@@ -451,6 +455,10 @@ def authorize_launch(root, manifest, candidate_id):
     if state.active:
         if state.active["plan"] != mark["plan"] or state.active["binding"] != binding:
             raise ValueError("Another adaptive child still holds the remaining effort")
+    if state.contract.get("extension_of"):
+        with study.calibration_verification_scope():
+            _verify_extension_launch(snapshot, context)
+    if state.active:
         return state.active
     return policy.reserve_stage(
         ledger,
@@ -528,6 +536,183 @@ def _verified_best_reference(state):
     return copy.deepcopy(ref)
 
 
+def _extension_baseline(parent_state, context):
+    baseline = copy.deepcopy(parent_state.best_feasible)
+    baseline.pop("stage_id")
+    return dict(baseline, stop="seed", iterations=0, evaluations=0, duration_seconds=0.0,
+                preparation_sha256=policy.digest(context))
+
+
+def _remaining_regions(state, context):
+    from diffeoforge.pilot_region_scope import label
+
+    progress = policy.extension_progress(state)
+    if progress is None:
+        return None
+    return [
+        dict(label=label(index), **progress[f"R{index}"])
+        for index in range(len(context["feedback"]["regions"])) if f"R{index}" in progress
+    ]
+
+
+def _verify_extension_parent(ledger, state, context):
+    """Bind the new allowance to one immutable original adaptive action."""
+    if ledger.parent.name != _EXTENSION_DIRECTORY:
+        raise ValueError("The additional allowance has an unexpected action directory")
+    origin = ledger.parent.parent
+    parent = policy.load_ledger(origin / "ledger")
+    original = _read(origin / "action.json")
+    offer = context["extension_offer"]
+    if (
+        policy.digest(original) != parent.baseline.get("preparation_sha256")
+        or context != dict(original, extension_offer=offer)
+        or parent.head != state.contract["extension_of"]
+        or offer["state_head"] != parent.head
+        or offer["reference"] != parent.best_feasible.get("reference")
+        or Path(offer["reference"]["directory"]).parent != origin
+        or offer["iterations"] != policy.EXTENSION_ITERATIONS
+        or not offer["remaining_regions"]
+        or offer["remaining_regions"] != _remaining_regions(parent, original)
+        or state.baseline != _extension_baseline(parent, context)
+        or any(state.contract[key] != parent.contract[key] for key in (
+            "objective_sha256", "marks_sha256", "evaluation_sha256", "green_limits",
+            "outside_limit", "red_tolerances", "minimum_improvement", "wall_seconds",
+        ))
+    ):
+        raise ValueError("The additional allowance lost its verified 600-iteration parent")
+
+
+def _extension_offer(snapshot, ledger, state, context, events, *, linked=False):
+    from diffeoforge import guided_feedback as feedback
+    from diffeoforge import pilot_adaptive_native as native
+
+    if not linked and (snapshot.study_directory / _LATEST_SEARCH).exists():
+        return None
+    remaining = _remaining_regions(state, context)
+    if not remaining:
+        return None
+    endings = [event for event in events if event["event"] == "adaptive_fit_finished"]
+    reference = state.best_feasible["reference"]
+    if (len(endings) != 1 or endings[0]["reason"] != policy.BUDGET_EXHAUSTED
+            or endings[0].get("ledger") != str(ledger)
+            or endings[0].get("best_reference") != reference
+            or endings[0].get("contract_sha256") != policy.digest(state.contract)
+            or endings[0].get("spent") != state.spent or endings[0].get("held_iterations") != 0
+            or Path(reference["directory"]) != snapshot.study_directory):
+        return None
+    identifier, target = reference["candidate_id"], reference["target"]
+    if snapshot.visual_reviews.get(identifier) is True or feedback.starting_fit_choice(
+        snapshot, identifier
+    ):
+        return None
+    marks, cleared = feedback.region_state(snapshot, identifier, target)
+    if cleared or policy.digest(marks) != state.contract["marks_sha256"]:
+        return None
+    decision_events = {"guided_starting_fit_selected", "guided_fit_feedback",
+                       "guided_method_preference", "guided_joint_starting_fit_selected"}
+    if any(event["event"] in decision_events for event in events[endings[0]["sequence"] + 1:]):
+        if feedback.selection(snapshot, identifier) != reference:
+            return None
+    # Recompute the bound scalars from production native/QC evidence for both
+    # sides of the comparison. Ledger scalars alone cannot authorize a run.
+    last = state.stages[-1]
+    before = last["plan"]["seed"]
+    for saved in (before, last["receipt"]):
+        saved_ref = saved["reference"]
+        source = snapshot if saved_ref == reference else _snapshot(saved_ref)
+        actual = native.stage_receipt(source, saved_ref["candidate_id"], state.contract)
+        actual.update(reference=_reference(source, saved_ref["candidate_id"]),
+                      stage_id=saved["stage_id"])
+        if actual != saved:
+            return None
+    return dict(iterations=policy.EXTENSION_ITERATIONS, remaining_regions=remaining,
+                reference=copy.deepcopy(reference), state_head=state.head,
+                review_sha256=events[-1]["event_hash"])
+
+
+def _verify_extension_launch(snapshot, context):
+    from diffeoforge import reference_calibration_study as study
+
+    expected = context["extension_offer"]
+    predecessor = _snapshot(expected["reference"])
+    pointer = _read(predecessor.study_directory / _LATEST_SEARCH)
+    expected_pointer = dict(directory=str(snapshot.study_directory),
+                            manifest_sha256=sha256_file(snapshot.study_directory / "study.json"))
+    if pointer != expected_pointer:
+        raise ValueError("This additional allowance is not the current prepared continuation")
+    parent_ledger, parent_state, original = _context(marker(_record(predecessor)))
+    events = study._load_events(predecessor.study_directory)
+    if _extension_offer(predecessor, parent_ledger, parent_state, original, events, linked=True
+                        ) != expected:
+        raise ValueError("The saved fit, checks or marked areas changed before continuation")
+
+
+def _unlinked_extension(action, context):
+    """Recover the one complete preparation if publication of its pointer stopped."""
+    from diffeoforge import reference_calibration_study as study
+
+    children = list(action.glob("guided-pilot-*/study.json"))
+    if len(children) != 1 or action.is_symlink():
+        return None
+    prepared = study.load_reference_calibration_study(children[0].parent)
+    mark = marker(_record(prepared))
+    if not mark:
+        return None
+    ledger, state, saved = _context(mark)
+    if (ledger == action / "ledger" and saved == context and not state.stages
+            and state.now < state.deadline and len(prepared.candidates) == 1
+            and prepared.candidates[0].status == "pending"
+            and prepared.candidates[0].attempts == 0):
+        return prepared
+    return None
+
+
+def prepare_extension(snapshot, expected_offer):
+    """Prepare one separately bounded successor. Never launch or approve a fit."""
+    from diffeoforge import reference_calibration_study as study
+    from diffeoforge import reference_guided_pilot as guided
+
+    started = time.time()
+    mark = marker(_record(snapshot))
+    if not mark or not isinstance(expected_offer, dict):
+        raise ValueError("Reopen the finished adaptive fit to verify its continuation")
+    with study.calibration_verification_scope():
+        ledger, state, original = _context(mark)
+        verified = _extension_offer(snapshot, ledger, state, original,
+                                    study._load_events(snapshot.study_directory))
+    if verified is None or verified != expected_offer:
+        raise ValueError("The continuation recommendation changed. Reopen the retained fit.")
+    if time.time() >= started + state.contract["wall_seconds"]:
+        raise ValueError("The continuation preparation used its wall allowance")
+    action = ledger.parent / _EXTENSION_DIRECTORY
+    context = dict(original, extension_offer=verified)
+    if action.exists():
+        prepared = _unlinked_extension(action, context)
+        if prepared is None:
+            raise ValueError("A prior continuation preparation cannot be safely reopened")
+        guided._pointer(snapshot.study_directory, prepared.study_directory)
+        return prepared
+    contract_fields = (
+        "objective_sha256", "marks_sha256", "evaluation_sha256", "red_tolerances",
+        "green_limits", "outside_limit", "minimum_improvement", "wall_seconds",
+        "probe_iterations",
+    )
+    contract = policy.create_contract(
+        **{key: state.contract[key] for key in contract_fields},
+        action_id=action.name, seed_sha256=state.best_feasible["field_sha256"],
+        now=started, total_iterations=policy.EXTENSION_ITERATIONS,
+        warm_iterations=policy.EXTENSION_ITERATIONS, extension_of=state.head,
+    )
+    action.mkdir(exist_ok=False)
+    _write(action / "action.json", context)
+    extension = policy.create_ledger(action / "ledger", contract,
+                                     baseline=_extension_baseline(state, context))
+    decision = policy.next_decision(extension)
+    if decision["kind"] != "stage":
+        raise ValueError("The continuation preparation used its wall allowance")
+    return _next_child(snapshot, action / "ledger", extension, context, decision)
+
+
 def presentation(snapshot):
     """Read-only, background-verified effort and retained-result presentation."""
     from diffeoforge import reference_calibration_study as study
@@ -535,24 +720,45 @@ def presentation(snapshot):
     mark = marker(_record(snapshot))
     if not mark:
         return None
-    _, state, _ = _context(mark)
-    endings = [row for row in study._load_events(snapshot.study_directory)
-               if row["event"] == "adaptive_fit_finished"]
+    ledger, state, context = _context(mark)
+    events = study._load_events(snapshot.study_directory)
+    endings = [row for row in events if row["event"] == "adaptive_fit_finished"]
     recommendation = finished_reference(snapshot) if endings else None
     expired = state.now >= state.deadline
     historical = bool(state.stages and mark["plan"]["stage_id"]
                       != state.stages[-1]["stage_id"])
     if not endings and (expired or historical):
         recommendation = _verified_best_reference(state)
+    extension = None
+    extension_incomplete = False
+    if endings and not historical:
+        try:
+            extension = _extension_offer(snapshot, ledger, state, context, events)
+        except (OSError, ValueError, KeyError, TypeError):
+            # Missing additional trend evidence must not hide the saved fit.
+            pass
+        action = ledger.parent / _EXTENSION_DIRECTORY
+        if extension and action.exists():
+            try:
+                recoverable = _unlinked_extension(action, dict(context, extension_offer=extension))
+            except (OSError, ValueError, KeyError, TypeError):
+                recoverable = None
+            if recoverable is None:
+                extension, extension_incomplete = None, True
+    reason = (endings[-1]["reason"] if endings else
+              "The action deadline has expired. Earlier fits remain saved." if expired else
+              "This is a historical adaptive stage. Open the latest saved stage." if historical
+              else "")
+    if extension_incomplete:
+        reason += " The earlier +300 preparation cannot be safely reopened."
     return dict(
         spent=state.spent, held=state.held, total=state.contract["total_iterations"],
         stage_iterations=mark["plan"]["iterations"], purpose=mark["plan"]["purpose"],
         wall_seconds=state.contract["wall_seconds"], closed=bool(endings) or expired or historical,
-        reason=(endings[-1]["reason"] if endings else
-                "The action deadline has expired. Earlier fits remain saved." if expired else
-                "This is a historical adaptive stage. Open the latest saved stage." if historical
-                else ""),
+        reason=reason,
         recommendation=recommendation, requires_review=bool(recommendation),
+        extension=extension,
+        extension_from=policy.MAX_ITERATIONS if state.contract.get("extension_of") else None,
     )
 
 
@@ -575,6 +781,7 @@ def _next_child(current, ledger, state, context, decision):
             "source_manifest_sha256",
             "initial_previous_directory",
             "seed_reference",
+            "extension_offer",
         }
     }
     source_root = Path(context["source_directory"])
@@ -588,6 +795,8 @@ def _next_child(current, ledger, state, context, decision):
         methods=(seed["method"],),
     )
     strategy = args["strategy"]
+    previous_info = _record(current)["guided"]
+    args["spent"] = previous_info["screen_trials_spent"]
     for key in ("optimization", "regional_continuation", "adaptive_fit"):
         strategy.pop(key, None)
     strategy.update(
@@ -601,7 +810,7 @@ def _next_child(current, ledger, state, context, decision):
         preference=None,
     )
     args["history"] = [
-        *args["history"],
+        *previous_info["history"],
         dict(**strategy["previous"], outcome="bounded_" + decision["purpose"]),
     ]
     basis = _basis(field["control_points_path"], seed["values"]["initial_control_point_spacing"])

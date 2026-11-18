@@ -21,6 +21,8 @@ from uuid import uuid4
 
 VERSION = "bounded-adaptive-fit-v1"
 MAX_ITERATIONS = 600
+EXTENSION_ITERATIONS = 300
+BUDGET_EXHAUSTED = "The cumulative iteration allowance ended, including discarded comparisons."
 _MAX_EVENTS = 256
 _LIMIT = 2 * 1024 * 1024
 _PROBES = ("baseline_probe", "cp_probe", "motion_probe")
@@ -106,6 +108,7 @@ def create_contract(
     warm_iterations=100,
     probe_iterations=40,
     minimum_improvement=0.02,
+    extension_of=None,
 ):
     """Declare a NEW action, not a replacement contract for a prepared/running fit.
 
@@ -123,7 +126,7 @@ def create_contract(
         raise ValueError("The declared improvement fraction must be smaller than one")
     if not math.isfinite(created + wall):
         raise ValueError("The adaptive deadline exceeds the finite clock range")
-    return dict(
+    contract = dict(
         version=VERSION,
         opt_in=True,
         action_id=action_id,
@@ -144,6 +147,11 @@ def create_contract(
         anatomical_approval=False,
         automatic_user_preference=False,
     )
+    if extension_of is not None:
+        if total_iterations != EXTENSION_ITERATIONS or warm_iterations != EXTENSION_ITERATIONS:
+            raise ValueError("An adaptive continuation has one allowance of exactly 300 iterations")
+        contract["extension_of"] = _hash(extension_of, "exhausted parent ledger head")
+    return contract
 
 
 def _contract(value):
@@ -165,7 +173,8 @@ def _contract(value):
             "minimum_improvement",
         )
     }
-    rebuilt = create_contract(**fields, now=value["created_at"])
+    rebuilt = create_contract(**fields, now=value["created_at"],
+                              extension_of=value.get("extension_of"))
     if value != rebuilt or value["minimum_improvement"] >= 1:
         raise ValueError("The adaptive-fit contract changed or is unsupported")
     return rebuilt
@@ -336,6 +345,37 @@ def _state(contract, baseline, head, sequence, stages, now):
     )
 
 
+def extension_progress(state):
+    """Recent matched regional gains after a verified completed 600-update action."""
+    contract, stages = state.contract, state.stages
+    if (contract.get("extension_of") is not None or state.spent != MAX_ITERATIONS
+            or contract["total_iterations"] != MAX_ITERATIONS or state.remaining or state.held
+            or len(stages) < 2 or any(row["status"] != "completed" for row in stages)):
+        return None
+    last = stages[-1]
+    after = last["receipt"]
+    before = last["plan"]["seed"]
+    if (last["plan"]["purpose"] != "continue" or after["stop"] != "maximum_iterations"
+            or after != state.best_feasible
+            or not any(before == stage["receipt"] for stage in stages[:-1])
+            or not _dominates(after, before) or any(
+                row.get("native_accepted") is not True or row.get("quality_warnings")
+                or not _feasible(row, contract) for row in (before, after))):
+        return None
+    unresolved = {
+        key: dict(before=before["red_errors"][key], after=value,
+                  improvement_percent=(1 - value / before["red_errors"][key]) * 100)
+        for key, value in after["red_errors"].items()
+        if value > contract["red_tolerances"][key]
+    }
+    if not unresolved or any(
+        row["after"] >= row["before"] * (1 - contract["minimum_improvement"])
+        for row in unresolved.values()
+    ):
+        return None
+    return unresolved
+
+
 def next_decision(state):
     """One numerical experiment or a conservative stop; never an anatomical decision."""
     contract, stages = state.contract, state.stages
@@ -375,17 +415,23 @@ def next_decision(state):
     if state.now >= state.deadline:
         return stop("The declared wall-time allowance ended; retain the best feasible field.")
     if state.remaining == 0:
-        return stop("The cumulative iteration allowance ended, including discarded comparisons.")
+        if contract.get("extension_of") is not None:
+            return stop("The additional 300-iteration allowance ended.")
+        return stop(BUDGET_EXHAUSTED)
     if any(row["status"] == "aborted" for row in stages):
         return stop(
             "A child did not finish with verified numerical evidence; inspect the retained field."
         )
+    if contract.get("extension_of") is not None and stages:
+        return stop("The additional same-objective continuation ended.")
     if _score(state.best_feasible, contract)[0] <= 1:
         return stop(
             "The declared red-ROI numerical targets were reached; anatomy still needs review."
         )
     probes = [row for row in stages if row["plan"]["purpose"] in _PROBES]
-    if probes and len(probes) < 3:
+    if contract.get("extension_of") is not None:
+        purpose, seed, iterations = "continue", state.baseline, EXTENSION_ITERATIONS
+    elif probes and len(probes) < 3:
         purpose = _PROBES[len(probes)]
         seed = probes[0]["plan"]["seed"]
         iterations = contract["probe_iterations"]
