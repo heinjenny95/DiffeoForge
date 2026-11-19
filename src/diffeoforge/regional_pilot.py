@@ -499,18 +499,36 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         available = False
         blocked = retention["reason"]
     from diffeoforge.pilot_adaptive_native import eligible_seed
+    from diffeoforge.pilot_adaptive_run import eligible, has_bidirectional_baseline
 
     selected_parent = data["references"].get(seed["directory"])
     if selected_parent is None and Path(seed["directory"]).resolve() == snapshot.study_directory:
         selected_parent = snapshot
-    bounded_available = bool(selected_parent is not None and seed.get("candidate_id")
-                             and eligible_seed(selected_parent, seed["candidate_id"]))
+    bounded_seed = bool(selected_parent is not None and seed.get("candidate_id")
+                        and eligible_seed(selected_parent, seed["candidate_id"]))
+    bounded_available = available and bounded_seed and eligible(
+        dict(goal="regional", regions=marked, method=method, reference=seed, regional_recipe=recipe)
+    )
+    bounded_note = ""
+    if bounded_available:
+        from diffeoforge.guided_response import measured
+
+        baseline = data.get("response_baseline") if seed == data["anchor"] else None
+        if baseline is None:
+            baseline = measured(seed, marked)
+        bounded_available = has_bidirectional_baseline(marked, baseline["baseline"])
+        if not bounded_available:
+            bounded_note = (
+                "A red area has no surface samples in one direction. Use one protected "
+                "local test from this saved fit."
+            )
+            reason = bounded_note + " " + reason
     from diffeoforge.pilot_iteration_effort import legacy_checkpoint, regional_allowance
 
     inherited = getattr(snapshot, "attachment_comparison", {}).get("iterations", 120)
     effort = regional_allowance(recipe, marked, inherited)
     checkpoint = None
-    if available and not bounded_available:
+    if available and not bounded_seed:
         prior = next((c for c in getattr(selected_parent, "candidates", ())
                       if c.candidate_id == seed.get("candidate_id")), None)
         checkpoint = legacy_checkpoint(recipe, effort["maximum_iterations"], prior)
@@ -530,6 +548,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     return dict(
         goal="regional",
         bounded_fit_available=bounded_available,
+        bounded_fit_note=bounded_note,
         title=("Improve remaining areas while retaining local detail" if recovery else
                "Improve marked areas and protect the rest"),
         reason=reason,

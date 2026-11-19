@@ -614,8 +614,9 @@ def _marked_trial_direction(snapshot, context, chosen, *, fresh_only=False):
             mode="trial", identifier=identifier, current=seed,
             action="adaptive_recover_start" if working else "adaptive_recover",
             title=proposal["title"], start_label=choice["label"],
-            reason="You marked an area that needs work. Prepare one local test that protects "
-                   "the surrounding shape, then compare it with this saved fit.",
+            reason=proposal.get("bounded_fit_note") or (
+                "You marked an area that needs work. Prepare one local test that protects "
+                "the surrounding shape, then compare it with this saved fit."),
             request=dict(request=request, reference=seed, values=proposal["values"],
                          goal=proposal["goal"], regions=regions, reviewed_next=True,
                          bounded_fit_available=proposal.get("bounded_fit_available", False)),
@@ -663,8 +664,9 @@ def _prepare_fit_direction(snapshot, context, chosen):
         label = f"{selected['method'].title()} · Test {choice['trial_index']} · {count:,} CP"
         return dict(
             direction, mode="trial", title=proposal["title"], start_label=label,
-            reason="This test compares the same marked areas on the selected saved fit. "
-                   "Review the affected areas and the rest of the shape after the test.",
+            reason=proposal.get("bounded_fit_note") or (
+                "This test compares the same marked areas on the selected saved fit. "
+                "Review the affected areas and the rest of the shape after the test."),
             request=dict(request=request, reference=selected, values=proposal["values"],
                          goal=proposal["goal"], regions=regions,
                          bounded_fit_available=proposal.get("bounded_fit_available", False)),
@@ -712,7 +714,8 @@ def _prepare_return_direction(context, direction, chosen):
         title="Work on remaining marked area" if len(problem) == 1 else
               "Work on remaining marked areas",
         reason=" ".join(filter(None, (
-            "Prepare a protected local test from this saved fit. "
+            proposal.get("bounded_fit_note")
+            or "Prepare a protected local test from this saved fit.",
             "Review the new result before deciding if it is suitable.", quality,
         ))),
         request=dict(request=request, reference=reference, values=proposal["values"],

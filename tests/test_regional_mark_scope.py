@@ -73,6 +73,34 @@ def test_identical_marks_keep_the_existing_measured_detail_route(monkeypatch):
     assert result['regional_recipe']['focus_width'] < .15
 
 
+@pytest.mark.parametrize('has_reverse', [False, True])
+def test_regional_guidance_checks_exact_red_baseline_before_offering_adaptation(
+    monkeypatch, has_reverse
+):
+    from diffeoforge import guided_response, pilot_adaptive_native
+
+    snapshot, data, _ = context(monkeypatch)
+    data['regions'].append(dict(data['regions'][0], center=[.5, 0., 0.], purpose='fixed'))
+    rows = [dict(region=deepcopy(data['regions'][0]),
+                 reverse_selected_faces=10 if has_reverse else 0,
+                 repeats=[dict(original_to_fit_p95=.1,
+                               fit_to_original_p95=.02 if has_reverse else None,
+                               reverse_count=2048 if has_reverse else 0) for _ in range(2)])]
+    data['response_baseline'] = dict(baseline=rows)
+    monkeypatch.setattr(pilot_adaptive_native, 'eligible_seed', lambda *_: True)
+
+    def unexpected_recapture(*_):
+        pytest.fail('Reuse the already verified exact-anchor measurement')
+
+    monkeypatch.setattr(guided_response, 'measured', unexpected_recapture)
+    result = regional_pilot.proposal(snapshot, 'x', data, symptom='detail')
+    assert result['bounded_fit_available'] is has_reverse
+    assert result['available'] and result['trials'] == 1
+    assert bool(result['bounded_fit_note']) is not has_reverse
+    assert result['initialization_reference'] == data['anchor']
+    assert result['regions'] == data['regions']
+
+
 def test_global_retry_cannot_restore_quality_from_an_old_mark_scope(monkeypatch):
     from diffeoforge import guided_feedback
 

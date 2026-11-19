@@ -168,27 +168,57 @@ def _context(mark):
     return ledger, state, context
 
 
+class UnmeasuredRedBaseline(ValueError):
+    """A red area's saved field has no surface samples in one direction."""
+
+
 def _red_baseline(feedback):
     rows, baseline = feedback["regions"], feedback.get("baseline") or []
     errors = {}
+    missing_surface = False
+    directions = (
+        ("original_to_fit_p95", "selected_faces", "forward_count"),
+        ("fit_to_original_p95", "reverse_selected_faces", "reverse_count"),
+    )
     for index, region in enumerate(rows):
         if region.get("purpose", "problem") != "problem":
             continue
         matches = [row for row in baseline if row.get("region") == region]
         if len(matches) != 1:
             raise ValueError("Each adaptive red area needs its exact captured baseline")
-        values = [
-            repeat.get(key)
-            for repeat in matches[0].get("repeats", [])
-            for key in ("original_to_fit_p95", "fit_to_original_p95")
-        ]
-        if not values or any(
-            type(value) not in (int, float) or not math.isfinite(value) or value < 0
-            for value in values
-        ):
-            raise ValueError("Adaptive red baseline has unmeasured surface distances")
-        errors[f"R{index}"] = max(values)
+        area = matches[0]
+        repeats = area.get("repeats")
+        if not repeats:
+            raise ValueError("Each adaptive red area needs repeated surface measurements")
+        values = []
+        for repeat in repeats:
+            for distance, faces, count in directions:
+                value = repeat.get(distance)
+                if (distance in repeat and value is None
+                        and type(area.get(faces)) is int and area[faces] == 0
+                        and type(repeat.get(count)) is int and repeat[count] == 0):
+                    missing_surface = True
+                    continue
+                if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                    raise ValueError("Adaptive red baseline has invalid surface measurements")
+                values.append(value)
+        if values:
+            errors[f"R{index}"] = max(values)
+    if missing_surface:
+        raise UnmeasuredRedBaseline(
+            "A red area has no surface samples in one direction. Reopen the pilot guidance "
+            "to prepare a protected local test from the saved fit."
+        )
     return errors
+
+
+def has_bidirectional_baseline(regions, measurements):
+    """Only structural absence rules out adaptation while allowing a local trial."""
+    try:
+        _red_baseline(dict(regions=regions, baseline=measurements))
+    except UnmeasuredRedBaseline:
+        return False
+    return True
 
 
 def prepare(arguments):
@@ -255,6 +285,7 @@ def prepare(arguments):
         preference=None,
     )
     args["strategy"] = strategy
+    red_errors = _red_baseline(args["feedback"])
     if time.time() >= action_started + WALL_SECONDS:
         raise ValueError("The adaptive preparation used its wall allowance; no child was prepared")
     parent = Path(args.get("destination_parent") or args["source"].study_directory.parent).resolve()
@@ -301,7 +332,7 @@ def prepare(arguments):
         seed_snapshot,
         ref["candidate_id"],
         contract,
-        red_errors=_red_baseline(args["feedback"]),
+        red_errors=red_errors,
         regions=marks,
     )
     baseline.update(reference=copy.deepcopy(ref), preparation_sha256=policy.digest(template))

@@ -90,6 +90,7 @@ def inputs(snapshot, identifier, context, *, regions_override=None, allow_contin
                 current_reference=current_reference,
                 severe=severe_regression(snapshot, identifier), references=references,
                 context=context, response_cases=response_cases, response_evidence=response_evidence,
+                response_baseline=response_baseline,
                 regional_capture=regional_capture,
                 common_optimization=common_optimization,
                 capacity_context=capacity_context,

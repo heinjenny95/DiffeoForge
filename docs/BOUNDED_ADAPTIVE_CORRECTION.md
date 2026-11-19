@@ -9,6 +9,12 @@ physical attachment/protection objective and evaluation protocol. It does not
 rewrite a prepared legacy trial. Landmark guides and unsupported native scopes
 keep their existing explicit workflow.
 
+Before offering adaptation, the pilot checks both measurement directions for
+each red area on the selected saved fit. When the marked volume has no surface
+on one side, the pilot offers the protected single-trial workflow if eligible.
+The same marks and selected field are used, with ordinary spatial, temporal,
+intersection and preservation checks.
+
 The first stage continues the selected field for at most 100 updates. If a red
 region stalls, three short, controlled residual tests compare the original
 basis, a nested basis with additional controls, and that same nested basis with

@@ -820,6 +820,39 @@ def test_capture_failure_preserves_old_files_and_creates_no_action(action, monke
 
 
 @pytest.mark.parametrize(
+    ("distance", "faces", "count"),
+    [
+        ("original_to_fit_p95", "selected_faces", "forward_count"),
+        ("fit_to_original_p95", "reverse_selected_faces", "reverse_count"),
+    ],
+)
+def test_structurally_empty_red_direction_refuses_adaptation_before_creating_action(
+    action, distance, faces, count
+):
+    feedback = action.arguments["feedback"]
+    area = feedback["baseline"][0]
+    area[faces] = 0
+    for repeat in area["repeats"]:
+        repeat.update({distance: None, count: 0})
+
+    assert not orchestration.has_bidirectional_baseline(feedback["regions"], feedback["baseline"])
+    with pytest.raises(orchestration.UnmeasuredRedBaseline, match="protected local test"):
+        orchestration.prepare(action.arguments)
+    assert not list(action.base.study_directory.parent.glob("adaptive-fit-*"))
+    assert not action.args_seen and not action.launches
+
+
+def test_missing_red_distance_with_surface_data_is_invalid_evidence(action):
+    feedback = action.arguments["feedback"]
+    area = feedback["baseline"][0]
+    area["reverse_selected_faces"] = 40
+    area["repeats"][0].update(fit_to_original_p95=None, reverse_count=2048)
+
+    with pytest.raises(ValueError, match="invalid surface measurements"):
+        orchestration.has_bidirectional_baseline(feedback["regions"], feedback["baseline"])
+
+
+@pytest.mark.parametrize(
     "error",
     [
         ValueError("Complete nested support exceeds 2000 controls"),
