@@ -58,6 +58,7 @@ from diffeoforge.resource_monitor import ProcessResourceMonitor
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 if TYPE_CHECKING:
+    from diffeoforge.analysis.reference_convergence_visualization import ReferenceStopEvidence
     from diffeoforge.report import PreflightResult
 
 RUN_MANIFEST_VERSION = "0.1"
@@ -1934,19 +1935,25 @@ def inspect_abandoned_run(run_directory: Path | str) -> AbandonedRunEvidence:
     )
 
 
-def iteration_extension_limit(source_run_directory: Path | str) -> int:
-    """Read the capped terminal stop; this hint alone never authorizes execution."""
+def completed_gradient_ascent_history(
+    source_run_directory: Path | str,
+) -> tuple[int, str, ReferenceStopEvidence]:
+    """Read the terminal log and verify that it matches the recorded history."""
     source = Path(source_run_directory).expanduser().resolve()
     manifest = _read_manifest(source)
     if manifest["effective_config"]["optimization"]["method"] != "gradient_ascent":
-        raise ConfigurationError("Additional iterations require native gradient-ascent state.")
+        raise ConfigurationError("This diagnosis requires native GradientAscent history.")
     result = _read_json_object(source / "result.json", "Source result")
+    terminal = _read_events(source / "events.jsonl")[-1]
     if (
         result.get("status") != "completed"
         or result.get("return_code") != 0
         or result.get("execution_error") is not None
+        or result.get("run_id") != manifest["run_id"]
+        or terminal.get("event") != "completed"
+        or terminal.get("return_code") != 0
     ):
-        raise ConfigurationError("Additional iterations require a completed capped run.")
+        raise ConfigurationError("The optimizer history requires a normally completed run.")
     log = source / "logs" / "deformetrica.log"
     csv_path = source / "logs" / "convergence.csv"
     if not log.is_file() or log.is_symlink() or not csv_path.is_file() or csv_path.is_symlink():
@@ -1960,11 +1967,18 @@ def iteration_extension_limit(source_run_directory: Path | str) -> int:
     from diffeoforge.analysis.reference_convergence_visualization import (
         detect_reference_stop_evidence,
     )
+    log_text = log.read_text(encoding="utf-8", errors="replace")
     evidence = detect_reference_stop_evidence(
-        log.read_text(encoding="utf-8"),
+        log_text,
         final_iteration=None if not rows else int(rows[-1]["iteration"]),
         maximum_iterations=maximum,
     )
+    return maximum, log_text, evidence
+
+
+def iteration_extension_limit(source_run_directory: Path | str) -> int:
+    """Read the capped terminal stop; this hint alone never authorizes execution."""
+    maximum, _, evidence = completed_gradient_ascent_history(source_run_directory)
     if evidence.signal != "maximum_iterations":
         raise ConfigurationError(
             "Additional iterations are available only after the iteration limit, "

@@ -1,19 +1,20 @@
-"""Asynchronous cap assessment; stale results cannot update a different run."""
+"""Asynchronous diagnosis for the selected completed run."""
 
 from concurrent.futures import ThreadPoolExecutor
 
-from PySide6.QtCore import QObject, QTimer
+from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLabel
 
-from diffeoforge.convergence_advice import capped_run_advice
+from diffeoforge.convergence_advice import run_advice
 
-_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cap-advice")
+_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="convergence-advice")
 
 
-class CapAdviceController(QObject):
+class ConvergenceAdviceController(QObject):
     def __init__(self, window, buttons):
         super().__init__(window)
         self.window, self.buttons = window, buttons
+        self.source = None
         self.future = None
         self.labels = []
         self.timer = QTimer(self)
@@ -21,6 +22,7 @@ class CapAdviceController(QObject):
         self.timer.timeout.connect(self._poll)
         for button in buttons:
             label = QLabel(button.parentWidget())
+            label.setTextFormat(Qt.TextFormat.PlainText)
             label.setWordWrap(True)
             label.hide()
             container = button.parentWidget()
@@ -35,6 +37,8 @@ class CapAdviceController(QObject):
             self.labels.append(label)
 
     def load(self, source):
+        if source is not None and source == self.source and self.future is not None:
+            return
         self.timer.stop()
         self.source = source
         self.window._iteration_extension_source = None
@@ -42,7 +46,7 @@ class CapAdviceController(QObject):
             widget.hide()
         if self.future is not None:
             self.future.cancel()
-        self.future = None if source is None else _POOL.submit(capped_run_advice, source)
+        self.future = None if source is None else _POOL.submit(run_advice, source)
         if self.future is not None:
             self.timer.start()
 
@@ -53,13 +57,15 @@ class CapAdviceController(QObject):
         try:
             maximum, advice = self.future.result()
         except (OSError, RuntimeError, TypeError, ValueError, KeyError):
+            self.future = None
             return
-        self.window._iteration_extension_source = self.source
         for button, label in zip(self.buttons, self.labels, strict=True):
-            button.setText(f"Continue +300 iterations ({maximum} → {maximum + 300})")
-            button.setToolTip(
-                "Continue from the saved state in a new run; previous results are retained."
-            )
-            button.show()
             label.setText(advice)
             label.show()
+            if maximum is not None:
+                button.setText(f"Continue +300 iterations ({maximum} → {maximum + 300})")
+                button.setToolTip(
+                    "Continue from the saved state in a new run; previous results are retained."
+                )
+                button.show()
+        self.window._iteration_extension_source = self.source if maximum is not None else None

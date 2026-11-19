@@ -83,10 +83,10 @@ def test_run_window_observes_progress_and_clears_engine_bound_history(app, monke
     source = tmp_path / "finished"
     from diffeoforge.desktop import convergence_advice
 
-    monkeypatch.setattr(convergence_advice, "capped_run_advice", lambda path: (300, "Advice"))
-    window._refresh_iteration_extension(source)
-    window._cap_advice.future.result(timeout=5)
-    window._cap_advice._poll()
+    monkeypatch.setattr(convergence_advice, "run_advice", lambda path: (300, "Advice"))
+    window._refresh_convergence_advice(source)
+    window._convergence_advice.future.result(timeout=5)
+    window._convergence_advice._poll()
     assert "300 → 600" in window.run_more_iterations_button.text()
     assert not window.result_more_iterations_button.isHidden()
     assert not window.qc_more_iterations_button.isHidden()
@@ -131,4 +131,27 @@ def test_run_window_observes_progress_and_clears_engine_bound_history(app, monke
     assert window._iteration_extension_source is None
     assert window.run_more_iterations_button.isHidden()
     assert window.run_live_optimizer_plot.isHidden()
+    window.close()
+
+
+def test_tolerance_stop_shows_diagnosis_without_continuation_on_every_page(
+    app, monkeypatch, tmp_path
+):
+    from diffeoforge.desktop import convergence_advice, widgets
+
+    source = tmp_path / "completed"
+    advice = "Native stop: tolerance reached.\nLast 50 logged iterations: objective improved."
+    monkeypatch.setattr(convergence_advice, "run_advice", lambda path: (None, advice))
+
+    window = widgets.DiffeoForgeWindow()
+    window._refresh_convergence_advice(source)
+    controller = window._convergence_advice
+    controller.future.result(timeout=5)
+    controller._poll()
+    assert [label.text() for label in controller.labels] == [advice] * 3
+    assert all(not label.isHidden() for label in controller.labels)
+    assert all(button.isHidden() for button in controller.buttons)
+    assert window._iteration_extension_source is None
+    window._clear_engine_project_state()
+    assert all(label.isHidden() for label in controller.labels)
     window.close()

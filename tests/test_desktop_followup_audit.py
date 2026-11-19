@@ -144,7 +144,8 @@ def test_closing_export_view_cannot_leave_recording_in_busy_mode(qapp, monkeypat
 
 
 @pytest.mark.parametrize("width,height", [(850, 650), (1140, 900)])
-def test_cap_advice_cannot_squeeze_qc_footer(qapp, monkeypatch, width, height):
+@pytest.mark.parametrize("maximum", [500, None])
+def test_convergence_advice_cannot_squeeze_qc_footer(qapp, monkeypatch, width, height, maximum):
     from PySide6.QtWidgets import QHBoxLayout, QPushButton, QVBoxLayout, QWidget
 
     from diffeoforge.desktop import convergence_advice as module
@@ -160,9 +161,9 @@ def test_cap_advice_cannot_squeeze_qc_footer(qapp, monkeypatch, width, height):
     row.addWidget(QPushButton("Open Results"))
     vertical.addWidget(footer)
     future = Future()
-    future.set_result((500, "Recent objective improvement is still measurable. " * 10))
+    future.set_result((maximum, "Recent objective improvement is still measurable. " * 10))
     monkeypatch.setattr(module._POOL, "submit", lambda *args: future)
-    controller = module.CapAdviceController(page, (button,))
+    controller = module.ConvergenceAdviceController(page, (button,))
     controller.load(Path("synthetic-capped-run"))
     controller._poll()
     page.show()
@@ -172,5 +173,43 @@ def test_cap_advice_cannot_squeeze_qc_footer(qapp, monkeypatch, width, height):
     assert label.width() >= width - 80
     assert label.geometry().bottom() < footer.geometry().top()
     assert footer.height() < 100
+    page.close()
+    qapp.processEvents()
+
+
+def test_convergence_advice_ignores_a_previous_run_and_reuses_selected_result(qapp, monkeypatch):
+    from PySide6.QtWidgets import QPushButton, QVBoxLayout, QWidget
+
+    from diffeoforge.desktop import convergence_advice as module
+
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    button = QPushButton("Continue +300 iterations")
+    layout.addWidget(button)
+    previous, selected = Path("old-cap-run"), Path("selected-tolerance-run")
+    previous_future, selected_future = Future(), Future()
+    assert previous_future.set_running_or_notify_cancel()
+    requests = []
+
+    def submit(worker, source):
+        requests.append(source)
+        return {previous: previous_future, selected: selected_future}[source]
+
+    monkeypatch.setattr(module._POOL, "submit", submit)
+    controller = module.ConvergenceAdviceController(page, (button,))
+    controller.load(previous)
+    controller.load(selected)
+    controller.load(selected)
+    previous_future.set_result((500, "Old advice"))
+    controller._poll()
+    assert button.isHidden() and controller.labels[0].isHidden()
+
+    selected_future.set_result((None, "Selected advice"))
+    controller._poll()
+    controller.load(selected)
+    assert requests == [previous, selected]
+    assert controller.labels[0].text() == "Selected advice"
+    assert not controller.labels[0].isHidden()
+    assert button.isHidden() and page._iteration_extension_source is None
     page.close()
     qapp.processEvents()

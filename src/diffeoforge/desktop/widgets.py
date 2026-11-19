@@ -7723,7 +7723,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.active_parameter_project_label.hide()
         self.method_results_panel.clear()
         self.result_card.hide()
-        self._refresh_iteration_extension(None)
+        self._refresh_convergence_advice(None)
         self.run_live_optimizer_plot.clear()
         self.run_live_optimizer_plot.hide()
         self.template_preview_card.hide()
@@ -8829,15 +8829,15 @@ class DiffeoForgeWindow(QMainWindow):
         request, result = prepared
         self._show_reference_resume(request, result)
 
-    def _refresh_iteration_extension(self, source: Path | None) -> None:
-        if not hasattr(self, "_cap_advice"):
-            from diffeoforge.desktop.convergence_advice import CapAdviceController
+    def _refresh_convergence_advice(self, source: Path | None) -> None:
+        if not hasattr(self, "_convergence_advice"):
+            from diffeoforge.desktop.convergence_advice import ConvergenceAdviceController
 
-            self._cap_advice = CapAdviceController(self, (
+            self._convergence_advice = ConvergenceAdviceController(self, (
                 self.run_more_iterations_button, self.result_more_iterations_button,
                 self.qc_more_iterations_button,
             ))
-        self._cap_advice.load(source)
+        self._convergence_advice.load(source)
 
     @Slot()
     def _select_saved_export(self):
@@ -8888,7 +8888,7 @@ class DiffeoForgeWindow(QMainWindow):
         self, request: DesktopReferenceLaunchRequest, result: ResumableReferenceRun,
         *, extension_maximum: int | None = None,
     ) -> None:
-        self._refresh_iteration_extension(None)
+        self._refresh_convergence_advice(None)
         self.review_early_atlas_button.hide()
         self._result = None
         self._run_readiness = None
@@ -11763,6 +11763,7 @@ class DiffeoForgeWindow(QMainWindow):
         worker.signals.cancel_failed.connect(self._atlas_cancel_failed)
         self._worker = worker
         self._result_review = None
+        self._refresh_convergence_advice(None)
         self.run_live_optimizer_plot.clear()
         self.run_live_optimizer_plot.setVisible(reference)
         self.run_result_card.hide()
@@ -12450,7 +12451,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
         self.run_state_label.setStyleSheet("")
         self._reference_run_request = None
-        self._refresh_iteration_extension(
+        self._refresh_convergence_advice(
             Path(terminal.payload["destination"]) if result.completed else None
         )
         self._sync_ready_state()
@@ -12536,7 +12537,9 @@ class DiffeoForgeWindow(QMainWindow):
             self.method_results_panel.load_saved(review)
         else:
             self.method_results_panel.clear()
-        self._refresh_iteration_extension(review.run_directory)
+        self._refresh_convergence_advice(
+            review.run_directory if review.engine_route == "deformetrica_reference" else None
+        )
         method_label = review.pca_method_label
         self.result_pca_short_help.setText(shape_method_description(review.pca_method_id))
         self.result_pca_title.setText(method_label)

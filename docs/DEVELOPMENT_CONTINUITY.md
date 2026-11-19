@@ -1,5 +1,14 @@
 # Development continuity
 
+## Read-only diagnosis after a native tolerance stop
+
+Completed GradientAscent results show the native stop and recent logged totals
+and weighted fit error. The 10- and 50-iteration comparisons account for gaps
+and printed rounding and identify the unlogged tolerance-triggering step.
+Direct initialization, visual quality review and the existing capped +300
+action retain their roles. See [terminal diagnosis](ATLAS_TERMINAL_DIAGNOSIS.md)
+for checkpoint and provenance requirements of a future explicit continuation.
+
 ## Fixed-basis individual initialization from zero
 
 A separately prepared Deformetrica project can fit every specimen from zero
