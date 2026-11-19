@@ -1,6 +1,10 @@
 # Development continuity
 
-## Deformetrica visual review before PCA
+## dev228 — Validation Lab handoff and Deformetrica visual review before PCA
+
+Validation Lab verifies the effective pilot plan against the original plan and
+the saved completed study before staging comparisons. Each comparison starts
+from the bound original template and its own control grid.
 
 The desktop opens the full cohort for visual QC before fitting PCA. An empty
 flagged queue starts PCA automatically. Each required reconstruction needs a
