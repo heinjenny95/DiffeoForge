@@ -1,5 +1,13 @@
 # Development continuity
 
+## dev227 — route one-sided marks to a protected test
+
+A red mark can contain surface from only one of the two meshes. The pilot checks
+this on the verified working fit before offering adaptive correction, and offers
+one protected local test when eligible. The test uses the saved starting field
+and marks. Existing reviews, numerical checks and sealed adaptive budgets keep
+their meaning. See [bounded adaptive correction](BOUNDED_ADAPTIVE_CORRECTION.md).
+
 ## dev226 - earlier review for costly local corrections
 
 A first 600-iteration protected correction from a legacy gradient-ascent
