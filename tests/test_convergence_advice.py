@@ -137,6 +137,14 @@ def test_completed_iteration_limit_keeps_the_existing_extension_budget(tmp_path)
     assert "Iteration limit reached (100)" in text and "Consider +300" in text
 
 
+def test_iteration_extension_still_rejects_an_invalid_utf8_log(tmp_path):
+    source = _history(tmp_path, _logged(100, -100, -90))
+    with (source / "logs/deformetrica.log").open("ab") as handle:
+        handle.write(b"\xff\n")
+    with pytest.raises(UnicodeDecodeError):
+        iteration_extension_limit(source)
+
+
 def test_attachment_change_within_rounding_is_reported_as_unresolved():
     rows = tuple(Observation(i, -100 + i, .05, 10, .5) for i in range(51))
     text = summarize(rows, at_iteration_limit=False)

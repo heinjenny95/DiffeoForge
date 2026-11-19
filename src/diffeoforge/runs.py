@@ -1967,7 +1967,7 @@ def completed_gradient_ascent_history(
     from diffeoforge.analysis.reference_convergence_visualization import (
         detect_reference_stop_evidence,
     )
-    log_text = log.read_text(encoding="utf-8", errors="replace")
+    log_text = log.read_text(encoding="utf-8")
     evidence = detect_reference_stop_evidence(
         log_text,
         final_iteration=None if not rows else int(rows[-1]["iteration"]),
