@@ -1,5 +1,13 @@
 # Development continuity
 
+## Guided local fit result clarification after dev225
+
+The prepared single protected local fit displays its own iteration allowance
+before Run. A capped regional result shows the local P95 gain when recorded,
+the specific surface checks that failed and review guidance before more
+iterations. Fitting and qualification time appear separately. This
+presentation change keeps iteration and qualification decisions as recorded.
+
 ## dev225 — recommend continuation after a productive adaptive fit
 
 After the initial adaptive 600-iteration allowance is spent, the pilot can

@@ -31,13 +31,46 @@ def test_cancelled_checks_offer_resume_without_a_new_fit(panel):
 def test_scope_and_failed_checks_are_visible_without_a_technical_disclosure(panel):
     from PySide6.QtWidgets import QLabel
 
-
     panel.guidance['regional_scope'] = dict(text='This trial: improve C; keep B in place.')
+    metrics = panel.candidate.metrics
+    metrics.update(runtime_seconds=2076, pipeline_wall_seconds=2604,
+                   maximum_iterations=600, final_iteration=600)
+    quality = metrics["attachment_comparison"]["subjects"]["specimen.vtk"]["regional_quality"]
+    quality.update(local_improved=True, baseline_surface_p95=0.218, active_surface_p95=0.039,
+                   explicit_fixed_preserved=True, qualification_wall_seconds=426)
+    panel.snapshot.attachment_comparison["iterations"] = 600
     panel.render()
     scope = panel.window.content.findChild(QLabel, 'regionalTrialScope')
     assert scope.isVisible() and 'improve C' in scope.text()
     assert any('Numerical checks did not pass' in w.text()
                for w in panel.window.content.findChildren(QLabel) if w.isVisible())
+    result = panel.window.content.findChild(QLabel, "regionalCheckOutcome")
+    assert result.isVisible()
+    assert "Marked-area P95 distance fell by 82.1%" in result.text()
+    assert "new surface intersection flags, source geometry refinement limit" in result.text()
+    assert "Review these checks before spending more iterations" in result.text()
+    assert "fixed marked areas" not in result.text()
+    assert any(
+        "43.4 min total · 34.6 min fit run" in row.text() and "7.1 min checks" in row.text()
+        for row in panel.window.content.findChildren(QLabel)
+        if row.isVisible()
+    )
+
+
+def test_prepared_single_regional_fit_names_its_own_iteration_allowance(panel):
+    from PySide6.QtWidgets import QLabel
+
+    panel.candidate.status = "pending"
+    panel.candidate.metrics = None
+    panel.snapshot.visual_reviews.clear()
+    panel.snapshot.attachment_comparison["iterations"] = 600
+    panel.window.layout().addWidget(panel.window.start_button)
+    panel.render()
+    assert panel.window.start_button.text() == "Run single protected local fit"
+    effort = panel.window.content.findChild(QLabel, "singleRegionalEffort")
+    assert effort.isVisible()
+    assert "up to 600 iterations, then surface checks" in effort.text()
+    assert not panel.invoked
 
 
 @pytest.mark.parametrize('phase', [None, 'fixed_shooting'])

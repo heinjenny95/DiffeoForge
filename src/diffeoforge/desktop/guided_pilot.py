@@ -1,5 +1,7 @@
 """Compact guided actions, separate method cards and visible recovery after rejection."""
 
+import math
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
@@ -28,6 +30,44 @@ def _extension_reason(offer):
     )
 
 
+def _regional_check_note(quality, *, capped, approved, starting_choice):
+    failures = [
+        label for key, label in (
+            ("no_new_intersection_flags", "new surface intersection flags"),
+            ("spatial_resolution_sufficient", "source geometry refinement limit"),
+            ("temporal_grid_stable", "time-grid stability"),
+            ("transition_preserved", "transition fit"),
+            ("outside_preserved", "preservation outside the area"),
+            ("shape_preserved", "preservation of marked part shape"),
+            ("explicit_fixed_preserved", "preservation of fixed marked areas"),
+        ) if quality.get(key) is False
+    ]
+    if not failures and quality.get("numerical_selection_suitable") is not False:
+        return (
+            "Local, transition and preservation checks passed. Inspect anatomy. "
+            "This regional objective still needs a shared cohort protocol."
+        )
+    causes = ", ".join(failures) or "an unresolved numerical check"
+    before, after = quality.get("baseline_surface_p95"), quality.get("active_surface_p95")
+    improvement = ""
+    if (quality.get("local_improved") is True
+            and all(type(value) in (float, int) and math.isfinite(value)
+                    for value in (before, after))
+            and 0 <= after < before):
+        improvement = f"Marked-area P95 distance fell by {(1 - after / before) * 100:.1f}%. "
+    if approved:
+        result = "Your suitable-fit decision is saved. Surface checks still report " + causes + "."
+    elif starting_choice:
+        result = f"This attempt reports {causes}. Choose the saved starting fit explicitly."
+    else:
+        result = f"This attempt fails: {causes}. Review the fit and its saved starting fit."
+    return (
+        improvement + result
+        + (" Review these checks before spending more iterations on the same settings."
+           if capped else "")
+    )
+
+
 def render(window, prepared):
     from diffeoforge.desktop.pilot_common_model import pin_action, pin_recovery, pin_revision
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
@@ -42,6 +82,8 @@ def render(window, prepared):
     info = record(snapshot)
     guidance = prepared.guidance
     bounded_action = guidance.get("bounded_adaptive")
+    regional_trial = bool(snapshot.attachment_comparison.get("regional_objective"))
+    iterations = snapshot.attachment_comparison.get("iterations")
     starting_choice = next((row for row in guidance.get("feedback", {}).values()
                             if row and row.get("starting_fit_choice")), None)
     density_pair = snapshot.attachment_comparison.get("early_density_comparison")
@@ -156,6 +198,13 @@ def render(window, prepared):
             note.setObjectName("adaptiveResult")
             note.setWordWrap(True)
             window.content_layout.addWidget(note)
+    elif regional_trial and type(iterations) is int and iterations > 0:
+        note = QLabel(
+            f"Single protected local fit · up to {iterations:,} iterations, then surface checks."
+        )
+        note.setObjectName("singleRegionalEffort")
+        note.setWordWrap(True)
+        window.content_layout.addWidget(note)
     if starting_choice and not running:
         from diffeoforge.desktop.guided_feedback import render_starting_choice
 
@@ -311,6 +360,8 @@ def render(window, prepared):
         window.start_button.setText(
             "Run +300 continuation" if bounded_action.get("extension_from") else
             f"Run adaptive correction · ≤{bounded_action['total']} total iterations")
+    elif regional_trial and can_run and not (resume_checks or common_flow or retry_blocked):
+        window.start_button.setText("Run single protected local fit")
     window.start_button.setVisible(can_run)
     window.start_button.setEnabled(can_run and not running and not retry_blocked)
     window.start_button.setToolTip(
@@ -634,6 +685,7 @@ def render(window, prepared):
             if runtime is not None:
                 state += (f" ({runtime / 60:.1f} min fitting across both stages)"
                           if multiscale and effort.get("stage") == "detail" else
+                          f" · {runtime / 60:.1f} min fit run" if regional_trial else
                           f" ({runtime / 60:.1f} min fitting)" if multiscale else
                           f" ({runtime / 60:.1f} min including review waits)")
         elif runtime is not None:
@@ -643,7 +695,8 @@ def render(window, prepared):
             state += f" · {resumed / 60:.1f} min resumed checks, no new fitting"
         from diffeoforge.guided_progress import iteration_limited
 
-        if iteration_limited(candidate):
+        capped = iteration_limited(candidate)
+        if capped:
             state += " · iteration limit, provisional"
         elif (candidate.metrics or {}).get("optimizer_stop_signal") == "pilot_review_request":
             state += " · ended at intermediate review, not converged"
@@ -681,29 +734,10 @@ def render(window, prepared):
             if quality.get('numerical_selection_suitable') is False:
                 label.setText('Numerical checks did not pass · '+state)
                 label.setObjectName('statusWarning')
-            failures = [label for key, label in [("transition_preserved", "transition fit"),
-                         ("outside_preserved", "preservation outside the area"),
-                         ("shape_preserved", "preservation of marked part shape")]
-                        if not quality[key]]
-            if not quality.get("no_new_intersection_flags", True):
-                failures.append("new surface intersection flags")
-            if not quality.get("temporal_grid_stable", True):
-                failures.append("time-grid stability")
-            if not quality.get("spatial_resolution_sufficient", True):
-                failures.append("original-source spatial resolution limit")
-            note = QLabel(
-                "Your suitable-fit decision is saved. Surface checks still report: "
-                + ", ".join(failures)
-                + ". Atlas checks remain separate."
-                if decision is True and failures else
-                "This attempt reports: " + ", ".join(failures)
-                + ". Choose the saved starting fit explicitly before another correction."
-                if failures and starting_choice else
-                "This attempt fails: " + ", ".join(failures)
-                + ". It will not replace your retained starting fit."
-                if failures else
-                          "Local, transition and preservation checks passed; inspect anatomy. "
-                          "This regional objective still needs a shared cohort protocol.")
+            note = QLabel(_regional_check_note(
+                quality, capped=capped, approved=decision is True, starting_choice=starting_choice,
+            ))
+            note.setObjectName("regionalCheckOutcome")
             note.setWordWrap(True)
             layout.addWidget(note)
         from diffeoforge.guided_density import refinement_for
