@@ -1,5 +1,11 @@
 # Development continuity
 
+## dev229 — atlas stop diagnosis and pilot correction routing
+
+This version includes the completed atlas diagnosis, zero-start individual
+initialization and protected missing-surface correction below. The Windows
+package uses the existing bundled desktop and Deformetrica reference workflow.
+
 ## Read-only diagnosis after a native tolerance stop
 
 Completed GradientAscent results show the native stop and recent logged totals
