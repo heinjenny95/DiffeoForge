@@ -2,11 +2,11 @@
 
 ## Reconstruction QC before PCA (19 November 2026)
 
-- [ ] After atlas completion, wait for the required visual decisions on flagged
+- [x] In the Deformetrica desktop workflow, wait for the required visual decisions on flagged
   reconstructions. Exclude specimens explicitly rated Implausible before
   fitting PCA and building the morphospace. Record the PCA cohort and the
   exclusion decisions. Preserve the complete atlas and reconstructions.
-- [ ] If the completed atlas has no reconstructions flagged for visual review,
+- [x] If the completed Deformetrica atlas has no reconstructions flagged for visual review,
   automatically compute the PCA and build the morphospace.
 
 ## Pilot correction editor follow-up (19 November 2026)

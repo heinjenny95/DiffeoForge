@@ -96,6 +96,21 @@ class ModernResultReview:
     pca_method_id: str = "cartesian_initial_momenta_pca"
     pca_method_label: str = "Cartesian initial-momenta PCA — Modern Engine"
     registration_qc_metric_label: str = "nearest-vertex p95 (proxy)"
+    registration_manifest_path: Path | None = None
+    registration_manifest_sha256: str | None = None
+    pca_pending: bool = False
+    pca_blocked_reason: str | None = None
+    pca_excluded_subjects: tuple[str, ...] = ()
+    pca_review_sha256: str | None = None
+
+    @property
+    def registration_source(self) -> dict[str, str]:
+        return {
+            "run_manifest_sha256": self.workflow_manifest_sha256,
+            "analysis_manifest_sha256": (
+                self.registration_manifest_sha256 or self.bundle_manifest_sha256
+            ),
+        }
 
     def artifact(self, key: str) -> ModernResultArtifact:
         for artifact in self.artifacts:

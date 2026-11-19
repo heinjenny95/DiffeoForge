@@ -17,18 +17,13 @@ from diffeoforge.pca_media import (
     MEDIA_VERSION,
     MediaCancelled,
     _check,
+    _media_source_directories,
     _record,
     _render_media,
     verify_media,
 )
-from diffeoforge.reference_pca import (
-    DEFAULT_REFERENCE_PCA_DIRECTORY,
-    verify_reference_pca_bundle,
-)
-from diffeoforge.reference_pca_deformations import (
-    DEFAULT_RESULT_DIRECTORY,
-    verify_reference_pca_deformation_result,
-)
+from diffeoforge.reference_pca import verify_reference_pca_bundle
+from diffeoforge.reference_pca_deformations import verify_reference_pca_deformation_result
 from diffeoforge.runs import publish_directory_exclusive
 
 
@@ -62,13 +57,17 @@ def prepare_oriented_media(directory, rotation, name, cancelled=None, progress=l
             "name": name,
             "rotation": rotation.tolist(),
             "scope": "all visualizations",
-        }:
+        } or data.get("sources") != metadata["sources"] or (
+            data.get("specimen_labels") != metadata["specimen_labels"]
+        ):
             raise ValueError("Saved visualization view identity differs")
         return target
     run = Path(metadata["source_run"])
-    pca = verify_reference_pca_bundle(run / DEFAULT_REFERENCE_PCA_DIRECTORY, source_run=run).pca
-    endpoint_root = run / DEFAULT_RESULT_DIRECTORY
-    result = verify_reference_pca_deformation_result(endpoint_root, source_run=run)
+    bundle_directory, endpoint_root = _media_source_directories(metadata)
+    pca = verify_reference_pca_bundle(bundle_directory, source_run=run).pca
+    result = verify_reference_pca_deformation_result(
+        endpoint_root, source_run=run, source_pca_bundle=bundle_directory,
+    )
     if result["result_version"] != "0.2":
         raise ValueError("Verified native physical endpoint shapes are required")
     saved = json.loads((directory / "PCA-Gallery/mesh-pca.json").read_text())

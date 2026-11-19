@@ -70,6 +70,76 @@ def test_media_reuse_checks_current_source_and_output_bytes(tmp_path, changed):
         verify_media(root, source_run=run)
 
 
+def test_reviewed_pca_media_and_oriented_view_use_the_same_selected_cohort(tmp_path, monkeypatch):
+    from diffeoforge import oriented_media as orientation
+    from diffeoforge import pca_media as media
+
+    run = tmp_path / "run"
+    bundle = run / "analysis" / "reviewed-pca"
+    endpoints = bundle.with_name("reviewed-pca-deformations-result")
+    bundle.mkdir(parents=True)
+    endpoints.mkdir()
+    for path in (
+        bundle / media.REFERENCE_PCA_MANIFEST,
+        endpoints / media.RESULT_NAME,
+        endpoints / "mean.vtk",
+        run / "manifest.json",
+        run / "result.json",
+        run / "output-inventory.json",
+    ):
+        path.write_bytes(path.name.encode())
+    (run / "output").mkdir()
+    reconstructions = []
+    for label in ("retained-a.vtk", "rejected-b.vtk", "retained-c.vtk"):
+        path = run / "output" / f"Atlas__Reconstruction__surface__subject_{label}.vtk"
+        path.write_bytes(label.encode())
+        reconstructions.append({**media._record(path), "path": path.name})
+    labels = ("retained-a.vtk", "retained-c.vtk")
+    pca = SimpleNamespace(sample_labels=labels, scores=np.array([[-1.0], [1.0]]), method="test")
+    report = SimpleNamespace(inventory=reconstructions, manifest={"effective_config": {}})
+    monkeypatch.setattr(
+        media, "load_reference_momenta", lambda *_: SimpleNamespace(run_report=report),
+    )
+
+    def verify_bundle(path, *, source_run):
+        assert path == bundle and source_run == run
+        return SimpleNamespace(pca=pca)
+
+    def verify_endpoints(path, *, source_run, source_pca_bundle):
+        assert path == endpoints and source_run == run and source_pca_bundle == bundle
+        return {
+            "result_version": "0.2",
+            "endpoints": [{**media._record(endpoints / "mean.vtk"), "path": "mean.vtk"}],
+        }
+
+    def render(stage, result, records, _endpoints, *args, **kwargs):
+        assert result is pca
+        assert [r["path"].split("__subject_")[1] for r in records] == [
+            f"{label}.vtk" for label in labels
+        ]
+        gallery = stage / "PCA-Gallery"
+        gallery.mkdir()
+        (gallery / "mesh-pca.json").write_text(
+            json.dumps([{"scores": row.tolist()} for row in pca.scores]), encoding="utf-8",
+        )
+
+    for module in (media, orientation):
+        monkeypatch.setattr(module, "verify_reference_pca_bundle", verify_bundle)
+        monkeypatch.setattr(module, "verify_reference_pca_deformation_result", verify_endpoints)
+        monkeypatch.setattr(module, "_render_media", render)
+
+    target = media.prepare_reference_media(
+        run, tmp_path, bundle_directory=bundle, deformation_directory=endpoints,
+    )
+    assert media.prepare_reference_media(
+        run, tmp_path, bundle_directory=bundle, deformation_directory=endpoints,
+    ) == target
+    oriented = orientation.prepare_oriented_media(target, np.eye(3), "reviewed")
+    metadata = verify_media(oriented, source_run=run)
+    assert metadata["specimen_labels"] == list(labels)
+    assert media._media_source_directories(metadata) == (bundle, endpoints)
+
+
 def test_gallery_export_refuses_changed_archive_and_preserves_destination(tmp_path, monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication

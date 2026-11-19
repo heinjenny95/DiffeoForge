@@ -384,6 +384,7 @@ def verify_reference_pca_deformation_design(
     design_directory: Path | str,
     *,
     source_run: Path | str | None = None,
+    source_pca_bundle: Path | str | None = None,
 ) -> Mapping[str, object]:
     """Strictly verify inventory, PCA endpoint values, XML, and source binding."""
 
@@ -452,6 +453,11 @@ def verify_reference_pca_deformation_design(
         else Path(str(source["run_directory"])).expanduser().resolve()
     )
     bundle_path = Path(str(source["pca_bundle"])).expanduser().resolve()
+    if (
+        source_pca_bundle is not None
+        and bundle_path != Path(source_pca_bundle).expanduser().resolve()
+    ):
+        raise ReferencePCADeformationError("Design uses a different PCA cohort bundle")
     try:
         bundle = verify_reference_pca_bundle(bundle_path, source_run=run)
         inputs = load_reference_momenta(run)
@@ -757,6 +763,7 @@ def verify_reference_pca_deformation_result(
     result_directory: Path | str,
     *,
     source_run: Path | str | None = None,
+    source_pca_bundle: Path | str | None = None,
 ) -> Mapping[str, object]:
     """Verify a completed Shooting result, nested design, inventory, and VTKs."""
 
@@ -814,6 +821,7 @@ def verify_reference_pca_deformation_result(
     design = verify_reference_pca_deformation_design(
         nested_design,
         source_run=source_run,
+        source_pca_bundle=source_pca_bundle,
     )
     if design["design_version"] != result["result_version"]:
         raise ReferencePCADeformationError("Result and source design versions differ")

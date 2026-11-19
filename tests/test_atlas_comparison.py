@@ -20,7 +20,7 @@ ROOT = Path(__file__).parents[1]
 TEMPLATE = ROOT / "examples" / "synthetic" / "meshes" / "template.vtk"
 
 
-def _sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def _sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, qc_selected: bool = False):
     labels = tuple(f"subject-{index:02d}.vtk" for index in range(6))
     features = np.asarray(
         [(index, index**2 * 0.1, (-1) ** index * 0.2) for index in range(6)],
@@ -33,9 +33,9 @@ def _sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             sample_labels=labels,
         ),
         "second": principal_component_analysis(
-            features * 1.02,
+            (features[1:] if qc_selected else features) * 1.02,
             feature_space="momenta:test",
-            sample_labels=labels,
+            sample_labels=labels[1:] if qc_selected else labels,
         ),
     }
     mesh = read_vtk_polydata(TEMPLATE)
@@ -43,7 +43,9 @@ def _sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     atlas_by_run = {}
     for source_index, name in enumerate(("first", "second")):
         run = (tmp_path / name).resolve()
-        bundle = run / "bundle"
+        bundle = run / (
+            f"reference-pca-qc-{'0' * 64}" if qc_selected and name == "second" else "bundle"
+        )
         bundle.mkdir(parents=True)
         atlas = run / "atlas.vtk"
         write_vtk_polydata(
@@ -85,6 +87,11 @@ def _sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     )
     monkeypatch.setattr(
         comparison_module,
+        "_review_recorded_source",
+        lambda source: reviews[Path(source["run_directory"]).resolve()],
+    )
+    monkeypatch.setattr(
+        comparison_module,
         "_pca",
         lambda review: pcas[review.project_name],
     )
@@ -123,6 +130,21 @@ def test_atlas_comparison_reports_templates_residuals_outliers_and_pca(
     assert "does not select" in report["scientific_boundary"]
     assert set(report["sources"]) == {"first", "second"}
     assert len(reviews) == 2
+
+
+def test_comparison_keeps_full_atlas_residuals_but_requires_matching_pca_cohorts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _sources(tmp_path, monkeypatch, qc_selected=True)
+    destination = tmp_path / "comparison"
+    write_atlas_comparison(tmp_path / "first", tmp_path / "second", destination)
+    report = verify_atlas_comparison(destination)
+
+    assert report["registration_residuals"]["paired"]["subject_count"] == 6
+    assert report["pca_stability"]["available"] is False
+    assert report["pca_cohorts"]["second"]["pca_subject_count"] == 5
+    assert report["pca_cohorts"]["second"]["excluded_from_pca"] == ["subject-00.vtk"]
 
 
 def test_atlas_comparison_rejects_changed_output(

@@ -47,27 +47,25 @@ zoom and toggle the meshes, explicitly acknowledge visual inspection, and record
 Plausible / Uncertain / Implausible. Decisions advance once through the queue and
 are autosaved with the identities of both displayed meshes.
 
-Step 6, atlas/PCA summary forms, method comparisons and result exports remain
-locked until every flagged case has an acknowledged plausible decision and the
-user explicitly releases results. The screen uses the same descriptive upper
-Tukey fence as the scientific report: residual strictly greater than
+In the Deformetrica workflow, a verified visual decision on every flagged
+reconstruction is required before fitting PCA. **Finish review & compute PCA**
+fits the morphospace after excluding any specimens rated Implausible. Uncertain
+specimens stay included with a QC warning. Every specimen stays in the atlas,
+and the PCA cohort is recorded with the finalized visual review. An empty
+flagged queue starts PCA automatically and uninspected cases stay unreviewed.
+
+The screen uses a descriptive upper Tukey fence. It flags residuals greater than
 `Q3 + 1.5 × IQR`, using linear quartiles over the full cohort. The threshold and
 individual reasons are shown and saved. For fewer than four specimens, screening
-is unavailable and manual review is required. An empty flagged queue needs no
-per-mesh approval, but still requires an explicit release action. This relative
-screen can miss uniformly poor fits; optional spot checks remain useful.
+is unavailable and manual review is required. This relative screen can miss
+uniformly poor fits. Exports distinguish completed required review from
+full-cohort manual review. The experimental Modern Engine retains its
+embedded full-cohort PCA and explicit result release.
 
-Any researcher-recorded uncertain or implausible decision also blocks release,
-even for an otherwise unflagged specimen. Resolve it through further inspection
-or a separate corrected run; there is no bulk approval or automatic specimen
-exclusion. Search only narrows the viewer list, never the required queue or PCA.
-Unflagged/uninspected subjects retain `unreviewed`, not an invented pass. Exports
-distinguish completed required review from incomplete full-cohort manual review.
-
-Release is bound to the verified run, analysis, original/reconstruction hashes and
-an immutable finalized QC review. Reopening resumes the saved visual review;
-legacy QC decisions alone do not release results. Changed decisions/evidence
-relock results. Review files live in the reference run's `reviews/` directory;
+Release binds the verified run, original/reconstruction hashes and an immutable
+finalized QC review. Reopening resumes the saved visual review. Changed
+decisions require a fresh PCA snapshot before Deformetrica results can be used.
+Review files live in the reference run's `reviews/` directory.
 Modern uses a sibling `<run-name>-reviews/` directory to preserve its exact run
 inventory. This is a desktop workflow gate, not encryption or a restriction on
 manual access to existing files/CLI tools, and is not biological validation.

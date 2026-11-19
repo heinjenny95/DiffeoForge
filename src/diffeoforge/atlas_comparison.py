@@ -69,11 +69,34 @@ def _review(directory: Path | str, *, create_pca_if_missing: bool = True) -> Mod
         return review_modern_result(directory)
     except (ModernResultReviewError, OSError, RuntimeError, TypeError, ValueError):
         try:
-            return review_reference_result(directory, create_pca_if_missing=create_pca_if_missing)
+            from diffeoforge.desktop.reference_result_review import review_current_reference_result
+
+            return review_current_reference_result(
+                directory, create_pca_if_missing=create_pca_if_missing
+            )
         except (ModernResultReviewError, OSError, RuntimeError, TypeError, ValueError) as error:
             raise AtlasComparisonError(
                 f"Could not verify atlas/PCA result {Path(directory)}: {error}"
             ) from error
+
+
+def _review_recorded_source(source: dict[str, Any]) -> ModernResultReview:
+    """Reopen the exact analysis selected when a comparison was published."""
+    try:
+        directory = source["run_directory"]
+        if source["engine_route"] == "deformetrica_reference":
+            return review_reference_result(
+                directory,
+                create_pca_if_missing=False,
+                bundle_directory=source["pca_bundle_directory"],
+            )
+        if source["engine_route"] == "modern":
+            return review_modern_result(directory)
+        raise ValueError("Unknown atlas engine")
+    except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
+        raise AtlasComparisonError(
+            f"Recorded atlas/PCA source did not reverify: {error}"
+        ) from error
 
 
 def _pca(review: ModernResultReview):
@@ -123,14 +146,14 @@ def _top_fraction(values: dict[str, float], fraction: float = 0.10) -> tuple[str
 
 
 def _comparison_payload(
-    first_directory: Path | str,
-    second_directory: Path | str,
+    first: ModernResultReview,
+    second: ModernResultReview,
     *,
     first_label: str,
     second_label: str,
     variance_target: float,
     created_at: str,
-) -> tuple[dict[str, Any], ModernResultReview, ModernResultReview]:
+) -> dict[str, Any]:
     if not first_label.strip() or not second_label.strip() or first_label == second_label:
         raise AtlasComparisonError("Comparison labels must be nonempty and distinct")
     if not 0.0 < float(variance_target) <= 1.0:
@@ -141,8 +164,6 @@ def _comparison_payload(
         raise AtlasComparisonError("created_at must be ISO-8601") from error
     if parsed.tzinfo is None:
         raise AtlasComparisonError("created_at must include a timezone offset")
-    first = _review(first_directory)
-    second = _review(second_directory)
     if first.run_directory == second.run_directory:
         raise AtlasComparisonError("Atlas comparison requires two distinct results")
     first_residuals = _residuals(first)
@@ -243,7 +264,24 @@ def _comparison_payload(
         "pca_stability": pca_evidence,
         "scientific_boundary": SCIENTIFIC_BOUNDARY,
     }
-    return payload, first, second
+    if any(
+        review.engine_route == "deformetrica_reference"
+        and review.bundle_directory.name.startswith("reference-pca-qc-")
+        for review in (first, second)
+    ):
+        payload["pca_cohorts"] = {
+            key: {
+                "atlas_subject_count": len(residuals),
+                "pca_subject_count": len(pca.sample_labels),
+                "pca_subjects": list(pca.sample_labels),
+                "excluded_from_pca": sorted(residuals.keys() - set(pca.sample_labels)),
+            }
+            for key, residuals, pca in (
+                ("first", first_residuals, first_pca),
+                ("second", second_residuals, second_pca),
+            )
+        }
+    return payload
 
 
 def _csv_safe(value: object) -> str:
@@ -302,6 +340,14 @@ def _html_report(payload: dict[str, Any]) -> str:
         if pca["available"]
         else f"unavailable: {html.escape(pca['unavailable_reason'])}"
     )
+    cohort_text = ""
+    if "pca_cohorts" in payload:
+        cohort_items = "".join(
+            f"<li>{html.escape(labels[key])}: {cohort['pca_subject_count']} PCA specimens "
+            f"from {cohort['atlas_subject_count']} atlas specimens.</li>"
+            for key, cohort in payload["pca_cohorts"].items()
+        )
+        cohort_text = f"<ul>{cohort_items}</ul>"
     rows = "".join(
         "<tr>"
         f"<td>{html.escape(label)}</td><td>{value['subject_count']}</td>"
@@ -324,7 +370,7 @@ padding:9px;text-align:left}}th{{background:#eef5f4}}</style></head><body>
 <table><thead><tr><th>Run</th><th>Subjects</th><th>Residual median</th><th>Residual p95</th>
 <th>Optimizer converged</th></tr></thead><tbody>{rows}</tbody></table>
 <h2>Estimated-template distance</h2><p>{template_text}</p>
-<h2>Paired PCA stability</h2><p>{pca_text}</p></body></html>"""
+<h2>Paired PCA stability</h2><p>{pca_text}</p>{cohort_text}</body></html>"""
 
 
 def write_atlas_comparison(
@@ -340,9 +386,11 @@ def write_atlas_comparison(
     """Atomically publish a no-winner quantitative atlas comparison."""
 
     timestamp = created_at or datetime.now(UTC).isoformat(timespec="seconds")
-    payload, first, second = _comparison_payload(
-        first_directory,
-        second_directory,
+    first = _review(first_directory)
+    second = _review(second_directory)
+    payload = _comparison_payload(
+        first,
+        second,
         first_label=first_label,
         second_label=second_label,
         variance_target=variance_target,
@@ -424,9 +472,11 @@ def verify_atlas_comparison(directory: Path | str) -> dict[str, Any]:
     if manifest.get("artifact_version") != ATLAS_COMPARISON_VERSION:
         raise AtlasComparisonError("Atlas comparison version is unsupported")
     settings = manifest["settings"]
-    payload, first, second = _comparison_payload(
-        manifest["first_source"]["run_directory"],
-        manifest["second_source"]["run_directory"],
+    first = _review_recorded_source(manifest["first_source"])
+    second = _review_recorded_source(manifest["second_source"])
+    payload = _comparison_payload(
+        first,
+        second,
         first_label=settings["first_label"],
         second_label=settings["second_label"],
         variance_target=float(settings["variance_target"]),

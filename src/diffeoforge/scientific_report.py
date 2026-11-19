@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import hashlib
 import html
 import json
 import math
@@ -123,6 +124,7 @@ class ScientificAtlasReport:
     pca_stability: Mapping[str, Any] | None
     evidence_sources: tuple[tuple[str, Path, str], ...]
     methods_text: str
+    pca_cohort: Mapping[str, Any] | None = None
 
     @property
     def engine_label(self) -> str:
@@ -168,6 +170,15 @@ class ScientificAtlasReport:
                 "method_id": self.review.pca_method_id,
                 "label": self.review.pca_method_label,
                 "generic_rbf_kernel_pca": False,
+                **(
+                    {
+                        "atlas_subject_count": len(self.subjects),
+                        "pca_subject_count": len(self.pca_cohort["included_subjects"]),
+                        "qc_cohort": dict(self.pca_cohort),
+                    }
+                    if self.pca_cohort is not None
+                    else {}
+                ),
             },
             "registration_qc": {
                 "metric": self.residual_metric,
@@ -233,14 +244,22 @@ def _canonical_json(value: object) -> str:
     )
 
 
-def _review_atlas(run_directory: Path | str) -> ModernResultReview:
+def _review_atlas(
+    run_directory: Path | str, *, bundle_directory: Path | None = None
+) -> ModernResultReview:
     run = Path(run_directory).expanduser().resolve()
     try:
         from diffeoforge.modern_workflow import MANIFEST_NAME as modern_manifest
 
         if (run / modern_manifest).is_file():
             return review_modern_result(run)
-        return review_reference_result(run, create_pca_if_missing=False)
+        if bundle_directory is not None:
+            return review_reference_result(
+                run, create_pca_if_missing=False, bundle_directory=bundle_directory
+            )
+        from diffeoforge.desktop.reference_result_review import review_current_reference_result
+
+        return review_current_reference_result(run, create_pca_if_missing=False)
     except (OSError, RuntimeError, TypeError, ValueError, ModernResultReviewError) as error:
         raise ScientificReportError(f"Atlas result did not verify: {error}") from error
 
@@ -302,6 +321,8 @@ def _residuals(review: ModernResultReview) -> tuple[tuple[str, float], ...]:
 def _load_decisions(
     review: ModernResultReview,
     decision_review: Path | str | None,
+    *,
+    pca_cohort: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, str], tuple[str, Path, str] | None]:
     if decision_review is None:
         try:
@@ -309,6 +330,8 @@ def _load_decisions(
         except ModernResultReviewError as error:
             raise ScientificReportError(str(error)) from error
         if finalized is None:
+            if pca_cohort is not None:
+                raise ScientificReportError("The selected PCA needs its finalized visual review")
             return {}, None
         source = finalized.path
     else:
@@ -316,16 +339,19 @@ def _load_decisions(
     if source.is_symlink() or not source.is_file():
         raise ScientificReportError(f"Decision review is missing or symbolic: {source}")
     try:
-        payload = json.loads(source.read_text(encoding="utf-8"))
+        data = source.read_bytes()
+        payload = json.loads(data.decode("utf-8"))
         bound = payload["source"]
         subjects = payload["subjects"]
-    except (KeyError, OSError, TypeError, json.JSONDecodeError) as error:
+    except (KeyError, OSError, TypeError, ValueError) as error:
         raise ScientificReportError("Decision review is unreadable or incomplete") from error
     if not isinstance(bound, Mapping) or (
-        bound.get("run_manifest_sha256") != review.workflow_manifest_sha256
-        or bound.get("analysis_manifest_sha256") != review.bundle_manifest_sha256
+        any(bound.get(key) != value for key, value in review.registration_source.items())
     ):
         raise ScientificReportError("Decision review belongs to different atlas evidence")
+    digest = hashlib.sha256(data).hexdigest()
+    if pca_cohort is not None and digest != pca_cohort["review_sha256"]:
+        raise ScientificReportError("Decision review differs from the review used for the PCA")
     if not isinstance(subjects, list):
         raise ScientificReportError("Decision review subject records are invalid")
     decisions: dict[str, str] = {}
@@ -339,7 +365,7 @@ def _load_decisions(
         if name in decisions:
             raise ScientificReportError("Decision review contains a duplicate subject")
         decisions[name] = str(decision)
-    return decisions, ("registration_qc_review", source, sha256_file(source))
+    return decisions, ("registration_qc_review", source, digest)
 
 
 def _parameter_values(config: Mapping[str, Any]) -> dict[str, float]:
@@ -544,7 +570,11 @@ def _pca_stability_evidence(
     return value, ("pca_stability", manifest_path, sha256_file(manifest_path))
 
 
-def _methods(review: ModernResultReview, config: Mapping[str, Any]) -> str:
+def _methods(
+    review: ModernResultReview,
+    config: Mapping[str, Any],
+    pca_cohort: Mapping[str, Any] | None = None,
+) -> str:
     model = config["model"]
     attachment = model["attachment"]
     deformation = model["deformation"]
@@ -623,6 +653,14 @@ def _methods(review: ModernResultReview, config: Mapping[str, Any]) -> str:
         )
         + "Registration quality was assessed from verified surface reconstructions; residual "
         "ranking was used only to prioritize visual inspection."
+        + (
+            " PCA was fitted after the required visual review. "
+            f"It included {len(pca_cohort['included_subjects'])} specimens and excluded "
+            f"{len(pca_cohort['excluded_subjects'])} explicitly rated Implausible. "
+            "The atlas and reconstruction QC retain the complete cohort."
+            if pca_cohort is not None
+            else ""
+        )
     )
 
 
@@ -786,7 +824,16 @@ def collect_scientific_atlas_report(
 
     review = _review_atlas(run_directory)
     config = _effective_config(review)
-    decisions, decision_source = _load_decisions(review, decision_review)
+    pca_cohort = None
+    if review.engine_route == "deformetrica_reference":
+        try:
+            manifest_bytes = review.bundle_manifest_path.read_bytes()
+            if hashlib.sha256(manifest_bytes).hexdigest() != review.bundle_manifest_sha256:
+                raise ScientificReportError("The PCA manifest changed after verification")
+            pca_cohort = json.loads(manifest_bytes).get("qc_cohort")
+        except (OSError, ValueError) as error:
+            raise ScientificReportError("The verified PCA manifest is unreadable") from error
+    decisions, decision_source = _load_decisions(review, decision_review, pca_cohort=pca_cohort)
     residuals = _residuals(review)
     threshold = _inspection_threshold(tuple(value for _, value in residuals))
     ranked = sorted(residuals, key=lambda item: (-item[1], item[0].casefold()))
@@ -852,7 +899,8 @@ def collect_scientific_atlas_report(
         holdout=holdout,
         pca_stability=stability,
         evidence_sources=tuple(sources),
-        methods_text=_methods(review, config),
+        methods_text=_methods(review, config, pca_cohort),
+        pca_cohort=pca_cohort,
     )
 
 
@@ -948,9 +996,26 @@ def render_scientific_report_html(report: ScientificAtlasReport) -> str:
         or "No explicit researcher registration-QC decisions were supplied."
     )
     optimizer_plot = _embedded_artifact_svg(report, "optimizer-convergence-plot")
+    cohort_text = ""
+    scope_text = "All specimens remain included."
+    if report.pca_cohort is not None:
+        excluded = tuple(report.pca_cohort["excluded_subjects"])
+        exclusion_text = (
+            " Excluded from PCA after an Implausible rating: "
+            + ", ".join(html.escape(name) for name in excluded)
+            + "."
+            if excluded
+            else ""
+        )
+        cohort_text = (
+            f"<p>Atlas cohort: {len(report.subjects)} specimens. "
+            f"Reviewed PCA cohort: {len(report.pca_cohort['included_subjects'])} specimens."
+            f"{exclusion_text}</p>"
+        )
+        scope_text = "The atlas retains all specimens."
     qc_warning = (
         '<div class="summary not_supported"><strong>Exploratory results — QC concerns:</strong> '
-        f"{html.escape(decision_summary)}. All specimens remain included. Review completion "
+        f"{html.escape(decision_summary)}. {scope_text} Review completion "
         "is not scientific approval; interpret and share plots with this QC status.</div>"
         if any(value in {"uncertain", "fail"} for value in decisions.values())
         else ""
@@ -1057,6 +1122,7 @@ as automatic biological validation.</div>
 <h2>Robustness evidence</h2><div class="grid">{"".join(evidence_cards)}</div>
 <h2>Subject registration review</h2><p>Metric: {html.escape(report.residual_metric)}.
 Researcher decisions: {html.escape(decision_summary)}</p>
+{cohort_text}
 <table><thead><tr><th>Rank</th><th>Subject</th><th>Residual</th><th>Inspection</th><th>Decision</th></tr></thead><tbody>{subject_rows}</tbody></table>
 <h2>Figures</h2>{"".join(figures)}
 <h2>Paper-ready methods draft</h2><p>{html.escape(report.methods_text)}</p>
@@ -1284,17 +1350,30 @@ def _verify_scientific_atlas_report(
     source = manifest.get("source")
     if not isinstance(source, Mapping):
         raise ScientificReportError("Scientific report source binding is invalid")
-    if reverify_source:
-        _review_atlas(str(source["run_directory"]))
     evidence = source.get("evidence")
     if not isinstance(evidence, list):
         raise ScientificReportError("Scientific report evidence inventory is invalid")
+    atlas_evidence = {}
     for record in evidence:
         if not isinstance(record, Mapping):
             raise ScientificReportError("Scientific report evidence record is invalid")
         path = Path(str(record["path"]))
         if path.is_symlink() or not path.is_file() or sha256_file(path) != record["sha256"]:
             raise ScientificReportError(f"Scientific report source evidence changed: {path}")
+        if record["role"] in {"workflow_manifest", "analysis_manifest"}:
+            if record["role"] in atlas_evidence:
+                raise ScientificReportError("Scientific report has duplicate atlas bindings")
+            atlas_evidence[record["role"]] = (path, record["sha256"])
+    if reverify_source:
+        if set(atlas_evidence) != {"workflow_manifest", "analysis_manifest"}:
+            raise ScientificReportError("Scientific report source atlas bindings are incomplete")
+        analysis_path, _ = atlas_evidence["analysis_manifest"]
+        review = _review_atlas(str(source["run_directory"]), bundle_directory=analysis_path.parent)
+        if atlas_evidence != {
+            "workflow_manifest": (review.workflow_manifest_path, review.workflow_manifest_sha256),
+            "analysis_manifest": (review.bundle_manifest_path, review.bundle_manifest_sha256),
+        }:
+            raise ScientificReportError("Scientific report source atlas no longer matches")
     records = manifest.get("artifacts")
     if not isinstance(records, list):
         raise ScientificReportError("Scientific report artifact inventory is invalid")

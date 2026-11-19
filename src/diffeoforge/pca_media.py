@@ -91,10 +91,27 @@ def verify_media(directory: Path, *, source_run: Path | None = None) -> dict:
     return data
 
 
+def _media_source_directories(metadata: dict) -> tuple[Path, Path]:
+    """Find the exact bound PCA and endpoint manifests in verified media."""
+    directories = []
+    for manifest in (REFERENCE_PCA_MANIFEST, RESULT_NAME):
+        matches = [
+            Path(record["path"]).resolve().parent
+            for record in metadata["sources"]
+            if Path(record["path"]).name == manifest
+        ]
+        if len(matches) != 1:
+            raise ValueError(f"PCA media must bind exactly one {manifest}")
+        directories.append(matches[0])
+    return directories[0], directories[1]
+
+
 def prepare_reference_media(
     run: Path,
     project: Path,
     *,
+    bundle_directory: Path | None = None,
+    deformation_directory: Path | None = None,
     progress=lambda _text: None,
     cancelled: threading.Event | None = None,
 ) -> Path:
@@ -108,8 +125,16 @@ def prepare_reference_media(
         progress(text)
 
     phase("Checking saved PCA and axis shapes")
-    bundle_path = run / DEFAULT_REFERENCE_PCA_DIRECTORY
-    endpoint_root = run / DEFAULT_RESULT_DIRECTORY
+    bundle_path = (
+        run / DEFAULT_REFERENCE_PCA_DIRECTORY if bundle_directory is None
+        else Path(bundle_directory)
+    ).resolve()
+    endpoint_root = (
+        run / DEFAULT_RESULT_DIRECTORY if deformation_directory is None
+        else Path(deformation_directory)
+    ).resolve()
+    if not bundle_path.is_relative_to(run) or not endpoint_root.is_relative_to(run):
+        raise ValueError("PCA media inputs must be located within the verified atlas run")
     identity = hashlib.sha256(
         (
             sha256_file(bundle_path / REFERENCE_PCA_MANIFEST)
@@ -118,10 +143,14 @@ def prepare_reference_media(
     ).hexdigest()
     target = project / "visualizations" / f"pca-{identity[:20]}-v{MEDIA_VERSION}"
     if target.exists():
-        verify_media(target, source_run=run)
+        data = verify_media(target, source_run=run)
+        if _media_source_directories(data) != (bundle_path, endpoint_root):
+            raise ValueError("Saved visualization uses a different PCA cohort or endpoint result")
         return target
     bundle = verify_reference_pca_bundle(bundle_path, source_run=run)
-    endpoint_result = verify_reference_pca_deformation_result(endpoint_root, source_run=run)
+    endpoint_result = verify_reference_pca_deformation_result(
+        endpoint_root, source_run=run, source_pca_bundle=bundle_path,
+    )
     if endpoint_result["result_version"] != "0.2":
         raise ValueError("Axis media require verified native physical endpoints (v0.2)")
     inputs = load_reference_momenta(run)

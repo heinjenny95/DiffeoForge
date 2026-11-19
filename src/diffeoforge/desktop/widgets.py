@@ -133,7 +133,7 @@ from diffeoforge.desktop.reference_result_review import (
     export_registration_qc_review,
     load_finalized_registration_qc_review,
     load_registration_qc_draft,
-    review_reference_result,
+    review_desktop_reference_result,
     save_registration_qc_draft,
 )
 from diffeoforge.desktop.reference_validation_dialog import ReferenceValidationDialog
@@ -1159,7 +1159,7 @@ class _ResultReviewWorker(QRunnable):
     @property
     def verification_message(self) -> str:
         scope = (
-            "the complete Deformetrica run and its bound PCA snapshot"
+            "the complete Deformetrica run and its visual review"
             if self.reference
             else "the complete Modern workflow and result bundle"
         )
@@ -1172,7 +1172,7 @@ class _ResultReviewWorker(QRunnable):
     def run(self) -> None:
         try:
             review = (
-                review_reference_result(
+                review_desktop_reference_result(
                     self.directory,
                     progress_callback=lambda completed, total, message: self.signals.progress.emit(
                         (completed, total, message)
@@ -1263,10 +1263,16 @@ class _PCAMetadataWorker(QRunnable):
 class _ReferencePCADeformationWorker(QRunnable):
     """Create, execute, and verify default reference PCA Shooting endpoints."""
 
-    def __init__(self, run_directory: Path, project_directory: Path | None = None) -> None:
+    def __init__(
+        self, run_directory: Path, project_directory: Path | None = None, *,
+        bundle_directory: Path | None = None,
+    ) -> None:
         super().__init__()
         self.run_directory = run_directory.expanduser().resolve()
         self.project_directory = project_directory or self.run_directory.parent.parent
+        self.bundle_directory = (
+            bundle_directory or self.run_directory / DEFAULT_REFERENCE_PCA_DIRECTORY
+        )
         self.signals = _WorkerSignals()
         self.cancelled = threading.Event()
 
@@ -1285,7 +1291,7 @@ class _ReferencePCADeformationWorker(QRunnable):
             if self.cancelled.is_set():
                 raise RuntimeError("Visualization preparation cancelled before native work")
             bundle = verify_reference_pca_bundle(
-                self.run_directory / DEFAULT_REFERENCE_PCA_DIRECTORY,
+                self.bundle_directory,
                 source_run=self.run_directory,
             )
             components = min(3, bundle.pca.number_of_components)
@@ -1293,28 +1299,40 @@ class _ReferencePCADeformationWorker(QRunnable):
                 raise ReferencePCADeformationError(
                     "Reference PCA has no component available for Shooting"
                 )
-            design = (
-                self.run_directory / "analysis" / DEFAULT_REFERENCE_PCA_DEFORMATION_DESIGN_DIRECTORY
-            )
+            if bundle.manifest.get("qc_cohort") is not None:
+                design = self.bundle_directory.with_name(
+                    self.bundle_directory.name + "-deformations"
+                )
+                result = self.bundle_directory.with_name(
+                    self.bundle_directory.name + "-deformations-result"
+                )
+            else:
+                design = (
+                    self.run_directory / "analysis"
+                    / DEFAULT_REFERENCE_PCA_DEFORMATION_DESIGN_DIRECTORY
+                )
+                result = self.run_directory / DEFAULT_REFERENCE_PCA_DEFORMATION_RESULT_DIRECTORY
             if design.exists():
                 verify_reference_pca_deformation_design(
                     design,
                     source_run=self.run_directory,
+                    source_pca_bundle=self.bundle_directory,
                 )
             else:
                 create_reference_pca_deformation_design(
                     self.run_directory,
                     design,
+                    pca_bundle=self.bundle_directory,
                     components=components,
                     standard_deviations=2.0,
                 )
-            result = self.run_directory / DEFAULT_REFERENCE_PCA_DEFORMATION_RESULT_DIRECTORY
             if not result.exists():
                 self.signals.progress.emit("Generating native mean and ±2 SD shapes")
                 result = execute_reference_pca_deformation_design(design, result)
             verify_reference_pca_deformation_result(
                 result,
                 source_run=self.run_directory,
+                source_pca_bundle=self.bundle_directory,
             )
             from diffeoforge.pca_media import prepare_reference_media
 
@@ -1322,6 +1340,8 @@ class _ReferencePCADeformationWorker(QRunnable):
                 self.run_directory, self.project_directory,
                 progress=self.signals.progress.emit,
                 cancelled=self.cancelled,
+                bundle_directory=self.bundle_directory,
+                deformation_directory=result,
             )
         except Exception as error:  # Unexpected media/decoder failures must release the UI too.
             self.signals.failed.emit(str(error))
@@ -3830,7 +3850,8 @@ class DiffeoForgeWindow(QMainWindow):
         hint.setObjectName("subtitle")
         hint.setWordWrap(True)
         boundary = QLabel(
-            'Uncertain or implausible cases remain warnings; no specimens are removed.'
+            'For Deformetrica, Implausible excludes a specimen from PCA. '
+            'Uncertain keeps it in the PCA with a warning.'
         )
         boundary.setObjectName("boundaryText")
         boundary.setWordWrap(True)
@@ -8990,6 +9011,7 @@ class DiffeoForgeWindow(QMainWindow):
         if (
             review is None
             or review.engine_route != "deformetrica_reference"
+            or review.pca_excluded_subjects
             or self._shape_space_comparison_worker is not None
         ):
             return
@@ -9191,13 +9213,16 @@ class DiffeoForgeWindow(QMainWindow):
             or self._worker is not None
         ):
             return
-        media = self._visualization_media_by_run.get(review.run_directory)
+        identity = review.run_directory, review.bundle_manifest_sha256
+        media = self._visualization_media_by_run.get(identity)
         if media is not None:
             self._navigate_to_step(6)
             return
-        self._pca_auto_attempted.add((review.run_directory, review.bundle_manifest_sha256))
-        worker = _ReferencePCADeformationWorker(review.run_directory)
-        self._pca_media_source_identity = (review.run_directory, review.bundle_manifest_sha256)
+        self._pca_auto_attempted.add(identity)
+        worker = _ReferencePCADeformationWorker(
+            review.run_directory, bundle_directory=review.bundle_directory,
+        )
+        self._pca_media_source_identity = identity
         worker.signals.succeeded.connect(self._reference_pca_deformation_succeeded)
         worker.signals.failed.connect(self._reference_pca_deformation_failed)
         worker.signals.progress.connect(self._visualization_progress)
@@ -9262,7 +9287,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "The active result changed; media were kept with their source and not displayed."
             )
             return
-        self._visualization_media_by_run[review.run_directory] = _result
+        self._visualization_media_by_run[self._pca_media_source_identity] = _result
         self._pca_media_finalizing = True
         worker = _ResultReviewWorker(review.run_directory, reference=True)
         worker.signals.succeeded.connect(self._result_review_succeeded)
@@ -9292,7 +9317,8 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = None
         self._pca_media_finalizing = False
         if self._result_review is not None:
-            self._visualization_media_by_run.pop(self._result_review.run_directory, None)
+            identity = self._result_review.run_directory, self._result_review.bundle_manifest_sha256
+            self._visualization_media_by_run.pop(identity, None)
         self._reference_pca_deformation_timer.stop()
         self._reference_pca_deformation_started_at = None
         self._set_result_controls_enabled(True)
@@ -9319,7 +9345,8 @@ class DiffeoForgeWindow(QMainWindow):
         self,
         review: ModernResultReview | None,
     ) -> None:
-        reference = review is not None and review.engine_route == "deformetrica_reference"
+        reference = (review is not None and review.engine_route == "deformetrica_reference"
+                     and not review.pca_pending)
         self.reference_pca_deformation_card.setVisible(reference)
         if not reference or review is None:
             self.generate_reference_pca_deformations_button.setEnabled(False)
@@ -9329,8 +9356,7 @@ class DiffeoForgeWindow(QMainWindow):
         except KeyError:
             generated = False
         else:
-            generated = (review.run_directory / DEFAULT_REFERENCE_PCA_DEFORMATION_RESULT_DIRECTORY
-                         / "reference-pca-deformation-result.json").is_file()
+            generated = True
         self.generate_reference_pca_deformations_button.setText(
             "Open Visualization"
         )
@@ -9345,7 +9371,7 @@ class DiffeoForgeWindow(QMainWindow):
             else ("Mean and ±2 SD views are prepared automatically after result review.")
         )
         identity = review.run_directory, review.bundle_manifest_sha256
-        media = self._visualization_media_by_run.get(review.run_directory)
+        media = self._visualization_media_by_run.get(identity)
         if media is not None and self._registration_results_released():
             try:
                 self.visualization_panel.load(media)
@@ -9353,7 +9379,7 @@ class DiffeoForgeWindow(QMainWindow):
                 self.visualization_panel.clear()
                 self.visualization_panel.status.setText(f"Media could not be displayed: {error}")
                 self.visualization_panel.retry.show()
-                self._visualization_media_by_run.pop(review.run_directory, None)
+                self._visualization_media_by_run.pop(identity, None)
                 return
             media = self.visualization_panel.directory
             previews = self.reference_pca_sd_previews.layout()
@@ -12479,7 +12505,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
-            'Importing results, checking reconstructions and preparing PCA…'
+            'Verifying atlas results and identifying reconstructions that need review…'
             if reference
             else "Workflow, bundle, inventory, mesh QC, and static SVGs are being "
             "fully reverified before the results view is enabled."
@@ -12490,7 +12516,8 @@ class DiffeoForgeWindow(QMainWindow):
     def _result_review_succeeded(self, review: ModernResultReview) -> None:
         self._worker = None
         save_library_preference(opened=review.run_directory)
-        if review.run_directory not in self._visualization_media_by_run:
+        identity = review.run_directory, review.bundle_manifest_sha256
+        if identity not in self._visualization_media_by_run:
             self.visualization_panel.clear()
             previews = self.reference_pca_sd_previews.layout()
             while previews.count():
@@ -12498,7 +12525,8 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_pca_sd_previews.setProperty("media", None)
         self._result_review = review
         self.results_page_title.setText(f"Results · {review.project_name}")
-        if review.engine_route == "deformetrica_reference":
+        if (review.engine_route == "deformetrica_reference"
+                and not review.pca_pending and not review.pca_excluded_subjects):
             self.method_results_panel.load_saved(review)
         else:
             self.method_results_panel.clear()
@@ -12683,7 +12711,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.pca_metadata_status_label.setText(
             "Ready for an exact-ID CSV join. Metadata will be applied after PCA only."
         )
-        reference_result = review.engine_route == "deformetrica_reference"
+        reference_result = (review.engine_route == "deformetrica_reference"
+                            and not review.pca_pending and not review.pca_excluded_subjects)
         self._shape_space_comparison_result = None
         self.open_shape_space_pdf_button.hide()
         self.open_shape_space_html_button.hide()
@@ -13222,7 +13251,9 @@ class DiffeoForgeWindow(QMainWindow):
                 f"All {len(subject_order)} registration-QC meshes in this queue have a decision. "
                 "The review will not restart automatically. The current draft is saved; "
                 + (
-                    "use Finish review & view results to continue."
+                    "use Finish review & compute PCA when all required cases are reviewed."
+                    if self._result_review.registration_manifest_path is not None
+                    else "use Finish review & view results to continue."
                     if all_plausible
                     else "use Finish review & view with QC warnings to continue. "
                     "Negative decisions remain recorded; no mesh has been excluded."
@@ -13370,7 +13401,8 @@ class DiffeoForgeWindow(QMainWindow):
         if review is None or not review.registration_qc:
             self.result_qc_summary_label.setText("QC review is unavailable.")
             self.registration_release_status_label.setText(
-                "Results locked: the full-cohort visual review could not be prepared. "
+                (review.pca_blocked_reason if review is not None else None)
+                or "Results locked: the full-cohort visual review could not be prepared. "
                 "Reload the completed run to reverify its original/reconstruction pairs."
             )
             self.result_qc_finalize_button.setEnabled(False)
@@ -13388,8 +13420,13 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_qc_warning_label.setText(
             f"Exploratory results — QC concerns: {counts['fail']} implausible, "
             f"{counts['uncertain']} uncertain; {counts['unreviewed']} not visually reviewed. "
-            "All specimens remain in the atlas and PCA. Review completion is not scientific "
-            "approval. Share QC status alongside exported plots."
+            + (
+                "Implausible specimens are excluded from PCA. Uncertain specimens remain "
+                "included. The atlas retains all specimens."
+                if review.registration_manifest_path is not None
+                else "All specimens remain in the atlas and PCA. Review completion is not "
+                "scientific approval. Share QC status alongside exported plots."
+            )
         )
         self.result_qc_warning_label.setVisible(has_concerns)
         released = self._registration_results_released()
@@ -13444,8 +13481,14 @@ class DiffeoForgeWindow(QMainWindow):
         except (ModernResultReviewError, KeyError) as error:
             eligible = False
             release_hint = str(error)
+        if (eligible and review.registration_manifest_path is not None
+                and len(review.registration_qc) - counts["fail"] < 2):
+            eligible = False
+            release_hint = "PCA needs at least two included specimens. The QC decisions are saved."
         self.result_qc_finalize_button.setText(
-            "Finish review && view with QC warnings"
+            "Finish review && compute PCA"
+            if review.registration_manifest_path is not None
+            else "Finish review && view with QC warnings"
             if has_concerns
             else (
                 "Finish review && view results" if required else "View results (no flagged cases)"
@@ -13474,7 +13517,10 @@ class DiffeoForgeWindow(QMainWindow):
             "specimens not visually reviewed. "
             + screening
             + (
-                "Exploratory results available with QC concerns; every specimen remains included."
+                f"Results available. PCA excludes {len(review.pca_excluded_subjects)} "
+                "Implausible specimens. The atlas retains all specimens."
+                if released and review.registration_manifest_path is not None
+                else "Exploratory results available with QC concerns. The full cohort is included."
                 if released and has_concerns
                 else "Results available; every specimen remains included."
                 if released
@@ -13488,6 +13534,10 @@ class DiffeoForgeWindow(QMainWindow):
         if review is None or not review.registration_qc or self._worker is not None:
             return
         try:
+            if review.pca_review_sha256 is not None:
+                from dataclasses import replace
+
+                review = replace(review, pca_review_sha256=None)
             release_registration_results(
                 review,
                 self._registration_qc_decisions,
@@ -13495,6 +13545,17 @@ class DiffeoForgeWindow(QMainWindow):
             )
         except (ModernResultReviewError, OSError, TypeError, ValueError) as error:
             QMessageBox.warning(self, "Results could not be released", str(error))
+            return
+        if review.registration_manifest_path is not None:
+            worker = _ResultReviewWorker(review.run_directory, reference=True)
+            worker.signals.succeeded.connect(self._result_review_succeeded)
+            worker.signals.failed.connect(self._qc_pca_preparation_failed)
+            self._worker = worker
+            self._set_result_controls_enabled(False)
+            self.registration_release_status_label.setText(
+                "Preparing PCA from the reviewed cohort…"
+            )
+            self._dispatch_result_review(worker, self._qc_pca_preparation_failed)
             return
         self._update_registration_qc_summary()
         has_concerns = any(
@@ -13519,8 +13580,17 @@ class DiffeoForgeWindow(QMainWindow):
         self._navigate_to_step(5)
         self._sync_reference_pca_deformation_action(review)
 
+    @Slot(str)
+    def _qc_pca_preparation_failed(self, message: str) -> None:
+        self._worker = None
+        self._set_result_controls_enabled(True)
+        self.registration_release_status_label.setText(
+            f"PCA could not be prepared: {message}. The visual decisions are saved."
+        )
+        self._sync_ready_state()
+
     def _registration_results_released(self) -> bool:
-        if self._result_review is None:
+        if self._result_review is None or self._result_review.pca_pending:
             return False
         try:
             require_registration_release(
@@ -13833,6 +13903,12 @@ class DiffeoForgeWindow(QMainWindow):
         )
 
     def _load_verified_pca_plots(self, review: ModernResultReview) -> None:
+        if review.pca_pending:
+            self.result_pca_scree_plot.hide()
+            self.result_pc1_pc2_plot.hide()
+            self.result_pc2_pc3_plot.hide()
+            self.result_pca_scree_plot_status.setText("PCA is awaiting visual review.")
+            return
         scree = verify_result_artifact(review, "pca-scree")
         self.result_pca_scree_plot.load(str(scree))
         if not self.result_pca_scree_plot.renderer().isValid():
@@ -14008,7 +14084,8 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.open_validation_lab_button.setEnabled(released and reference)
         self.create_shape_space_comparison_button.setEnabled(
-            released and reference and self._shape_space_comparison_worker is None
+            released and reference and not self._result_review.pca_excluded_subjects
+            and self._shape_space_comparison_worker is None
         )
         if released:
             self._sync_reference_pca_deformation_action(self._result_review)

@@ -1,5 +1,14 @@
 # Development continuity
 
+## Deformetrica visual review before PCA
+
+The desktop opens the full cohort for visual QC before fitting PCA. An empty
+flagged queue starts PCA automatically. Each required reconstruction needs a
+verified inspection and decision. Implausible removes the specimen from the
+PCA input and morphospace. Uncertain keeps it in the analysis with a QC warning.
+Each PCA snapshot binds its cohort to the exact finalized review. The fitted
+atlas and historical analyses stay available on disk.
+
 ## dev227 — route one-sided marks to a protected test
 
 A red mark can contain surface from only one of the two meshes. The pilot checks

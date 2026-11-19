@@ -109,10 +109,15 @@ def inspection_binding(review: ModernResultReview, subject: str) -> dict[str, st
 
 
 def _source(review: ModernResultReview) -> dict[str, str]:
-    return {
-        "run_manifest_sha256": review.workflow_manifest_sha256,
-        "analysis_manifest_sha256": review.bundle_manifest_sha256,
-    }
+    return review.registration_source
+
+
+def _manifest_bindings(review: ModernResultReview):
+    yield review.workflow_manifest_path, review.workflow_manifest_sha256
+    yield review.bundle_manifest_path, review.bundle_manifest_sha256
+    if review.registration_manifest_path is not None:
+        yield review.registration_manifest_path, review.registration_manifest_sha256
+    yield from review.additional_manifest_bindings
 
 
 def load_visual_inspections(review: ModernResultReview) -> dict[str, dict[str, str]]:
@@ -132,6 +137,16 @@ def load_visual_inspections(review: ModernResultReview) -> dict[str, dict[str, s
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise ModernResultReviewError(f"Visual review draft did not verify: {error}") from error
     return inspections
+
+
+def load_visual_review_draft(review: ModernResultReview):
+    """Older optional passes without mesh binding do not stand for inspection."""
+    decisions = load_registration_qc_draft(review)
+    inspections = load_visual_inspections(review)
+    return {
+        name: value for name, value in decisions.items()
+        if value != "pass" or name in inspections
+    }, inspections
 
 
 def require_visual_review(
@@ -175,11 +190,7 @@ def release_registration_results(
 ) -> None:
     """Record explicit access to results, retaining negative QC and the entire cohort."""
     require_visual_review(review, decisions, inspections)
-    for path, expected in (
-        (review.workflow_manifest_path, review.workflow_manifest_sha256),
-        (review.bundle_manifest_path, review.bundle_manifest_sha256),
-        *review.additional_manifest_bindings,
-    ):
+    for path, expected in _manifest_bindings(review):
         if sha256_file(path) != expected:
             raise ModernResultReviewError("Atlas evidence changed; reload before finishing review")
     scope = _visual_review_scope(review, decisions, inspections)
@@ -198,6 +209,11 @@ def release_registration_results(
             "Required cases have recorded visual decisions, not necessarily plausibility "
             "approval. Uncertain or implausible cases remain QC concerns; results with "
             "concerns are exploratory, not scientifically approved. "
+            "Unflagged, uninspected cases remain explicitly unreviewed. "
+            "The full atlas and source reconstructions remain intact. "
+            "The QC-selected PCA records exclusions separately."
+            if review.registration_manifest_path is not None else
+            "Required cases have recorded visual decisions. "
             "Unflagged, uninspected cases remain explicitly unreviewed. "
             "All atlas/PCA specimens and source evidence remain unchanged."
         ),
@@ -218,6 +234,9 @@ def require_registration_release(
     require_visual_review(review, decisions, inspections)
     path = registration_qc_directory(review) / RELEASE_NAME
     try:
+        if review.pca_review_sha256 is not None:
+            if load_visual_review_draft(review) != (dict(decisions), dict(inspections)):
+                raise ValueError("The saved visual decisions changed. Reload the review.")
         if path.is_symlink() or not path.is_file():
             raise ValueError("Use Finish review & view results in Step 5 first")
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -235,6 +254,8 @@ def require_registration_release(
             or payload.get("source") != _source(review)
             or payload.get("visual_inspections") != dict(inspections)
             or finalized is None
+            or (review.pca_review_sha256 is not None
+                and finalized.sha256 != review.pca_review_sha256)
             or payload.get("visual_review_scope")
             != _visual_review_scope(review, decisions, inspections, policy=expected_policy)
             or dict(finalized.decisions) != {
@@ -245,11 +266,7 @@ def require_registration_release(
         ):
             raise ValueError("The saved release no longer matches the current visual review")
         # Also catch manifest edits after the result snapshot was loaded.
-        for manifest, expected in (
-            (review.workflow_manifest_path, review.workflow_manifest_sha256),
-            (review.bundle_manifest_path, review.bundle_manifest_sha256),
-            *review.additional_manifest_bindings,
-        ):
+        for manifest, expected in _manifest_bindings(review):
             if sha256_file(manifest) != expected:
                 raise ValueError("The reviewed atlas evidence changed; reload the run")
     except (OSError, ValueError, TypeError) as error:

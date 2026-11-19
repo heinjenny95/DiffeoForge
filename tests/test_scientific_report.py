@@ -119,3 +119,59 @@ def test_review_completion_does_not_claim_plausibility(tmp_path: Path, decision,
     assert len(report.subjects) == len(initial.subjects)
     assert "Exploratory results" in render_scientific_report_html(report)
     assert "All specimens remain included" in render_scientific_report_html(report)
+
+
+def test_publication_uses_reviewed_reference_cohort_and_preserves_legacy_report(
+    tmp_path: Path,
+) -> None:
+    from test_reference_pca import _completed_reference_run
+
+    from diffeoforge.desktop.reference_result_review import (
+        review_desktop_reference_result,
+        review_reference_result,
+        save_registration_qc_draft,
+    )
+    from diffeoforge.desktop.registration_release import (
+        inspection_binding,
+        release_registration_results,
+    )
+    from diffeoforge.publication_bundle import write_publication_bundle
+
+    run = _completed_reference_run(tmp_path)
+    legacy = review_reference_result(run)
+    legacy_report = write_scientific_atlas_report(
+        collect_scientific_atlas_report(run, created_at=FIXED_TIME), tmp_path / "legacy-report"
+    )
+    review = review_desktop_reference_result(run)
+    all_names = [item.subject_name for item in review.registration_qc]
+    excluded, uncertain = all_names[:2]
+    decisions = dict.fromkeys(all_names, "pass")
+    decisions.update({excluded: "fail", uncertain: "uncertain"})
+    visual = {name: inspection_binding(review, name) for name in decisions}
+    save_registration_qc_draft(review, decisions, visual_inspections=visual)
+    release_registration_results(review, decisions, visual)
+    selected = review_desktop_reference_result(run)
+
+    destination = tmp_path / "reviewed-publication"
+    publication = write_publication_bundle(run, destination, created_at=FIXED_TIME)
+    payload = json.loads(
+        (destination / "scientific-report" / SCIENTIFIC_REPORT_JSON).read_text("utf-8")
+    )
+    method = payload["shape_space_method"]
+    assert method["atlas_subject_count"] == len(all_names)
+    assert method["pca_subject_count"] == len(all_names) - 1
+    assert method["qc_cohort"]["excluded_subjects"] == [excluded]
+    assert uncertain in method["qc_cohort"]["included_subjects"]
+    projected = destination / "tables-and-evidence" / "pca-scores.csv"
+    assert projected.read_bytes() == selected.artifact("pca-scores").path.read_bytes()
+    assert publication.manifest["source"]["analysis_manifest_sha256"] == (
+        selected.bundle_manifest_sha256
+    )
+    verified_legacy = verify_scientific_atlas_report(legacy_report.directory)
+    assert verified_legacy.directory == legacy_report.directory
+    assert legacy.bundle_directory.is_dir()
+
+    decisions[excluded] = "pass"
+    save_registration_qc_draft(selected, decisions, visual_inspections=visual)
+    with pytest.raises(ScientificReportError, match="saved release no longer matches"):
+        collect_scientific_atlas_report(run)

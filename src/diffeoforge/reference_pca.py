@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import re
 import shutil
 import uuid
 from collections.abc import Mapping, Sequence
@@ -45,6 +46,7 @@ from diffeoforge.runs import publish_directory_exclusive
 from diffeoforge.strict_json import load_strict_json_object
 
 REFERENCE_PCA_BUNDLE_VERSION = "0.3"
+QC_REFERENCE_PCA_BUNDLE_VERSION = "0.4"
 REFERENCE_PCA_MANIFEST = "reference-pca-manifest.json"
 REFERENCE_PCA_SIDECAR = "reference-pca-manifest.sha256"
 DEFAULT_REFERENCE_PCA_DIRECTORY = Path("analysis") / "reference-result-analysis-v0.3"
@@ -108,8 +110,39 @@ class ReferenceMomentaInput:
 
 
 def _schema(version: str) -> dict[str, Any]:
-    if version not in {"0.1", "0.2", "0.3"}:
+    if version not in {"0.1", "0.2", "0.3", QC_REFERENCE_PCA_BUNDLE_VERSION}:
         raise ReferencePCAError(f"Unsupported reference PCA bundle version: {version}")
+    if version == QC_REFERENCE_PCA_BUNDLE_VERSION:
+        schema = _schema("0.3")
+        schema["title"] = "DiffeoForge visually reviewed reference result-analysis bundle"
+        schema["properties"]["bundle_version"] = {"const": version}
+        schema["required"].append("qc_cohort")
+        schema["properties"]["qc_cohort"] = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "review_sha256", "decisions", "included_subjects", "excluded_subjects",
+            ],
+            "properties": {
+                "review_sha256": {"$ref": "#/$defs/sha256"},
+                "decisions": {
+                    "type": "object",
+                    "additionalProperties": {"enum": ["pass", "uncertain", "fail"]},
+                },
+                "included_subjects": {
+                    "type": "array",
+                    "minItems": 2,
+                    "uniqueItems": True,
+                    "items": {"type": "string", "minLength": 1},
+                },
+                "excluded_subjects": {
+                    "type": "array",
+                    "uniqueItems": True,
+                    "items": {"type": "string", "minLength": 1},
+                },
+            },
+        }
+        return schema
     if version == "0.3":
         schema = _schema("0.2")
         schema["title"] = "DiffeoForge deformation-aware result-analysis bundle"
@@ -585,20 +618,54 @@ def _deformation_kernel_width(inputs: ReferenceMomentaInput) -> float:
     return value
 
 
+def _reviewed_cohort(
+    subject_labels: tuple[str, ...],
+    decisions: Mapping[str, str],
+    review_sha256: str,
+) -> tuple[dict[str, Any], list[int]]:
+    if not isinstance(review_sha256, str) or re.fullmatch("[0-9a-f]{64}", review_sha256) is None:
+        raise ReferencePCAError("The PCA cohort needs a finalized visual review SHA-256")
+    if not isinstance(decisions, Mapping) or set(decisions) - set(subject_labels):
+        raise ReferencePCAError("The PCA cohort has decisions for unknown atlas subjects")
+    decisions = dict(decisions)
+    if any(
+        not isinstance(value, str) or value not in ("pass", "uncertain", "fail")
+        for value in decisions.values()
+    ):
+        raise ReferencePCAError("The PCA cohort contains unsupported visual review decisions")
+    rows = [i for i, label in enumerate(subject_labels) if decisions.get(label) != "fail"]
+    if len(rows) < 2:
+        raise ReferencePCAError(
+            "PCA needs at least two specimens after excluding Implausible reconstructions"
+        )
+    return {
+        "review_sha256": review_sha256,
+        "decisions": decisions,
+        "included_subjects": [subject_labels[i] for i in rows],
+        "excluded_subjects": [label for label in subject_labels if decisions.get(label) == "fail"],
+    }, rows
+
+
 def _reference_pca(
     inputs: ReferenceMomentaInput,
     *,
     method_id: str,
     pca_components: int | None,
+    cohort_rows: list[int] | None = None,
 ) -> tuple[PCAResult, dict[str, object]]:
+    labels = inputs.subject_labels
+    momenta = inputs.momenta
+    if cohort_rows is not None:
+        labels = tuple(labels[i] for i in cohort_rows)
+        momenta = momenta[cohort_rows]
     if method_id == LDDMM_REFERENCE_PCA_METHOD_ID:
         width = _deformation_kernel_width(inputs)
         pca = lddmm_metric_momenta_pca(
-            np.array(inputs.momenta, dtype=np.float64, copy=True),
+            np.array(momenta, dtype=np.float64, copy=True),
             np.array(inputs.control_points, dtype=np.float64, copy=True),
             deformation_kernel_width=width,
             n_components=pca_components,
-            subject_labels=inputs.subject_labels,
+            subject_labels=labels,
         )
         parameters: dict[str, object] = {
             "deformation_kernel_width": width,
@@ -608,9 +675,9 @@ def _reference_pca(
         return pca, parameters
     if method_id == CARTESIAN_REFERENCE_PCA_METHOD_ID:
         pca = momenta_pca(
-            np.array(inputs.momenta, dtype=np.float64, copy=True),
+            np.array(momenta, dtype=np.float64, copy=True),
             n_components=pca_components,
-            subject_labels=inputs.subject_labels,
+            subject_labels=labels,
         )
         return pca, {}
     raise ReferencePCAError(
@@ -625,6 +692,7 @@ def write_reference_pca_bundle(
     pca_components: int | None = None,
     method_id: str = DEFAULT_REFERENCE_PCA_METHOD_ID,
     created_at: str | None = None,
+    qc_cohort: Mapping[str, Any] | None = None,
 ) -> Path:
     """Atomically publish a self-contained, source-bound Deformetrica PCA bundle."""
 
@@ -635,6 +703,7 @@ def write_reference_pca_bundle(
         pca_components=pca_components,
         method_id=method_id,
         created_at=created_at,
+        qc_cohort=qc_cohort,
     )
 
 
@@ -645,14 +714,28 @@ def _write_reference_pca_bundle_from_inputs(
     pca_components: int | None = None,
     method_id: str = DEFAULT_REFERENCE_PCA_METHOD_ID,
     created_at: str | None = None,
+    qc_cohort: Mapping[str, Any] | None = None,
 ) -> Path:
     """Reuse a fully verified, operation-local snapshot; never a persistent UI cache."""
+    cohort = None
+    cohort_rows = None
+    if qc_cohort is not None:
+        if destination is None or Path(destination).expanduser().resolve() == (
+            inputs.run_directory / DEFAULT_REFERENCE_PCA_DIRECTORY
+        ).resolve():
+            raise ReferencePCAError("Choose a separate destination for the reviewed PCA cohort")
+        if not isinstance(qc_cohort, Mapping) or set(qc_cohort) != {"decisions", "review_sha256"}:
+            raise ReferencePCAError("Expected the visual decisions and finalized review SHA-256")
+        cohort, cohort_rows = _reviewed_cohort(
+            inputs.subject_labels, qc_cohort["decisions"], qc_cohort["review_sha256"],
+        )
     optimization = _reference_optimization_input(inputs)
     try:
         pca, method_parameters = _reference_pca(
             inputs,
             method_id=method_id,
             pca_components=pca_components,
+            cohort_rows=cohort_rows,
         )
     except (TypeError, ValueError, np.linalg.LinAlgError) as error:
         raise ReferencePCAError(f"Could not compute momenta PCA: {error}") from error
@@ -736,7 +819,9 @@ def _write_reference_pca_bundle_from_inputs(
         artifacts = [_artifact(temporary, path) for path in generated]
         timestamp = created_at or datetime.now(UTC).isoformat(timespec="seconds")
         manifest = {
-            "bundle_version": REFERENCE_PCA_BUNDLE_VERSION,
+            "bundle_version": (
+                REFERENCE_PCA_BUNDLE_VERSION if cohort is None else QC_REFERENCE_PCA_BUNDLE_VERSION
+            ),
             "created_at": timestamp,
             "source_run": _source_run_document(inputs),
             "inputs": {
@@ -799,7 +884,12 @@ def _write_reference_pca_bundle_from_inputs(
                 **({"recovery": recovery_document} if recovery_document else {}),
             },
             "artifacts": artifacts,
-            "scientific_boundary": SCIENTIFIC_BOUNDARY,
+            "scientific_boundary": SCIENTIFIC_BOUNDARY + (
+                " The PCA was refitted on the recorded QC cohort. The atlas and copied "
+                "source momenta retain every specimen."
+                if cohort is not None
+                else ""
+            ),
             "immutability_contract": {
                 "publication": "atomic no-replace directory publication",
                 "verification": (
@@ -811,6 +901,7 @@ def _write_reference_pca_bundle_from_inputs(
                     "plus source run hashes"
                 ),
             },
+            **({"qc_cohort": cohort} if cohort is not None else {}),
         }
         _validate_manifest(manifest)
         manifest_path = temporary / REFERENCE_PCA_MANIFEST
@@ -942,8 +1033,15 @@ def _verify_source_binding(manifest: Mapping[str, Any], inputs: ReferenceMomenta
         raise ReferencePCAError("PCA bundle source-run hashes differ from the current run")
     if tuple(manifest["inputs"]["subject_labels"]) != inputs.subject_labels:
         raise ReferencePCAError("PCA bundle subject order differs from the source run")
+    if manifest["bundle_version"] == QC_REFERENCE_PCA_BUNDLE_VERSION:
+        for name, record in (
+            ("momenta", inputs.momenta_record), ("control_points", inputs.control_points_record),
+        ):
+            copied = manifest["inputs"][name]
+            if copied != _source_artifact(record, copied["copied_path"]):
+                raise ReferencePCAError(f"Copied PCA {name} differs from the exact source run")
     if (
-        manifest["bundle_version"] == "0.3"
+        manifest["bundle_version"] in {"0.3", QC_REFERENCE_PCA_BUNDLE_VERSION}
         and manifest["pca"]["method_id"] == LDDMM_REFERENCE_PCA_METHOD_ID
         and not math.isclose(
             float(manifest["pca"]["method_parameters"]["deformation_kernel_width"]),
@@ -953,7 +1051,7 @@ def _verify_source_binding(manifest: Mapping[str, Any], inputs: ReferenceMomenta
         )
     ):
         raise ReferencePCAError("PCA deformation kernel width differs from the exact source run")
-    if manifest["bundle_version"] in {"0.2", "0.3"}:
+    if manifest["bundle_version"] in {"0.2", "0.3", QC_REFERENCE_PCA_BUNDLE_VERSION}:
         optimization = manifest["optimization"]
         if "recovery" in optimization:
             if inputs.run_report.convergence:
@@ -1201,8 +1299,19 @@ def _verify_reference_pca_bundle(
         or len(labels) != momenta.shape[0]
     ):
         raise ReferencePCAError("Copied raw parameters differ from declared dimensions")
+    if manifest["bundle_version"] == QC_REFERENCE_PCA_BUNDLE_VERSION:
+        declared_cohort = manifest["qc_cohort"]
+        cohort, rows = _reviewed_cohort(
+            labels, declared_cohort["decisions"], declared_cohort["review_sha256"],
+        )
+        if declared_cohort != cohort:
+            raise ReferencePCAError(
+                "Retained PCA subjects differ from the recorded visual decisions"
+            )
+        momenta = momenta[rows]
+        labels = tuple(cohort["included_subjects"])
     try:
-        if manifest["bundle_version"] == "0.3":
+        if manifest["bundle_version"] in {"0.3", QC_REFERENCE_PCA_BUNDLE_VERSION}:
             method_id = str(manifest["pca"]["method_id"])
             if method_id == LDDMM_REFERENCE_PCA_METHOD_ID:
                 method_parameters = manifest["pca"]["method_parameters"]
@@ -1281,7 +1390,7 @@ def _verify_reference_pca_bundle(
         pca_mean_rows(pca),
         label="PCA mean",
     )
-    if manifest["bundle_version"] in {"0.2", "0.3"}:
+    if manifest["bundle_version"] in {"0.2", "0.3", QC_REFERENCE_PCA_BUNDLE_VERSION}:
         _verify_optimization(root, manifest)
     if source_inputs is not None:
         _verify_source_binding(manifest, source_inputs)

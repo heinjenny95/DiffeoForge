@@ -80,7 +80,7 @@ def test_result_worker_reports_unexpected_exceptions(application, monkeypatch, t
     def fail(*_args, **_kwargs):
         raise KeyError("unexpected importer key")
 
-    monkeypatch.setattr(widgets, "review_reference_result", fail)
+    monkeypatch.setattr(widgets, "review_desktop_reference_result", fail)
     monkeypatch.setattr(widgets, "review_modern_result", fail)
     worker = _ResultReviewWorker(tmp_path, reference=reference)
     errors, successes = [], []

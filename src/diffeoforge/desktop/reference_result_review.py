@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -29,6 +29,7 @@ from diffeoforge.reference_pca import (
     DEFAULT_REFERENCE_PCA_DIRECTORY,
     REFERENCE_PCA_MANIFEST,
     ReferencePCAError,
+    _reference_optimization_input,
     _verify_reference_pca_bundle,
     _write_reference_pca_bundle_from_inputs,
     load_reference_momenta,
@@ -49,6 +50,7 @@ _ESTIMATED_TEMPLATE_MARKER = "__EstimatedParameters__Template_"
 _RECONSTRUCTION_MARKER = "__Reconstruction__"
 _REGISTRATION_QC_DRAFT = "registration-qc-draft.json"
 _REGISTRATION_QC_FINALIZED = "registration-qc-finalized.json"
+_QC_PCA_WORKFLOW = "registration-qc-pca-workflow.json"
 
 
 @dataclass(frozen=True)
@@ -110,10 +112,7 @@ def save_registration_qc_draft(
     payload = {
         "schema_version": "0.1",
         "updated_at": datetime.now(UTC).isoformat(),
-        "source": {
-            "run_manifest_sha256": review.workflow_manifest_sha256,
-            "analysis_manifest_sha256": review.bundle_manifest_sha256,
-        },
+        "source": review.registration_source,
         "decisions": dict(sorted(normalized.items())),
         "visual_inspections": dict(visual_inspections or {}),
     }
@@ -141,10 +140,7 @@ def load_registration_qc_draft(review: ModernResultReview) -> dict[str, str]:
     if not isinstance(payload, dict) or payload.get("schema_version") != "0.1":
         raise ModernResultReviewError("Registration-QC draft has an unsupported schema")
     source = payload.get("source")
-    if not isinstance(source, dict) or source != {
-        "run_manifest_sha256": review.workflow_manifest_sha256,
-        "analysis_manifest_sha256": review.bundle_manifest_sha256,
-    }:
+    if source != review.registration_source:
         raise ModernResultReviewError(
             "Registration-QC draft belongs to different verified run evidence"
         )
@@ -208,8 +204,7 @@ def export_registration_qc_review(
         ),
         "source": {
             "run_directory": str(review.run_directory),
-            "run_manifest_sha256": review.workflow_manifest_sha256,
-            "analysis_manifest_sha256": review.bundle_manifest_sha256,
+            **review.registration_source,
         },
         "summary": {
             "subject_count": len(review.registration_qc),
@@ -294,8 +289,7 @@ def finalize_registration_qc_review(
         ),
         "source": {
             "run_directory": str(review.run_directory),
-            "run_manifest_sha256": review.workflow_manifest_sha256,
-            "analysis_manifest_sha256": review.bundle_manifest_sha256,
+            **review.registration_source,
         },
         "summary": {
             "subject_count": len(review.registration_qc),
@@ -341,10 +335,7 @@ def finalize_registration_qc_review(
     binding = {
         "schema_version": "0.1",
         "updated_at": created_at.isoformat(),
-        "source": {
-            "run_manifest_sha256": review.workflow_manifest_sha256,
-            "analysis_manifest_sha256": review.bundle_manifest_sha256,
-        },
+        "source": review.registration_source,
         "review": {
             "filename": path.name,
             "sha256": digest,
@@ -386,10 +377,7 @@ def load_finalized_registration_qc_review(
         raise ModernResultReviewError(
             "Finalized registration-QC binding is unreadable or incomplete"
         ) from error
-    if binding.get("schema_version") != "0.1" or source != {
-        "run_manifest_sha256": review.workflow_manifest_sha256,
-        "analysis_manifest_sha256": review.bundle_manifest_sha256,
-    }:
+    if binding.get("schema_version") != "0.1" or source != review.registration_source:
         raise ModernResultReviewError(
             "Finalized registration-QC binding belongs to different verified run evidence"
         )
@@ -421,8 +409,7 @@ def load_finalized_registration_qc_review(
     if payload.get("schema_version") != "0.2" or payload.get("review_status") != "finalized":
         raise ModernResultReviewError("Bound registration-QC review is not finalized")
     if not isinstance(payload_source, dict) or (
-        payload_source.get("run_manifest_sha256") != review.workflow_manifest_sha256
-        or payload_source.get("analysis_manifest_sha256") != review.bundle_manifest_sha256
+        any(payload_source.get(key) != value for key, value in review.registration_source.items())
     ):
         raise ModernResultReviewError(
             "Finalized registration-QC review belongs to different atlas evidence"
@@ -488,6 +475,16 @@ def _pca_items(bundle_manifest: dict, ratios: tuple[float, ...]) -> tuple[Result
             ),
         ),
     ]
+    cohort = bundle_manifest.get("qc_cohort")
+    if cohort is not None:
+        included = cohort["included_subjects"]
+        excluded = cohort["excluded_subjects"]
+        items.insert(0, ResultReviewItem(
+            "PCA cohort",
+            f"{len(included)} / {len(included) + len(excluded)} atlas specimens included",
+            ("Implausible and excluded from PCA: " + ", ".join(excluded)
+             if excluded else "No specimens were rated Implausible."),
+        ))
     cumulative = 0.0
     for index, ratio in enumerate(ratios[:_PCA_DISPLAY_LIMIT], start=1):
         cumulative += ratio
@@ -531,36 +528,51 @@ def review_reference_result(
     *,
     create_pca_if_missing: bool = True,
     progress_callback: Callable[[int, int, str], None] | None = None,
+    bundle_directory: Path | str | None = None,
+    qc_only: bool = False,
 ) -> ModernResultReview:
     """Verify one Deformetrica run and its deterministic, source-bound PCA snapshot."""
 
     run = Path(run_directory).expanduser().resolve()
-    bundle_directory = run / DEFAULT_REFERENCE_PCA_DIRECTORY
+    bundle_directory = (
+        run / DEFAULT_REFERENCE_PCA_DIRECTORY if bundle_directory is None
+        else Path(bundle_directory).expanduser().resolve()
+    )
     if progress_callback is not None:
-        progress_callback(0, 0, "Verifying run files and PCA provenance")
+        progress_callback(0, 0, "Verifying run files" if qc_only else
+                          "Verifying run files and PCA provenance")
     try:
         source_inputs = load_reference_momenta(run)
-        if create_pca_if_missing and not bundle_directory.exists():
-            _write_reference_pca_bundle_from_inputs(source_inputs)
-        verified = _verify_reference_pca_bundle(bundle_directory, source_inputs=source_inputs)
+        if not qc_only and create_pca_if_missing and not bundle_directory.exists():
+            _write_reference_pca_bundle_from_inputs(source_inputs, bundle_directory)
+        verified = None if qc_only else _verify_reference_pca_bundle(
+            bundle_directory, source_inputs=source_inputs
+        )
         report = source_inputs.run_report
     except (OSError, RuntimeError, TypeError, ValueError, ReferencePCAError) as error:
         raise ModernResultReviewError(
             f"Deformetrica result and momenta PCA did not verify: {error}"
         ) from error
 
-    deformation_result_directory = run / DEFAULT_PCA_DEFORMATION_RESULT_DIRECTORY
+    manifest = {} if verified is None else dict(verified.manifest)
+    cohort = manifest.get("qc_cohort")
+    deformation_result_directory = (
+        bundle_directory.with_name(bundle_directory.name + "-deformations-result")
+        if cohort is not None else run / DEFAULT_PCA_DEFORMATION_RESULT_DIRECTORY
+    )
     legacy_deformations = run / "analysis/reference-pca-deformations-v0.1-result"
-    if not deformation_result_directory.exists() and legacy_deformations.exists():
+    if (cohort is None and not deformation_result_directory.exists()
+            and legacy_deformations.exists()):
         deformation_result_directory = legacy_deformations
     deformation_result: Mapping[str, object] | None = None
-    if deformation_result_directory.exists():
+    if verified is not None and deformation_result_directory.exists():
         if progress_callback is not None:
             progress_callback(0, 0, "Verifying PC deformation files")
         try:
             deformation_result = verify_reference_pca_deformation_result(
                 deformation_result_directory,
                 source_run=run,
+                source_pca_bundle=bundle_directory if cohort is not None else None,
             )
         except (
             OSError,
@@ -582,11 +594,11 @@ def review_reference_result(
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         qc_unavailable_reason = str(error)
 
-    manifest = dict(verified.manifest)
     if progress_callback is not None:
         progress_callback(0, 0, "Assembling verified result review")
-    records = {str(record["path"]): record for record in manifest["artifacts"]}
-    if len(records) != len(manifest["artifacts"]):
+    inventory = manifest.get("artifacts", ())
+    records = {str(record["path"]): record for record in inventory}
+    if len(records) != len(inventory):
         raise ModernResultReviewError("Reference PCA contains duplicate artifact records")
     artifacts: list[ModernResultArtifact] = []
 
@@ -792,6 +804,53 @@ def review_reference_result(
             for index, (subject, residual) in enumerate(ranked, start=1)
         )
 
+    if verified is None:
+        if {item.subject_name for item in registration_qc} != set(source_inputs.subject_labels):
+            qc_unavailable_reason = qc_unavailable_reason or (
+                "Visual review does not cover the exact atlas cohort."
+            )
+            registration_qc = ()
+        optimization = _reference_optimization_input(source_inputs)
+        workflow_manifest = run / "manifest.json"
+        run_hash = sha256_file(workflow_manifest)
+        return ModernResultReview(
+            run_directory=run,
+            bundle_directory=run,
+            project_name=str(report.manifest["project"]["name"]),
+            created_at=str(report.manifest["created_at"]),
+            workflow_manifest_path=workflow_manifest,
+            workflow_manifest_sha256=run_hash,
+            bundle_manifest_path=workflow_manifest,
+            bundle_manifest_sha256=run_hash,
+            optimizer_converged=None,
+            optimizer_termination_reason=optimization.stop_evidence.signal,
+            optimizer_cycles_completed=optimization.convergence[-1].iteration,
+            optimizer_max_cycles=optimization.maximum_iterations,
+            overview=(
+                ResultReviewItem(
+                    "Atlas cohort", str(source_inputs.subject_count), "All registered specimens."
+                ),
+            ),
+            optimization=(),
+            pca=(),
+            quality=(),
+            artifacts=tuple(artifacts),
+            scientific_boundaries=(
+                "Complete the required visual reviews before computing the morphospace.",
+            ),
+            engine_route="deformetrica_reference",
+            pca_method_id="lddmm_deformation_kernel_pca",
+            pca_method_label="LDDMM deformation-kernel PCA",
+            execution_duration_seconds=optimization.duration_seconds,
+            optimizer_stop_interpretation=optimization.stop_evidence.summary,
+            additional_artifact_roots=(
+                output_directory.resolve(), staged_input_directory.resolve(),
+            ),
+            registration_qc=registration_qc,
+            pca_pending=True,
+            pca_blocked_reason=qc_unavailable_reason,
+        )
+
     inputs = manifest["inputs"]
     pca = manifest["pca"]
     optimization_evidence = manifest["optimization"]
@@ -857,7 +916,7 @@ def review_reference_result(
             f"{pca['method']} scores (CSV)",
             pca["scores_path"],
             "csv",
-            "All subject scores in immutable manifest order.",
+            "Scores of the included specimens in immutable atlas order.",
         ),
         (
             "pca-loadings",
@@ -1168,4 +1227,132 @@ def review_reference_result(
             else ()
         ),
         registration_qc=registration_qc,
+        pca_excluded_subjects=tuple(cohort["excluded_subjects"]) if cohort is not None else (),
     )
+
+
+def _bind_reference_qc(review: ModernResultReview, *, initialize: bool) -> ModernResultReview:
+    """Freeze the original review binding, even if another PCA is made later."""
+    marker = registration_qc_directory(review) / _QC_PCA_WORKFLOW
+    legacy = review.run_directory / DEFAULT_REFERENCE_PCA_DIRECTORY / REFERENCE_PCA_MANIFEST
+    sources = {"atlas": review.workflow_manifest_path, "legacy-pca": legacy}
+    if initialize and not marker.exists() and not marker.is_symlink():
+        if any(review.run_directory.glob("analysis/reference-pca-qc-*")):
+            raise ModernResultReviewError("The saved PCA cohort lacks its visual-review workflow.")
+        scope = "legacy-pca" if legacy.is_file() else "atlas"
+        payload = {
+            "version": 1,
+            "atlas_manifest_sha256": review.workflow_manifest_sha256,
+            "registration_scope": scope,
+            "registration_manifest_sha256": sha256_file(sources[scope]),
+        }
+        try:
+            write_text_safely(marker, json.dumps(payload, sort_keys=True) + "\n", overwrite=False)
+        except FileExistsError:
+            pass
+    if marker.is_symlink() or not marker.is_file():
+        raise ModernResultReviewError("The saved PCA review workflow is missing or symbolic.")
+    payload = json.loads(marker.read_text(encoding="utf-8"))
+    if (
+        not isinstance(payload, dict)
+        or payload.get("version") != 1
+        or payload.get("atlas_manifest_sha256") != review.workflow_manifest_sha256
+        or payload.get("registration_scope") not in sources
+    ):
+        raise ModernResultReviewError(
+            "The saved PCA review workflow belongs to different evidence."
+        )
+    path = sources[payload["registration_scope"]]
+    if path.is_symlink() or sha256_file(path) != payload.get("registration_manifest_sha256"):
+        raise ModernResultReviewError("The source of the saved visual review has changed.")
+    return replace(review, registration_manifest_path=path,
+                   registration_manifest_sha256=payload["registration_manifest_sha256"])
+
+
+def _review_qc_selected_reference(run, *, publish, progress_callback=None):
+    from diffeoforge.desktop.registration_release import (
+        RELEASE_NAME,
+        load_visual_review_draft,
+        release_registration_results,
+        require_registration_release,
+        required_registration_inspections,
+    )
+
+    pending = review_reference_result(run, qc_only=True, progress_callback=progress_callback)
+    pending = _bind_reference_qc(pending, initialize=publish)
+    if not pending.registration_qc:
+        return pending
+    try:
+        decisions, inspections = load_visual_review_draft(pending)
+        required = required_registration_inspections(pending, decisions)
+        release = registration_qc_directory(pending) / RELEASE_NAME
+        if publish and not required and not release.exists() and not release.is_symlink():
+            release_registration_results(pending, decisions, inspections)
+        require_registration_release(pending, decisions, inspections)
+        finalized = load_finalized_registration_qc_review(pending)
+        if finalized is None:
+            raise ModernResultReviewError("Finish visual review before computing PCA.")
+    except ModernResultReviewError as error:
+        return replace(pending, pca_blocked_reason=str(error))
+
+    n_included = len(pending.registration_qc) - sum(value == "fail" for value in decisions.values())
+    if n_included < 2:
+        return replace(pending, pca_blocked_reason=(
+            f"PCA needs two included specimens. The visual review currently leaves {n_included}."
+        ))
+    bundle = pending.run_directory / "analysis" / f"reference-pca-qc-{finalized.sha256}"
+    if bundle.is_symlink():
+        raise ModernResultReviewError("The saved QC-selected PCA path is symbolic.")
+    if not bundle.exists():
+        if not publish:
+            return replace(pending, pca_blocked_reason="Open the atlas in DF to prepare its PCA.")
+        if progress_callback is not None:
+            progress_callback(0, 0, f"Computing PCA for {n_included} included specimens")
+        _write_reference_pca_bundle_from_inputs(
+            load_reference_momenta(run), bundle,
+            qc_cohort={"decisions": decisions, "review_sha256": finalized.sha256},
+        )
+    review = review_reference_result(
+        run, create_pca_if_missing=False, bundle_directory=bundle,
+        progress_callback=progress_callback,
+    )
+    manifest = json.loads(review.bundle_manifest_path.read_text(encoding="utf-8"))
+    cohort = manifest.get("qc_cohort") or {}
+    if cohort.get("review_sha256") != finalized.sha256 or cohort.get("decisions") != decisions:
+        raise ModernResultReviewError("The verified PCA belongs to a different visual review.")
+    require_registration_release(
+        pending, *load_visual_review_draft(pending),
+    )
+    current = load_finalized_registration_qc_review(pending)
+    if current is None or current.sha256 != finalized.sha256:
+        raise ModernResultReviewError(
+            "The visual review changed while PCA was prepared. Reload it."
+        )
+    return replace(
+        review,
+        registration_manifest_path=pending.registration_manifest_path,
+        registration_manifest_sha256=pending.registration_manifest_sha256,
+        pca_review_sha256=finalized.sha256,
+    )
+
+
+def review_desktop_reference_result(run_directory, *, progress_callback=None) -> ModernResultReview:
+    """Review a complete atlas first and prepare its PCA once the review permits it."""
+    run = Path(run_directory).expanduser().resolve()
+    return _review_qc_selected_reference(run, publish=True, progress_callback=progress_callback)
+
+
+def review_current_reference_result(
+    run_directory, *, create_pca_if_missing: bool = False,
+) -> ModernResultReview:
+    """Load the current approved analysis, while retaining legacy run support."""
+    run = Path(run_directory).expanduser().resolve()
+    marker = run / "reviews" / _QC_PCA_WORKFLOW
+    if not marker.exists() and not marker.is_symlink():
+        if any(run.glob("analysis/reference-pca-qc-*")):
+            raise ModernResultReviewError("The saved PCA cohort lacks its visual-review workflow.")
+        return review_reference_result(run, create_pca_if_missing=create_pca_if_missing)
+    review = _review_qc_selected_reference(run, publish=False)
+    if review.pca_pending:
+        raise ModernResultReviewError(review.pca_blocked_reason or "PCA is awaiting visual review.")
+    return review

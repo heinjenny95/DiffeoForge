@@ -619,6 +619,72 @@ def test_reference_pca_bundle_is_source_bound_recomputed_and_nonreplacing(
     assert cartesian_bundle.manifest["pca"]["method_parameters"] == {}
 
 
+def test_reviewed_reference_pca_refits_only_retained_subject_rows(tmp_path: Path) -> None:
+    run = _completed_reference_run(tmp_path)
+    source = load_reference_momenta(run)
+    full_path = write_reference_pca_bundle(run)
+    full_manifest_hash = sha256_file(full_path / REFERENCE_PCA_MANIFEST)
+    a, b, c, d, e = source.subject_labels
+    decisions = {d: "fail", e: "pass", c: "uncertain", b: "fail"}
+    reviewed_path = write_reference_pca_bundle(
+        run, run / "analysis" / "reviewed-pca",
+        qc_cohort={"decisions": decisions, "review_sha256": "a" * 64},
+    )
+    bundle = verify_reference_pca_bundle(reviewed_path, source_run=run)
+
+    assert bundle.manifest["bundle_version"] == "0.4"
+    assert bundle.manifest["qc_cohort"] == {
+        "review_sha256": "a" * 64,
+        "decisions": decisions,
+        "included_subjects": [a, c, e],
+        "excluded_subjects": [b, d],
+    }
+    assert bundle.pca.sample_labels == (a, c, e)
+    assert bundle.pca.number_of_components == 2
+    np.testing.assert_allclose(bundle.pca.mean, np.mean(source.momenta[[0, 2, 4]], axis=0).ravel())
+    assert bundle.manifest["inputs"]["subject_labels"] == list(source.subject_labels)
+    raw = reviewed_path / bundle.manifest["inputs"]["momenta"]["copied_path"]
+    assert raw.read_bytes() == source.momenta_path.read_bytes()
+    scores = reviewed_path / bundle.manifest["pca"]["scores_path"]
+    with scores.open(newline="", encoding="utf-8") as handle:
+        assert [row[0] for row in list(csv.reader(handle))[1:]] == [a, c, e]
+    assert sha256_file(full_path / REFERENCE_PCA_MANIFEST) == full_manifest_hash
+    assert verify_reference_pca_bundle(full_path, source_run=run).pca.sample_labels == (
+        source.subject_labels
+    )
+
+    # Rehashing a manipulated manifest must not allow contradictory sample membership.
+    manifest_path = reviewed_path / REFERENCE_PCA_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["qc_cohort"]["included_subjects"] = [e, c, a]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    (reviewed_path / REFERENCE_PCA_SIDECAR).write_text(
+        sha256_file(manifest_path) + "\n", encoding="ascii",
+    )
+    with pytest.raises(ReferencePCAError, match="differ from the recorded visual decisions"):
+        verify_reference_pca_bundle(reviewed_path, source_run=run)
+
+
+def test_reviewed_reference_pca_requires_valid_decisions_and_two_retained_rows(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    labels = load_reference_momenta(run).subject_labels
+    target = run / "analysis" / "reviewed-pca"
+    too_few = {"decisions": dict.fromkeys(labels[1:], "fail"), "review_sha256": "a" * 64}
+    with pytest.raises(ReferencePCAError, match="at least two specimens"):
+        write_reference_pca_bundle(run, target, qc_cohort=too_few)
+    unknown = {"decisions": {labels[0].removesuffix(".vtk"): "fail"}, "review_sha256": "a" * 64}
+    with pytest.raises(ReferencePCAError, match="unknown atlas subjects"):
+        write_reference_pca_bundle(run, target, qc_cohort=unknown)
+    invalid = {"decisions": {labels[0]: "unreviewed"}, "review_sha256": "a" * 64}
+    with pytest.raises(ReferencePCAError, match="unsupported visual review decisions"):
+        write_reference_pca_bundle(run, target, qc_cohort=invalid)
+    with pytest.raises(ReferencePCAError, match="finalized visual review SHA-256"):
+        write_reference_pca_bundle(run, target, qc_cohort=dict(invalid, review_sha256="unknown"))
+    assert not target.exists()
+
+
 def test_reference_shape_space_comparison_validates_model_aligned_default(
     tmp_path: Path,
 ) -> None:
@@ -1363,7 +1429,13 @@ def test_reference_pca_deformation_design_binds_exact_shooting_endpoints(
         standard_deviations=2.0,
         created_at="2026-07-19T09:05:00+00:00",
     )
-    design = verify_reference_pca_deformation_design(design_path, source_run=run)
+    design = verify_reference_pca_deformation_design(
+        design_path, source_run=run, source_pca_bundle=bundle,
+    )
+    with pytest.raises(ReferencePCADeformationError, match="different PCA cohort bundle"):
+        verify_reference_pca_deformation_design(
+            design_path, source_run=run, source_pca_bundle=run / "analysis" / "reviewed-pca",
+        )
 
     assert design["status"] == "prospective_not_executed"
     assert design["shooting"]["endpoint_count"] == 5
