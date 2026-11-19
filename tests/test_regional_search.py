@@ -200,6 +200,34 @@ def test_matching_quality_reuses_measured_capture_without_geometry_reads(monkeyp
     assert result['original_to_fit_p95'] == .16
 
 
+def test_per_region_capture_reuses_verified_rows_for_the_exact_marks(monkeypatch):
+    from diffeoforge import pilot_recovery
+    from diffeoforge.regional_search import capture
+
+    mark = dict(center=[0, 0, 0], radius=1, reconstruction={"sha256": "a" * 64})
+    reference = dict(candidate_id="fit", target="shape.vtk")
+    snapshot = SimpleNamespace(candidates=[SimpleNamespace(candidate_id="fit", metrics={})])
+    rows = [dict(region=mark, repeats=[
+        dict(original_to_fit_p95=.15, fit_to_original_p95=.2),
+        dict(original_to_fit_p95=.16, fit_to_original_p95=.19),
+    ])]
+
+    def measure(*args, **kwargs):
+        return dict(baseline=rows)
+
+    monkeypatch.setattr(pilot_recovery, "capture", measure)
+    expected = capture(snapshot, reference, [mark], per_region=True)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Do not remeasure exact inspected marks")
+
+    monkeypatch.setattr(pilot_recovery, "capture", forbidden)
+    actual = capture(snapshot, reference, [mark], per_region=True, measurements=rows)
+    assert actual == expected
+    with pytest.raises(ValueError, match="do not match"):
+        capture(snapshot, reference, [dict(mark, radius=2)], per_region=True, measurements=rows)
+
+
 def test_reached_finer_scale_keeps_capture_and_adds_independent_detail_field(monkeypatch):
     from test_regional_fit import proposal_data
 

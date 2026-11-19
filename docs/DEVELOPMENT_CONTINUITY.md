@@ -1,5 +1,28 @@
 # Development continuity
 
+## dev226 - earlier review for costly local corrections
+
+A first 600-iteration protected correction from a legacy gradient-ascent
+field receives a 120-iteration checkpoint if its measured starting fit
+suggests at least 20 minutes of fitting at the full allowance. The checkpoint
+uses the same scientific mesh data, objective, time grid and surface checks.
+It can lead to one explicitly reviewed continuation with up to 480 more
+iterations on the same field and marks. Every open marked area must improve
+and all numerical and protection checks must pass. The optimizer history
+starts anew. Previously prepared work retains its recorded allowance.
+
+The local result shows directional P95 changes for each measured problem
+mark, along with the check failures and separate fitting/check times.
+Repeated guidance in the same prepared view reuses exact, already-bound
+mark measurements. Historical results lacking the new reconstruction's
+triangles remain inspectable without blocking work on the selected fit.
+The correction editor draws the selected 3D box at its exact saved bounds.
+
+This is an earlier decision point. Full qualification can still take time,
+and continuing both stages can repeat checks. The new checkpoints do not
+alter the adaptive 600/+300 route or establish an overall speedup or better
+anatomical fits.
+
 ## Keep the selected fit available when an older mesh lacks its marked faces
 
 A mark placed on a qualified reconstruction can reference subdivided faces

@@ -8,7 +8,7 @@ from test_reconstruction_feedback import bridge
 
 pytest.importorskip("PySide6")
 from PySide6.QtCore import QPoint, QPointF, Qt
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QColor, QImage
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from surface_frame_helpers import wait_for_frame
@@ -131,6 +131,71 @@ def test_actual_click_on_extra_reconstruction_material_saves_exact_binding(
             assert reopened._rows == [row] and reopened.save.isEnabled()
         finally:
             reopened.close()
+    finally:
+        dialog.close()
+        application.processEvents()
+
+
+def test_selected_box_outline_follows_its_saved_bounds_through_movement_and_resize(
+    tmp_path, monkeypatch, application,
+):
+    from diffeoforge.desktop.landmark_3d_widget import _projection_pixels, project_surface
+
+    dialog, _, fit = _dialog(tmp_path, monkeypatch, application)
+    canvas = dialog.canvas
+    try:
+        dialog.pick_surface.setCurrentIndex(dialog.pick_surface.findData("reconstruction"))
+        dialog.shape.setCurrentIndex(dialog.shape.findData("box"))
+        assert canvas._displayed_box_outline().isEmpty()  # No center chosen yet.
+        _click(application, dialog)
+        row = dialog._rows[0]
+        assert row["reconstruction"]["sha256"] == fit.model.sha256
+        dialog.axes[0].setValue(12)
+        dialog.axes[1].setValue(15)
+        dialog.axes[2].setValue(20)
+        half_extent = dialog.diagonal * np.array([.12, .15, .20])
+        box = np.asarray(row["bounds"]).reshape(3, 2)
+        np.testing.assert_allclose(np.diff(box, axis=1).ravel(), 2 * half_extent)
+
+        dialog.move.setChecked(True)
+        offset = .30 * _projection_pixels(canvas.width(), canvas.height(), canvas.zoom) / 2
+        target = QPoint(round(canvas.width() / 2 + offset), canvas.height() // 2)
+        moved = _click(application, dialog, pos=target)
+        assert len(dialog._rows) == 1 and moved[0] > .2
+        assert row["center"] == pytest.approx(moved)
+        box = np.asarray(row["bounds"]).reshape(3, 2)
+        np.testing.assert_allclose(box.mean(axis=1), moved)
+        np.testing.assert_allclose(np.diff(box, axis=1).ravel(), 2 * half_extent)
+        canvas.rotate_view(44, -27)
+        before_size = canvas.size()
+        dialog.resize(810, 700)
+        wait_for_frame(application, lambda: canvas.picking_ready, canvas)
+        assert canvas.size() != before_size
+
+        corners = np.stack(np.meshgrid(*box, indexing="ij"), axis=-1).reshape(-1, 3)
+        scene = canvas._frames.image_scene
+        projected = project_surface(
+            corners, np.empty((0, 3), int), center=scene.center, scale=scene.scale,
+            rotation=scene.rotation, yaw=0, pitch=0, zoom=scene.zoom, pan=scene.pan,
+            width=scene.width, height=scene.height,
+        ).screen_vertices
+        outline = canvas._displayed_box_outline()
+        assert outline.elementCount() == 24
+        image = canvas.grab().toImage()
+        color = QColor("#17424b")
+        for i in range(0, outline.elementCount(), 2):
+            first, second = outline.elementAt(i), outline.elementAt(i + 1)
+            assert first.isMoveTo() and second.isLineTo()
+            endpoints = np.asarray([(first.x, first.y), (second.x, second.y)])
+            assert all(np.min(np.linalg.norm(projected - point, axis=1)) < 1e-8
+                       for point in endpoints)
+            x, y = np.rint(endpoints.mean(axis=0)).astype(int)
+            assert any(image.pixelColor(x + dx, y + dy) == color
+                       for dx in range(-1, 2) for dy in range(-1, 2))
+
+        dialog.save.click()
+        assert dialog.regions == [row]
+        assert dialog.regions[0]["bounds"] == pytest.approx(box.ravel())
     finally:
         dialog.close()
         application.processEvents()

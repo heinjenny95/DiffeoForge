@@ -109,6 +109,7 @@ def test_spacing_can_improve_without_changing_parts_but_outside_and_shape_regres
 def proposal_data():
     ref = dict(
         directory="synthetic-singleton",
+        candidate_id="starting-fit",
         target="shape.vtk",
         method="varifold",
         values=dict(
@@ -244,14 +245,16 @@ def test_original_source_grid_is_bound_and_staged_with_residual(tmp_path):
         read_plan(config)
 
 
-@pytest.mark.parametrize("symptom", ["detail", "curvature", "unsupported_detail"])
+@pytest.mark.parametrize("symptom", ["detail", "curvature", "unsupported_detail",
+                                     "expensive_detail"])
 def test_real_pilot_transition_stages_regional_assets_without_launching(
     tmp_path, monkeypatch, symptom
 ):
     import shutil
 
     unsupported = symptom == 'unsupported_detail'
-    symptom = 'detail' if unsupported else symptom
+    checkpoint = symptom == 'expensive_detail'
+    symptom = 'detail' if unsupported or checkpoint else symptom
 
     from test_guided_pilot import run_batch
     from test_interactive_pilot import initial
@@ -263,6 +266,19 @@ def test_real_pilot_transition_stages_regional_assets_without_launching(
     from diffeoforge.runs import prepare_run, verify_prepared_run
     from diffeoforge.surface_io import load_surface_mesh
 
+    if checkpoint:
+        from dataclasses import replace
+
+        import test_guided_pilot as fixture_pilot
+
+        from diffeoforge import regional_search
+
+        classify = fixture_pilot._metrics
+        monkeypatch.setattr(fixture_pilot, "_metrics", lambda path: replace(
+            classify(path), runtime_seconds=530., final_iteration=120, maximum_iterations=120))
+        monkeypatch.setattr(regional_search, "capture", lambda *a, **k: {
+            "original_to_fit_p95": .7, "symmetric_tail": .7,
+        })
     base = run_batch(initial(tmp_path), monkeypatch)
     target_subject = base.plan.selected_pilot_subjects[0]
     original = load_surface_mesh(
@@ -346,6 +362,13 @@ def test_real_pilot_transition_stages_regional_assets_without_launching(
     prepared = prepare_run(child.candidates[0].config_path, run_id="regional-stage-test")
     verify_prepared_run(prepared)
     assert (prepared / "input/regional/plan.json").is_file()
+    if checkpoint:
+        recipe = child.attachment_comparison["guided"]["strategy"]["regional_recipe"]
+        assert recipe["review_checkpoint"]["first_iterations"] == 120
+        assert recipe["review_checkpoint"]["total_iterations"] == 600
+        assert child.attachment_comparison["iterations"] == 120
+        optimizer = ET.parse(prepared / "engine/optimization_parameters.xml")
+        assert optimizer.find("max-iterations").text == "120"
     if expected == "residual":
         assert not plan['warm_source_support']['passed']
         assert plan["residual"]["inherited_fields_unchanged"]

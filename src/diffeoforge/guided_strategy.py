@@ -769,7 +769,16 @@ def verify_strategy(info, record, manifest, study_root=None):
         from diffeoforge.guided_failed_parent import verify_marker
 
         verify_marker(strategy["failure_parent_recovery"], info, record, manifest)
+    from diffeoforge.pilot_iteration_effort import checkpoint_remainder, review_checkpoint
+
     optimization = strategy.get("optimization")
+    recipe = strategy.get("regional_recipe")
+    checkpoint = review_checkpoint(recipe)
+    if checkpoint:
+        if bounded or (not optimization and (
+                info["goal"] != "regional" or info["phase"] != "refine"
+                or record["iterations"] != checkpoint["first_iterations"])):
+            return False
     if optimization and not bounded:
         from diffeoforge.guided_feedback import verify_reference
         from diffeoforge.guided_progress import iteration_limited
@@ -793,6 +802,17 @@ def verify_strategy(info, record, manifest, study_root=None):
                 # A same-objective successor gets one additional block of the
                 # prior size. The cumulative branch total is recorded separately.
                 allowance = candidate.metrics["maximum_iterations"]
+        if checkpoint:
+            parent_info = guided.record(parent)
+            parent_recipe = (parent_info.get("strategy") or {}).get("regional_recipe")
+            subject = candidate.metrics.get("attachment_comparison", {}).get(
+                "subjects", {}).get(optimization["reference"]["target"], {})
+            if (not optimization.get("version") or optimization["common_model"]
+                    or not strategy.get("regional_continuation") or parent_recipe != recipe):
+                return False
+            allowance = checkpoint_remainder(parent_info, candidate.metrics, subject)
+            if allowance <= 0:
+                return False
         if (info["phase"] != "refine" or info["goal"] != "optimize"
                 or parent.plan.pilot_subject_count != 1 or not iteration_limited(candidate)
                 or set(record["methods"].values()) != {optimization["reference"]["method"]}

@@ -72,7 +72,7 @@ def compare(before, after):
 def history(cases, reference, regions):
     """Measure existing results only; no files are changed or scientific jobs launched."""
     if not regions or not reference:
-        return cases, []
+        return cases, [], None
     from diffeoforge.reconstruction_feedback import ReconstructionMaterialUnavailable
 
     baseline = measured(reference, regions)
@@ -108,7 +108,7 @@ def history(cases, reference, regions):
                 evidence.append(dict(fit=fit, family=case.get('family', case.get('goal')),
                                      outcome=case.get('outcome'), **response))
         result.append(row)
-    return result, evidence
+    return result, evidence, baseline
 
 
 def choose(cases, fallback):

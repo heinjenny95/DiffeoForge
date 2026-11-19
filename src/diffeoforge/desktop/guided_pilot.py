@@ -68,6 +68,36 @@ def _regional_check_note(quality, *, capped, approved, starting_choice):
     )
 
 
+def _marked_area_changes(feedback, subjects, target):
+    """Report directional P95 changes on the exact areas of this trial."""
+    from diffeoforge.pilot_region_scope import label
+
+    before = (feedback or {}).get("baseline", [])
+    after = subjects.get(target, {}).get("marked_regions", {}).get("measurements", [])
+    if len(before) != len(after):
+        return []
+    changes = []
+    for index, (left, right) in enumerate(zip(before, after, strict=True)):
+        area = left.get("region") or {}
+        diagonal = left.get("diagonal")
+        if (area != right.get("region") or area.get("purpose", "problem") != "problem"
+                or type(diagonal) not in (int, float) or not math.isfinite(diagonal)
+                or diagonal <= 0):
+            continue
+        directional = []
+        for key in ("original_to_fit_p95", "fit_to_original_p95"):
+            values = [[row.get(key) for row in area.get("repeats", [])]
+                      for area in (left, right)]
+            if all(len(v) == 2 and all(type(x) in (int, float) and math.isfinite(x)
+                                       for x in v) for v in values):
+                baseline, outcome = (max(v) for v in values)
+                directional.append(f"{100 * (outcome - baseline) / diagonal:+.2f} pp")
+            else:
+                directional.append("unavailable")
+        changes.append(f"{label(index)} · " + " / ".join(directional))
+    return changes
+
+
 def render(window, prepared):
     from diffeoforge.desktop.pilot_common_model import pin_action, pin_recovery, pin_revision
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
@@ -84,6 +114,9 @@ def render(window, prepared):
     bounded_action = guidance.get("bounded_adaptive")
     regional_trial = bool(snapshot.attachment_comparison.get("regional_objective"))
     iterations = snapshot.attachment_comparison.get("iterations")
+    strategy = info.get("strategy") or {}
+    checkpoint = (strategy.get("regional_recipe") or {}).get("review_checkpoint")
+    checkpoint_continuation = bool(checkpoint and strategy.get("optimization"))
     starting_choice = next((row for row in guidance.get("feedback", {}).values()
                             if row and row.get("starting_fit_choice")), None)
     density_pair = snapshot.attachment_comparison.get("early_density_comparison")
@@ -199,9 +232,21 @@ def render(window, prepared):
             note.setWordWrap(True)
             window.content_layout.addWidget(note)
     elif regional_trial and type(iterations) is int and iterations > 0:
-        note = QLabel(
-            f"Single protected local fit · up to {iterations:,} iterations, then surface checks."
-        )
+        if checkpoint:
+            total = checkpoint["total_iterations"]
+            text = (
+                f"Local continuation · up to {iterations:,} more iterations. "
+                f"The correction is capped at {total:,} across both tests."
+                if checkpoint_continuation else
+                f"First local check · up to {iterations:,} of {total:,} correction iterations. "
+                "Then inspect each marked area and the surface checks."
+            )
+        else:
+            text = (
+                f"Single protected local fit · up to {iterations:,} iterations, "
+                "then surface checks."
+            )
+        note = QLabel(text)
         note.setObjectName("singleRegionalEffort")
         note.setWordWrap(True)
         window.content_layout.addWidget(note)
@@ -361,7 +406,11 @@ def render(window, prepared):
             "Run +300 continuation" if bounded_action.get("extension_from") else
             f"Run adaptive correction · ≤{bounded_action['total']} total iterations")
     elif regional_trial and can_run and not (resume_checks or common_flow or retry_blocked):
-        window.start_button.setText("Run single protected local fit")
+        window.start_button.setText(
+            "Run local continuation" if checkpoint_continuation else
+            f"Run first local check · up to {iterations} iterations" if checkpoint else
+            "Run single protected local fit"
+        )
     window.start_button.setVisible(can_run)
     window.start_button.setEnabled(can_run and not running and not retry_blocked)
     window.start_button.setToolTip(
@@ -740,6 +789,15 @@ def render(window, prepared):
             note.setObjectName("regionalCheckOutcome")
             note.setWordWrap(True)
             layout.addWidget(note)
+            changes = _marked_area_changes(info.get("feedback"), subjects, info["target"])
+            if changes:
+                areas = QLabel(
+                    "Marked-area P95 changes (negative means closer). "
+                    "Original to fit / fit to original.\n" + "   |   ".join(changes)
+                )
+                areas.setObjectName("markedAreaP95Changes")
+                areas.setWordWrap(True)
+                layout.addWidget(areas)
         from diffeoforge.guided_density import refinement_for
 
         initialization = refinement_for(snapshot.attachment_comparison, candidate.candidate_id)

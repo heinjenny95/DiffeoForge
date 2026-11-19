@@ -486,16 +486,6 @@ def proposal(snapshot, identifier, data, *, symptom=None):
             "Keep the saved deformation as a fixed prefix and add a correction "
             "at the chosen movement scale, then evaluate their true forward composition. "
         )
-    from diffeoforge.pilot_iteration_effort import regional_allowance
-
-    effort = regional_allowance(
-        recipe, marked, getattr(snapshot, "attachment_comparison", {}).get("iterations", 120)
-    )
-    reason += (
-        f"Allow up to {effort['maximum_iterations']} iterations for this local test; "
-        "the solver can finish earlier. This is separate from the short method screen. "
-        "An improving capped field can be continued with the same settings and marks. "
-    )
     # A cohort reconstruction is a useful visual comparison, but its moving
     # template/control basis cannot seed the frozen singleton protocol. Check
     # before offering the action; bind() retains the complete field checks.
@@ -513,8 +503,30 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     selected_parent = data["references"].get(seed["directory"])
     if selected_parent is None and Path(seed["directory"]).resolve() == snapshot.study_directory:
         selected_parent = snapshot
-    bounded_available = bool(selected_parent is not None and eligible_seed(
-        selected_parent, seed["candidate_id"]))
+    bounded_available = bool(selected_parent is not None and seed.get("candidate_id")
+                             and eligible_seed(selected_parent, seed["candidate_id"]))
+    from diffeoforge.pilot_iteration_effort import legacy_checkpoint, regional_allowance
+
+    inherited = getattr(snapshot, "attachment_comparison", {}).get("iterations", 120)
+    effort = regional_allowance(recipe, marked, inherited)
+    checkpoint = None
+    if available and not bounded_available:
+        prior = next((c for c in getattr(selected_parent, "candidates", ())
+                      if c.candidate_id == seed.get("candidate_id")), None)
+        checkpoint = legacy_checkpoint(recipe, effort["maximum_iterations"], prior)
+    if checkpoint:
+        recipe["review_checkpoint"] = checkpoint
+        reason += (
+            f"Check the correction after up to {checkpoint['first_iterations']} iterations "
+            "on the full surfaces. If every marked problem area improves and the protection "
+            f"and surface checks pass, review whether to use the rest of the "
+            f"{checkpoint['total_iterations']}-iteration allowance. "
+        )
+    else:
+        reason += (
+            f"Allow up to {effort['maximum_iterations']} iterations for this local test. "
+            "The solver can finish earlier. "
+        )
     return dict(
         goal="regional",
         bounded_fit_available=bounded_available,

@@ -51,7 +51,7 @@ def inputs(snapshot, identifier, context, *, regions_override=None, allow_contin
     inspected = context["allowed"].get(identifier, False)
     from diffeoforge.guided_response import history
 
-    response_cases, response_evidence = history(context['cases'], anchor, marked)
+    response_cases, response_evidence, response_baseline = history(context['cases'], anchor, marked)
     current_reference = _reference(snapshot, identifier, target) if inspected else None
     from diffeoforge.config import load_config
     from diffeoforge.surface_io import load_surface_mesh
@@ -75,10 +75,15 @@ def inputs(snapshot, identifier, context, *, regions_override=None, allow_contin
             and any(r.get('purpose', 'problem') == 'problem' for r in marked)):
         from diffeoforge.regional_search import capture
 
+        problems = [r for r in marked if r.get('purpose', 'problem') == 'problem']
+        options = dict(per_region=True) if any(r.get('purpose') == 'fixed' for r in marked) else {}
+        if response_baseline is not None:
+            # The regional recipe needs only the problem subset of the same samples.
+            options['measurements'] = [
+                area for area in response_baseline['baseline'] if area['region'] in problems
+            ]
         regional_capture = capture(references.get(capture_reference['directory'], snapshot),
-            capture_reference,
-            [r for r in marked if r.get('purpose', 'problem') == 'problem'],
-            **(dict(per_region=True) if any(r.get('purpose') == 'fixed' for r in marked) else {}))
+                                   capture_reference, problems, **options)
     verified = dict(anchor=anchor, baseline=baseline, current=current, target=target,
                 regions=marked,
                 retention_context=retention,

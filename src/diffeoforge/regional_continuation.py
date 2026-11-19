@@ -392,12 +392,18 @@ def _proposal(snapshot, identifier, data):
     """Return an eligible numerical proposal, or None without changing old flows."""
     from diffeoforge import reference_guided_pilot as guided
     from diffeoforge.guided_progress import iteration_limited
+    from diffeoforge.pilot_iteration_effort import checkpoint_remainder, review_checkpoint
     from diffeoforge.reference_calibration_study import calibration_candidate_run_directory
 
     info = guided.record(snapshot)
     recipe = (info.get("strategy") or {}).get("regional_recipe")
+    checkpoint = review_checkpoint(recipe)
     current, ref = data["current"], data.get("current_reference")
     feedback = (data["context"].get("feedback", {}).get(identifier) or {}).get("feedback") or {}
+    outcome = feedback.get("outcome")
+    reviewed = outcome in {"same", "better"} or (
+        checkpoint and outcome is None and ref and data["anchor"] == ref
+    )
     previous_marks = (info.get("feedback") or {}).get("regions")
     marks = data["regions"]
     from diffeoforge.retained_mark_source import current_is_bound
@@ -407,7 +413,7 @@ def _proposal(snapshot, identifier, data):
         or not ref
         or getattr(snapshot, "visual_reviews", {}).get(identifier) is True
         or snapshot.plan.pilot_subject_count != 1
-        or feedback.get("outcome") not in {"same", "better"}
+        or not reviewed
         or not iteration_limited(current)
         or not marks
         or previous_marks != marks
@@ -428,8 +434,11 @@ def _proposal(snapshot, identifier, data):
         .get(ref["target"], {})
     )
     quality = row.get("regional_quality", {})
+    allowance = (checkpoint_remainder(info, current.metrics, row) if checkpoint
+                 else current.metrics["maximum_iterations"])
     if (
-        row.get("refinement_guard", {}).get("severe") is True
+        not allowance
+        or row.get("refinement_guard", {}).get("severe") is True
         or quality.get("marked_regions") != marks
         or quality.get("outside_preserved") is not True
         or quality.get("shape_preserved") is not True
@@ -458,12 +467,17 @@ def _proposal(snapshot, identifier, data):
         optimizer_history="new; previous SciPy Hessian/line-search memory is not restored",
         anatomical_approval=False,
     )
+    reason = (
+        "Every marked problem area improved and the surface and protection checks passed. "
+        f"Up to {allowance} iterations remain for the same regional correction. "
+        if checkpoint else "The finite fit stopped at its iteration limit. "
+    )
     return dict(
         goal="optimize",
         title="Optimize longer with the same regional settings",
-        reason="The finite fit stopped at its iteration limit. Continue the same original "
-        "objective, marked areas, incoming geometry, prefix and exact control basis from "
-        "the inspected accepted field. This is a new optimizer history and needs fresh review.",
+        reason=reason + "Continue the same original objective, marked areas, incoming geometry, "
+        "prefix and exact control basis from the inspected accepted field. "
+        "This is a new optimizer history and needs fresh review.",
         available=True,
         blocked_reason="",
         regions=marks,
@@ -477,7 +491,7 @@ def _proposal(snapshot, identifier, data):
         regional_recipe=copy.deepcopy(recipe),
         regional_continuation=marker,
         numerical_extension=True,
-        optimization_iterations=current.metrics["maximum_iterations"],
+        optimization_iterations=allowance,
         remaining_checks=max(0, len(info["pilot_order"]) - 1),
         hypothesis_count=(info.get("strategy") or {}).get("hypothesis_count", 0),
         contrast_level=0,

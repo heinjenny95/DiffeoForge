@@ -79,7 +79,8 @@ def test_new_marks_bound_geometry_replay_without_discarding_history(monkeypatch)
         dict(fit=dict(reference, id=i), target="shape.vtk", method="varifold", family="detail")
         for i in range(60)
     ]
-    result, evidence = response.history(cases, reference, [dict(mark="new")])
+    result, evidence, baseline = response.history(cases, reference, [dict(mark="new")])
+    assert baseline == {}
     assert len(result) == 60 and len(evidence) == 2
     assert len(calls) == 3  # retained baseline plus the two latest contrasts
     assert result[0] == cases[0] and all(c["fit"] == r["fit"]
@@ -106,7 +107,8 @@ def test_new_reconstruction_mark_keeps_the_working_fit_when_history_is_incompati
     row = dict(target=chosen["target"], method=chosen["method"], family="detail")
     previous = dict(row, fit=earlier, outcome="better", response={"status": "improved"})
     alternate = dict(row, fit=compatible)
-    rows, evidence = response.history([previous, alternate], chosen, [marked])
+    rows, evidence, baseline = response.history([previous, alternate], chosen, [marked])
+    assert baseline == metric()
     assert calls == [chosen, earlier, compatible]
     assert rows[0] == dict(row, fit=earlier, outcome="better")
     assert previous["response"] == {"status": "improved"}
@@ -190,7 +192,7 @@ def test_history_uses_same_new_patch_for_all_results_and_rejects_other_methods(m
     rows = [dict(case('detail', 'unchanged'), fit=a, target='form', method='current'),
             dict(case('density', 'unchanged'), fit=b, target='form', method='current'),
             dict(fit=a, target='form', method='varifold')]
-    result, evidence = response.history(rows, anchor, [{'new': 'patch'}])
+    result, evidence, _ = response.history(rows, anchor, [{'new': 'patch'}])
     assert [r['status'] for r in evidence] == ['unchanged', 'improved']
     assert all(p == [{'new': 'patch'}] for _, p in calls)
     assert 'response' not in result[-1] and 'response' in result[0]

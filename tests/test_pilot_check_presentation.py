@@ -73,6 +73,56 @@ def test_prepared_single_regional_fit_names_its_own_iteration_allowance(panel):
     assert not panel.invoked
 
 
+@pytest.mark.parametrize(("limit", "continuation"), [(120, False), (480, True)])
+def test_prepared_early_review_uses_the_shared_budget_and_waits_for_run(panel, limit, continuation):
+    from PySide6.QtWidgets import QLabel
+
+    panel.candidate.status = "pending"
+    panel.candidate.metrics = None
+    panel.snapshot.visual_reviews.clear()
+    record = panel.snapshot.attachment_comparison
+    record["iterations"] = limit
+    strategy = panel.info["strategy"] = dict(regional_recipe=dict(review_checkpoint=dict(
+        version="regional-review-checkpoint-v1", first_iterations=120, total_iterations=600)))
+    if continuation:
+        strategy["optimization"] = dict(reference={})
+    panel.window.layout().addWidget(panel.window.start_button)
+    panel.render()
+    effort = panel.window.content.findChild(QLabel, "singleRegionalEffort")
+    assert effort.isVisible()
+    assert "600" in effort.text() and str(limit) in effort.text()
+    assert panel.window.start_button.text().startswith(
+        "Run local continuation" if continuation else "Run first local check"
+    )
+    assert not panel.invoked
+
+
+def test_directional_distances_reveal_tradeoffs_per_exact_mark(panel):
+    from PySide6.QtWidgets import QLabel
+
+    def row(region, forward, reverse):
+        return dict(region=region, diagonal=10., repeats=[
+            dict(original_to_fit_p95=forward, fit_to_original_p95=reverse)
+        ] * 2)
+
+    problem = dict(purpose="problem", center=[0, 0, 0])
+    fixed = dict(purpose="fixed", center=[1, 0, 0])
+    extra = dict(purpose="problem", center=[2, 0, 0])
+    panel.info["feedback"] = dict(baseline=[
+        row(problem, .4, .2), row(fixed, .1, .1), row(extra, .4, .2),
+    ])
+    target = panel.candidate.metrics["attachment_comparison"]["subjects"]["specimen.vtk"]
+    target["marked_regions"] = dict(outcome="regression", measurements=[
+        row(problem, .2, .3), row(fixed, .1, .1), row(extra, None, .1),
+    ])
+    panel.render()
+    changes = panel.window.content.findChild(QLabel, "markedAreaP95Changes")
+    assert changes.isVisible()
+    assert "A · -2.00 pp / +1.00 pp" in changes.text()
+    assert "C · unavailable / -1.00 pp" in changes.text()
+    assert "B ·" not in changes.text()
+
+
 @pytest.mark.parametrize('phase', [None, 'fixed_shooting'])
 def test_check_clock_uses_whole_qualification_not_the_restarted_internal_batch(panel, phase):
     from PySide6.QtWidgets import QLabel

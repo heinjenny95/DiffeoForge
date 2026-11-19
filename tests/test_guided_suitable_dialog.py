@@ -162,6 +162,7 @@ def panel(monkeypatch, tmp_path):
         app=app,
         window=window,
         snapshot=snapshot,
+        info=info,
         guidance=context,
         candidate=candidate,
         invoked=invoked,

@@ -2,7 +2,7 @@
 import numpy as np
 
 
-def capture(snapshot, reference, regions, *, per_region=False):
+def capture(snapshot, reference, regions, *, per_region=False, measurements=None):
     """Background-only evidence from this retained fit, never a successful oracle."""
     candidate = next(c for c in snapshot.candidates
                      if c.candidate_id == reference['candidate_id'])
@@ -12,10 +12,16 @@ def capture(snapshot, reference, regions, *, per_region=False):
             and regions == quality.get('surface_regions', quality.get('marked_regions'))):
         rows = quality['active_surface']
     else:
-        from diffeoforge.pilot_recovery import capture as measure
+        if measurements is None:
+            from diffeoforge.pilot_recovery import capture as measure
 
-        measured = measure(snapshot, candidate.candidate_id, reference['target'], regions=regions)
-        rows = [repeat for area in measured['baseline'] for repeat in area['repeats']]
+            measured = measure(
+                snapshot, candidate.candidate_id, reference['target'], regions=regions,
+            )
+            measurements = measured['baseline']
+        elif [area['region'] for area in measurements] != regions:
+            raise ValueError('Capture measurements do not match the requested marked areas')
+        rows = [repeat for area in measurements for repeat in area['repeats']]
     forward = [r['original_to_fit_p95'] for r in rows
                if r.get('original_to_fit_p95') is not None]
     reverse = [r['fit_to_original_p95'] for r in rows
@@ -25,7 +31,7 @@ def capture(snapshot, reference, regions, *, per_region=False):
     if any(r.get("reconstruction") for r in regions):
         result["symmetric_tail"] = max([*forward, *reverse], default=0)
     if per_region:
-        result['per_region'] = capture_rows(measured['baseline'])
+        result['per_region'] = capture_rows(measurements)
     return result
 
 

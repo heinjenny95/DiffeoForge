@@ -4,11 +4,20 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from itertools import product
 from threading import Event
 
 import numpy as np
 from PySide6.QtCore import QPointF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen, QWheelEvent
+from PySide6.QtGui import (
+    QColor,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPaintEvent,
+    QPen,
+    QWheelEvent,
+)
 from PySide6.QtWidgets import QCheckBox, QWidget
 
 from diffeoforge.desktop.display_proxy import DEFAULT_DISPLAY_FACES
@@ -19,6 +28,11 @@ from diffeoforge.desktop.surface_snap import closest_surface_point
 
 INTERACTIVE_TRIANGLE_BUDGET = 5_000
 SURFACE_OPACITY = 255
+_BOX_EDGES = (
+    (0, 4), (1, 5), (2, 6), (3, 7),
+    (0, 2), (1, 3), (4, 6), (5, 7),
+    (0, 1), (2, 3), (4, 5), (6, 7),
+)
 
 
 @dataclass(frozen=True)
@@ -655,6 +669,13 @@ class InteractiveMeshCanvas3D(QWidget):
         image = self._frames.request(key, scene)
         if image is not None:
             painter.drawImage(0, 0, image)
+            outline = self._displayed_box_outline()
+            if not outline.isEmpty():
+                # A light halo keeps the box legible across both mesh colors.
+                painter.setPen(QPen(QColor("#ffffff"), 4.0))
+                painter.drawPath(outline)
+                painter.setPen(QPen(QColor("#17424b"), 2.0))
+                painter.drawPath(outline)
         self._presented_key = key if self._frames.ready(key) and not navigation else None
         if (
             navigation or not self._frames.ready(key) or not self.full_resolution_ready
@@ -714,17 +735,43 @@ class InteractiveMeshCanvas3D(QWidget):
         )
         painter.end()
 
-    def _displayed_marker_positions(self) -> dict[str, QPointF]:
+    def _project_on_displayed_frame(self, points) -> list[QPointF]:
+        # During navigation or resize the cache can still show its older camera.
         scene = self._frames.image_scene
-        if scene is None:
-            return {}
+        if scene is None or not len(points):
+            return []
         factor = 0.9 * max(1.0, min(scene.width, scene.height) - scene.margin) * scene.zoom
-        positions = {}
-        for label, value in self._markers.items():
-            normalized = (np.asarray(value, dtype=np.float64) - scene.center) / scene.scale
-            camera = normalized @ scene.rotation.T
-            positions[label] = QPointF(
-                scene.width / 2.0 + scene.pan[0] + float(camera[0]) * factor,
-                scene.height / 2.0 + scene.pan[1] - float(camera[1]) * factor,
+        normalized = (np.asarray(points, dtype=np.float64) - scene.center) / scene.scale
+        camera = normalized @ scene.rotation.T
+        return [
+            QPointF(
+                scene.width / 2.0 + scene.pan[0] + float(x) * factor,
+                scene.height / 2.0 + scene.pan[1] - float(y) * factor,
             )
-        return positions
+            for x, y, _ in camera
+        ]
+
+    def _displayed_box_outline(self) -> QPainterPath:
+        outline = QPainterPath()
+        if self._surface_region is None:
+            return outline
+        if self._surface_region[0] == "box":
+            bounds = self._surface_region[1]
+        elif self._surface_region[0] == "regions":
+            rows, selected = self._surface_region[1:]
+            if selected is None or not 0 <= selected < len(rows) or rows[selected][0] != "box":
+                return outline
+            bounds = rows[selected][1]
+        else:
+            return outline
+        box_vertices = list(product(bounds[:2], bounds[2:4], bounds[4:]))
+        corners = self._project_on_displayed_frame(box_vertices)
+        if corners:
+            for start, end in _BOX_EDGES:
+                outline.moveTo(corners[start])
+                outline.lineTo(corners[end])
+        return outline
+
+    def _displayed_marker_positions(self) -> dict[str, QPointF]:
+        projected = self._project_on_displayed_frame(list(self._markers.values()))
+        return dict(zip(self._markers, projected, strict=True)) if projected else {}

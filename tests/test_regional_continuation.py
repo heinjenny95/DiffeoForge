@@ -657,7 +657,7 @@ def preview_inputs(case, monkeypatch):
     monkeypatch.setattr(guided_strategy, "_candidate", lambda *_a, **_k: case.candidate)
     monkeypatch.setattr(guided_strategy, "_target", lambda *_: "target.vtk")
     monkeypatch.setattr(guided_strategy, "_reference", lambda *_: case.ref)
-    monkeypatch.setattr(guided_response, "history", lambda *_: ([], []))
+    monkeypatch.setattr(guided_response, "history", lambda *_: ([], [], None))
     monkeypatch.setattr(regional_search, "capture", lambda *_a, **_k: None)
     monkeypatch.setattr(study, "_verify_manifest", lambda *_: dict(template_diagonal=6.0))
     return context

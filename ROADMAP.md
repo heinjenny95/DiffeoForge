@@ -2,7 +2,7 @@
 
 ## Pilot correction editor follow-up (19 November 2026)
 
-- [ ] Show the selected 3D box as a clear edge outline in the correction
+- [x] Show the selected 3D box as a clear edge outline in the correction
   viewport. Update the outline as the view rotates or the box center or
   X/Y/Z size changes. Keep its edges distinguishable from the mesh overlay
   and use the same bounds as the saved area selection.

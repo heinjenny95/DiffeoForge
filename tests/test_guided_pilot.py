@@ -45,7 +45,9 @@ def run_batch(snapshot, monkeypatch, *, controller=_CompletedController, refinem
     # Regional evidence has dedicated real-geometry and response tests.
     from diffeoforge import guided_response
 
-    monkeypatch.setattr(guided_response, 'history', lambda cases, reference, regions: (cases, []))
+    monkeypatch.setattr(
+        guided_response, 'history', lambda cases, reference, regions: (cases, [], None)
+    )
     from diffeoforge import pilot_common_diagnosis
 
     # This receipt-only controller has no run manifest or reconstruction. Real
