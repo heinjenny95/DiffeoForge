@@ -8,12 +8,18 @@ same-objective numerical extensions.
 The policy applies to explicit missing/detail requests with an inspected Retain
 area, no rigid-shape guides, and a per-brush forward mismatch larger than that
 brush's radius. Subsequent detail requests in that protocol remain eligible.
-Ordinary smaller misses and other symptoms retain their existing route.
+It also handles original-surface correction marks when two repeated measurements
+find original faces and zero selected fit faces in the marked volume. The forward
+P95 must exceed the brush radius or the longest box half-span. A reconstruction-side
+correction can stay in the saved instructions while the trial focuses on the
+missing original patch. A missing distance without face and sample counts does
+not establish this route.
 
-The next trial works on the brush with the largest measured symmetric tail. All
-original instructions remain bound to its evidence and visible in the review.
-The proposal names the active area and requires reviewing the other projections;
-a partial-area trial cannot manufacture whole-shape anatomical approval.
+The next trial names the active brush and uses the largest measured tail among
+the qualifying missing patches when any are present. All original instructions
+remain bound to its evidence and visible in the review. Only the active brush
+drives the local attachment. The other corrections still need review, and the
+existing numerical and Retain-area checks must pass before qualification.
 
 Capture width is twice the measured symmetric 95th-percentile distance between
 the actual free source patch and the original target patch. Two deterministic

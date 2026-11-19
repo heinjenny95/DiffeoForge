@@ -709,15 +709,17 @@ def _prepare_return_direction(context, direction, chosen):
     if not proposal["available"] or proposal["initialization_reference"] != reference:
         reason = proposal.get("blocked_reason") or "The saved field cannot seed this adjustment."
         return dict(start, reason=" ".join(filter(None, (reason, quality))))
+    focused = (proposal.get("regional_recipe") or {}).get("protected_capture")
+    next_step = proposal["reason"] if focused else " ".join((
+        proposal.get("bounded_fit_note") or "Prepare a protected local test from this saved fit.",
+        "Review the new result before deciding if it is suitable.",
+    ))
     return dict(
         start, mode="trial",
-        title="Work on remaining marked area" if len(problem) == 1 else
-              "Work on remaining marked areas",
-        reason=" ".join(filter(None, (
-            proposal.get("bounded_fit_note")
-            or "Prepare a protected local test from this saved fit.",
-            "Review the new result before deciding if it is suitable.", quality,
-        ))),
+        title=(proposal["title"] if focused else
+               "Work on remaining marked area" if len(problem) == 1 else
+               "Work on remaining marked areas"),
+        reason=" ".join(filter(None, (next_step, quality))),
         request=dict(request=request, reference=reference, values=proposal["values"],
                      goal=proposal["goal"], regions=regions,
                      bounded_fit_available=proposal.get("bounded_fit_available", False)),

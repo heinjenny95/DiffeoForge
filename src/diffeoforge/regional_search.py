@@ -45,9 +45,18 @@ def capture_rows(measurements):
         back = [r['fit_to_original_p95'] for r in area['repeats']
                 if r.get('fit_to_original_p95') is not None]
         reverse = max(back) if back else None
+        empty_fit_patch = (
+            area.get('selected_faces', 0) > 0 and area.get('reverse_selected_faces') == 0
+            and len(area['repeats']) == 2
+            and all(r.get('forward_count', 0) > 0 and r.get('reverse_count') == 0
+                    and r.get('original_to_fit_p95') is not None
+                    and 'fit_to_original_p95' in r and r['fit_to_original_p95'] is None
+                    for r in area['repeats'])
+        )
         rows.append(dict(region=area['region'], original_to_fit_p95=forward,
                          fit_to_original_p95=reverse,
-                         symmetric_tail=max(forward or 0, reverse or 0)))
+                         symmetric_tail=max(forward or 0, reverse or 0),
+                         empty_fit_patch=empty_fit_patch))
     return rows
 
 

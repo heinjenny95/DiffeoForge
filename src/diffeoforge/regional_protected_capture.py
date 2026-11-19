@@ -4,6 +4,7 @@ import math
 
 VERSION = 'protected-missing-feature-v1'
 NATIVE_TIMEPOINTS = 145
+DETAIL_SYMPTOMS = {'detail', 'missing'}
 
 
 def active_regions(recipe, regions):
@@ -17,15 +18,13 @@ def active_regions(recipe, regions):
 
 
 def proposal(snapshot, identifier, data, info, symptom):
-    """New detail requests only; explicit same-objective extensions bypass this."""
-    if symptom not in {'detail', 'missing'}:
+    """Prepare protected capture when a marked original feature needs reach."""
+    if symptom not in DETAIL_SYMPTOMS | {'unsure'}:
         return None
     marked = data['regions']
     problem = [r for r in marked if r.get('purpose', 'problem') == 'problem']
-    if any(r.get('reconstruction') for r in problem):
-        return None  # A reverse-material mark is not a missing-original capture request.
     if (not any(r.get('purpose') == 'fixed' for r in marked) or not problem
-            or any(r['symptom'] not in {'detail', 'missing'} for r in problem)
+            or any(r['symptom'] in {'gap', 'position'} for r in problem)
             or any(r.get('purpose') == 'preserve' for r in marked)):
         return None
     evidence = data.get('regional_capture') or {}
@@ -35,7 +34,13 @@ def proposal(snapshot, identifier, data, info, symptom):
     reference = data['anchor'] or data['current_reference']
     previous = (info.get('strategy') or {}).get('regional_recipe') or {}
     persistent = previous.get('protected_capture') == VERSION
-    if not persistent and not any(r['original_to_fit_p95'] > r['region']['radius'] for r in rows):
+    explicit_detail = (symptom in DETAIL_SYMPTOMS
+                       and all(not r.get('reconstruction') and r['symptom'] in DETAIL_SYMPTOMS
+                               for r in problem))
+    missing = [r for r in rows if _missing_original(r)]
+    explicit_capture = explicit_detail and (persistent or any(
+        (r['original_to_fit_p95'] or 0) > r['region']['radius'] for r in rows))
+    if not missing and not explicit_capture:
         return None
     from diffeoforge.regional_pilot import _quality_for_regions
     from diffeoforge.regional_search import capture_rows
@@ -51,8 +56,14 @@ def proposal(snapshot, identifier, data, info, symptom):
         measured = subject.get('marked_regions', {}).get('measurements', [])
         subset = [a for a in measured if a['region'] in problem]
         if [a['region'] for a in subset] == problem:
-            seed, rows = data['current_reference'], capture_rows(subset)
-    worst = max(rows, key=lambda r: r['symmetric_tail'])
+            current_rows = capture_rows(subset)
+            current_missing = [r for r in current_rows if _missing_original(r)]
+            # Recheck the actual seed. A previous missing patch is no longer
+            # evidence for prioritizing it if the new field already reaches it.
+            if missing and not current_missing and not explicit_capture:
+                return None
+            seed, rows, missing = data['current_reference'], current_rows, current_missing
+    worst = max(missing or rows, key=lambda r: r['symmetric_tail'])
     if not math.isfinite(worst['symmetric_tail']) or worst['symmetric_tail'] <= 0:
         return None
     active = worst['region']
@@ -60,10 +71,7 @@ def proposal(snapshot, identifier, data, info, symptom):
     before_width = values['deformation_kernel_width']
     # Dyadic refinement relative to this seed; repeating a request does not
     # blindly halve the movement scale again. Attachment capture is independent.
-    size = active['radius']
-    if active.get('shape') == 'box':
-        b = active['bounds']
-        size = max(b[i+1]-b[i] for i in (0, 2, 4)) / 2
+    size = _half_span(active)
     width = before_width
     for _ in range(16):
         if width <= size * .5:
@@ -108,9 +116,11 @@ def proposal(snapshot, identifier, data, info, symptom):
     from diffeoforge.pilot_region_scope import label
 
     area = label(marked.index(active))
+    rationale = (f'Area {area} contains original surface beyond the starting fit. '
+                 if missing else
+                 f'Area {area} has the largest measured remaining surface mismatch. ')
     return dict(goal='regional', title=f'Improve marked area {area}; retain the rest',
-        reason=f'Work on area {area}, which has the largest measured remaining '
-        'surface mismatch. Keep the complete starting fit and the Retain areas. '
+        reason=rationale + 'Keep the complete starting fit and the Retain areas. '
         'This trial improves one marked area; the other instructions remain saved. '
         'Use a broad capture range with separate local movement. '
         + ('An earlier identical test is retained; this is a distinct weight contrast. '
@@ -126,6 +136,23 @@ def proposal(snapshot, identifier, data, info, symptom):
         hypothesis_count=len(data['context']['cases']),
         contrast_level=len(data['context']['cases']),
         response_evidence=[])
+
+
+def _missing_original(row):
+    region = row['region']
+    forward = row['original_to_fit_p95']
+    if (not row.get('empty_fit_patch') or region.get('reconstruction')
+            or region['symptom'] not in DETAIL_SYMPTOMS | {'unsure'}
+            or forward is None or not math.isfinite(forward)):
+        return False
+    return forward > _half_span(region)
+
+
+def _half_span(region):
+    if region.get('shape') == 'box':
+        bounds = region['bounds']
+        return max(bounds[i+1]-bounds[i] for i in (0, 2, 4)) / 2
+    return region['radius']
 
 
 def patch_capture_width(vertices, faces, target_vertices, target_faces, chosen, regions):

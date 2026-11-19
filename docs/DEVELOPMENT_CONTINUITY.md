@@ -1,5 +1,13 @@
 # Development continuity
 
+## Focus protected capture on missing original surfaces
+
+The pilot can prioritize one marked original-surface gap even when a correction
+also contains a reconstruction-side mark. It requires repeated original-to-fit
+surface measurements and zero selected fit faces inside the marked volume. The
+proposal retains the selected field and all instructions, names the active area,
+and uses the existing protected-capture checks and iteration allowance.
+
 ## dev228 — Validation Lab handoff and Deformetrica visual review before PCA
 
 Validation Lab verifies the effective pilot plan against the original plan and

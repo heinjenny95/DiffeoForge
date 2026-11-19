@@ -76,6 +76,43 @@ def test_numeric_extension_other_symptoms_and_small_ordinary_miss_are_unchanged(
     assert proposal(None, 'x', data, info, 'detail') is None
 
 
+def test_one_sided_original_box_focuses_capture_among_mixed_marks():
+    data, info = setup_data()
+    missing, other_original, fixed = data['regions']
+    missing.update(shape='box', bounds=[-.52, .52, -.38, .38, -.38, .38],
+                   radius=.75, symptom='unsure')
+    other_original['symptom'] = 'unsure'
+    extra = dict(center=[3, 0, 0], radius=.4, symptom='unsure', reconstruction={'bound': True})
+    data['regions'].append(extra)
+    measurements = [
+        dict(region=missing, selected_faces=800, reverse_selected_faces=0,
+             repeats=[dict(forward_count=2048, reverse_count=0,
+                           original_to_fit_p95=.60, fit_to_original_p95=None)]*2),
+        dict(region=other_original, selected_faces=500, reverse_selected_faces=120,
+             repeats=[dict(forward_count=2048, reverse_count=2048,
+                           original_to_fit_p95=.21, fit_to_original_p95=.17)]*2),
+        dict(region=extra, selected_faces=300, reverse_selected_faces=180,
+             repeats=[dict(forward_count=2048, reverse_count=2048,
+                           original_to_fit_p95=.02, fit_to_original_p95=.90)]*2),
+    ]
+    data['regional_capture']['per_region'] = capture_rows(measurements)
+    result = proposal(None, 'x', data, info, 'unsure')
+    assert result['regional_recipe']['active_regions'] == [missing]
+    assert result['regional_recipe']['focus_width'] == 1.2
+    assert result['values']['deformation_kernel_width'] == .2
+    assert result['initialization_reference'] == data['anchor']
+    assert result['regions'] == [missing, other_original, fixed, extra]
+    assert 'original surface beyond' in result['reason']
+
+    measurements[0]['reverse_selected_faces'] = 5
+    data['regional_capture']['per_region'] = capture_rows(measurements)
+    assert proposal(None, 'x', data, info, 'unsure') is None
+    measurements[0]['reverse_selected_faces'] = 0
+    measurements[0]['repeats'][0]['original_to_fit_p95'] = .50
+    data['regional_capture']['per_region'] = capture_rows(measurements)
+    assert proposal(None, 'x', data, info, 'unsure') is None
+
+
 def test_failed_identical_protected_capture_does_not_repeat_the_same_trial():
     data, info = setup_data()
     first = proposal(None, 'x', data, info, 'detail')
