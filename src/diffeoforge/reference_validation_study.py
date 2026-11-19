@@ -44,8 +44,8 @@ from diffeoforge.reference_validation import (
     ReferenceValidationPlan,
     ValidationFinalist,
     ValidationRunEvidence,
+    _plan_and_inputs,
     assess_reference_validation,
-    build_reference_validation_plan,
     extend_reference_validation_plan,
     reference_validation_plan_from_manifest,
 )
@@ -270,6 +270,11 @@ def _validation_configuration(
     config["input"]["subject_pattern"] = "*.vtk"
     config["output"]["directory"] = "./runs"
     config["optimization"]["max_iterations"] = maximum_iterations
+    result = config["project"]["parameter_provenance"]["recommendation"]["calibration_result"]
+    if result.pop("full_cohort_initialization", None):
+        deformation = config["model"]["deformation"]
+        for key in ("initial_momenta", "initial_momenta_subjects", "initial_control_points"):
+            deformation.pop(key, None)
     targets = {
         "attachment_kernel_width": ("attachment", "kernel_width"),
         "deformation_kernel_width": ("deformation", "kernel_width"),
@@ -345,9 +350,9 @@ def create_reference_validation_study(
 
     source_path = Path(config_path).expanduser().resolve()
     source_config = load_config(source_path)
-    inputs = validate_input_paths(source_config, source_path)
-    plan = build_reference_validation_plan(
+    plan, inputs = _plan_and_inputs(
         source_path,
+        source_config,
         holdout_fraction=holdout_fraction,
         resample_count=resample_count,
         resample_fraction=resample_fraction,
@@ -419,6 +424,7 @@ def create_reference_validation_study(
                 template_diagonal=plan.template_diagonal,
             )
             candidate_config = config_directory / "atlas.yaml"
+            validate_input_paths(config, candidate_config)
             _write_yaml(candidate_config, config, overwrite=False)
             run_records.append(
                 {

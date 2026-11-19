@@ -13,6 +13,7 @@ import yaml
 import diffeoforge.reference_holdout_study as holdout_study_module
 import diffeoforge.reference_validation_study as validation_study_module
 from diffeoforge.cli import main
+from diffeoforge.config import load_config, validate_input_paths
 from diffeoforge.desktop.project_setup import (
     DesktopEngine,
     ProjectSetupRequest,
@@ -20,11 +21,18 @@ from diffeoforge.desktop.project_setup import (
 )
 from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_calibration import build_reference_calibration_plan
+from diffeoforge.reference_calibration_study import (
+    STUDY_MANIFEST,
+    _append_event,
+    _load_events,
+    create_reference_calibration_study,
+)
 from diffeoforge.reference_holdout_study import (
     ReferenceHoldoutStudyRunner,
     create_reference_holdout_study,
     load_reference_holdout_study,
 )
+from diffeoforge.reference_integration_check import overlay_plan
 from diffeoforge.reference_recommendation import recommend_reference_parameters
 from diffeoforge.reference_validation import (
     ReferenceValidationError,
@@ -147,6 +155,140 @@ def test_validation_plan_requires_completed_calibration(tmp_path: Path) -> None:
 
     with pytest.raises(ReferenceValidationError, match="completed"):
         build_reference_validation_plan(config)
+
+
+def _completed_pilot_with_learned_seed(tmp_path: Path) -> tuple[Path, Path]:
+    source = _calibrated_project(tmp_path)
+    config = yaml.safe_load(source.read_text(encoding="utf-8"))
+    original = validate_input_paths(config, source)
+    root = source.parent / "calibration" / "completed"
+    study = create_reference_calibration_study(source, root)
+    last = study.plan.stages[-1]
+    finer = last.candidates[-1].values["timepoints"] + 10
+    _append_event(
+        root, "integration_resolution_added",
+        {
+            "version": "integration-extension-v1",
+            "stage_id": last.stage_id,
+            "candidate": {
+                "candidate_id": f"timepoints-{len(last.candidates) + 1:02d}",
+                "parameter_values": {"timepoints": finer},
+                "label": "Finer integration check",
+                "rationale": "Synthetic overlay fixture",
+            },
+        },
+    )
+    result = config["project"]["parameter_provenance"]["recommendation"]["calibration_result"]
+    effective = overlay_plan(study.plan, _load_events(root))
+    assert effective.fingerprint != study.plan.fingerprint
+    for stage in study.plan.stages:
+        selected = result["selected_candidate_ids"][stage.stage_id]
+        decision = _append_event(
+            root, "stage_selected",
+            {
+                "stage_id": stage.stage_id,
+                "candidate_id": selected,
+                "parameter_values": {
+                    name: result["selected_values"][name] for name in stage.candidates[0].values
+                },
+                "visual_approvals": {selected: True},
+            },
+        )
+    result.update(
+        study_id=study.study_id,
+        study_manifest_sha256=sha256_file(root / STUDY_MANIFEST),
+        plan_fingerprint=effective.fingerprint,
+        decision_event_hash=decision["event_hash"],
+    )
+    seed = root / "seed"
+    seed.mkdir()
+    template = seed / "learned.vtk"
+    template.write_bytes(original.template.read_bytes() + b"\n")
+    controls = seed / "controls.txt"
+    controls.write_text("0 0 0\n", encoding="utf-8")
+    momenta = seed / "momenta.txt"
+    momenta.write_text(
+        f"{original.subject_count} 1 3\n" + "0 0 0\n" * original.subject_count,
+        encoding="utf-8",
+    )
+    names = [path.name for path in original.subjects]
+    pilot_names = [subject.filename for subject in study.plan.selected_pilot_subjects]
+    result["full_cohort_initialization"] = {
+        "method": "preserved_pilot_momenta_fixed_basis_initialization",
+        "source_run_directory": str(seed),
+        "source_run_manifest_sha256": "a" * 64,
+        "template_sha256": sha256_file(template),
+        "control_points_sha256": sha256_file(controls),
+        "pilot_momenta_sha256": "b" * 64,
+        "initial_momenta_sha256": sha256_file(momenta),
+        "subject_labels": names,
+        "subject_sha256": {path.name: sha256_file(path) for path in original.subjects},
+        "pilot_indices": [names.index(name) for name in pilot_names],
+        "pilot_subject_labels": pilot_names,
+        "individual_max_iterations": 120,
+        "early_review_iteration": 10,
+        "completed_initialization_indices": [],
+        "early_review_approved": False,
+        "limitation": "Synthetic starting-field fixture.",
+    }
+    config["input"].update(directory=str(original.input_directory), template=str(template))
+    config["model"]["deformation"].update(
+        initial_control_points=str(controls), initial_momenta=str(momenta),
+        initial_momenta_subjects=names,
+    )
+    final = root / "selected" / "atlas-calibrated.yaml"
+    final.parent.mkdir()
+    final.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    _append_event(
+        root, "study_completed",
+        {
+            "final_config": "selected/atlas-calibrated.yaml",
+            "final_config_sha256": sha256_file(final),
+        },
+    )
+    return final, original.template
+
+
+def test_validation_resolves_completed_pilot_overlay_and_rebases_each_finalist(
+    tmp_path: Path,
+) -> None:
+    final, original_template = _completed_pilot_with_learned_seed(tmp_path)
+    digest = sha256_file(final)
+    atlas = load_config(final)
+    recommendation = atlas["project"]["parameter_provenance"]["recommendation"]
+    lab = create_reference_validation_study(final, tmp_path / "validation", resample_count=1)
+
+    assert lab.plan.calibration_plan_fingerprint == (
+        recommendation["calibration_result"]["plan_fingerprint"]
+    )
+    assert lab.plan.calibration_plan_fingerprint != (
+        recommendation["calibration_plan"]["fingerprint"]
+    )
+    assert lab.plan.template_sha256 == sha256_file(original_template)
+    assert lab.plan.subject_count == 10
+    assert lab.event_count == 1
+    assert sha256_file(final) == digest
+    for run in lab.runs:
+        config = load_config(run.config_path)
+        inputs = validate_input_paths(config, run.config_path)
+        assert sha256_file(inputs.template) == lab.plan.template_sha256
+        assert inputs.initial_control_points is None and inputs.initial_momenta is None
+        assert inputs.subject_count < lab.plan.subject_count
+
+
+@pytest.mark.parametrize("field", ["plan_fingerprint", "decision_event_hash"])
+def test_validation_rejects_unproved_revision_of_the_completed_pilot(
+    tmp_path: Path, field: str,
+) -> None:
+    final, _ = _completed_pilot_with_learned_seed(tmp_path)
+    config = yaml.safe_load(final.read_text(encoding="utf-8"))
+    result = config["project"]["parameter_provenance"]["recommendation"]["calibration_result"]
+    result[field] = "c" * 64
+    changed = final.with_name("altered.yaml")
+    changed.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    with pytest.raises(ReferenceValidationError, match="do not match the saved decision"):
+        create_reference_validation_study(changed, tmp_path / "validation")
+    assert not (tmp_path / "validation").exists()
 
 
 def test_validation_plan_extension_adds_one_run_per_frozen_cohort(

@@ -17,13 +17,16 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 
-from diffeoforge.config import ConfigurationError, load_config, validate_input_paths
+from diffeoforge.config import ConfigurationError, InputSummary, load_config, validate_input_paths
 from diffeoforge.mesh import sha256_file
-from diffeoforge.reference_calibration import reference_calibration_plan_from_provenance
+from diffeoforge.reference_calibration import (
+    ReferenceCalibrationPlan,
+    reference_calibration_plan_from_provenance,
+)
 from diffeoforge.reference_recommendation import (
     MeshGeometryObservation,
     recommend_reference_parameters,
@@ -435,7 +438,85 @@ def build_reference_validation_plan(
     """Build a deterministic, hash-bound post-pilot validation plan."""
 
     source = Path(config_path).expanduser().resolve()
-    config = load_config(source)
+    plan, _ = _plan_and_inputs(
+        source, load_config(source), holdout_fraction=holdout_fraction,
+        resample_count=resample_count, resample_fraction=resample_fraction,
+    )
+    return plan
+
+
+def _verified_completed_pilot(
+    source: Path,
+    config: Mapping[str, Any],
+    declared: ReferenceCalibrationPlan,
+    result: Mapping[str, Any],
+) -> tuple[ReferenceCalibrationPlan, Path]:
+    """Verify both the declared plan and the plan reconstructed with its saved events."""
+    from diffeoforge import reference_calibration_study as calibration
+
+    roots = list(source.parents)
+    source_run = (result.get("full_cohort_initialization") or {}).get("source_run_directory")
+    if source_run:
+        roots.extend(Path(source_run).resolve().parents)
+    manifest_hash = result.get("study_manifest_sha256")
+    root = next(
+        (
+            directory for directory in dict.fromkeys(roots)
+            if (manifest := directory / calibration.STUDY_MANIFEST).is_file()
+            and sha256_file(manifest) == manifest_hash
+        ),
+        None,
+    )
+    if root is None:
+        raise ReferenceValidationError(
+            "Restore the completed pilot study to verify its saved plan and result."
+        )
+    with calibration.calibration_verification_scope():
+        manifest = calibration._verify_manifest(root)
+        snapshot = calibration.load_reference_calibration_study(root, _restore_reviews=False)
+        events = calibration._load_events(root)
+    if snapshot.status != "completed" or snapshot.final_config_path is None:
+        raise ReferenceValidationError("Validation Lab requires a completed pilot study")
+    final_config = load_config(snapshot.final_config_path)
+    final_result = final_config["project"]["parameter_provenance"]["recommendation"][
+        "calibration_result"
+    ]
+    last_stage = snapshot.plan.stages[-1].stage_id
+    decision = next(
+        (event for event in reversed(events)
+         if event["event"] == "stage_selected" and event.get("stage_id") == last_stage),
+        {},
+    )
+    if (
+        manifest["plan_fingerprint"] != declared.fingerprint
+        or snapshot.study_id != result.get("study_id")
+        or result.get("plan_fingerprint") not in {declared.fingerprint, snapshot.plan.fingerprint}
+        or decision.get("event_hash") != result.get("decision_event_hash")
+        or decision.get("candidate_id") != snapshot.selected_candidate_ids.get(last_stage)
+        or decision.get("visual_approvals", {}).get(decision.get("candidate_id")) is not True
+        or result.get("selected_candidate_ids") != snapshot.selected_candidate_ids
+        or result.get("selected_values") != snapshot.selected_values
+        or any(result.get(key) != final_result.get(key) for key in (
+            "study_manifest_sha256", "decision_event_hash", "plan_fingerprint",
+        ))
+        or _parameter_values(config) != _parameter_values(final_config)
+        or config["model"]["attachment"]["type"] != final_config["model"]["attachment"]["type"]
+    ):
+        raise ReferenceValidationError(
+            "Pilot result and calibration plan fingerprints do not match the saved decision"
+        )
+    return snapshot.plan, calibration._safe_study_path(root, manifest["inputs"]["template"]["copy"])
+
+
+def _plan_and_inputs(
+    source: Path,
+    config: Mapping[str, Any],
+    *,
+    holdout_fraction: float,
+    resample_count: int,
+    resample_fraction: float,
+) -> tuple[ReferenceValidationPlan, InputSummary]:
+    """Freeze a validation design and keep the exact resolved input paths for staging."""
     inputs = validate_input_paths(config, source)
     if not 0.1 <= holdout_fraction <= 0.4:
         raise ReferenceValidationError("holdout_fraction must be between 0.1 and 0.4")
@@ -463,18 +544,30 @@ def build_reference_validation_plan(
     calibration_plan = reference_calibration_plan_from_provenance(
         calibration_plan_record
     )
-    if calibration_record.get("plan_fingerprint") != calibration_plan.fingerprint:
-        raise ReferenceValidationError(
-            "Pilot result and calibration plan fingerprints do not match"
+    if (calibration_record.get("plan_fingerprint") != calibration_plan.fingerprint
+            or calibration_record.get("full_cohort_initialization")):
+        effective_plan, original_template = _verified_completed_pilot(
+            source, config, calibration_plan, calibration_record
         )
+        if calibration_record["plan_fingerprint"] != calibration_plan.fingerprint:
+            calibration_plan = effective_plan
+        # Validation trains every finalist from the original template and its own
+        # control grid. Full-cohort learned fields cannot initialize a resample.
+        template = inputs.cohort_template or original_template
+        inputs = replace(inputs, template=template)
     if calibration_plan.subject_count != inputs.subject_count:
         raise ReferenceValidationError(
             "Pilot plan subject count differs from the current full cohort"
         )
-    if calibration_plan.template_sha256 != sha256_file(inputs.template):
+    template_hash = sha256_file(inputs.template)
+    if calibration_plan.template_sha256 != template_hash:
         raise ReferenceValidationError(
             "Pilot plan template bytes differ from the current template"
         )
+    subject_hashes = {path.name: sha256_file(path) for path in inputs.subjects}
+    if any(subject_hashes.get(subject.filename) != subject.sha256
+           for subject in calibration_plan.selected_pilot_subjects):
+        raise ReferenceValidationError("Pilot specimen identities or mesh bytes differ")
 
     recommendation = recommend_reference_parameters(
         (inputs.template, *inputs.subjects),
@@ -521,7 +614,7 @@ def build_reference_validation_plan(
     subjects = tuple(
         ValidationSubject(
             filename=path.name,
-            sha256=sha256_file(path),
+            sha256=subject_hashes[path.name],
             source_subject_index=index,
             role="heldout" if path.name in heldout_set else "training",
         )
@@ -573,7 +666,7 @@ def build_reference_validation_plan(
         "calibration_study_id": str(calibration_record["study_id"]),
         "template": {
             "filename": inputs.template.name,
-            "sha256": sha256_file(inputs.template),
+            "sha256": template_hash,
             "diagonal": recommendation.template_diagonal,
         },
         "coordinate_unit": str(config["input"]["units"]),
@@ -582,14 +675,14 @@ def build_reference_validation_plan(
         "smallest_relevant_feature": smallest,
     }
     fingerprint = _canonical_hash(payload)
-    return ReferenceValidationPlan(
+    plan = ReferenceValidationPlan(
         version=VALIDATION_PLAN_VERSION,
         fingerprint=fingerprint,
         source_config_sha256=sha256_file(source),
         calibration_plan_fingerprint=calibration_plan.fingerprint,
         calibration_study_id=str(calibration_record["study_id"]),
         template_filename=inputs.template.name,
-        template_sha256=sha256_file(inputs.template),
+        template_sha256=template_hash,
         template_diagonal=recommendation.template_diagonal,
         coordinate_unit=str(config["input"]["units"]),
         subjects=subjects,
@@ -633,6 +726,7 @@ def build_reference_validation_plan(
             "Automatic geometric evidence cannot decide biological plausibility.",
         ),
     )
+    return plan, inputs
 
 
 def validation_plan_json(plan: ReferenceValidationPlan) -> str:

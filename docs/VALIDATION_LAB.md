@@ -22,6 +22,14 @@ Validation Lab therefore:
 5. repeats the comparison on predeclared deterministic training resamples; and
 6. produces one scoped uncertainty report only after every frozen run finishes.
 
+If the completed pilot added candidates during calibration, Validation Lab
+verifies the original plan, the effective plan reconstructed from the pilot
+journal, and the saved selection. Keep the completed pilot study with the atlas
+configuration so these records can be checked. For a pilot-initialized atlas,
+each validation cohort starts from the verified original template. Each finalist
+builds a control grid at its declared spacing. The learned full-cohort field
+stays bound to the source atlas.
+
 After the training/resampling comparison completes, DiffeoForge creates a
 separate SHA-bound holdout study. For each finalist it copies the estimated
 training-only template and control points, freezes both, and estimates only the
