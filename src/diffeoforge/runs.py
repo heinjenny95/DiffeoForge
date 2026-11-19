@@ -463,6 +463,7 @@ def _prepare_run(
                 raise ConfigurationError(f"Mesh changed since preparation preflight: {path}")
 
     from diffeoforge.reference_atlas_handoff import (
+        cold_individual_start_enabled,
         direct_joint_source_path,
         direct_joint_start_enabled,
         initialization,
@@ -470,8 +471,9 @@ def _prepare_run(
     )
 
     handoff = initialization(config)
+    cold_individual = cold_individual_start_enabled(handoff)
     direct_joint = direct_joint_start_enabled(handoff)
-    if handoff and (handoff["early_review_approved"] or handoff[
+    if handoff and (handoff.get("early_review_approved", False) or handoff[
         "completed_initialization_indices"
     ]):
         raise ConfigurationError("A new atlas cannot reuse resume-only phase or review state.")
@@ -479,7 +481,7 @@ def _prepare_run(
         path.name: metadata.sha256
         for path, metadata in zip(summary.subjects, subject_metadata, strict=True)
     } != handoff["subject_sha256"]:
-        raise ConfigurationError("Preserved-pilot full-cohort geometry changed.")
+        raise ConfigurationError("Fixed-basis full-cohort geometry changed.")
 
     output_root = (
         Path(output_directory).expanduser().resolve()
@@ -589,8 +591,8 @@ def _prepare_run(
                 receipt["source_config_sha256"],
             )
         shutil.copy2(source_config, source_config_copy)
-        if direct_joint and load_config(source_config_copy) != reviewed_config:
-            raise ConfigurationError("Direct joint configuration changed during preparation.")
+        if (direct_joint or cold_individual) and load_config(source_config_copy) != reviewed_config:
+            raise ConfigurationError("Atlas start configuration changed during preparation.")
         effective = effective_reference_config(
             config,
             summary.input_directory,
@@ -805,9 +807,13 @@ def _verify_prepared_run_contents(
             f"expected {expected_run_id!r}, observed {manifest.get('run_id')!r}"
         )
     _verify_protected_artifacts(run_path, manifest)
-    from diffeoforge.reference_atlas_handoff import verify_prepared_direct_joint_start
+    from diffeoforge.reference_atlas_handoff import (
+        verify_prepared_cold_individual_start,
+        verify_prepared_direct_joint_start,
+    )
 
     verify_prepared_direct_joint_start(run_path, manifest)
+    verify_prepared_cold_individual_start(run_path, manifest)
     events = _read_events(run_path / "events.jsonl")
     if events[-1]["event"] != "prepared":
         raise ConfigurationError(

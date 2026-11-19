@@ -67,6 +67,30 @@
           "type": "string",
           "minLength": 1
         },
+        "cold_individual_initialization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "template_sha256", "control_points_sha256", "subject_labels",
+                       "subject_sha256", "individual_max_iterations", "completed_initialization_indices"],
+          "properties": {
+            "method": {"const": "cold_individual_fixed_basis_initialization"},
+            "template_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "control_points_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "subject_labels": {
+              "type": "array", "minItems": 2, "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1}
+            },
+            "subject_sha256": {
+              "type": "object", "minProperties": 2,
+              "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+            },
+            "individual_max_iterations": {"type": "integer", "minimum": 1},
+            "completed_initialization_indices": {
+              "type": "array", "uniqueItems": true,
+              "items": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
         "mesh_resolution_study": {
           "type": "object", "additionalProperties": false,
           "required": ["fingerprint", "level"],

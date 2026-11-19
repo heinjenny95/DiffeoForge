@@ -1,4 +1,4 @@
-"""Preserved pilot fields and a supervised early full-cohort checkpoint.
+"""Fixed-basis individual initialization and supervised atlas handoffs.
 
 All fields initialize one subsequent joint atlas on the same learned basis.
 They are never substituted into an existing PCA or treated as final atlas results.
@@ -24,6 +24,7 @@ from diffeoforge.strict_json import load_strict_json_object
 
 METHOD = "preserved_pilot_momenta_fixed_basis_initialization"
 REFINEMENT_METHOD = "preserved_atlas_momenta_fixed_basis_refinement"
+COLD_INDIVIDUAL_METHOD = "cold_individual_fixed_basis_initialization"
 PROGRESS = "atlas-initialization.json"
 EARLY_CHECK = "early-atlas-check.json"
 REVIEW = "early-atlas-review.json"
@@ -42,6 +43,8 @@ _SCREEN_KEYS = (
 
 def early_review_enabled(plan):
     """Old protected contracts retain their explicit review stop until changed."""
+    if cold_individual_start_enabled(plan):
+        return False
     enabled = plan.get("early_review_enabled", True)
     if type(enabled) is not bool:
         raise ConfigurationError("Early atlas review must be an explicit boolean choice.")
@@ -49,14 +52,39 @@ def early_review_enabled(plan):
 
 
 def initialization(config):
+    project = config.get("project", {})
     value = (
-        config.get("project", {})
-        .get("parameter_provenance", {})
+        project.get("parameter_provenance", {})
         .get("recommendation", {})
         .get("calibration_result", {})
         .get("full_cohort_initialization", {})
     )
+    cold = project.get("cold_individual_initialization")
+    if cold is not None:
+        if value:
+            raise ConfigurationError("Cold individual fitting cannot reuse a pilot atlas handoff.")
+        return cold
     return value if value.get("method") in {METHOD, REFINEMENT_METHOD} else None
+
+
+def cold_individual_start_enabled(plan):
+    return bool(plan and plan.get("method") == COLD_INDIVIDUAL_METHOD)
+
+
+def verify_cold_individual_start(config, inputs, plan):
+    """Bind a fresh all-zero start to its supplied template, controls and cohort."""
+    if (inputs.initial_momenta is not None or inputs.initial_control_points is None
+            or plan["completed_initialization_indices"]
+            or plan["individual_max_iterations"] != config["optimization"]["max_iterations"]):
+        raise ConfigurationError(
+            "Cold individual fitting requires explicit controls, zero starting momenta, "
+            "a fresh start, and the same individual and joint iteration cap."
+        )
+    if (sha256_file(inputs.template) != plan["template_sha256"]
+            or sha256_file(inputs.initial_control_points) != plan["control_points_sha256"]
+            or [p.name for p in inputs.subjects] != plan["subject_labels"]
+            or {p.name: sha256_file(p) for p in inputs.subjects} != plan["subject_sha256"]):
+        raise ConfigurationError("Cold individual template, controls, or cohort binding changed.")
 
 
 def configure_preserved_pilot(config, *, root, seed, config_directory):
@@ -143,7 +171,10 @@ def upgrade_saved_pilot_config(config_path):
 
     path = Path(config_path).resolve()
     config = load_config(path)
-    if initialization(config):
+    plan = initialization(config)
+    if cold_individual_start_enabled(plan):
+        raise ConfigurationError("A cold individual fit has no saved pilot handoff to upgrade.")
+    if plan:
         validate_input_paths(config, path)
         return path
     study = path.parent.parent
@@ -402,6 +433,39 @@ def verify_prepared_direct_joint_start(run, manifest):
             raise ConfigurationError("Prepared direct joint seed binding changed.")
 
 
+def verify_prepared_cold_individual_start(run, manifest):
+    """Verify the sealed cohort from prepared files, independent of the source project."""
+    config = manifest["effective_config"]
+    plan = initialization(config)
+    if not cold_individual_start_enabled(plan):
+        return
+    source = load_config(run / "config/source-config.yaml")
+    fresh_plan = {**plan, "completed_initialization_indices": []}
+    protected = {record["path"]: record["sha256"] for record in manifest["protected_artifacts"]}
+    completed = plan["completed_initialization_indices"]
+    if (protected.get("config/source-config.yaml") != manifest["source_config"]["sha256"]
+            or initialization(source) != fresh_plan
+            or source["optimization"]["max_iterations"] != plan["individual_max_iterations"]
+            or (completed and "resume/resume.json" not in protected)
+            or len(completed) != len(set(completed))
+            or any(type(index) is not int or not 0 <= index < len(plan["subject_labels"])
+                   for index in completed)):
+        raise ConfigurationError("Prepared cold individual source or resume binding changed.")
+    subjects = {
+        Path(record["staged_path"]).name: protected.get(record["staged_path"])
+        for record in manifest["inputs"] if record["role"] == "subject"
+    }
+    if list(subjects) != plan["subject_labels"] or subjects != plan["subject_sha256"]:
+        raise ConfigurationError("Prepared cold individual cohort geometry or order changed.")
+    for prefix, digests in (
+        ("input/template/", [plan["template_sha256"]]),
+        ("input/control-points/", [plan["control_points_sha256"]]),
+        ("input/momenta/", []),
+    ):
+        if [digest for path, digest in protected.items() if path.startswith(prefix)] != digests:
+            raise ConfigurationError("Prepared cold individual template or seed binding changed.")
+
+
 def choose_early_review(config_path, *, enabled):
     """Save a linked launch choice without rewriting the completed pilot config."""
     if type(enabled) is not bool:
@@ -411,6 +475,8 @@ def choose_early_review(config_path, *, enabled):
     plan = initialization(config)
     if not plan:
         raise ConfigurationError("This configuration has no preserved-pilot atlas handoff.")
+    if cold_individual_start_enabled(plan) and enabled:
+        raise ConfigurationError("Early pilot review is unavailable for a cold individual start.")
     if direct_joint_start_enabled(plan) and enabled:
         raise ConfigurationError("Early pilot review is unavailable for a direct joint start.")
     if early_review_enabled(plan) == enabled:
@@ -633,6 +699,11 @@ def configure_resume(config, source_run):
         return
     source_run = Path(source_run)
     guard = source_run / "output" / EARLY_CHECK
+    cold = cold_individual_start_enabled(plan)
+    if cold and any(
+        (source_run / "output" / name).exists() for name in (EARLY_CHECK, INITIAL_SCREEN)
+    ):
+        raise ConfigurationError("Cold individual fitting has no scheduled early pilot checks.")
     if guard.exists():
         check = read_early_check(source_run)
         review_path = source_run / "analysis" / REVIEW
@@ -744,6 +815,8 @@ def adapter_source(config):
             + "\n_DF_INITIAL_REVIEW_PRIORITY = " + repr(REVIEW_PRIORITY)
             + "\n" + NATIVE_SCREEN + SCREEN_ADAPTER
         )
+    if cold_individual_start_enabled(plan):
+        plan = dict(plan, early_review_enabled=False, early_review_approved=False, pilot_indices=[])
     return "\n_DF_ATLAS_PLAN = " + repr(plan) + "\n" + screen + ADAPTER
 
 
@@ -892,11 +965,14 @@ def _df_atlas_update(self, *args, **kwargs):
         return _df_atlas_base_update(self, *args, **kwargs)
     labels = _DF_ATLAS_PLAN["subject_labels"]
     if list(self.dataset.subject_ids) != labels:
-        raise RuntimeError("Preserved pilot initialization subject order differs")
+        raise RuntimeError("Fixed-basis initialization subject order differs")
     model = self.statistical_model
     pilot = set(_DF_ATLAS_PLAN["pilot_indices"])
     preserved = model.get_momenta()[_DF_ATLAS_PLAN["pilot_indices"]].copy()
     completed = set(_DF_ATLAS_PLAN["completed_initialization_indices"]) | pilot
+    cold = _DF_ATLAS_PLAN["method"] == "cold_individual_fixed_basis_initialization"
+    if cold and _df_np.any(model.get_momenta()[sorted(set(range(len(labels))) - completed)] != 0):
+        raise RuntimeError("An unfinished cold individual fit must start with zero momenta")
     if _DF_ATLAS_PLAN["method"] == "preserved_atlas_momenta_fixed_basis_refinement":
         # Every row already comes from the declared, hash-bound full-cohort seed.
         # Use it directly in the common optimizer; do not refit other rows first.
@@ -906,8 +982,9 @@ def _df_atlas_update(self, *args, **kwargs):
     for index, label in enumerate(labels):
         if index in completed:
             continue
-        _df_log.info("DiffeoForge initialization: specimen %s of %s (%s); fixed pilot basis",
-                     index + 1, len(labels), label)
+        _df_log.info("DiffeoForge initialization: specimen %s of %s (%s); %s",
+                     index + 1, len(labels), label,
+                     "fixed initial basis" if cold else "fixed pilot basis")
         local_model = _df_copy.copy(model)
         local_model.fixed_effects = dict(model.fixed_effects)
         local_model.fixed_effects["momenta"] = model.get_momenta()[index:index + 1].copy()

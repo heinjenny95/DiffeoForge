@@ -62,6 +62,7 @@ class ProjectReviewResult:
     direct_pilot_atlas: bool = False
     pilot_initial_fit_review: bool = False
     pilot_early_review: bool = False
+    cold_individual_atlas: bool = False
 
 
 def _number(value: int | float) -> str:
@@ -292,6 +293,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
     from diffeoforge.config import load_config
     from diffeoforge.mesh_inspection_cache import desktop_locations
     from diffeoforge.reference_atlas_handoff import (
+        COLD_INDIVIDUAL_METHOD,
         METHOD,
         direct_joint_source_path,
         direct_joint_start_enabled,
@@ -314,6 +316,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
     provenance = config["project"].get("parameter_provenance")
     start_plan = initialization(config)
     preserved = bool(start_plan and start_plan["method"] == METHOD)
+    cold_individual = bool(start_plan and start_plan["method"] == COLD_INDIVIDUAL_METHOD)
     direct = preserved and direct_joint_start_enabled(start_plan)
     serial_plan = start_plan
     if direct:
@@ -530,6 +533,12 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             "The saved pilot fits are reused. Other specimens are fitted on the fixed pilot "
             "template and control points before joint optimization.",
         ),) if preserved else ()),
+        *((ReviewItem(
+            "Atlas initialization",
+            "Individual fits before joint optimization",
+            "Each specimen starts from zero deformation and fits on the fixed starting "
+            "template and control points. These fits initialize the joint atlas.",
+        ),) if cold_individual else ()),
         ReviewItem(
             "Coordinate unit",
             str(config["input"]["units"]),
@@ -729,6 +738,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         direct_pilot_atlas=direct,
         pilot_initial_fit_review=fit_review,
         pilot_early_review=early_review,
+        cold_individual_atlas=cold_individual,
     )
 
 

@@ -1,5 +1,15 @@
 # Development continuity
 
+## Fixed-basis individual initialization from zero
+
+A separately prepared Deformetrica project can fit every specimen from zero
+momenta on an explicitly supplied initial template and control-point grid before
+joint optimization. The initialization record binds the exact input bytes and
+ordered cohort and requires the same individual cap as the fresh joint run.
+The desktop review identifies the initialization and its starting basis. This
+route requires no pilot results and claims no anatomical approval. Existing
+pilot-backed initialization choices remain available on their setup review.
+
 ## Focus protected capture on missing original surfaces
 
 The pilot can prioritize one marked original-surface gap even when a correction

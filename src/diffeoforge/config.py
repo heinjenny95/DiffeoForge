@@ -263,13 +263,16 @@ def validate_input_paths(
             raise ConfigurationError(f"Invalid initial momenta: {error}") from error
 
     from diffeoforge.reference_atlas_handoff import (
+        cold_individual_start_enabled,
         direct_joint_start_enabled,
         initialization,
+        verify_cold_individual_start,
         verify_direct_joint_start,
     )
 
     handoff = initialization(config)
-    if handoff:
+    cold = cold_individual_start_enabled(handoff)
+    if handoff and not cold:
         if (
             initial_momenta is None
             or hashlib.sha256(initial_momenta.read_bytes()).hexdigest()
@@ -289,7 +292,9 @@ def validate_input_paths(
         initial_momenta=initial_momenta,
         cohort_template=cohort_template,
     )
-    if direct_joint_start_enabled(handoff):
+    if cold:
+        verify_cold_individual_start(config, result, handoff)
+    elif direct_joint_start_enabled(handoff):
         verify_direct_joint_start(config, source_path, result, handoff)
 
     from diffeoforge.regional_fit import validate_scope

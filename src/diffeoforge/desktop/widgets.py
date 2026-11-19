@@ -11490,6 +11490,12 @@ class DiffeoForgeWindow(QMainWindow):
                 "start from the undeformed pilot template. Review the finished atlas for "
                 "anatomical quality."
             )
+        elif review.cold_individual_atlas:
+            self.run_title_label.setText("Fit specimens individually, then compute atlas")
+            self.run_subtitle_label.setText(
+                "Fit every specimen from zero deformation on the fixed starting template and "
+                "control points. Use those fits to initialize joint optimization."
+            )
         elif review.preserved_pilot_atlas:
             self.run_title_label.setText("Initialize and compute atlas")
             initial_step = (
@@ -12048,7 +12054,7 @@ class DiffeoForgeWindow(QMainWindow):
                 message = detail[:1].upper() + detail[1:]
                 self.run_stage_label.setText("Initialize full cohort")
                 self.run_progress_bar.setRange(0, 0)
-                self.run_progress_bar.setFormat("Initialize specimens on the fixed pilot basis")
+                self.run_progress_bar.setFormat("Fit specimens on the fixed starting basis")
                 self.run_optimizer_label.setText(
                     f"Elapsed: {self._format_duration(elapsed)}. Joint optimization follows."
                 )

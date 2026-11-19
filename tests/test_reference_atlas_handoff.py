@@ -2,8 +2,11 @@
 
 import hashlib
 import json
+import logging
+import os
 import pickle
 import sys
+import tempfile
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -12,12 +15,18 @@ import pytest
 import yaml
 from test_pilot_cohort_handoff import handoff  # noqa: F401
 from test_reference_checkpoint_schedule import _adapter
-from test_runs import _execute_cap_fixture, abandon_prepared_run, write_tetrahedron
+from test_runs import (
+    _execute_cap_fixture,
+    abandon_prepared_run,
+    write_run_config,
+    write_tetrahedron,
+)
 
 from diffeoforge.config import ConfigurationError, load_config, validate_input_paths
 from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_atlas_handoff import (
     ADAPTER,
+    COLD_INDIVIDUAL_METHOD,
     EARLY_CHECK,
     INITIAL_SCREEN_VERSION,
     METHOD,
@@ -654,3 +663,168 @@ def test_default_off_joint_checkpoint_resumes_after_completed_initialization(
     _execute_cap_fixture(successor, monkeypatch)
     following = prepare_resume_run(successor, run_id="joint-following", additional_iterations=300)
     assert initialization(verify_prepared_run(following)["effective_config"]) == resumed
+
+
+@pytest.fixture
+def cold_individual(tmp_path):
+    original = write_run_config(tmp_path)
+    config = load_config(original)
+    controls = tmp_path / "controls.txt"
+    controls.write_text("0 0 0\n1 1 1\n", encoding="ascii")
+    config["model"]["deformation"]["initial_control_points"] = controls.name
+    original.write_text(yaml.safe_dump(config), encoding="utf-8")
+    inputs = validate_input_paths(config, original)
+    config["project"]["cold_individual_initialization"] = {
+        "method": COLD_INDIVIDUAL_METHOD,
+        "template_sha256": sha256_file(inputs.template),
+        "control_points_sha256": sha256_file(controls),
+        "subject_labels": [path.name for path in inputs.subjects],
+        "subject_sha256": {path.name: sha256_file(path) for path in inputs.subjects},
+        "individual_max_iterations": config["optimization"]["max_iterations"],
+        "completed_initialization_indices": [],
+    }
+    source = tmp_path / "cold.yaml"
+    source.write_text(yaml.safe_dump(config), encoding="utf-8")
+    return source, original, inputs
+
+
+def test_cold_individual_prepares_same_native_xml_and_resumes(cold_individual, monkeypatch):
+    source, original, _ = cold_individual
+    direct = prepare_run(original, run_id="cold-direct")
+    prep = plan_reference_preparation(source, run_id="cold-individual")
+    run = prepare_run_against_plan(source, prep)
+    start = initialization(verify_prepared_run(run)["effective_config"])
+    assert start == initialization(load_config(source))
+    assert not early_review_enabled(start)
+    assert not (run / "input/momenta").exists()
+    assert not (run / "config/pilot-handoff").exists()
+    for name in ("model.xml", "data_set.xml", "optimization_parameters.xml"):
+        assert (direct / "engine" / name).read_bytes() == (run / "engine" / name).read_bytes()
+    adapter = (run / "engine/sitecustomize.py").read_text(encoding="utf-8")
+    assert "_df_atlas_update" in adapter
+    assert "_df_screen_initial_fits" not in adapter.split("def _df_atlas_update")[0]
+    compile(adapter, "sitecustomize.py", "exec")
+
+    initialized = b"verified fixture: before shared optimization"
+    _execute_cap_fixture(run, monkeypatch, output_files={
+        "output/atlas-initialized-state.p": initialized,
+        f"output/{PROGRESS}": json.dumps({
+            "version": "0.1", "subject_labels": start["subject_labels"],
+            "completed_indices": [0, 1],
+            "checkpoint_sha256": hashlib.sha256(initialized).hexdigest(),
+        }).encode(),
+    })
+    source.unlink()  # The prepared run keeps its own source copy.
+    first = prepare_resume_run(run, run_id="cold-resume", additional_iterations=300)
+    first_config = verify_prepared_run(first)["effective_config"]
+    assert first_config["optimization"]["max_iterations"] == 302
+    assert initialization(first_config) == {**start, "completed_initialization_indices": [0, 1]}
+    _execute_cap_fixture(first, monkeypatch)
+    second = prepare_resume_run(first, run_id="cold-second-resume", additional_iterations=300)
+    second_config = verify_prepared_run(second)["effective_config"]
+    assert second_config["optimization"]["max_iterations"] == 602
+    assert initialization(second_config) == initialization(first_config)
+
+
+@pytest.mark.parametrize("defect", [
+    "cap", "warm", "progress", "template", "controls", "order", "mesh",
+])
+def test_cold_individual_rejects_changed_inputs_before_preparation(cold_individual, defect):
+    source, _, inputs = cold_individual
+    config = load_config(source)
+    start = initialization(config)
+    if defect == "cap":
+        start["individual_max_iterations"] += 1
+    elif defect == "warm":
+        momenta = source.with_name("momenta.txt")
+        _write_momenta(momenta, np.ones((2, 2, 3)))
+        config["model"]["deformation"]["initial_momenta"] = momenta.name
+        config["model"]["deformation"]["initial_momenta_subjects"] = start["subject_labels"]
+    elif defect == "progress":
+        start["completed_initialization_indices"] = [0]
+    elif defect == "order":
+        start["subject_labels"].reverse()
+    else:
+        changed = {"template": inputs.template, "controls": inputs.initial_control_points,
+                   "mesh": inputs.subjects[0]}[defect]
+        changed.write_bytes(changed.read_bytes() + b"\n")
+    source.write_text(yaml.safe_dump(config), encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="Cold individual"):
+        prepare_run(source, run_id="cold-invalid")
+    assert not (source.parent / "runs").exists()
+
+
+@pytest.mark.parametrize("completed, unexpected_warm", [([], False), ([0], False), ([0], True)])
+def test_cold_native_individual_loop_uses_only_zero_unfinished_rows(
+    cold_individual, monkeypatch, tmp_path, completed, unexpected_warm,
+):
+    source, _, _ = cold_individual
+    config = new_run_config(load_config(source))
+    start = initialization(config)
+    start["completed_initialization_indices"] = completed
+    call_shapes = []
+
+    class Model:
+        freeze_control_points = False
+        freeze_template = False
+
+        def get_momenta(self):
+            return self.fixed_effects["momenta"]
+
+    class Gradient:
+        def __init__(self, **settings):
+            self.__dict__.update(settings)
+            self.current_iteration = 0
+
+        def _get_parameters(self):
+            return self.statistical_model.get_momenta().copy()
+
+        def _dump_state_file(self):
+            Path(self.state_file).write_bytes(self.current_parameters.tobytes())
+
+        def update(self):
+            model = self.statistical_model
+            call_shapes.append((self.dataset.subject_ids, model.freeze_template,
+                                model.freeze_control_points, model.get_momenta().copy()))
+            if len(self.dataset.subject_ids) == 1:
+                model.get_momenta()[:] = 1.0
+
+    support = ModuleType("deformetrica.support")
+    support.utilities = SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "deformetrica.support", support)
+    exec(adapter_source(config), {
+        "_df_ga": Gradient, "_df_os": os, "_df_tempfile": tempfile, "_df_logging": logging,
+        "_df_log": logging.getLogger("diffeoforge.test-initialization"),
+    })
+    model = Model()
+    momenta = np.zeros((2, 2, 3))
+    momenta[completed] = 2.0
+    if unexpected_warm:
+        momenta[1] = 3.0
+    model.fixed_effects = {"momenta": momenta}
+    labels = start["subject_labels"]
+    estimator = Gradient(
+        statistical_model=model,
+        dataset=SimpleNamespace(
+            subject_ids=labels, deformable_objects=[None] * 2, times=[None] * 2,
+        ),
+        max_iterations=2, convergence_tolerance=1e-4, initial_step_size=0.01,
+        scale_initial_step_size=True, max_line_search_iterations=10, line_search_shrink=0.5,
+        line_search_expand=1.2, print_every_n_iters=1, save_every_n_iters=5,
+        output_dir=str(tmp_path), state_file=str(tmp_path / "state.p"),
+    )
+    if unexpected_warm:
+        with pytest.raises(RuntimeError, match="zero momenta"):
+            estimator.update()
+        assert not call_shapes
+        return
+    estimator.update()
+    assert len(call_shapes) == 3 - len(completed)
+    for index, call in zip(sorted(set(range(2)) - set(completed)), call_shapes[:-1], strict=True):
+        assert call[:3] == ([labels[index]], True, True)
+        np.testing.assert_array_equal(call[3], 0)
+    assert call_shapes[-1][:3] == (labels, False, False)
+    np.testing.assert_array_equal(call_shapes[-1][3], momenta)
+    np.testing.assert_array_equal(momenta[completed], 2)
+    np.testing.assert_array_equal(momenta[sorted(set(range(2)) - set(completed))], 1)
+    assert not (tmp_path / EARLY_CHECK).exists()
