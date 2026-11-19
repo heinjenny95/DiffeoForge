@@ -9,6 +9,10 @@ from pathlib import Path
 import numpy as np
 
 
+class ReconstructionMaterialUnavailable(ValueError):
+    """A verified mesh has no proven material mapping for the requested mark."""
+
+
 def topology_sha256(vertices, faces):
     """Bind ordered material triangles and vertex count, independently of position."""
     f = np.asarray(faces, dtype="<i8")
@@ -40,7 +44,9 @@ def material_mask(vertices, faces, rows, *, lineage=None):
         validate_evidence(evidence)
         if digest is None:
             digest = topology_sha256(vertices, f)
-        if evidence["topology_sha256"] == digest and evidence["face_ids"][-1] < len(f):
+        if evidence["topology_sha256"] == digest:
+            if evidence["face_ids"][-1] >= len(f):
+                raise ValueError("The marked reconstruction face is out of range")
             selected[evidence["face_ids"]] = True
         elif lineage is not None:
             # Qualification may conformingly subdivide the original material
@@ -51,7 +57,8 @@ def material_mask(vertices, faces, rows, *, lineage=None):
                 raise ValueError("Invalid marked reconstruction material lineage mask")
             selected |= descendants
         else:
-            raise ValueError("The marked reconstruction material connectivity changed")
+            raise ReconstructionMaterialUnavailable(
+                "The marked reconstruction material connectivity changed")
     return selected
 
 

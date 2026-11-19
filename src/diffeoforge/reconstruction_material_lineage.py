@@ -149,7 +149,10 @@ class MaterialLineage:
         matches = [i for i, row in enumerate(self._grids)
                    if row["topology_sha256"] == evidence["topology_sha256"]]
         if len(matches) != 1:
-            raise ValueError("The marked reconstruction has no verified material ancestor")
+            from diffeoforge.reconstruction_feedback import ReconstructionMaterialUnavailable
+
+            raise ReconstructionMaterialUnavailable(
+                "The marked reconstruction has no verified material ancestor")
         start = matches[0]
         if evidence["face_ids"][-1] >= self._grids[start]["faces"]:
             raise ValueError("The marked reconstruction ancestor face is out of range")

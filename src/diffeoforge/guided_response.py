@@ -73,6 +73,8 @@ def history(cases, reference, regions):
     """Measure existing results only; no files are changed or scientific jobs launched."""
     if not regions or not reference:
         return cases, []
+    from diffeoforge.reconstruction_feedback import ReconstructionMaterialUnavailable
+
     baseline = measured(reference, regions)
     # New marks must not trigger a full historical geometry replay on every
     # selector refresh. Keep all decisions, but remeasure recent relevant
@@ -94,10 +96,17 @@ def history(cases, reference, regions):
         if (index in selected and fit and case['target'] == reference['target']
                 and case['method'] == reference['method']
                 and fit != reference):
-            response = compare(baseline, measured(fit, regions))
-            row['response'] = response
-            evidence.append(dict(fit=fit, family=case.get('family', case.get('goal')),
-                                 outcome=case.get('outcome'), **response))
+            try:
+                previous = measured(fit, regions)
+            except ReconstructionMaterialUnavailable:
+                # A newer reconstruction mark can name child faces absent in this
+                # earlier fit. The historical comparison is optional evidence.
+                row.pop('response', None)
+            else:
+                response = compare(baseline, previous)
+                row['response'] = response
+                evidence.append(dict(fit=fit, family=case.get('family', case.get('goal')),
+                                     outcome=case.get('outcome'), **response))
         result.append(row)
     return result, evidence
 

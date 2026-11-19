@@ -1,5 +1,15 @@
 # Development continuity
 
+## Keep the selected fit available when an older mesh lacks its marked faces
+
+A mark placed on a qualified reconstruction can reference subdivided faces
+that were never present in an older fit. The background pilot view now omits
+that optional historical measurement when no exact material mapping exists.
+The selected fit and its current marks still need exact validation. Changed
+files, invalid face IDs and broken ancestry still fail verification. Historical
+fits and feedback remain available, and no fitting or acceptance settings
+change.
+
 ## Guided local fit result clarification after dev225
 
 The prepared single protected local fit displays its own iteration allowance

@@ -86,6 +86,52 @@ def test_new_marks_bound_geometry_replay_without_discarding_history(monkeypatch)
                                        for c, r in zip(cases, result, strict=True))
 
 
+def test_new_reconstruction_mark_keeps_the_working_fit_when_history_is_incompatible(monkeypatch):
+    from diffeoforge.reconstruction_feedback import ReconstructionMaterialUnavailable
+
+    chosen = dict(target="shape.vtk", method="varifold", id="selected")
+    earlier = dict(chosen, id="older")
+    compatible = dict(chosen, id="compatible")
+    marked = metric()["baseline"][0]["region"]
+    calls = []
+
+    def measured(reference, regions):
+        assert regions == [marked]
+        calls.append(reference)
+        if reference == earlier:
+            raise ReconstructionMaterialUnavailable("Earlier fit has no mapped triangles")
+        return metric()
+
+    monkeypatch.setattr(response, "measured", measured)
+    row = dict(target=chosen["target"], method=chosen["method"], family="detail")
+    previous = dict(row, fit=earlier, outcome="better", response={"status": "improved"})
+    alternate = dict(row, fit=compatible)
+    rows, evidence = response.history([previous, alternate], chosen, [marked])
+    assert calls == [chosen, earlier, compatible]
+    assert rows[0] == dict(row, fit=earlier, outcome="better")
+    assert previous["response"] == {"status": "improved"}
+    assert rows[1]["response"]["status"] == "unchanged"
+    assert [entry["fit"] for entry in evidence] == [compatible]
+
+    with pytest.raises(ReconstructionMaterialUnavailable):
+        response.history([alternate], earlier, [marked])
+
+
+def test_history_rejects_an_integrity_error_in_a_compared_fit(monkeypatch):
+    chosen = dict(target="shape.vtk", method="varifold", id="selected")
+    earlier = dict(chosen, id="older")
+
+    def measured(reference, regions):
+        if reference == earlier:
+            raise ValueError("Reconstruction material lineage evidence changed")
+        return metric()
+
+    monkeypatch.setattr(response, "measured", measured)
+    row = dict(target=chosen["target"], method=chosen["method"], fit=earlier)
+    with pytest.raises(ValueError, match="lineage evidence changed"):
+        response.history([row], chosen, [metric()["baseline"][0]["region"]])
+
+
 def marked_chain(tmp_path, monkeypatch):
     base = reject(run_batch(initial(tmp_path), monkeypatch), 'guided-varifold', marked=True)
     geometry_receipt(base, 'guided-varifold', monkeypatch)
