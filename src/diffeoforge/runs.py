@@ -8,6 +8,7 @@ import errno
 import hashlib
 import importlib.metadata
 import json
+import math
 import os
 import platform
 import queue
@@ -21,7 +22,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Mapping
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path, PurePosixPath
@@ -91,6 +92,40 @@ class ResumeSourceEvidence:
     checkpoint_path: Path
     checkpoint_bytes: int
     checkpoint_sha256: str
+    tolerance_continuation: ToleranceContinuation | None = None
+
+
+@dataclass(frozen=True)
+class ToleranceContinuation:
+    """Bounded manual successor settings tied to the accepted terminal state."""
+
+    checkpoint_iteration: int
+    source_maximum_iterations: int
+    additional_iterations: int
+    maximum_iterations: int
+    source_tolerance: float
+    tolerance: float
+    checkpoint_sha256: str
+    source_log_sha256: str
+
+    def __post_init__(self) -> None:
+        if (
+            any(type(value) is not int for value in (
+                self.checkpoint_iteration, self.source_maximum_iterations,
+                self.additional_iterations, self.maximum_iterations,
+            ))
+            or not 0 < self.checkpoint_iteration <= self.source_maximum_iterations
+            or self.additional_iterations != 300
+            or self.maximum_iterations != self.checkpoint_iteration + self.additional_iterations
+            or type(self.source_tolerance) not in {int, float}
+            or type(self.tolerance) not in {int, float}
+            or not math.isfinite(self.source_tolerance)
+            or not 0 < self.tolerance < self.source_tolerance
+            or self.tolerance != self.source_tolerance * 0.1
+            or any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value)
+                   for value in (self.checkpoint_sha256, self.source_log_sha256))
+        ):
+            raise ConfigurationError("Invalid bounded tolerance continuation settings.")
 
 
 @dataclass(frozen=True)
@@ -1353,6 +1388,13 @@ def _load_resume_provenance(run_directory: Path) -> Mapping[str, Any] | None:
         raise ConfigurationError(f"Protected resume checkpoint size mismatch: {staged_path}")
     if sha256_file(staged_path) != checkpoint["sha256"]:
         raise ConfigurationError(f"Protected resume checkpoint checksum mismatch: {staged_path}")
+    if "tolerance_continuation" in provenance:
+        from diffeoforge.reference_final_export_recovery import checkpoint_iteration
+
+        continuation = ToleranceContinuation(**provenance["tolerance_continuation"])
+        if (continuation.checkpoint_sha256 != checkpoint["sha256"]
+                or continuation.checkpoint_iteration != checkpoint_iteration(staged_path)):
+            raise ConfigurationError("Tolerance continuation is bound to a different checkpoint.")
     return provenance
 
 
@@ -1467,6 +1509,14 @@ def execute_run(
             resume_provenance["iteration_extension"]["maximum_iterations"]
         ):
             raise ConfigurationError("Prepared budget differs from protected extension provenance.")
+    if resume_provenance is not None and "tolerance_continuation" in resume_provenance:
+        continuation = resume_provenance["tolerance_continuation"]
+        optimization = config["optimization"]
+        if (optimization["max_iterations"] != continuation["maximum_iterations"]
+                or optimization["convergence_tolerance"] != continuation["tolerance"]
+                or optimization["method"] != "gradient_ascent"
+                or config["project"].get("atlas_stop", {}).get("mode") == "morphospace_stability"):
+            raise ConfigurationError("Prepared optimizer differs from the tolerance continuation.")
     command = build_command(config, run_path)
     supervised = "engine/backend_control.py" in command.argv
     cancellation_started = None
@@ -1987,13 +2037,105 @@ def iteration_extension_limit(source_run_directory: Path | str) -> int:
     return maximum
 
 
+def _tolerance_continuation_plan(
+    source: Path, config: Mapping[str, Any], checkpoint: Path, checkpoint_sha256: str,
+) -> ToleranceContinuation:
+    """Use the last accepted state, which can be absent from the printed trace."""
+    from diffeoforge.reference_final_export_recovery import checkpoint_iteration
+
+    if config["project"].get("atlas_stop", {}).get("mode") == "morphospace_stability":
+        raise ConfigurationError("Tolerance continuation requires the native optimizer stop mode.")
+    provenance = _load_resume_provenance(source)
+    if provenance is not None and "convergence_reference" in provenance:
+        raise ConfigurationError(
+            "This saved run has a protected convergence reference that cannot be reset."
+        )
+    log = source / "logs/deformetrica.log"
+    log_sha256 = sha256_file(log) if log.is_file() and not log.is_symlink() else None
+    maximum, text, stop = completed_gradient_ascent_history(source)
+    markers = list(ITERATION_RE.finditer(text))
+    terminal = text[markers[-1].end():].casefold() if markers else ""
+    if (
+        stop.signal != "tolerance_threshold"
+        or "tolerance threshold met. stopping the optimization process." not in terminal
+        or "number of line search loops exceeded" in terminal
+        or ">> stop: pilot review request" in terminal
+        or not log_sha256
+        or sha256_file(log) != log_sha256
+    ):
+        raise ConfigurationError("Continuation requires an explicit native tolerance stop.")
+    iteration = checkpoint_iteration(checkpoint)
+    if sha256_file(checkpoint) != checkpoint_sha256:
+        raise ConfigurationError("Source checkpoint changed while checking its accepted iteration.")
+    previous = int(markers[-1].group(1))
+    print_interval = config["optimization"]["print_every_n_iterations"]
+    if not previous <= iteration <= min(maximum, previous + print_interval):
+        raise ConfigurationError("Checkpoint iteration does not match the terminal native log.")
+    tolerance = float(config["optimization"]["convergence_tolerance"])
+    return ToleranceContinuation(
+        checkpoint_iteration=iteration,
+        source_maximum_iterations=maximum,
+        additional_iterations=300,
+        maximum_iterations=iteration + 300,
+        source_tolerance=tolerance,
+        tolerance=tolerance * 0.1,
+        checkpoint_sha256=checkpoint_sha256,
+        source_log_sha256=log_sha256,
+    )
+
+
+def tolerance_extension_preview(source_run_directory: Path | str) -> ToleranceContinuation:
+    """Inspect the saved tolerance stop and accepted checkpoint without preparing a run."""
+    source = Path(source_run_directory).expanduser().resolve()
+    manifest = _read_manifest(source)
+    result = _read_json_object(source / "result.json", "Source result")
+    _, inventory = _read_output_inventory(source, result)
+    checkpoint, digest = _verified_resume_checkpoint(source, inventory)
+    return _tolerance_continuation_plan(source, manifest["effective_config"], checkpoint, digest)
+
+
+def _verified_resume_checkpoint(
+    source_run: Path, inventory: Mapping[str, Any],
+) -> tuple[Path, str]:
+    checkpoint_records = [
+        record
+        for record in inventory["files"]
+        if isinstance(record, dict)
+        and record.get("path") == EXECUTION_CHECKPOINT_PATH.name
+    ]
+    if len(checkpoint_records) != 1:
+        raise ConfigurationError(
+            "The source run has no unique inventoried Deformetrica checkpoint; it cannot "
+            "be resumed. A run stopped before its first save may legitimately have none."
+        )
+    checkpoint_record = checkpoint_records[0]
+    checkpoint_path = _resolve_run_artifact(
+        source_run, EXECUTION_CHECKPOINT_PATH.as_posix(), "Source checkpoint",
+    )
+    if not checkpoint_path.is_file() or checkpoint_path.stat().st_size < 1:
+        raise ConfigurationError(f"Source checkpoint is missing or empty: {checkpoint_path}")
+    if checkpoint_path.stat().st_size != checkpoint_record.get("bytes"):
+        raise ConfigurationError(
+            f"Source checkpoint size differs from its inventory: {checkpoint_path}"
+        )
+    checkpoint_hash = sha256_file(checkpoint_path)
+    if checkpoint_hash != checkpoint_record.get("sha256"):
+        raise ConfigurationError(
+            f"Source checkpoint checksum differs from its inventory: {checkpoint_path}"
+        )
+    return checkpoint_path, checkpoint_hash
+
+
 def inspect_resume_source(
-    source_run_directory: Path | str, *, additional_iterations: int = 0
+    source_run_directory: Path | str, *, additional_iterations: int = 0,
+    after_tolerance: bool = False,
 ) -> ResumeSourceEvidence:
     """Verify resume eligibility and checkpoint integrity without changing any files."""
 
     if type(additional_iterations) is not int or additional_iterations not in {0, 300}:
         raise ConfigurationError("Additional iteration budget must be 0 or 300.")
+    if type(after_tolerance) is not bool or (after_tolerance and additional_iterations != 300):
+        raise ConfigurationError("Continuation after tolerance requires an explicit +300 budget.")
     source_run = Path(source_run_directory).expanduser().resolve()
     source_manifest = _read_manifest(source_run)
     if source_manifest.get("run_id") != source_run.name:
@@ -2009,8 +2151,11 @@ def inspect_resume_source(
     terminal_status = events[-1]["event"]
     if additional_iterations:
         if terminal_status != "completed":
+            if after_tolerance:
+                raise ConfigurationError("Tolerance continuation requires a completed run.")
             raise ConfigurationError("Additional iterations require a completed capped run.")
-        iteration_extension_limit(source_run)
+        if not after_tolerance:
+            iteration_extension_limit(source_run)
     elif terminal_status not in RESUMABLE_STATES:
         raise ConfigurationError(
             "Resume requires a failed or interrupted source run; "
@@ -2048,34 +2193,13 @@ def inspect_resume_source(
             f"{REFERENCE_DEFORMETRICA_VERSION}; got {source_backend_version!r}."
         )
     inventory_path, inventory = _read_output_inventory(source_run, source_result)
-    checkpoint_records = [
-        record
-        for record in inventory["files"]
-        if isinstance(record, dict)
-        and record.get("path") == EXECUTION_CHECKPOINT_PATH.name
-    ]
-    if len(checkpoint_records) != 1:
-        raise ConfigurationError(
-            "The source run has no unique inventoried Deformetrica checkpoint; it cannot "
-            "be resumed. A run stopped before its first save may legitimately have none."
+    checkpoint_path, checkpoint_hash = _verified_resume_checkpoint(source_run, inventory)
+    continuation = (
+        _tolerance_continuation_plan(
+            source_run, source_manifest["effective_config"], checkpoint_path, checkpoint_hash,
         )
-    checkpoint_record = checkpoint_records[0]
-    checkpoint_path = _resolve_run_artifact(
-        source_run,
-        EXECUTION_CHECKPOINT_PATH.as_posix(),
-        "Source checkpoint",
+        if after_tolerance else None
     )
-    if not checkpoint_path.is_file() or checkpoint_path.stat().st_size < 1:
-        raise ConfigurationError(f"Source checkpoint is missing or empty: {checkpoint_path}")
-    if checkpoint_path.stat().st_size != checkpoint_record.get("bytes"):
-        raise ConfigurationError(
-            f"Source checkpoint size differs from its inventory: {checkpoint_path}"
-        )
-    checkpoint_hash = sha256_file(checkpoint_path)
-    if checkpoint_hash != checkpoint_record.get("sha256"):
-        raise ConfigurationError(
-            f"Source checkpoint checksum differs from its inventory: {checkpoint_path}"
-        )
     return ResumeSourceEvidence(
         source_run=source_run,
         manifest=source_manifest,
@@ -2086,6 +2210,7 @@ def inspect_resume_source(
         checkpoint_path=checkpoint_path,
         checkpoint_bytes=checkpoint_path.stat().st_size,
         checkpoint_sha256=checkpoint_hash,
+        tolerance_continuation=continuation,
     )
 
 
@@ -2097,6 +2222,8 @@ def prepare_resume_run(
     checkpoint_mode: str | None = None,
     convergence_reference: dict | None = None,
     precision: str | None = None,
+    after_tolerance: bool = False,
+    expected_tolerance_continuation: ToleranceContinuation | None = None,
 ) -> Path:
     """Prepare an immutable checkpoint successor, optionally extending a capped budget."""
 
@@ -2104,11 +2231,24 @@ def prepare_resume_run(
         raise ConfigurationError("Unsupported resume output checkpoint mode.")
     if precision not in {None, "float64"}:
         raise ConfigurationError("Resume precision can only explicitly promote to float64.")
+    if after_tolerance and (convergence_reference is not None or precision is not None):
+        raise ConfigurationError("Tolerance continuation uses a fresh native objective reference.")
+    if after_tolerance and checkpoint_mode not in {None, "compact_final_export"}:
+        raise ConfigurationError("Tolerance continuation requires a reviewable final export.")
     evidence = inspect_resume_source(
-        source_run_directory, additional_iterations=additional_iterations
+        source_run_directory, additional_iterations=additional_iterations,
+        after_tolerance=after_tolerance,
     )
+    continuation = evidence.tolerance_continuation
+    if (expected_tolerance_continuation is not None
+            and continuation != expected_tolerance_continuation):
+        raise ConfigurationError("The tolerance checkpoint or reviewed continuation plan changed.")
     source_run = evidence.source_run
     source_manifest = evidence.manifest
+    if continuation and source_manifest["effective_config"]["output"].get(
+        "checkpoint_mode"
+    ) == "compact_convergence_export":
+        checkpoint_mode = "compact_final_export"
     source_result_path = source_run / "result.json"
     terminal_status = evidence.terminal_status
     inventory_path = evidence.inventory_path
@@ -2176,7 +2316,10 @@ def prepare_resume_run(
 
         configure_resume(config, source_run)
         old_maximum = int(config["optimization"]["max_iterations"])
-        if additional_iterations:
+        if continuation:
+            config["optimization"]["max_iterations"] = continuation.maximum_iterations
+            config["optimization"]["convergence_tolerance"] = continuation.tolerance
+        elif additional_iterations:
             config["optimization"]["max_iterations"] = old_maximum + additional_iterations
         validate_reference_config(config)
         copied_artifacts: list[Path] = []
@@ -2227,6 +2370,12 @@ def prepare_resume_run(
         copied_artifacts.append(effective_path)
         from diffeoforge.reference_checkpoint_schedule import needs_adapter as compact
         from diffeoforge.reference_checkpoint_schedule import render_adapter
+        from diffeoforge.reference_morphospace_native import (
+            adapter_source as morphospace_adapter_source,
+        )
+        from diffeoforge.reference_morphospace_native import (
+            manifest_subject_labels,
+        )
         from diffeoforge.reference_singleton_compat import SITECUSTOMIZE, needs_adapter
 
         singleton_source = SITECUSTOMIZE if needs_adapter(config) else ""
@@ -2238,6 +2387,9 @@ def prepare_resume_run(
                 ),
                 convergence_reference=convergence_reference,
                 require_saved_reference=(inherited_reference is not None),
+                morphospace_source=morphospace_adapter_source(
+                    config, manifest_subject_labels(source_manifest),
+                ),
             )
             if compact(config) else singleton_source
         )
@@ -2298,7 +2450,11 @@ def prepare_resume_run(
                 "trajectory_continuity": "not_guaranteed",
             },
         }
-        if additional_iterations:
+        if continuation:
+            if sha256_file(source_run / "logs/deformetrica.log") != continuation.source_log_sha256:
+                raise ConfigurationError("The native stop log changed during continuation setup.")
+            provenance["tolerance_continuation"] = asdict(continuation)
+        elif additional_iterations:
             provenance["iteration_extension"] = {
                 "source_maximum_iterations": old_maximum,
                 "additional_iterations": additional_iterations,

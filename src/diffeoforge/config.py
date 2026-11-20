@@ -297,7 +297,9 @@ def validate_input_paths(
     elif direct_joint_start_enabled(handoff):
         verify_direct_joint_start(config, source_path, result, handoff)
 
+    from diffeoforge.reference_atlas_stop import validate_atlas_stop
     from diffeoforge.regional_fit import validate_scope
 
     validate_scope(config, result)
+    validate_atlas_stop(config, subject_count=result.subject_count)
     return result

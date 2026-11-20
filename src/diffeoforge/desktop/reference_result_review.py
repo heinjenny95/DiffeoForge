@@ -25,6 +25,7 @@ from diffeoforge.reference_calibration_metrics import (
     ReferenceCalibrationRunMetrics,
     _collect_reference_calibration_metrics_from_report,
 )
+from diffeoforge.reference_morphospace_stopping import read_morphospace_stability
 from diffeoforge.reference_pca import (
     DEFAULT_REFERENCE_PCA_DIRECTORY,
     REFERENCE_PCA_MANIFEST,
@@ -44,6 +45,7 @@ from diffeoforge.reference_pca_deformations import (
     ReferencePCADeformationError,
     verify_reference_pca_deformation_result,
 )
+from diffeoforge.result_report import RunReport
 
 _PCA_DISPLAY_LIMIT = 10
 _ESTIMATED_TEMPLATE_MARKER = "__EstimatedParameters__Template_"
@@ -51,6 +53,17 @@ _RECONSTRUCTION_MARKER = "__Reconstruction__"
 _REGISTRATION_QC_DRAFT = "registration-qc-draft.json"
 _REGISTRATION_QC_FINALIZED = "registration-qc-finalized.json"
 _QC_PCA_WORKFLOW = "registration-qc-pca-workflow.json"
+
+_ATLAS_STOP_LABELS = {
+    "morphospace_stable": "Morphospace stability criterion met",
+    "native_tolerance": "Native objective-change tolerance reached",
+    "iteration_limit": "Iteration limit reached",
+    "line_search_exhausted": "Line search exhausted",
+    "optimizer_callback": "Optimizer stopped by its callback",
+    "numerical_failure": "Numerical failure",
+    "backend_failure": "Backend failure",
+    "cancelled": "Cancelled",
+}
 
 
 @dataclass(frozen=True)
@@ -72,6 +85,70 @@ class FinalizedRegistrationQCReview:
     sha256: str
     complete: bool
     decisions: Mapping[str, str]
+
+
+@dataclass(frozen=True)
+class AtlasStopReview:
+    reason: str
+    iteration: int | None
+    interpretation: str
+    items: tuple[ResultReviewItem, ...]
+
+
+def _atlas_stop_review(run: Path, report: RunReport) -> AtlasStopReview | None:
+    """Present the accepted-state receipt alongside the original objective history."""
+    policy = report.manifest["effective_config"]["project"].get("atlas_stop")
+    if policy is None:
+        return None
+    try:
+        evidence = read_morphospace_stability(run, verified_run_report=report)
+    except (OSError, RuntimeError, TypeError, ValueError, KeyError):
+        evidence = None
+    terminal = evidence["terminal"] if evidence is not None else None
+    if terminal is None:
+        detail = "The saved atlas stopping evidence could not be verified."
+        return AtlasStopReview(
+            "unverified_stop", None, detail,
+            (ResultReviewItem("Atlas stop", "Unverified", detail),),
+        )
+
+    reason = terminal["reason"]
+    iteration = terminal["iteration"]
+    label = _ATLAS_STOP_LABELS[reason]
+    interpretation = f"{label} at accepted joint-atlas iteration {iteration}."
+    items = [ResultReviewItem(
+        "Verified atlas stop", f"{label} · accepted iteration {iteration}",
+        "The retained native record identifies the final accepted atlas checkpoint. "
+        "Assess the saved surface fits in Visual QC.",
+    )]
+    if evidence["observations"]:
+        row = evidence["observations"][-1]
+        windows = [(policy["window_iterations"], row)]
+        if policy.get("long_window_iterations") is not None:
+            windows.append((policy["long_window_iterations"], row["long_window"]))
+        for target, window in windows:
+            previous = window["previous_iteration"]
+            span = window["window_iterations"]
+            comparison = (
+                f"Accepted iterations {previous} to {iteration} · {span}/{target} iterations."
+                if previous is not None else f"0/{target} comparable accepted iterations."
+            )
+            if window["status"] == "measured":
+                cohort = window["cohort_percent"]
+                specimen = window["max_subject_percent"]
+                highest = ", ".join(window["worst_subjects"])
+                value = f"Cohort {cohort:.4g}% · highest specimen {specimen:.4g}%"
+                detail = f"{comparison} Highest change in {highest}."
+            else:
+                value = "Change unavailable"
+                detail = comparison
+            items.append(ResultReviewItem(f"Morphospace over {target} iterations", value, detail))
+        items.append(ResultReviewItem(
+            "Weighted fit error at the accepted checkpoint",
+            f"{row['weighted_fit_error']:.6g}",
+            "The native log and its plot retain the recorded fit-error history.",
+        ))
+    return AtlasStopReview(reason, iteration, interpretation, tuple(items))
 
 
 def registration_qc_directory(review: ModernResultReview) -> Path:
@@ -554,6 +631,8 @@ def review_reference_result(
             f"Deformetrica result and momenta PCA did not verify: {error}"
         ) from error
 
+    atlas_stop = _atlas_stop_review(run, report)
+    accepted_iteration = atlas_stop.iteration if atlas_stop is not None else None
     manifest = {} if verified is None else dict(verified.manifest)
     cohort = manifest.get("qc_cohort")
     deformation_result_directory = (
@@ -811,6 +890,7 @@ def review_reference_result(
             )
             registration_qc = ()
         optimization = _reference_optimization_input(source_inputs)
+        final_iteration = optimization.convergence[-1].iteration
         workflow_manifest = run / "manifest.json"
         run_hash = sha256_file(workflow_manifest)
         return ModernResultReview(
@@ -823,15 +903,19 @@ def review_reference_result(
             bundle_manifest_path=workflow_manifest,
             bundle_manifest_sha256=run_hash,
             optimizer_converged=None,
-            optimizer_termination_reason=optimization.stop_evidence.signal,
-            optimizer_cycles_completed=optimization.convergence[-1].iteration,
+            optimizer_termination_reason=(
+                atlas_stop.reason if atlas_stop is not None else optimization.stop_evidence.signal
+            ),
+            optimizer_cycles_completed=(
+                accepted_iteration if accepted_iteration is not None else final_iteration
+            ),
             optimizer_max_cycles=optimization.maximum_iterations,
             overview=(
                 ResultReviewItem(
                     "Atlas cohort", str(source_inputs.subject_count), "All registered specimens."
                 ),
             ),
-            optimization=(),
+            optimization=atlas_stop.items if atlas_stop is not None else (),
             pca=(),
             quality=(),
             artifacts=tuple(artifacts),
@@ -842,7 +926,13 @@ def review_reference_result(
             pca_method_id="lddmm_deformation_kernel_pca",
             pca_method_label="LDDMM deformation-kernel PCA",
             execution_duration_seconds=optimization.duration_seconds,
-            optimizer_stop_interpretation=optimization.stop_evidence.summary,
+            optimizer_stop_interpretation=(
+                atlas_stop.interpretation if atlas_stop is not None
+                else optimization.stop_evidence.summary
+            ),
+            optimizer_last_logged_iteration=(
+                final_iteration if accepted_iteration is not None else None
+            ),
             additional_artifact_roots=(
                 output_directory.resolve(), staged_input_directory.resolve(),
             ),
@@ -1078,11 +1168,13 @@ def review_reference_result(
             "not recorded" if duration_seconds is None else _format_duration(duration_seconds),
             "Measured wall-clock duration stored in terminal run evidence.",
         ),
-        ResultReviewItem(
-            "Reported stop signal",
-            str(optimization_evidence["reported_stop_signal"]).replace("_", " "),
-            str(optimization_evidence["stop_interpretation"]),
-        ),
+        *(atlas_stop.items if atlas_stop is not None else (
+            ResultReviewItem(
+                "Reported stop signal",
+                str(optimization_evidence["reported_stop_signal"]).replace("_", " "),
+                str(optimization_evidence["stop_interpretation"]),
+            ),
+        )),
         ResultReviewItem(
             "Final plotted state",
             f"last logged iteration {final_iteration}",
@@ -1181,8 +1273,13 @@ def review_reference_result(
         bundle_manifest_path=bundle_manifest,
         bundle_manifest_sha256=sha256_file(bundle_manifest),
         optimizer_converged=None,
-        optimizer_termination_reason=str(optimization_evidence["reported_stop_signal"]),
-        optimizer_cycles_completed=final_iteration,
+        optimizer_termination_reason=(
+            atlas_stop.reason if atlas_stop is not None
+            else str(optimization_evidence["reported_stop_signal"])
+        ),
+        optimizer_cycles_completed=(
+            accepted_iteration if accepted_iteration is not None else final_iteration
+        ),
         optimizer_max_cycles=configured_max,
         overview=overview,
         optimization=optimization,
@@ -1210,7 +1307,11 @@ def review_reference_result(
             + (" — default" if str(pca["method_id"]) == "lddmm_deformation_kernel_pca" else "")
         ),
         execution_duration_seconds=duration_seconds,
-        optimizer_stop_interpretation=str(optimization_evidence["stop_interpretation"]),
+        optimizer_stop_interpretation=(
+            atlas_stop.interpretation if atlas_stop is not None
+            else str(optimization_evidence["stop_interpretation"])
+        ),
+        optimizer_last_logged_iteration=final_iteration if accepted_iteration is not None else None,
         additional_artifact_roots=(
             output_directory.resolve(),
             staged_input_directory.resolve(),

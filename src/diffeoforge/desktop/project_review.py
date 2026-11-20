@@ -63,6 +63,8 @@ class ProjectReviewResult:
     pilot_initial_fit_review: bool = False
     pilot_early_review: bool = False
     cold_individual_atlas: bool = False
+    atlas_stop_available: bool = False
+    atlas_stop_mode: str | None = None
 
 
 def _number(value: int | float) -> str:
@@ -300,6 +302,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         early_review_enabled,
         initialization,
     )
+    from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY, atlas_stop_available
 
     shared, sources = desktop_locations()
     preflight = collect_preflight(config_path, cache_project=config_path.parent,
@@ -307,6 +310,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
     runtime_estimate = estimate_reference_runtime(preflight)
     production_readiness = assess_reference_production_readiness(preflight)
     config = preflight.config
+    stop_mode = config["project"].get("atlas_stop", {}).get("mode")
     model = config["model"]
     deformation = model["deformation"]
     optimization = config["optimization"]
@@ -539,6 +543,13 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             "Each specimen starts from zero deformation and fits on the fixed starting "
             "template and control points. These fits initialize the joint atlas.",
         ),) if cold_individual else ()),
+        *((ReviewItem(
+            "Atlas stopping rule",
+            "Run until morphospace stabilizes" if stop_mode == MORPHOSPACE_STABILITY
+            else "Stop at optimizer convergence and review",
+            "The iteration budget remains binding. The stability window counts only joint "
+            "atlas iterations. Visual QC is a separate decision.",
+        ),) if stop_mode else ()),
         ReviewItem(
             "Coordinate unit",
             str(config["input"]["units"]),
@@ -739,6 +750,8 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         pilot_initial_fit_review=fit_review,
         pilot_early_review=early_review,
         cold_individual_atlas=cold_individual,
+        atlas_stop_available=len(preflight.subjects) >= 2 and atlas_stop_available(config),
+        atlas_stop_mode=stop_mode,
     )
 
 

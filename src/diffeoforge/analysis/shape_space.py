@@ -13,6 +13,15 @@ from numbers import Integral, Real
 
 import numpy as np
 
+from diffeoforge._atlas_distance_metric import (
+    _momenta_and_controls,
+    _positive_real,
+    _readonly,
+    gaussian_control_point_kernel,
+)
+from diffeoforge._atlas_distance_metric import (
+    lddmm_momenta_squared_distances as lddmm_momenta_squared_distances,
+)
 from diffeoforge.analysis.pca import PCAResult, principal_component_analysis
 
 LDDMM_METRIC_PCA_METHOD = "LDDMM deformation-kernel metric tangent PCA"
@@ -20,21 +29,6 @@ RBF_KERNEL_PCA_METHOD = "generic RBF kernel PCA"
 TANGENT_PCOA_METHOD = "LDDMM tangent-distance principal coordinates analysis"
 ISOMAP_METHOD = "Isomap of declared pairwise distances"
 DIFFUSION_MAP_METHOD = "diffusion map of declared pairwise distances"
-
-
-def _readonly(values: np.ndarray) -> np.ndarray:
-    result = np.array(values, dtype=np.float64, copy=True)
-    result.setflags(write=False)
-    return result
-
-
-def _positive_real(name: str, value: float) -> float:
-    if isinstance(value, bool) or not isinstance(value, Real):
-        raise TypeError(f"{name} must be a real scalar")
-    result = float(value)
-    if not math.isfinite(result) or result <= 0:
-        raise ValueError(f"{name} must be finite and greater than zero")
-    return result
 
 
 def _component_count(value: int | None, maximum: int) -> int:
@@ -46,44 +40,6 @@ def _component_count(value: int | None, maximum: int) -> int:
     if result < 1 or result > maximum:
         raise ValueError(f"n_components must be between 1 and {maximum}")
     return result
-
-
-def _momenta_and_controls(
-    momenta: np.ndarray,
-    control_points: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    if not isinstance(momenta, np.ndarray) or momenta.dtype != np.float64:
-        raise TypeError("momenta must be a numpy.float64 array")
-    if momenta.ndim != 3 or momenta.shape[0] < 2 or momenta.shape[1] < 1:
-        raise ValueError("momenta must have shape (subjects >= 2, control_points >= 1, 3)")
-    if momenta.shape[2] != 3 or not bool(np.isfinite(momenta).all()):
-        raise ValueError("momenta must contain finite three-dimensional vectors")
-    if not isinstance(control_points, np.ndarray) or control_points.dtype != np.float64:
-        raise TypeError("control_points must be a numpy.float64 array")
-    if control_points.shape != (momenta.shape[1], 3):
-        raise ValueError("control_points must have shape (momenta control_points, 3)")
-    if not bool(np.isfinite(control_points).all()):
-        raise ValueError("control_points must contain only finite values")
-    return momenta, control_points
-
-
-def gaussian_control_point_kernel(
-    control_points: np.ndarray,
-    kernel_width: float,
-) -> np.ndarray:
-    """Return Deformetrica's Gaussian K(q_i,q_j)=exp(-||q_i-q_j||²/width²)."""
-
-    if not isinstance(control_points, np.ndarray) or control_points.dtype != np.float64:
-        raise TypeError("control_points must be a numpy.float64 array")
-    if control_points.ndim != 2 or control_points.shape[0] < 1 or control_points.shape[1] != 3:
-        raise ValueError("control_points must have shape (points >= 1, 3)")
-    if not bool(np.isfinite(control_points).all()):
-        raise ValueError("control_points must contain only finite values")
-    width = _positive_real("kernel_width", kernel_width)
-    differences = control_points[:, None, :] - control_points[None, :, :]
-    squared = np.einsum("ijk,ijk->ij", differences, differences, optimize=True)
-    kernel = np.exp(-np.maximum(squared, 0.0) / (width * width))
-    return _readonly((kernel + kernel.T) * 0.5)
 
 
 def _metric_square_roots(metric: np.ndarray) -> tuple[np.ndarray, np.ndarray, int]:
@@ -204,24 +160,6 @@ def lddmm_metric_momenta_pca(
         sample_labels=subject_labels,
         tie_tolerance=tie_tolerance,
     )
-
-
-def lddmm_momenta_squared_distances(
-    momenta: np.ndarray,
-    control_points: np.ndarray,
-    *,
-    deformation_kernel_width: float,
-) -> np.ndarray:
-    """Return pairwise squared tangent distances induced by the LDDMM kernel."""
-
-    values, controls = _momenta_and_controls(momenta, control_points)
-    kernel = gaussian_control_point_kernel(controls, deformation_kernel_width)
-    gram = np.einsum("sic,ij,tjc->st", values, kernel, values, optimize=True)
-    diagonal = np.diag(gram)
-    squared = diagonal[:, None] + diagonal[None, :] - 2.0 * gram
-    squared = np.maximum((squared + squared.T) * 0.5, 0.0)
-    np.fill_diagonal(squared, 0.0)
-    return _readonly(squared)
 
 
 def _squared_distance_matrix(values: np.ndarray) -> np.ndarray:

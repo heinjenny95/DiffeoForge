@@ -269,6 +269,7 @@ def render_engine_file_bytes(
 
     if compact(config):
         from diffeoforge.reference_atlas_handoff import adapter_source
+        from diffeoforge.reference_morphospace_native import adapter_source as morphospace_adapter
 
         singleton_source = rendered.get("sitecustomize.py", b"").decode("utf-8")
         rendered["sitecustomize.py"] = render_adapter(
@@ -276,6 +277,8 @@ def render_engine_file_bytes(
             convergence_only=(
                 config["output"].get("checkpoint_mode") == "compact_convergence_export"
             ),
+            morphospace_source=morphospace_adapter(
+                config, tuple(path.name for path in staged_subjects)),
         ).encode("utf-8")
     from diffeoforge.reference_finite_accepted_guard import extend_engine_files
 

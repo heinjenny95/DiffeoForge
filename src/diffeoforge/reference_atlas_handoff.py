@@ -295,6 +295,12 @@ def choose_direct_joint_start(config_path, *, enabled):
     )
 
 
+def _initialization_contract(config):
+    normalized = new_run_config(config)
+    normalized["project"].pop("atlas_stop", None)
+    return normalized
+
+
 def verify_direct_joint_start(config, config_path, inputs, plan):
     """Reverify this opt-in against the saved visual decision and immutable pilot bytes."""
     from diffeoforge.reference_calibration_study import (
@@ -308,7 +314,7 @@ def verify_direct_joint_start(config, config_path, inputs, plan):
     source = direct_joint_source_path(path, plan["direct_joint_start"])
     source_config = load_config(source)
     expected = _direct_joint_configuration(source_config, source)
-    if new_run_config(expected) != new_run_config(config):
+    if _initialization_contract(expected) != _initialization_contract(config):
         raise ConfigurationError("Direct joint configuration differs from its saved pilot handoff.")
 
     study = source.parent.parent
@@ -340,7 +346,7 @@ def verify_direct_joint_start(config, config_path, inputs, plan):
     if not initialization(canonical):
         for key in ("initial_momenta", "initial_momenta_subjects"):
             normalized_source["model"]["deformation"].pop(key, None)
-    if new_run_config(normalized_source) != new_run_config(canonical):
+    if _initialization_contract(normalized_source) != _initialization_contract(canonical):
         raise ConfigurationError("Direct joint start changes the completed pilot parameters.")
     if initialization(canonical) and plan["initial_momenta_sha256"] != canonical_plan[
         "initial_momenta_sha256"
@@ -416,7 +422,12 @@ def verify_prepared_direct_joint_start(run, manifest):
         raise ConfigurationError("Prepared direct joint start lost its source configuration.")
     expected = _direct_joint_configuration(load_config(run / source), run / source)
     prepared = load_config(run / "config/source-config.yaml")
-    if new_run_config(expected) != new_run_config(prepared) or initialization(expected) != plan:
+    if (
+        _initialization_contract(expected) != _initialization_contract(prepared)
+        or initialization(expected) != plan
+        or prepared["project"].get("atlas_stop")
+        != manifest["effective_config"]["project"].get("atlas_stop")
+    ):
         raise ConfigurationError("Prepared direct joint start differs from its saved handoff.")
     inputs = {
         Path(r["staged_path"]).name: r["geometry"]["sha256"]

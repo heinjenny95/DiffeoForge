@@ -23,6 +23,7 @@ schema_data = [
     (str(path), "diffeoforge/schema")
     for path in sorted(schema_directory.glob("*.json"))
 ]
+native_source_data = [(str(source / "diffeoforge" / "_atlas_distance_metric.py"), "diffeoforge")]
 third_party_data = [
     (str(path), "third-party/licenses" if path.parent.name == "licenses" else "third-party")
     for path in sorted((repository / "distribution/third-party").rglob("*"))
@@ -96,7 +97,7 @@ desktop_analysis = Analysis(
     [str(entrypoints / "diffeoforge_desktop.py")],
     pathex=[str(source)],
     binaries=[],
-    datas=schema_data + third_party_data + media_metadata + desktop_data,
+    datas=schema_data + native_source_data + third_party_data + media_metadata + desktop_data,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig=matplotlib_hooks,
@@ -126,7 +127,7 @@ worker_analysis = Analysis(
     [str(entrypoints / "diffeoforge_worker.py")],
     pathex=[str(source)],
     binaries=[],
-    datas=schema_data,
+    datas=schema_data + native_source_data,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig=matplotlib_hooks,
@@ -155,7 +156,7 @@ reference_worker_analysis = Analysis(
     [str(entrypoints / "diffeoforge_reference_worker.py")],
     pathex=[str(source)],
     binaries=[],
-    datas=schema_data,
+    datas=schema_data + native_source_data,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig=matplotlib_hooks,
@@ -186,7 +187,7 @@ reference_preparation_worker_analysis = Analysis(
     [str(entrypoints / "diffeoforge_reference_preparation_worker.py")],
     pathex=[str(source)],
     binaries=[],
-    datas=schema_data,
+    datas=schema_data + native_source_data,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig=matplotlib_hooks,
@@ -224,7 +225,7 @@ reference_execution_worker_analysis = Analysis(
     [str(entrypoints / "diffeoforge_reference_execution_worker.py")],
     pathex=[str(source)],
     binaries=[],
-    datas=schema_data,
+    datas=schema_data + native_source_data,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig=matplotlib_hooks,

@@ -633,13 +633,16 @@ class _TemplatePreviewWorker(QRunnable):
 class _PilotAtlasHandoffWorker(QRunnable):
     def __init__(
         self, config_path: Path, *, early_review: bool = False, initial_fit_review: bool = False,
-        direct_start: bool = False,
+        direct_start: bool = False, choose_initialization: bool = True,
+        stop_mode: str | None = None,
     ) -> None:
         super().__init__()
         self.config_path = config_path
         self.early_review = early_review
         self.initial_fit_review = initial_fit_review
         self.direct_start = direct_start
+        self.choose_initialization = choose_initialization
+        self.stop_mode = stop_mode
         self.signals = _WorkerSignals()
 
     @Slot()
@@ -651,14 +654,19 @@ class _PilotAtlasHandoffWorker(QRunnable):
                 choose_initial_fit_screen,
                 upgrade_saved_pilot_config,
             )
+            from diffeoforge.reference_atlas_stop import choose_atlas_stop
             from diffeoforge.reference_calibration_study import calibration_verification_scope
 
             with calibration_verification_scope():
-                path = upgrade_saved_pilot_config(self.config_path)
-                path = choose_direct_joint_start(path, enabled=self.direct_start)
-                if not self.direct_start:
-                    path = choose_initial_fit_screen(path, enabled=self.initial_fit_review)
-                    path = choose_early_review(path, enabled=self.early_review)
+                path = self.config_path
+                if self.choose_initialization:
+                    path = upgrade_saved_pilot_config(path)
+                    path = choose_direct_joint_start(path, enabled=self.direct_start)
+                    if not self.direct_start:
+                        path = choose_initial_fit_screen(path, enabled=self.initial_fit_review)
+                        path = choose_early_review(path, enabled=self.early_review)
+                if self.stop_mode is not None:
+                    path = choose_atlas_stop(path, self.stop_mode)
                 result = load_existing_reference_project(path)
         except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
@@ -1605,23 +1613,27 @@ class _RunLookupWorker(QRunnable):
 
 
 class _IterationExtensionWorker(QRunnable):
-    """Bind a capped checkpoint continuation without blocking the UI or starting it."""
+    """Bind an explicit checkpoint continuation without starting the optimizer."""
 
-    def __init__(self, source: Path) -> None:
+    def __init__(self, source: Path, *, after_tolerance: bool = False) -> None:
         super().__init__()
         self.source = source
+        self.after_tolerance = after_tolerance
         self.signals = _WorkerSignals()
 
     @Slot()
     def run(self) -> None:
         try:
+            options = {"additional_iterations": 300}
+            if self.after_tolerance:
+                options["after_tolerance"] = True
             request = build_reference_resume_launch_request(
                 self.source,
                 request_id=f"reference-extension-{uuid.uuid4().hex}",
                 run_id=f"{self.source.name[:95]}-plus300-{uuid.uuid4().hex[:8]}",
-                additional_iterations=300,
+                **options,
             )
-            evidence = inspect_resume_source(self.source, additional_iterations=300)
+            evidence = inspect_resume_source(self.source, **options)
             result = ResumableReferenceRun(
                 run_directory=evidence.source_run,
                 project_name=evidence.manifest["effective_config"]["project"]["name"],
@@ -1631,7 +1643,9 @@ class _IterationExtensionWorker(QRunnable):
                 source_config_path=request.config_path,
                 source_config_sha256=request.expected_config_sha256,
             )
-            maximum = evidence.manifest["effective_config"]["optimization"]["max_iterations"]
+            plan = getattr(request, "tolerance_continuation", None)
+            maximum = (plan.checkpoint_iteration if plan is not None else
+                       evidence.manifest["effective_config"]["optimization"]["max_iterations"])
         except (OSError, RuntimeError, TypeError, ValueError, KeyError) as error:
             self.signals.failed.emit(str(error))
             return
@@ -1989,6 +2003,7 @@ class DiffeoForgeWindow(QMainWindow):
         ) = None
         self._reference_run_request: DesktopReferenceLaunchRequest | None = None
         self._iteration_extension_source: Path | None = None
+        self._iteration_extension_after_tolerance = False
         self._run_result: (
             DesktopWorkerControllerResult
             | DesktopRemoteAtlasResult
@@ -2580,9 +2595,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.pilot_atlas_start_combo = QComboBox()
         self.pilot_atlas_start_combo.setAccessibleName("Atlas initialization")
         self.pilot_atlas_start_combo.addItem(
-            "Fit remaining specimens individually (recommended)", False
+            "Start from individual fits", False
         )
-        self.pilot_atlas_start_combo.addItem("Start the joint atlas directly", True)
+        self.pilot_atlas_start_combo.addItem("Direct start", True)
         self.pilot_atlas_start_detail = QLabel()
         self.pilot_atlas_start_detail.setObjectName("reviewDetail")
         self.pilot_atlas_start_detail.setWordWrap(True)
@@ -2609,6 +2624,27 @@ class DiffeoForgeWindow(QMainWindow):
         self.pilot_atlas_start_combo.currentIndexChanged.connect(self._pilot_atlas_start_changed)
         self.initial_fit_review_check.toggled.connect(self._pilot_atlas_start_changed)
         self.early_atlas_review_check.toggled.connect(self._pilot_atlas_start_changed)
+
+        self.atlas_stop_card = QFrame()
+        self.atlas_stop_card.setObjectName("card")
+        stop_layout = QVBoxLayout(self.atlas_stop_card)
+        stop_layout.setContentsMargins(24, 22, 24, 24)
+        stop_title = QLabel("Atlas stopping rule")
+        stop_title.setObjectName("sectionTitle")
+        self.atlas_stop_combo = QComboBox()
+        self.atlas_stop_combo.setAccessibleName("Atlas stopping rule")
+        self.atlas_stop_combo.addItem(
+            "Stop at optimizer convergence and review", "optimizer_convergence"
+        )
+        self.atlas_stop_combo.addItem("Run until morphospace stabilizes", "morphospace_stability")
+        self.atlas_stop_detail = QLabel()
+        self.atlas_stop_detail.setObjectName("reviewDetail")
+        self.atlas_stop_detail.setWordWrap(True)
+        for widget in (stop_title, self.atlas_stop_combo, self.atlas_stop_detail):
+            stop_layout.addWidget(widget)
+        self.atlas_stop_card.hide()
+        layout.addWidget(self.atlas_stop_card)
+        self.atlas_stop_combo.currentIndexChanged.connect(self._pilot_atlas_start_changed)
 
         template_preview = QFrame()
         template_preview.setObjectName("card")
@@ -3029,6 +3065,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_live_optimizer_plot = LiveOptimizerPlot()
         self.run_live_optimizer_plot.hide()
         progress_layout.addWidget(self.run_live_optimizer_plot)
+        self.run_morphospace_label = QLabel()
+        self.run_morphospace_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.run_morphospace_label.setWordWrap(True)
+        self.run_morphospace_label.hide()
+        progress_layout.addWidget(self.run_morphospace_label)
         progress_layout.addWidget(self.run_optimizer_label)
         progress_layout.addWidget(InfoDisclosure("Event log", self.run_event_log))
         layout.addWidget(progress)
@@ -7726,6 +7767,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._refresh_convergence_advice(None)
         self.run_live_optimizer_plot.clear()
         self.run_live_optimizer_plot.hide()
+        self.run_morphospace_label.hide()
         self.template_preview_card.hide()
         self.reference_readiness_card.hide()
         self.reference_preparation_status_card.hide()
@@ -8865,7 +8907,10 @@ class DiffeoForgeWindow(QMainWindow):
     def _prepare_iteration_extension(self) -> None:
         if self._worker is not None or self._iteration_extension_source is None:
             return
-        worker = _IterationExtensionWorker(self._iteration_extension_source)
+        worker = _IterationExtensionWorker(
+            self._iteration_extension_source,
+            after_tolerance=self._iteration_extension_after_tolerance,
+        )
         worker.signals.succeeded.connect(self._iteration_extension_ready)
         worker.signals.failed.connect(self._iteration_extension_failed)
         self._worker = worker
@@ -8898,6 +8943,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_run_request = request
         self.run_live_optimizer_plot.clear()
         self.run_live_optimizer_plot.show()
+        self.run_morphospace_label.hide()
         self._review = ProjectReviewResult(
             engine=DesktopEngine.DEFORMETRICA_REFERENCE,
             project_name=result.project_name,
@@ -8957,7 +9003,18 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_result_card.hide()
         self.refresh_run_readiness_button.setEnabled(False)
         if extension_maximum is not None:
-            self.run_title_label.setText("Continue Deformetrica atlas: +300 iterations")
+            self.run_title_label.setText("Continue Deformetrica atlas · +300 iterations")
+            self.run_subtitle_label.setText(
+                "Review the continuation settings, then start a new run."
+            )
+            plan = getattr(request, "tolerance_continuation", None)
+            settings = (
+                f"Accepted checkpoint {plan.checkpoint_iteration} · "
+                f"new iteration limit {plan.maximum_iterations}\n"
+                f"Tolerance {plan.source_tolerance:g} → {plan.tolerance:g}\n"
+                if plan is not None else
+                f"Iteration limit {extension_maximum} → {extension_maximum + 300}\n"
+            )
             self.run_boundary_label.setText(
                 "Previous results remain unchanged. Parameters and iteration are restored; "
                 "Deformetrica reinitializes its objective baseline, gradient and line-search state."
@@ -8965,7 +9022,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_summary_label.setText(
                 f"Project: {result.project_name}\n"
                 f"Source run: {self._wrappable_path(result.run_directory)}\n"
-                f"Iteration limit: {extension_maximum} → {extension_maximum + 300}\n"
+                f"{settings}"
                 f"New run: {self._wrappable_path(request.destination)}"
             )
             self.run_progress_bar.setFormat("Continuation not started")
@@ -9934,6 +9991,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.pilot_atlas_start_combo.blockSignals(True)
         self.pilot_atlas_start_combo.setCurrentIndex(int(review.direct_pilot_atlas))
         self.pilot_atlas_start_combo.blockSignals(False)
+        self.atlas_stop_combo.blockSignals(True)
+        self.atlas_stop_combo.setCurrentIndex(max(0, self.atlas_stop_combo.findData(
+            review.atlas_stop_mode
+        )))
+        self.atlas_stop_combo.blockSignals(False)
         for control, checked in (
             (self.initial_fit_review_check, review.pilot_initial_fit_review),
             (self.early_atlas_review_check, review.pilot_early_review),
@@ -10716,11 +10778,13 @@ class DiffeoForgeWindow(QMainWindow):
 
     def _pilot_atlas_start_pending(self) -> bool:
         review = self._review
-        if (
-            not isinstance(review, ProjectReviewResult)
-            or review.engine is not DesktopEngine.DEFORMETRICA_REFERENCE
-            or self._pilot_atlas_start_source() is None
-        ):
+        if not isinstance(review, ProjectReviewResult):
+            return False
+        if (self._atlas_stop_source() is not None
+                and self.atlas_stop_combo.currentData() != review.atlas_stop_mode):
+            return True
+        if (review.engine is not DesktopEngine.DEFORMETRICA_REFERENCE
+                or self._pilot_atlas_start_source() is None):
             return False
         direct = self.pilot_atlas_start_combo.currentData()
         return not review.preserved_pilot_atlas or direct != review.direct_pilot_atlas or (
@@ -10729,6 +10793,16 @@ class DiffeoForgeWindow(QMainWindow):
                 or self.early_atlas_review_check.isChecked() != review.pilot_early_review
             )
         )
+
+    def _atlas_stop_source(self) -> Path | None:
+        review = self._review
+        if (isinstance(review, ProjectReviewResult) and review.atlas_stop_available
+                and self._bound_project_matches_form() and self._run_result is None
+                and not (
+                    self._reference_run_request and self._reference_run_request.resume_source
+                )):
+            return review.config_path
+        return None
 
     @Slot()
     def _pilot_atlas_start_changed(self) -> None:
@@ -10742,13 +10816,24 @@ class DiffeoForgeWindow(QMainWindow):
             and self._pilot_atlas_start_source() is not None
         )
         self.pilot_atlas_start_card.setVisible(visible)
+        stop_visible = self._atlas_stop_source() is not None
+        self.atlas_stop_card.setVisible(stop_visible)
+        self.atlas_stop_combo.setEnabled(self._worker is None)
+        self.atlas_stop_detail.setText(
+            "Check every 25 accepted joint iterations. Stop when cohort change is below 1% "
+            "and every specimen is below 2% over 200 iterations and also over 400 once that "
+            "full window is available. Individual fits are excluded. The iteration budget applies."
+            if self.atlas_stop_combo.currentData() == "morphospace_stability" else
+            "Use the native optimizer stop and the configured iteration budget. Review "
+            "morphospace change and reconstruction quality after fitting."
+        )
         direct = self.pilot_atlas_start_combo.currentData()
         self.pilot_atlas_start_combo.setEnabled(self._worker is None)
         self.prepare_pilot_holdout_button.setEnabled(visible and self._worker is None)
         for control in (self.initial_fit_review_check, self.early_atlas_review_check):
             control.setVisible(not direct)
             control.setEnabled(self._worker is None and not direct)
-        if not visible:
+        if not visible and not stop_visible:
             return
         self.pilot_atlas_start_detail.setText(
             "Use the saved pilot fits and skip the separate initialization stage. The remaining "
@@ -10760,11 +10845,12 @@ class DiffeoForgeWindow(QMainWindow):
             "specimen a fitted starting point."
         )
         if isinstance(self._worker, _PilotAtlasHandoffWorker):
-            self.show_run_button.setText("Preparing selected atlas start…")
+            self.show_run_button.setText("Preparing atlas choices…")
             self.show_run_button.setEnabled(False)
         elif self._worker is None and self._reference_readiness and self._reference_readiness.ready:
+            review_label = "Review atlas choices" if stop_visible else "Review selected atlas start"
             self.show_run_button.setText(
-                "Review selected atlas start"
+                review_label
                 if self._pilot_atlas_start_pending()
                 else "Continue to supervised Deformetrica execution"
             )
@@ -10785,7 +10871,9 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _prepare_preserved_atlas(self) -> None:
-        path = self._pilot_atlas_start_source()
+        initializer = self._pilot_atlas_start_source()
+        stop_source = self._atlas_stop_source()
+        path = initializer or stop_source
         if self._worker is not None or path is None or self._run_result is not None:
             return
         direct = self.pilot_atlas_start_combo.currentData()
@@ -10794,11 +10882,13 @@ class DiffeoForgeWindow(QMainWindow):
             early_review=not direct and self.early_atlas_review_check.isChecked(),
             initial_fit_review=not direct and self.initial_fit_review_check.isChecked(),
             direct_start=direct,
+            choose_initialization=initializer is not None,
+            stop_mode=self.atlas_stop_combo.currentData() if stop_source else None,
         )
         worker.signals.succeeded.connect(self._preserved_atlas_ready)
         worker.signals.failed.connect(self._preserved_atlas_failed)
         self._worker = worker
-        self.status_label.setText("Binding saved pilot fields to the full cohort…")
+        self.status_label.setText("Binding the initialization and stopping rule…")
         self._sync_ready_state()
         self._thread_pool.start(worker)
 
@@ -10812,19 +10902,22 @@ class DiffeoForgeWindow(QMainWindow):
             return
         if (
             isinstance(worker, _PilotAtlasHandoffWorker)
-            and worker.config_path != self._pilot_atlas_start_source()
+            and worker.config_path != (
+                self._pilot_atlas_start_source() or self._atlas_stop_source()
+            )
         ):
             self.status_label.setText("Project changed; the prepared atlas setup was not applied.")
             self._sync_ready_state()
             return
-        self._apply_reference_calibrated_configuration(result.config_path)
+        if isinstance(worker, _PilotAtlasHandoffWorker) and worker.choose_initialization:
+            self._apply_reference_calibrated_configuration(result.config_path)
         self._result = result
         self._remember_current_project(result)
         self._review = None
         self._reference_readiness = None
         self._reference_run_request = None
         self.status_label.setText(
-            "Atlas initialization saved. Review the new setup before starting the atlas."
+            "Atlas setup saved. Review the selected initialization and stopping rule."
         )
         self._review_project()
 
@@ -11766,6 +11859,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._refresh_convergence_advice(None)
         self.run_live_optimizer_plot.clear()
         self.run_live_optimizer_plot.setVisible(reference)
+        self.run_morphospace_label.hide()
         self.run_result_card.hide()
         self.run_event_log.clear()
         self._reference_cancel_pending = False
@@ -12035,6 +12129,14 @@ class DiffeoForgeWindow(QMainWindow):
         elif event.kind == "resources":
             self._latest_reference_resource_text = self._reference_resource_text(event.payload)
             self.run_optimizer_label.setToolTip(self._latest_reference_resource_text)
+            return
+        elif event.kind == "morphospace_progress":
+            from diffeoforge.desktop.convergence_advice import morphospace_text
+
+            if self.run_morphospace_label.isHidden():
+                self.run_live_optimizer_plot.attachment_checkbox.setChecked(True)
+            self.run_morphospace_label.setText(morphospace_text(event.payload))
+            self.run_morphospace_label.show()
             return
         elif event.kind == "activity":
             elapsed = float(event.payload["elapsed_seconds"])
@@ -12452,7 +12554,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setStyleSheet("")
         self._reference_run_request = None
         self._refresh_convergence_advice(
-            Path(terminal.payload["destination"]) if result.completed else None
+            Path(terminal.payload["destination"])
+            if result.completed or result.interrupted else None
         )
         self._sync_ready_state()
         if self._close_after_worker:
@@ -12464,6 +12567,9 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(str)
     def _atlas_failed(self, message: str) -> None:
         remote = isinstance(self._worker, _RemoteAtlasWorker)
+        reference = (
+            self._reference_run_request if isinstance(self._worker, _ReferenceAtlasWorker) else None
+        )
         self._worker = None
         self.cancel_atlas_button.setEnabled(False)
         self.refresh_run_readiness_button.setEnabled(True)
@@ -12477,6 +12583,8 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.run_state_label.setText(f"Atlas run failed or was rejected: {message}{suffix}")
         self.run_event_log.appendPlainText(f"Parent: error: {message}")
+        if reference is not None and (reference.destination / "result.json").is_file():
+            self._refresh_convergence_advice(reference.destination)
         self.start_atlas_button.setEnabled(True)
         self._sync_ready_state()
         if self._close_after_worker:
@@ -12679,7 +12787,28 @@ class DiffeoForgeWindow(QMainWindow):
             )
         self.result_completion_label.setToolTip(self.result_completion_label.text())
         stop = review.optimizer_termination_reason.replace("_", " ")
-        if review.optimizer_converged is False:
+        logged = getattr(review, "optimizer_last_logged_iteration", None)
+        state = f"last logged iteration {review.optimizer_cycles_completed}"
+        if logged is not None:
+            state = f"accepted iteration {review.optimizer_cycles_completed}"
+            stop = {
+                "morphospace_stable": "Morphospace thresholds met",
+                "native_tolerance": "Native tolerance met",
+                "iteration_limit": "Iteration limit reached",
+                "line_search_exhausted": "Line search exhausted",
+            }.get(review.optimizer_termination_reason, stop.capitalize())
+            self.result_completion_label.setObjectName(
+                "statusSuccess" if review.optimizer_termination_reason in {
+                    "morphospace_stable", "native_tolerance",
+                } else "statusWarning"
+            )
+            self.result_completion_label.setStyleSheet("")
+            self.result_completion_label.setToolTip(
+                f"{stop} at accepted iteration {review.optimizer_cycles_completed}. "
+                f"The last printed iteration was {logged}. "
+                "Review the final reconstructions for anatomical plausibility."
+            )
+        elif review.optimizer_converged is False:
             stop = f"Optimizer did not converge ({stop})"
         elif review.optimizer_converged is True:
             stop = f"Converged ({stop})"
@@ -12688,12 +12817,14 @@ class DiffeoForgeWindow(QMainWindow):
         else:
             stop += "; convergence not established"
         unit = "iteration" if review.engine_route == "deformetrica_reference" else "cycle"
+        if logged is None:
+            state = f"last logged {unit} {review.optimizer_cycles_completed}"
         duration = (
             " · " + self._format_result_duration(review.execution_duration_seconds)
             if review.execution_duration_seconds is not None else ""
         )
         self.result_completion_label.setText(
-            f"Stop: {stop} · last logged {unit} {review.optimizer_cycles_completed}"
+            f"Stop: {stop} · {state}"
             f" / {review.optimizer_max_cycles}{duration}. Review atlas fit next."
         )
         self._populate_result_artifacts(review)

@@ -155,3 +155,54 @@ def test_tolerance_stop_shows_diagnosis_without_continuation_on_every_page(
     window._clear_engine_project_state()
     assert all(label.isHidden() for label in controller.labels)
     window.close()
+
+
+def test_atlas_live_checkpoint_shows_outlier_and_available_window(app):
+    from diffeoforge.desktop import widgets
+    from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
+
+    window = widgets.DiffeoForgeWindow()
+    payload = {
+        "iteration": 425, "previous_iteration": 225, "window_iterations": 200,
+        "status": "measured", "cohort_percent": 0.4, "max_subject_percent": 3.0,
+        "worst_subjects": ["outlier.vtk"], "weighted_fit_error": 0.08,
+        "long_window": {
+            "previous_iteration": 25, "window_iterations": 400, "status": "measured",
+            "cohort_percent": 1.5, "max_subject_percent": 1.8, "worst_subjects": ["other.vtk"],
+        },
+    }
+    window._reference_atlas_event(DesktopReferenceWorkerEvent(
+        request_id="window", sequence=0, kind="morphospace_progress", payload=payload,
+    ))
+    preview = window.run_morphospace_label.text()
+    assert "225 → 425" in preview and "200/200" in preview
+    assert "25 → 425" in preview and "400/400" in preview
+    assert "Cohort 1.5% (requires <1%; above or at threshold)" in preview
+    assert "Cohort 0.4% (requires <1%; within threshold)" in preview
+    assert "Highest specimen 3% (requires <2%; above or at threshold)" in preview
+    assert "outlier.vtk" in preview and "Weighted fit error 0.08" in preview
+    window._clear_engine_project_state()
+    assert window.run_morphospace_label.isHidden()
+    window.close()
+
+
+def test_verified_tolerance_stop_shows_explicit_continuation(app, monkeypatch, tmp_path):
+    from diffeoforge.desktop import convergence_advice, widgets
+    from diffeoforge.runs import ToleranceContinuation
+
+    source = tmp_path / "completed"
+    plan = ToleranceContinuation(317, 1600, 300, 617, 1.e-6, 1.e-7, "a" * 64, "b" * 64)
+    monkeypatch.setattr(convergence_advice, "run_advice", lambda path: (None, "Native stop"))
+    monkeypatch.setattr(convergence_advice, "tolerance_extension_preview", lambda path: plan)
+    window = widgets.DiffeoForgeWindow()
+    window._refresh_convergence_advice(source)
+    controller = window._convergence_advice
+    controller.future.result(timeout=5)
+    controller._poll()
+    assert window._iteration_extension_after_tolerance
+    assert not controller.buttons[0].isHidden()
+    assert "+300 iterations with tighter tolerance" in controller.buttons[0].text()
+    assert "317" in controller.buttons[0].toolTip()
+    assert "617" in controller.buttons[0].toolTip()
+    assert not source.exists()
+    window.close()

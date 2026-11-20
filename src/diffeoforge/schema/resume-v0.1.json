@@ -113,6 +113,25 @@
         }
       }
     },
+    "tolerance_continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checkpoint_iteration", "source_maximum_iterations", "additional_iterations",
+        "maximum_iterations", "source_tolerance", "tolerance", "checkpoint_sha256",
+        "source_log_sha256"
+      ],
+      "properties": {
+        "checkpoint_iteration": {"type": "integer", "minimum": 1},
+        "source_maximum_iterations": {"type": "integer", "minimum": 1},
+        "additional_iterations": {"const": 300},
+        "maximum_iterations": {"type": "integer", "minimum": 301},
+        "source_tolerance": {"type": "number", "exclusiveMinimum": 0},
+        "tolerance": {"type": "number", "exclusiveMinimum": 0},
+        "checkpoint_sha256": {"$ref": "#/$defs/sha256"},
+        "source_log_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
     "output_schedule_change": {
       "type": "object",
       "additionalProperties": false,
@@ -271,15 +290,17 @@
         }
       },
       "then": {
-        "required": [
-          "iteration_extension"
+        "oneOf": [
+          {"required": ["iteration_extension"]},
+          {"required": ["tolerance_continuation"]}
         ]
       }
     },
     {
       "if": {
-        "required": [
-          "iteration_extension"
+        "anyOf": [
+          {"required": ["iteration_extension"]},
+          {"required": ["tolerance_continuation"]}
         ]
       },
       "then": {
@@ -293,6 +314,10 @@
           }
         }
       }
+    },
+    {
+      "if": {"required": ["tolerance_continuation"]},
+      "then": {"not": {"required": ["convergence_reference"]}}
     },
     {
       "if": {

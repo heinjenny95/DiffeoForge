@@ -30,6 +30,7 @@ ReferenceWorkerEventKind = Literal[
     "activity",
     "resources",
     "progress",
+    "morphospace_progress",
     "terminal",
 ]
 ReferenceWorkerOutcome = Literal[
@@ -182,6 +183,7 @@ class ReferenceWorkerEventLedger:
         self._last_phase_index: int | None = None
         self._last_activity_elapsed: float | None = None
         self._last_progress_iteration: int | None = None
+        self._last_morphospace_iteration: int | None = None
         self._inspection: Mapping[str, Any] | None = None
         self._terminal: DesktopReferenceWorkerEvent | None = None
 
@@ -305,6 +307,26 @@ class ReferenceWorkerEventLedger:
                     "Reference worker progress iterations must increase strictly"
                 )
             self._last_progress_iteration = iteration
+        elif event.kind == "morphospace_progress":
+            payload = event.payload
+            iteration = payload["iteration"]
+            if (
+                self._last_phase_index != REFERENCE_WORKER_PHASES.index("execute")
+                or (self._last_morphospace_iteration is not None
+                    and iteration <= self._last_morphospace_iteration)
+            ):
+                raise DesktopReferenceWorkerProtocolError(
+                    "Invalid live morphospace checkpoint order"
+                )
+            for window in (payload, payload["long_window"]):
+                previous = window["previous_iteration"]
+                expected = 0 if previous is None else iteration - previous
+                if (window["window_iterations"] != expected
+                        or (previous is not None and previous >= iteration)):
+                    raise DesktopReferenceWorkerProtocolError(
+                        "Invalid live morphospace comparison window"
+                    )
+            self._last_morphospace_iteration = iteration
         else:
             outcome = str(event.payload["outcome"])
             if event.payload["destination"] != str(self._request.destination):

@@ -1,5 +1,14 @@
 # Development continuity
 
+## Independent atlas initialization and stopping policy
+
+The atlas review offers separate choices for initialization and stopping.
+Opted-in GradientAscent runs preserve accepted joint checkpoints for
+morphospace stability diagnostics. Automatic mode can continue beyond a native
+tolerance hit within the configured budget. Native review mode supports an
+explicit, protected +300 successor after a verified tolerance stop. See
+[atlas initialization and stopping](ATLAS_MORPHOSPACE_STOP.md).
+
 ## dev229 — atlas stop diagnosis and pilot correction routing
 
 This version includes the completed atlas diagnosis, zero-start individual

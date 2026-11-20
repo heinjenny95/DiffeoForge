@@ -354,6 +354,30 @@ def test_direct_joint_rejects_edited_link_or_missing_recorded_review(completed_j
         journal.write_bytes(saved)
 
 
+@pytest.mark.parametrize("direct", [False, True])
+@pytest.mark.parametrize("mode", ["optimizer_convergence", "morphospace_stability"])
+def test_atlas_stop_is_independent_of_approved_pilot_initialization(
+    completed_joint_pilot, direct, mode,
+):
+    from diffeoforge.reference_atlas_stop import choose_atlas_stop, stop_policy
+
+    source = completed_joint_pilot.final_config_path
+    initializer = choose_direct_joint_start(source, enabled=direct)
+    previous = initializer.read_bytes()
+    selected = choose_atlas_stop(initializer, mode)
+    assert initializer.read_bytes() == previous
+    assert choose_atlas_stop(selected, mode) == selected
+    run = prepare_run(selected, run_id=f"stop-{mode}")
+    reopened = verify_prepared_run(run)["effective_config"]
+    assert reopened["project"]["atlas_stop"] == stop_policy(mode)
+    assert direct_joint_start_enabled(initialization(reopened)) is direct
+    assert initialization(reopened) == initialization(load_config(initializer))
+    native = (run / "engine/sitecustomize.py").read_text(encoding="utf-8")
+    assert "_df_ms_install_update(" in native
+    assert ("def _df_atlas_update(" in native) is not direct
+    compile(native, "sitecustomize.py", "exec")
+
+
 def test_flagged_initial_fit_requires_its_own_review_and_keeps_pilot_gate(early):
     config, run, old = early
     output = run / "output"

@@ -133,11 +133,23 @@ def test_failed_worker_reports_specific_guard_reason(tmp_path, monkeypatch):
     assert "different gradient" in events[-1].payload["message"]
 
 
+@pytest.mark.parametrize("mode", [None, "optimizer_convergence", "morphospace_stability"])
 def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    mode: str | None,
 ) -> None:
     request = _request(tmp_path)
+    if mode is not None:
+        from diffeoforge.config import load_config
+        from diffeoforge.reference_atlas_stop import stop_policy
+
+        config = load_config(request.config_path)
+        config["project"]["atlas_stop"] = stop_policy(mode)
+        monkeypatch.setattr(execution_worker, "verify_prepared_run",
+                            lambda _path: {"effective_config": config})
+        monkeypatch.setattr(execution_worker, "read_morphospace_stability",
+                            lambda _path: {"terminal": {"export": "complete"}})
     monkeypatch.setattr(execution_worker, "collect_preflight", lambda _path, **_kwargs: object())
     monkeypatch.setattr(
         execution_worker,
@@ -201,6 +213,16 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
                 f">> Log-likelihood = {-10 + iteration:.3E} "
                 "[ attachment = -8.000E+00 ; regularity = -2.000E+00 ]\n"
             )
+        if mode is not None:
+            preview = {
+                "previous_iteration": 0, "window_iterations": 3, "status": "measured",
+                "cohort_percent": 0.45, "max_subject_percent": 0.66, "worst_subjects": ["test"],
+            }
+            row = dict(preview, iteration=3, weighted_fit_error=8.0, long_window=preview)
+            line_callback("DiffeoForge morphospace stability: invalid JSON")
+            line = "INFO DiffeoForge morphospace stability: " + json.dumps(row)
+            line_callback(line)
+            line_callback(line)
         line_callback("DiffeoForge final mesh export started: 3 specimens\n")
         activity_callback(27.0, "Writing mesh", "output/reference_info.log")
         (request.destination / "result.json").write_text(
@@ -234,6 +256,7 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
         "progress",
         "progress",
         "progress",
+        *(("morphospace_progress",) if mode is not None else ()),
         "activity",
         "phase",
         "phase",
@@ -249,6 +272,10 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
     assert progress[-1].payload["iteration"] == 3
     assert progress[-1].payload["estimate_status"] == "observed_rate_to_iteration_cap"
     assert progress[-1].payload["eta_to_iteration_cap_seconds"] == pytest.approx(97 * 6)
+    if mode is not None:
+        stability = next(event.payload for event in events if event.kind == "morphospace_progress")
+        assert stability["weighted_fit_error"] == 8.0
+        assert stability["long_window"]["window_iterations"] == 3
     assert events[-1].payload["outcome"] == "completed"
     assert events[-1].payload["result_sha256"] == sha256_file(
         request.destination / "result.json"
@@ -402,14 +429,21 @@ def test_reference_execution_worker_reports_launch_validation_failure(
     assert not request.destination.exists()
 
 
-@pytest.mark.parametrize("additional_iterations", [0, 300])
+@pytest.mark.parametrize(("additional_iterations", "after_tolerance"), [
+    (0, False), (300, False), (300, True),
+])
 def test_reference_execution_worker_prepares_resume_successor_without_source_preflight(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     additional_iterations: int,
+    after_tolerance: bool,
 ) -> None:
+    from diffeoforge.runs import ToleranceContinuation
+
     base = _request(tmp_path)
     source = (tmp_path / "runs" / "interrupted-001").resolve()
+    continuation = ToleranceContinuation(301, 1000, 300, 601, 1e-6, 1e-7, "a" * 64, "b" * 64)
+    plan = continuation if after_tolerance else None
     request = DesktopReferenceLaunchRequest(
         **{
             **base.__dict__,
@@ -417,6 +451,7 @@ def test_reference_execution_worker_prepares_resume_successor_without_source_pre
             "run_id": "resume-001",
             "resume_source": source,
             "additional_iterations": additional_iterations,
+            "tolerance_continuation": plan,
         }
     )
     monkeypatch.setattr(
@@ -431,8 +466,8 @@ def test_reference_execution_worker_prepares_resume_successor_without_source_pre
     )
     prepared = []
 
-    def prepare(source_run, *, run_id, additional_iterations=0):
-        prepared.append((source_run, run_id, additional_iterations))
+    def prepare(source_run, *, run_id, additional_iterations=0, **continuation_options):
+        prepared.append((source_run, run_id, additional_iterations, continuation_options))
         request.destination.mkdir(parents=True)
         return request.destination
 
@@ -449,7 +484,9 @@ def test_reference_execution_worker_prepares_resume_successor_without_source_pre
         from diffeoforge.config import load_config
 
         effective = load_config(request.config_path)
-        effective["optimization"]["max_iterations"] = 600
+        effective["optimization"]["max_iterations"] = plan.maximum_iterations if plan else 600
+        if plan:
+            effective["optimization"]["convergence_tolerance"] = plan.tolerance
         monkeypatch.setattr(execution_worker, "verify_prepared_run", lambda _path: {
             "effective_config": effective,
         })
@@ -464,9 +501,13 @@ def test_reference_execution_worker_prepares_resume_successor_without_source_pre
     code, events, _stderr = _run(request)
 
     assert code == 0
-    assert prepared == [(source, "resume-001", additional_iterations)]
+    expected_options = (
+        {"after_tolerance": True, "expected_tolerance_continuation": plan} if plan else {}
+    )
+    assert prepared == [(source, "resume-001", additional_iterations, expected_options)]
     if additional_iterations:
-        assert next(e for e in events if e.kind == "progress").payload["maximum_iterations"] == 600
+        progress = next(event for event in events if event.kind == "progress").payload
+        assert progress["maximum_iterations"] == (plan.maximum_iterations if plan else 600)
     assert events[-1].payload["outcome"] == "completed"
 
 

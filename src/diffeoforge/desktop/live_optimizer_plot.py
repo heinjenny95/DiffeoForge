@@ -23,6 +23,10 @@ class LiveOptimizerSample:
     attachment: float
     regularity: float
 
+    @property
+    def weighted_fit_error(self) -> float:
+        return -self.attachment
+
 
 class LiveOptimizerPlot(QWidget):
     """Show only complete, finite, increasing-iteration worker observations."""
@@ -43,7 +47,7 @@ class LiveOptimizerPlot(QWidget):
         objective = QLabel("Objective")
         objective.setStyleSheet(f"color: {_OBJECTIVE_COLOR};")
         legend.addWidget(objective)
-        self.attachment_checkbox = QCheckBox("Attachment")
+        self.attachment_checkbox = QCheckBox("Weighted fit error")
         self.attachment_checkbox.setStyleSheet(f"color: {_ATTACHMENT_COLOR};")
         self.regularity_checkbox = QCheckBox("Regularity")
         self.regularity_checkbox.setStyleSheet(f"color: {_REGULARITY_COLOR};")
@@ -125,7 +129,7 @@ class _OptimizerCanvas(QWidget):
         main_height = 210 if separate else self.height()
         series = [("objective", _OBJECTIVE_COLOR, Qt.PenStyle.SolidLine)]
         if self.plot.attachment_checkbox.isChecked():
-            series.append(("attachment", _ATTACHMENT_COLOR, Qt.PenStyle.DashLine))
+            series.append(("weighted_fit_error", _ATTACHMENT_COLOR, Qt.PenStyle.DashLine))
         self._draw_panel(
             painter, QRectF(0, 0, self.width(), main_height), "Objective / log-likelihood", series
         )

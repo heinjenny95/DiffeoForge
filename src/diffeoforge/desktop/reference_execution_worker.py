@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import sys
 import threading
@@ -22,8 +23,12 @@ from diffeoforge.desktop.reference_progress import ReferenceProgressTracker
 from diffeoforge.desktop.reference_worker_protocol import (
     DesktopReferenceWorkerCommand,
     DesktopReferenceWorkerEvent,
+    DesktopReferenceWorkerProtocolError,
 )
 from diffeoforge.desktop.worker_protocol import parse_json_object, sha256_file
+from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY
+from diffeoforge.reference_morphospace_native import LIVE_PREFIX
+from diffeoforge.reference_morphospace_stopping import read_morphospace_stability
 from diffeoforge.report import PreflightInspectionProgress, collect_preflight
 from diffeoforge.result_report import collect_run_report
 from diffeoforge.runs import execute_run, prepare_resume_run, prepare_run, verify_prepared_run
@@ -173,7 +178,7 @@ def run_reference_execution_worker(
                     "Revalidating meshes and effective Deformetrica parameters."
                     if request.resume_source is None
                     else (
-                        "Reverifying interrupted source evidence, protected inputs, "
+                        "Reverifying source evidence, protected inputs, "
                         "terminal inventory, and checkpoint."
                     )
                 ),
@@ -228,6 +233,14 @@ def run_reference_execution_worker(
             from diffeoforge.reference_final_export_recovery import prepare_final_export
 
             run_directory = prepare_final_export(request.resume_source, run_id=request.run_id)
+        elif request.tolerance_continuation is not None:
+            run_directory = prepare_resume_run(
+                request.resume_source,
+                run_id=request.run_id,
+                additional_iterations=request.additional_iterations,
+                after_tolerance=True,
+                expected_tolerance_continuation=request.tolerance_continuation,
+            )
         else:
             run_directory = (
                 prepare_run(request.config_path, run_id=request.run_id, preflight=preflight)
@@ -271,9 +284,14 @@ def run_reference_execution_worker(
         tracker = ReferenceProgressTracker(
             maximum_iterations,
             convergence_tolerance=float(config["optimization"]["convergence_tolerance"]),
+            estimate_native_stop=(
+                config["project"].get("atlas_stop", {}).get("mode") != MORPHOSPACE_STABILITY
+            ),
         )
         started = time.monotonic()
         last_iteration: int | None = None
+        last_morphospace_iteration: int | None = None
+        has_morphospace_policy = "atlas_stop" in config["project"]
         latest_resources: Mapping[str, object] | None = None
         review_wait_started = None
         review_wait_seconds = 0.0
@@ -285,10 +303,42 @@ def run_reference_execution_worker(
 
         def observe_line(line: str) -> None:
             nonlocal last_iteration, review_wait_started, review_wait_seconds, review_finished
-            nonlocal export_started
+            nonlocal export_started, last_morphospace_iteration
             if cancel_event.is_set() or request.final_export_only:
                 # execute_run delivers and verifies the backend cancellation.
                 # Raising here would bypass that handshake on the next log line.
+                return
+            if has_morphospace_policy and LIVE_PREFIX in line:
+                # The native logger may prepend a timestamp. Only the verified
+                # run report is authoritative for decisions and checkpoint identity.
+                try:
+                    row = json.loads(line.split(LIVE_PREFIX, 1)[1])
+                    short, long = row, row["long_window"]
+                    iteration = row["iteration"]
+                    previews = []
+                    for comparison in (short, long):
+                        previous = comparison["previous_iteration"]
+                        expected_window = 0 if previous is None else iteration - previous
+                        if (comparison["window_iterations"] != expected_window
+                                or (previous is not None and previous >= iteration)):
+                            return
+                        preview = {key: comparison[key] for key in (
+                            "previous_iteration", "window_iterations", "status",
+                            "cohort_percent", "max_subject_percent",
+                        )}
+                        preview["worst_subjects"] = comparison["worst_subjects"][:5]
+                        previews.append(preview)
+                    if (last_morphospace_iteration is None
+                            or iteration > last_morphospace_iteration):
+                        emit("morphospace_progress", {
+                            **previews[0],
+                            "iteration": iteration,
+                            "weighted_fit_error": row["weighted_fit_error"],
+                            "long_window": previews[1],
+                        })
+                        last_morphospace_iteration = iteration
+                except (DesktopReferenceWorkerProtocolError, TypeError, ValueError, KeyError):
+                    pass
                 return
             if "DiffeoForge final mesh export started:" in line:
                 export_started = True
@@ -403,6 +453,9 @@ def run_reference_execution_worker(
                 f"Deformetrica finished with return code {return_code} and "
                 f"status {report.result['status']!r}"
             )
+        if has_morphospace_policy and not request.final_export_only:
+            if read_morphospace_stability(run_directory) is None:
+                raise RuntimeError("The accepted primary atlas stop assessment is missing.")
         return terminal("completed", "Deformetrica completed and its result evidence verified.")
     except (OSError, RuntimeError, TypeError, UnicodeError, ValueError) as error:
         if parent_disconnected.is_set():

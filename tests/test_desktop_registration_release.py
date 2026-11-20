@@ -822,3 +822,39 @@ def test_direct_pilot_option_requires_review_before_launch(review_window, monkey
     assert len(queued) == 2
     assert queued[-1].direct_start is False
     assert queued[-1].config_path == review.config_path
+
+
+@pytest.mark.parametrize("direct", [False, True])
+@pytest.mark.parametrize("mode", ["optimizer_convergence", "morphospace_stability"])
+def test_atlas_review_dispatches_two_independent_choices(review_window, monkeypatch, direct, mode):
+    from types import SimpleNamespace
+
+    from diffeoforge.desktop.project_review import ProjectReviewResult
+    from diffeoforge.desktop.project_setup import DesktopEngine
+
+    window = review_window
+    path = window._result_review.run_directory / "saved-pilot.yaml"
+    review = ProjectReviewResult(
+        DesktopEngine.DEFORMETRICA_REFERENCE, "Synthetic atlas", path, "a" * 64,
+        path.with_suffix(".html"), "Report", 7, (), (), (), "",
+        preserved_pilot_atlas=True, atlas_stop_available=True,
+    )
+    window._review_succeeded(review)
+    window._reference_readiness = SimpleNamespace(ready=True)
+    window._run_result = None
+    window._result_review = None
+    queued = []
+    monkeypatch.setattr(window, "_thread_pool", SimpleNamespace(start=queued.append))
+    window.pilot_atlas_start_combo.setCurrentIndex(int(direct))
+    window.atlas_stop_combo.setCurrentIndex(window.atlas_stop_combo.findData(mode))
+    window._sync_ready_state()
+    assert not window.atlas_stop_card.isHidden()
+    assert window._pilot_atlas_start_pending()
+    window._show_run_page()
+    assert len(queued) == 1
+    assert queued[0].direct_start is direct
+    assert queued[0].stop_mode == mode
+    window._review_succeeded(replace(review, direct_pilot_atlas=direct, atlas_stop_mode=mode))
+    assert window.pilot_atlas_start_combo.currentData() is direct
+    assert window.atlas_stop_combo.currentData() == mode
+    assert not window._pilot_atlas_start_pending()

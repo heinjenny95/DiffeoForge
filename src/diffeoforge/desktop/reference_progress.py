@@ -69,6 +69,7 @@ class ReferenceProgressTracker:
         window: int = 10,
         convergence_tolerance: float = 0.0001,
         output_overhead_seconds: float = 0.0,
+        estimate_native_stop: bool = True,
     ) -> None:
         if isinstance(maximum_iterations, bool) or maximum_iterations < 1:
             raise ValueError("maximum_iterations must be a positive integer")
@@ -78,6 +79,7 @@ class ReferenceProgressTracker:
         self.window = int(window)
         self.convergence_tolerance = float(convergence_tolerance)
         self.output_overhead_seconds = float(output_overhead_seconds)
+        self.estimate_native_stop = estimate_native_stop
         if (
             not math.isfinite(self.convergence_tolerance)
             or self.convergence_tolerance <= 0
@@ -219,7 +221,8 @@ class ReferenceProgressTracker:
                 contention = historical > 0 and recent_rate > historical * 1.5
                 if contention:
                     status = "observed_rate_to_cap_with_resource_contention"
-            convergence_window = self._likely_convergence_window()
+            if self.estimate_native_stop:
+                convergence_window = self._likely_convergence_window()
             if convergence_window is not None:
                 likely_eta_lower = (
                     max(0, convergence_window[0] - iteration)

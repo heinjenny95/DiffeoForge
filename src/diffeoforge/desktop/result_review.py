@@ -102,6 +102,7 @@ class ModernResultReview:
     pca_blocked_reason: str | None = None
     pca_excluded_subjects: tuple[str, ...] = ()
     pca_review_sha256: str | None = None
+    optimizer_last_logged_iteration: int | None = None
 
     @property
     def registration_source(self) -> dict[str, str]:

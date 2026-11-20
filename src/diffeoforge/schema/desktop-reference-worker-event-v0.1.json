@@ -17,7 +17,7 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
     },
     "sequence": {"type": "integer", "minimum": 0},
-    "kind": {"enum": ["accepted", "phase", "inspection", "activity", "resources", "progress", "terminal"]},
+    "kind": {"enum": ["accepted", "phase", "inspection", "activity", "resources", "progress", "morphospace_progress", "terminal"]},
     "payload": {"type": "object"}
   },
   "allOf": [
@@ -46,11 +46,46 @@
       "then": {"properties": {"payload": {"$ref": "#/$defs/progress"}}}
     },
     {
+      "if": {"properties": {"kind": {"const": "morphospace_progress"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/morphospace_progress"}}}
+    },
+    {
       "if": {"properties": {"kind": {"const": "terminal"}}},
       "then": {"properties": {"payload": {"$ref": "#/$defs/terminal"}}}
     }
   ],
   "$defs": {
+    "morphospace_progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["iteration", "previous_iteration", "window_iterations", "status",
+        "cohort_percent", "max_subject_percent", "worst_subjects", "weighted_fit_error",
+        "long_window"],
+      "properties": {
+        "iteration": {"type": "integer", "minimum": 0},
+        "previous_iteration": {"type": ["integer", "null"], "minimum": 0},
+        "window_iterations": {"type": "integer", "minimum": 0, "maximum": 200},
+        "status": {"enum": ["measured", "unavailable"]},
+        "cohort_percent": {"type": ["number", "null"], "minimum": 0},
+        "max_subject_percent": {"type": ["number", "null"], "minimum": 0},
+        "worst_subjects": {"type": "array", "items": {"type": "string"}},
+        "weighted_fit_error": {"type": ["number", "null"]},
+        "long_window": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["previous_iteration", "window_iterations", "status",
+            "cohort_percent", "max_subject_percent", "worst_subjects"],
+          "properties": {
+            "previous_iteration": {"type": ["integer", "null"], "minimum": 0},
+            "window_iterations": {"type": "integer", "minimum": 0, "maximum": 400},
+            "status": {"enum": ["measured", "unavailable"]},
+            "cohort_percent": {"type": ["number", "null"], "minimum": 0},
+            "max_subject_percent": {"type": ["number", "null"], "minimum": 0},
+            "worst_subjects": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    },
     "inspection": {
       "type": "object",
       "additionalProperties": false,

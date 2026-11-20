@@ -131,9 +131,11 @@ _df_exp.write_flow = _df_flow
 
 def render_adapter(
     singleton_source="", atlas_source="", *, convergence_only=False,
-    convergence_reference=None, require_saved_reference=False,
+    convergence_reference=None, require_saved_reference=False, morphospace_source="",
 ):
     """Fail closed if Python's normally nonfatal sitecustomize hook fails."""
+    if morphospace_source and (convergence_only or convergence_reference is not None):
+        raise ValueError("Atlas stopping evidence requires compact final export.")
     policy = "\n_df_export_on_convergence = True\n" if convergence_only else ""
     reference_source = ""
     if convergence_reference is not None:
@@ -144,7 +146,11 @@ def render_adapter(
         reference_source = adapter_source(
             convergence_reference, require_saved=require_saved_reference,
         )
-    body = singleton_source + reference_source + SITECUSTOMIZE + policy + atlas_source
+    export_evidence = "\n_df_ms_install_export(_df_ga)\n" if morphospace_source else ""
+    body = (
+        singleton_source + reference_source + morphospace_source + SITECUSTOMIZE
+        + export_evidence + policy + atlas_source
+    )
     return (
         '"""DiffeoForge reference output scheduling adapter v1."""\n'
         "try:\n"

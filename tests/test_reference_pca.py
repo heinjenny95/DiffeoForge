@@ -111,9 +111,10 @@ def _completed_reference_run(
     launcher: dict[str, str] | None = None,
     three_components: bool = False,
     use_rk2: bool | None = None,
+    atlas_stop: dict | None = None,
 ) -> Path:
     example = Path(__file__).parents[1] / "examples" / "minimal-atlas.yaml"
-    if launcher is not None or use_rk2 is not None:
+    if launcher is not None or use_rk2 is not None or atlas_stop is not None:
         config = yaml.safe_load(example.read_text(encoding="utf-8"))
         for key in ("directory", "template"):
             config["input"][key] = str((example.parent / config["input"][key]).resolve())
@@ -121,6 +122,8 @@ def _completed_reference_run(
             config["runtime"]["launcher"] = launcher
         if use_rk2 is not None:
             config["model"]["deformation"]["use_rk2"] = use_rk2
+        if atlas_stop is not None:
+            config["project"]["atlas_stop"] = atlas_stop
         tmp_path.mkdir(parents=True, exist_ok=True)
         example = tmp_path / "synthetic-reference.yaml"
         example.write_text(yaml.safe_dump(config), encoding="utf-8")
@@ -238,6 +241,81 @@ def _completed_reference_run(
             + "\n"
         )
     return run
+
+
+@pytest.mark.parametrize(("qc_only", "reason"), [
+    (False, "numerical_failure"), (True, "native_tolerance"),
+])
+def test_reference_result_displays_verified_stop_and_preserves_log(
+    tmp_path, monkeypatch, qc_only, reason,
+):
+    from diffeoforge import reference_morphospace_stopping as stopping
+    from diffeoforge.reference_atlas_stop import OPTIMIZER_CONVERGENCE, stop_policy
+    from diffeoforge.reference_morphospace_native import REPORT_NAME, manifest_subject_labels
+    from diffeoforge.runs import _inventory_outputs, _read_manifest
+
+    policy = stop_policy(OPTIMIZER_CONVERGENCE)
+    run = _completed_reference_run(tmp_path, atlas_stop=policy)
+    manifest = _read_manifest(run)
+    labels = manifest_subject_labels(manifest)
+    width = manifest["effective_config"]["model"]["deformation"]["kernel_width"]
+    output = run / "output"
+    (output / "morphospace-checkpoints").mkdir()
+    checkpoint = output / "deformetrica-state.p"
+    checkpoint.write_bytes(b"retained optimizer snapshot")
+    controls = np.zeros((1, 3))
+    momenta = np.zeros((len(labels), 1, 3))
+    momenta[:, 0, 0] = np.arange(len(labels))
+    baseline = stopping.distance_matrix(momenta, controls, width)
+    observations, previous = [], None
+    for iteration, scale in [(0, 1.0), (2, 1.03)]:
+        relative = f"morphospace-checkpoints/iteration-{iteration}.npz"
+        path = output / relative
+        np.savez(path, momenta=momenta * scale, control_points=controls)
+        record = {"path": relative, "sha256": sha256_file(path)}
+        distances = stopping.distance_matrix(momenta * scale, controls, width)
+        comparison = dict(
+            previous_iteration=0 if previous else None,
+            previous_checkpoint=previous,
+            window_iterations=iteration,
+            **stopping.compare_distances(baseline if previous else None, distances, labels),
+        )
+        observations.append(dict(
+            iteration=iteration, checkpoint=record, weighted_fit_error=7.0,
+            objective=-8.0, long_window=dict(comparison), **comparison,
+        ))
+        previous = record
+    (output / REPORT_NAME).write_text(json.dumps({
+        "version": 1, "policy": policy, "subject_labels": list(labels),
+        "deformation_kernel_width": width, "joint_origin_iteration": 0,
+        "observations": observations,
+        "terminal": {"reason": reason, "iteration": 2, "export": "complete",
+                     "checkpoint_sha256": sha256_file(checkpoint)},
+    }), encoding="utf-8")
+    result_path = run / "result.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    (run / "output-inventory.json").unlink()
+    result["outputs"] = _inventory_outputs(run)
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+
+    def file_digest(path):
+        if path == checkpoint or path.suffix == ".npz":
+            pytest.fail("Result review already verified the checkpoint inventory")
+        return sha256_file(path)
+
+    monkeypatch.setattr(stopping, "sha256_file", file_digest)
+    review = review_reference_result(run, qc_only=qc_only)
+    assert review.optimizer_termination_reason == reason
+    assert review.optimizer_cycles_completed == 2
+    assert review.optimizer_last_logged_iteration == 1
+    assert "accepted joint-atlas iteration 2" in review.optimizer_stop_interpretation
+    by_label = {item.label: item for item in review.optimization}
+    assert "accepted iteration 2" in by_label["Verified atlas stop"].value
+    assert "2/200" in by_label["Morphospace over 200 iterations"].explanation
+    assert "2/400" in by_label["Morphospace over 400 iterations"].explanation
+    assert "Cohort 3%" in by_label["Morphospace over 400 iterations"].value
+    if not qc_only:
+        assert by_label["Final plotted state"].value == "last logged iteration 1"
 
 
 def _reseal_export_fixture(run: Path) -> None:

@@ -67,6 +67,19 @@
           "type": "string",
           "minLength": 1
         },
+        "atlas_stop": {
+          "type": "object", "additionalProperties": false,
+          "required": ["mode", "window_iterations", "long_window_iterations", "check_interval",
+                       "cohort_threshold_percent", "specimen_threshold_percent"],
+          "properties": {
+            "mode": {"enum": ["optimizer_convergence", "morphospace_stability"]},
+            "window_iterations": {"const": 200},
+            "long_window_iterations": {"const": 400},
+            "check_interval": {"const": 25},
+            "cohort_threshold_percent": {"const": 1.0},
+            "specimen_threshold_percent": {"const": 2.0}
+          }
+        },
         "cold_individual_initialization": {
           "type": "object",
           "additionalProperties": false,
