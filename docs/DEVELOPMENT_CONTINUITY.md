@@ -1,5 +1,12 @@
 # Development continuity
 
+## dev232 — keep the atlas choices in review
+
+Checking linked atlas choices keeps the user on Step 3 while verifying the
+updated configuration and Deformetrica readiness. Continue opens supervised
+execution once readiness passes. Initial project setup retains its own
+navigation.
+
 ## dev231 — opt-in open-ended morphospace stopping
 
 The atlas review can explicitly select automatic stability without a joint
