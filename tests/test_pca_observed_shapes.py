@@ -179,7 +179,7 @@ def test_old_media_is_preserved_and_retry_publishes_one_new_cache(tmp_path, monk
     mean_record = {**pca_media._record(result / "mean.vtk"), "path": "mean.vtk"}
 
     def verify_bundle(*_args, **_kwargs):
-        return SimpleNamespace(pca=pca)
+        return SimpleNamespace(pca=pca, manifest={})
 
     def verify_result(*_args, **_kwargs):
         return {"result_version": "0.2", "endpoints": [mean_record]}

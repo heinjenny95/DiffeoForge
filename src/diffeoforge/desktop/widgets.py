@@ -602,9 +602,10 @@ class _QcRecalibrationWorker(QRunnable):
 
 
 class _ReviewWorker(QRunnable):
-    def __init__(self, result: ProjectSetupResult) -> None:
+    def __init__(self, result: ProjectSetupResult, *, atlas_choices: bool = False) -> None:
         super().__init__()
         self.result = result
+        self.atlas_choices = atlas_choices
         self.signals = _WorkerSignals()
 
     @Slot()
@@ -9975,7 +9976,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._sync_ready_state()
 
     @Slot()
-    def _review_project(self) -> None:
+    def _review_project(self, *, atlas_choices: bool = False) -> None:
         if self._result is None or self._worker is not None:
             return
         self.status_label.setObjectName("status")
@@ -9983,7 +9984,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.status_label.setText(
             "Effective parameters and available workload evidence are being collected…"
         )
-        self._worker = _ReviewWorker(self._result)
+        self._worker = _ReviewWorker(self._result, atlas_choices=atlas_choices)
         self._worker.signals.succeeded.connect(self._review_worker_succeeded)
         self._worker.signals.failed.connect(self._review_failed)
         self._sync_ready_state()
@@ -9993,12 +9994,16 @@ class DiffeoForgeWindow(QMainWindow):
     def _review_worker_succeeded(self, review: ProjectReviewResult) -> None:
         """Publish a review and start the reference safety check automatically."""
 
-        self._review_succeeded(review)
+        worker = self._worker
+        atlas_choices = isinstance(worker, _ReviewWorker) and worker.atlas_choices
+        self._review_succeeded(review, atlas_choices=atlas_choices)
         if review.engine is DesktopEngine.DEFORMETRICA_REFERENCE:
             self._check_reference_readiness()
 
     @Slot(object)
-    def _review_succeeded(self, review: ProjectReviewResult) -> None:
+    def _review_succeeded(
+        self, review: ProjectReviewResult, *, atlas_choices: bool = False
+    ) -> None:
         self._worker = None
         self._review = review
         self.pilot_atlas_start_combo.blockSignals(True)
@@ -10099,8 +10104,9 @@ class DiffeoForgeWindow(QMainWindow):
             self.show_run_button.setText("Checking Deformetrica setup automatically…")
             self.show_run_button.setEnabled(False)
         self._refresh_reference_calibration_execution_card()
-        self._set_active_step(1)
-        self.page_stack.setCurrentIndex(1)
+        target_step = 2 if atlas_choices else 1
+        self._set_active_step(target_step)
+        self.page_stack.setCurrentIndex(target_step)
         self._sync_ready_state()
 
     @Slot()
@@ -10943,7 +10949,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.status_label.setText(
             "Atlas setup saved. Review the selected initialization and stopping rule."
         )
-        self._review_project()
+        self._review_project(atlas_choices=True)
 
     @Slot(str)
     def _preserved_atlas_failed(self, message: str) -> None:

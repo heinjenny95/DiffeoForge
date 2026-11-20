@@ -862,3 +862,73 @@ def test_atlas_review_dispatches_two_independent_choices(review_window, monkeypa
     assert window.pilot_atlas_start_combo.currentData() is direct
     assert window.atlas_stop_combo.currentData() == mode
     assert not window._pilot_atlas_start_pending()
+
+
+@pytest.mark.parametrize("preserved_pilot", [False, True])
+@pytest.mark.parametrize("mode", ["morphospace_stability", "morphospace_stability_unlimited"])
+def test_atlas_choices_recheck_stays_on_review_page(
+    review_window, monkeypatch, preserved_pilot, mode
+):
+    from types import SimpleNamespace
+
+    from diffeoforge.desktop import widgets
+    from diffeoforge.desktop.project_review import ProjectReviewResult
+    from diffeoforge.desktop.project_setup import DesktopEngine, ProjectSetupResult
+
+    window = review_window
+    directory = window._result_review.run_directory
+    path = directory / "atlas.yaml"
+    linked = directory / f"atlas-stop-{mode}.yaml"
+    engine = DesktopEngine.DEFORMETRICA_REFERENCE
+    review = ProjectReviewResult(
+        engine, "Synthetic atlas", path, "a" * 64, path.with_suffix(".html"), "Report",
+        2, (), (), (), "",
+        preserved_pilot_atlas=preserved_pilot, direct_pilot_atlas=preserved_pilot,
+        atlas_stop_available=True,
+    )
+    linked_review = replace(
+        review, config_path=linked, config_sha256="b" * 64, atlas_stop_mode=mode,
+    )
+    linked_setup = ProjectSetupResult(engine, linked, directory / "template.vtk", 2, None, ())
+    readiness = SimpleNamespace(
+        ready=True, config_path=linked, config_sha256=linked_review.config_sha256,
+        workspace=directory, launcher={"type": "container", "engine": "docker", "image": "test"},
+        device="cpu", report=SimpleNamespace(status="ready", checks=()),
+    )
+    queued = []
+    refreshes = []
+    monkeypatch.setattr(window, "_thread_pool", SimpleNamespace(start=queued.append))
+    monkeypatch.setattr(window, "_apply_reference_calibrated_configuration", lambda _path: None)
+    monkeypatch.setattr(widgets, "review_project", lambda _path, _engine: linked_review)
+    monkeypatch.setattr(widgets, "check_reference_environment", lambda _review: readiness)
+    monkeypatch.setattr(window, "_refresh_run_readiness", lambda: refreshes.append(True))
+    window._run_result = None
+    window._result_review = None
+    window._review_succeeded(review)
+    assert window.page_stack.currentIndex() == 1
+    window._reference_readiness = SimpleNamespace(ready=True)
+    window._navigate_to_step(2)
+    window.atlas_stop_combo.setCurrentIndex(window.atlas_stop_combo.findData(mode))
+
+    window.show_run_button.click()
+    assert len(queued) == 1
+    handoff = queued[0]
+    assert handoff.config_path == path and handoff.stop_mode == mode
+    handoff.signals.succeeded.emit(linked_setup)
+    assert len(queued) == 2
+    queued[1].run()
+    assert len(queued) == 3
+    assert window._review is linked_review
+    assert window._active_step == window.page_stack.currentIndex() == 2
+    assert window.atlas_stop_combo.currentData() == mode
+    assert not window.show_run_button.isEnabled()
+    assert not window._step_is_unlocked(3)
+
+    queued[2].run()
+    assert window._active_step == window.page_stack.currentIndex() == 2
+    assert window.show_run_button.text() == "Continue to supervised Deformetrica execution"
+    assert window.show_run_button.isEnabled()
+    assert not refreshes
+    window.show_run_button.click()
+    assert window.page_stack.currentIndex() == 3
+    assert refreshes == [True] and len(queued) == 3

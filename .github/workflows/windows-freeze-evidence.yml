@@ -321,6 +321,7 @@ jobs:
             tests/test_desktop_reference_progress.py \
             tests/test_desktop_live_optimizer.py::test_atlas_progress_stays_indeterminate_without_limit \
             tests/test_desktop_registration_release.py::test_atlas_review_dispatches_two_independent_choices \
+            tests/test_desktop_registration_release.py::test_atlas_choices_recheck_stays_on_review_page \
             tests/test_pilot_theme_contrast.py tests/test_specimen_comparison_dialog.py \
             tests/test_pca_observed_shapes.py \
             tests/test_desktop_input_preflight.py::test_existing_alignment_opens_read_only_gpa_viewer_before_confirmation \
