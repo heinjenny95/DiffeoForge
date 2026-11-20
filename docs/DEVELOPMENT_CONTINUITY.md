@@ -1,6 +1,6 @@
 # Development continuity
 
-## Opt-in open-ended morphospace stopping
+## dev231 — opt-in open-ended morphospace stopping
 
 The atlas review can explicitly select automatic stability without a joint
 iteration limit. The native joint estimator keeps the two stability windows,
