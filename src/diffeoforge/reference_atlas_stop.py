@@ -6,13 +6,18 @@ from diffeoforge.config import ConfigurationError, load_config, validate_schema
 
 OPTIMIZER_CONVERGENCE = "optimizer_convergence"
 MORPHOSPACE_STABILITY = "morphospace_stability"
+MORPHOSPACE_STABILITY_UNLIMITED = "morphospace_stability_unlimited"
 _MODES = (OPTIMIZER_CONVERGENCE, MORPHOSPACE_STABILITY)
 
 
-def stop_policy(mode):
+def stop_policy(mode, *, unlimited_iterations=False):
     if mode not in _MODES:
         raise ConfigurationError("Unknown atlas stopping mode.")
-    return {
+    if type(unlimited_iterations) is not bool or (
+        unlimited_iterations and mode != MORPHOSPACE_STABILITY
+    ):
+        raise ConfigurationError("Only automatic morphospace stopping can run without a limit.")
+    policy = {
         "mode": mode,
         "window_iterations": 200,
         "long_window_iterations": 400,
@@ -20,6 +25,24 @@ def stop_policy(mode):
         "cohort_threshold_percent": 1.0,
         "specimen_threshold_percent": 2.0,
     }
+    if unlimited_iterations:
+        policy["unlimited_iterations"] = True
+    return policy
+
+
+def atlas_stop_choice(config):
+    """Return the setup choice represented by a saved policy."""
+    policy = config.get("project", {}).get("atlas_stop", {})
+    if policy.get("unlimited_iterations") is True:
+        return MORPHOSPACE_STABILITY_UNLIMITED
+    return policy.get("mode")
+
+
+def atlas_iteration_limit(config):
+    """Return the effective joint limit. Individual initialization keeps its budget."""
+    if atlas_stop_choice(config) == MORPHOSPACE_STABILITY_UNLIMITED:
+        return None
+    return int(config["optimization"]["max_iterations"])
 
 
 def atlas_stop_available(config):
@@ -45,21 +68,27 @@ def validate_atlas_stop(config, *, subject_count=None):
         raise ConfigurationError(
             "Atlas stopping choices require a full-cohort GradientAscent atlas with final export."
         )
+    policy = config["project"]["atlas_stop"]
+    if "unlimited_iterations" in policy and (
+        policy["unlimited_iterations"] is not True or policy["mode"] != MORPHOSPACE_STABILITY
+    ):
+        raise ConfigurationError("Only automatic morphospace stopping can run without a limit.")
 
 
-def choose_atlas_stop(config_path, mode):
+def choose_atlas_stop(config_path, mode, *, unlimited_iterations=False):
     """Save a sibling choice and preserve the original project and pilot evidence."""
     from diffeoforge.reference_atlas_handoff import _write_linked_atlas_config
 
     path = Path(config_path).resolve()
     config = load_config(path)
-    policy = stop_policy(mode)
+    policy = stop_policy(mode, unlimited_iterations=unlimited_iterations)
     if config["project"].get("atlas_stop") == policy:
         return path
     config["project"]["atlas_stop"] = policy
     validate_schema(config)
     validate_atlas_stop(config)
     stem = path.stem
-    for other in _MODES:
+    for other in (*_MODES, MORPHOSPACE_STABILITY_UNLIMITED):
         stem = stem.removesuffix(f"-stop-{other}")
-    return _write_linked_atlas_config(config, path.with_name(f"{stem}-stop-{mode}.yaml"))
+    choice = atlas_stop_choice(config)
+    return _write_linked_atlas_config(config, path.with_name(f"{stem}-stop-{choice}.yaml"))

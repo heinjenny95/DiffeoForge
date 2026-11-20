@@ -1,5 +1,12 @@
 # Development continuity
 
+## Opt-in open-ended morphospace stopping
+
+The atlas review can explicitly select automatic stability without a joint
+iteration limit. The native joint estimator keeps the two stability windows,
+live observations, cancellation, and technical stops. Separate initialization
+keeps its own bounded settings. See [atlas stopping](ATLAS_MORPHOSPACE_STOP.md).
+
 ## dev230 — independent atlas initialization and stopping policy
 
 The atlas review offers separate choices for initialization and stopping.

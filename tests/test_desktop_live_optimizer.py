@@ -186,6 +186,27 @@ def test_atlas_live_checkpoint_shows_outlier_and_available_window(app):
     window.close()
 
 
+def test_atlas_progress_stays_indeterminate_without_limit(app):
+    from diffeoforge.desktop import widgets
+    from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
+
+    window = widgets.DiffeoForgeWindow()
+    payload = {
+        "iteration": 1290, "maximum_iterations": None,
+        "log_likelihood": -12.0, "attachment": -9.0, "regularity": -3.0,
+        "elapsed_seconds": 512.0, "seconds_per_iteration": 0.4,
+        "eta_to_iteration_cap_seconds": None, "estimate_status": "no_iteration_limit",
+    }
+    window._reference_atlas_event(DesktopReferenceWorkerEvent(
+        request_id="atlas", sequence=0, kind="progress", payload=payload,
+    ))
+    assert window.run_progress_bar.minimum() == window.run_progress_bar.maximum() == 0
+    assert "1290" in window.run_state_label.text()
+    assert "no iteration limit" in window.run_optimizer_label.text()
+    assert "0.40 s/iteration" in window.run_optimizer_label.text()
+    window.close()
+
+
 def test_verified_tolerance_stop_shows_explicit_continuation(app, monkeypatch, tmp_path):
     from diffeoforge.desktop import convergence_advice, widgets
     from diffeoforge.runs import ToleranceContinuation

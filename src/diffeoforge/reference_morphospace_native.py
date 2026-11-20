@@ -25,6 +25,9 @@ def adapter_source(config, subject_labels):
     if (config["output"].get("checkpoint_mode") != "compact_final_export"
             or config["optimization"]["method"] != "gradient_ascent"):
         raise ValueError("Atlas stopping evidence requires compact native GradientAscent")
+    unlimited = policy.get("unlimited_iterations", False)
+    if type(unlimited) is not bool or (unlimited and policy["mode"] != "morphospace_stability"):
+        raise ValueError("Unlimited joint iterations require automatic morphospace stopping")
     labels = tuple(subject_labels)
     if len(labels) < 2 or len(set(labels)) != len(labels):
         raise ValueError("Atlas stopping evidence requires an ordered multi-specimen cohort")
@@ -253,7 +256,7 @@ def _df_ms_after_callback(estimator):
     return session.reason is not None
 
 
-def _df_ms_rebind(original, expected_sha256):
+def _df_ms_rebind(original, expected_sha256, unlimited_iterations):
     source = _df_ms_textwrap.dedent(_df_ms_inspect.getsource(original))
     if _df_ms_hashlib.sha256(source.encode("utf-8")).hexdigest() != expected_sha256:
         raise RuntimeError("Unsupported native GradientAscent.update source")
@@ -306,6 +309,17 @@ def _df_ms_rebind(original, expected_sha256):
         "not self.current_iteration == self.max_iterations"))]
     gradient.body.append(statement("_df_ms_check_gradient(gradient)"))
 
+    if unlimited_iterations:
+        expected_loop = _df_ms_ast.parse(
+            "self.callback_ret and self.current_iteration < self.max_iterations", mode="eval").body
+        if _df_ms_ast.dump(loop.test) != _df_ms_ast.dump(expected_loop):
+            raise RuntimeError("Unsupported native GradientAscent iteration condition")
+        # Keep the native callback and recompute gradients beyond the declared
+        # initialization budget without replacing it with a large numeric cap.
+        loop.test = _df_ms_ast.parse("self.callback_ret", mode="eval").body
+        index = loop.body.index(gradient)
+        loop.body[index:index + 1] = gradient.body
+
     carrier = _df_ms_ast.ClassDef(name="_df_UpdateCarrier", bases=[], keywords=[], body=[function],
                                  decorator_list=[])
     module = _df_ms_ast.fix_missing_locations(_df_ms_ast.Module(body=[carrier], type_ignores=[]))
@@ -325,7 +339,8 @@ def _df_ms_rebind(original, expected_sha256):
 
 def _df_ms_install_update(policy, labels, width, expected_sha256):
     original = _df_ms_ga.update
-    replacement = _df_ms_rebind(original, expected_sha256)
+    unlimited_iterations = policy.get("unlimited_iterations", False)
+    replacement = _df_ms_rebind(original, expected_sha256, unlimited_iterations)
 
     def update(estimator, *args, **kwargs):
         if getattr(estimator, "_df_individual_initialization", False):
@@ -349,7 +364,8 @@ def _df_ms_install_update(policy, labels, width, expected_sha256):
             session.finish(reason, "not_started")
             raise
         reason = session.reason or (
-            "iteration_limit" if session.accepted >= estimator.max_iterations
+            "iteration_limit" if not unlimited_iterations and (
+                session.accepted >= estimator.max_iterations)
             else "optimizer_callback")
         session.finish(reason, "pending")
         return result

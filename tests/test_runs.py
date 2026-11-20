@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pickle
 import sys
 import time
 from pathlib import Path
@@ -12,6 +13,11 @@ import diffeoforge.runs as runs
 from diffeoforge.backends import CommandSpec
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
+from diffeoforge.reference_atlas_stop import (
+    MORPHOSPACE_STABILITY,
+    atlas_iteration_limit,
+    stop_policy,
+)
 from diffeoforge.runs import (
     REFERENCE_ACTIVITY_INTERVAL_SECONDS,
     execute_run,
@@ -744,6 +750,28 @@ def test_prepare_resume_rejects_checkpoint_changed_after_inventory(tmp_path: Pat
         prepare_resume_run(source, run_id="successor")
 
 
+def test_interrupted_unbounded_atlas_can_resume_past_its_stored_budget(tmp_path):
+    config_path = write_run_config(tmp_path)
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    policy = stop_policy(MORPHOSPACE_STABILITY, unlimited_iterations=True)
+    config["project"]["atlas_stop"] = policy
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    source = prepare_run(config_path, run_id="unbounded")
+    checkpoint = pickle.dumps({"current_iteration": 425})
+    abandon_prepared_run(source, checkpoint=checkpoint)
+    recover_run(source, reason="power loss", confirm_process_stopped=True)
+
+    successor = prepare_resume_run(source, run_id="resume-unbounded")
+    restored = verify_prepared_run(successor)["effective_config"]
+
+    assert restored["project"]["atlas_stop"] == policy
+    assert atlas_iteration_limit(restored) is None
+    assert restored["optimization"]["max_iterations"] == 2
+    assert (successor / "resume/source-checkpoint.p").read_bytes() == checkpoint
+    assert inspect_resume_source(source).checkpoint_path.read_bytes() == checkpoint
+    assert (successor / "engine/sitecustomize.py").is_file()
+
+
 def test_prepare_resume_explains_missing_checkpoint(tmp_path: Path) -> None:
     source = prepare_run(write_run_config(tmp_path), run_id="source")
     abandon_prepared_run(source)
@@ -1099,6 +1127,25 @@ def test_capped_extension_preserves_source_and_chains_effective_budget(tmp_path,
     assert yaml.safe_load((second / "config/source-config.yaml").read_text())["optimization"][
         "max_iterations"
     ] == 300
+
+
+def test_unbounded_atlas_log_at_stored_budget_is_not_eligible_for_cap_extension(
+    tmp_path, monkeypatch,
+):
+    config_path = write_run_config(tmp_path)
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["project"]["atlas_stop"] = stop_policy(
+        MORPHOSPACE_STABILITY, unlimited_iterations=True,
+    )
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    source = prepare_run(config_path, run_id="unbounded")
+    _execute_cap_fixture(source, monkeypatch)
+
+    maximum, _, evidence = runs.completed_gradient_ascent_history(source)
+    assert maximum is None and evidence.signal == "unknown"
+    with pytest.raises(ConfigurationError, match="only after the iteration limit"):
+        prepare_resume_run(source, run_id="unbounded-plus300", additional_iterations=300)
+    assert not (source.parent / "unbounded-plus300").exists()
 
 
 @pytest.mark.parametrize("stop", [

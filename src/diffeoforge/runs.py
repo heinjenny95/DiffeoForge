@@ -54,6 +54,7 @@ from diffeoforge.config import (
     validate_input_paths,
 )
 from diffeoforge.mesh import MeshMetadata, inspect_inputs, sha256_file
+from diffeoforge.reference_atlas_stop import atlas_iteration_limit
 from diffeoforge.reference_runtime import probe_reference_gpu
 from diffeoforge.resource_monitor import ProcessResourceMonitor
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
@@ -1987,7 +1988,7 @@ def inspect_abandoned_run(run_directory: Path | str) -> AbandonedRunEvidence:
 
 def completed_gradient_ascent_history(
     source_run_directory: Path | str,
-) -> tuple[int, str, ReferenceStopEvidence]:
+) -> tuple[int | None, str, ReferenceStopEvidence]:
     """Read the terminal log and verify that it matches the recorded history."""
     source = Path(source_run_directory).expanduser().resolve()
     manifest = _read_manifest(source)
@@ -2013,7 +2014,7 @@ def completed_gradient_ascent_history(
         raise ConfigurationError("Terminal convergence history differs from result evidence.")
     with csv_path.open(encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    maximum = int(manifest["effective_config"]["optimization"]["max_iterations"])
+    maximum = atlas_iteration_limit(manifest["effective_config"])
     from diffeoforge.analysis.reference_convergence_visualization import (
         detect_reference_stop_evidence,
     )
@@ -2029,7 +2030,7 @@ def completed_gradient_ascent_history(
 def iteration_extension_limit(source_run_directory: Path | str) -> int:
     """Read the capped terminal stop; this hint alone never authorizes execution."""
     maximum, _, evidence = completed_gradient_ascent_history(source_run_directory)
-    if evidence.signal != "maximum_iterations":
+    if maximum is None or evidence.signal != "maximum_iterations":
         raise ConfigurationError(
             "Additional iterations are available only after the iteration limit, "
             "not after tolerance convergence or line-search failure."
@@ -2056,7 +2057,8 @@ def _tolerance_continuation_plan(
     markers = list(ITERATION_RE.finditer(text))
     terminal = text[markers[-1].end():].casefold() if markers else ""
     if (
-        stop.signal != "tolerance_threshold"
+        maximum is None
+        or stop.signal != "tolerance_threshold"
         or "tolerance threshold met. stopping the optimization process." not in terminal
         or "number of line search loops exceeded" in terminal
         or ">> stop: pilot review request" in terminal

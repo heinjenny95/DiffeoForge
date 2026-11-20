@@ -14,7 +14,7 @@ class DesktopReferenceProgress:
     """One parsed optimizer observation with a clearly bounded ETA meaning."""
 
     iteration: int
-    maximum_iterations: int
+    maximum_iterations: int | None
     log_likelihood: float
     attachment: float
     regularity: float
@@ -55,7 +55,9 @@ class DesktopReferenceProgress:
         }
 
     @property
-    def fraction_of_iteration_cap(self) -> float:
+    def fraction_of_iteration_cap(self) -> float | None:
+        if self.maximum_iterations is None:
+            return None
         return min(1.0, self.iteration / self.maximum_iterations)
 
 
@@ -64,18 +66,20 @@ class ReferenceProgressTracker:
 
     def __init__(
         self,
-        maximum_iterations: int,
+        maximum_iterations: int | None,
         *,
         window: int = 10,
         convergence_tolerance: float = 0.0001,
         output_overhead_seconds: float = 0.0,
         estimate_native_stop: bool = True,
     ) -> None:
-        if isinstance(maximum_iterations, bool) or maximum_iterations < 1:
-            raise ValueError("maximum_iterations must be a positive integer")
+        if maximum_iterations is not None and (
+            type(maximum_iterations) is not int or maximum_iterations < 1
+        ):
+            raise ValueError("maximum_iterations must be a positive integer or None")
         if isinstance(window, bool) or window < 2:
             raise ValueError("window must be an integer of at least 2")
-        self.maximum_iterations = int(maximum_iterations)
+        self.maximum_iterations = maximum_iterations
         self.window = int(window)
         self.convergence_tolerance = float(convergence_tolerance)
         self.output_overhead_seconds = float(output_overhead_seconds)
@@ -95,6 +99,8 @@ class ReferenceProgressTracker:
         self._smoothed_seconds_per_iteration: float | None = None
 
     def _likely_convergence_window(self) -> tuple[int, int] | None:
+        if self.maximum_iterations is None:
+            return None
         changes: list[tuple[int, float]] = []
         for (earlier_iteration, _earlier_elapsed, earlier_objective), (
             later_iteration,
@@ -172,6 +178,8 @@ class ReferenceProgressTracker:
             return None
         objective = float(convergence_match.group(1))
         self._samples.append((iteration, elapsed, objective))
+        if self.maximum_iterations is None:
+            del self._samples[:-(self.window + 1)]
 
         rate_samples = self._samples[-(self.window + 1) :]
         rates = [
@@ -193,7 +201,7 @@ class ReferenceProgressTracker:
         ]
         seconds_per_iteration: float | None = None
         eta: float | None = None
-        status = "warming_up"
+        status = "no_iteration_limit" if self.maximum_iterations is None else "warming_up"
         contention = False
         convergence_window: tuple[int, int] | None = None
         likely_eta_lower: float | None = None
@@ -209,19 +217,20 @@ class ReferenceProgressTracker:
                     0.7 * self._smoothed_seconds_per_iteration + 0.3 * observed_rate
                 )
             seconds_per_iteration = self._smoothed_seconds_per_iteration
-            eta = (
-                max(0.0, self.maximum_iterations - iteration)
-                * seconds_per_iteration
-                + self.output_overhead_seconds
-            )
-            status = "observed_rate_to_iteration_cap"
             if len(rates) >= 6:
                 historical = float(statistics.median(rates[:-3]))
                 recent_rate = float(statistics.median(rates[-3:]))
                 contention = historical > 0 and recent_rate > historical * 1.5
-                if contention:
-                    status = "observed_rate_to_cap_with_resource_contention"
-            if self.estimate_native_stop:
+            if self.maximum_iterations is not None:
+                eta = (
+                    max(0.0, self.maximum_iterations - iteration) * seconds_per_iteration
+                    + self.output_overhead_seconds
+                )
+                status = (
+                    "observed_rate_to_cap_with_resource_contention" if contention
+                    else "observed_rate_to_iteration_cap"
+                )
+            if self.estimate_native_stop and self.maximum_iterations is not None:
                 convergence_window = self._likely_convergence_window()
             if convergence_window is not None:
                 likely_eta_lower = (

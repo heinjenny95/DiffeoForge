@@ -41,16 +41,16 @@ def detect_reference_stop_evidence(
     log_text: str,
     *,
     final_iteration: int | None,
-    maximum_iterations: int,
+    maximum_iterations: int | None,
 ) -> ReferenceStopEvidence:
     """Classify only explicit terminal evidence; never infer scientific convergence."""
 
     if not isinstance(log_text, str):
         raise TypeError("log_text must be a string")
-    if maximum_iterations < 1:
+    if maximum_iterations is not None and maximum_iterations < 1:
         raise ValueError("maximum_iterations must be positive")
     normalized = log_text.casefold()
-    if "tolerance threshold met" in normalized:
+    if maximum_iterations is not None and "tolerance threshold met" in normalized:
         return ReferenceStopEvidence(
             "tolerance_threshold",
             (
@@ -93,7 +93,8 @@ def detect_reference_stop_evidence(
             "The curve shows logged objective evaluations. Accepted-state and export "
             "bindings are verified separately.",
         )
-    if final_iteration is not None and final_iteration >= maximum_iterations:
+    if (maximum_iterations is not None and final_iteration is not None
+            and final_iteration >= maximum_iterations):
         return ReferenceStopEvidence(
             "maximum_iterations",
             (
@@ -164,7 +165,7 @@ def _polyline(
 def reference_convergence_svg(
     rows: Sequence[ConvergenceRow],
     *,
-    maximum_iterations: int,
+    maximum_iterations: int | None,
     duration_seconds: float | None,
     stop_evidence: ReferenceStopEvidence,
 ) -> str:
@@ -173,7 +174,7 @@ def reference_convergence_svg(
     observations = tuple(rows)
     if not observations:
         raise ValueError("at least one convergence observation is required")
-    if maximum_iterations < 1:
+    if maximum_iterations is not None and maximum_iterations < 1:
         raise ValueError("maximum_iterations must be positive")
     if duration_seconds is not None and (
         not math.isfinite(duration_seconds) or duration_seconds < 0
@@ -193,6 +194,11 @@ def reference_convergence_svg(
     runtime_text = (
         "runtime not recorded" if duration_seconds is None else f"runtime {duration_seconds:.1f} s"
     )
+    history_text = (
+        f"last logged iteration {x_high} of maximum {maximum_iterations}; {runtime_text}"
+        if maximum_iterations is not None else
+        f"last logged iteration {x_high} · no joint iteration limit · {runtime_text}"
+    )
     upper_top, upper_height = 105.0, 245.0
     lower_top, lower_height = 430.0, 155.0
     upper_low, upper_high = _extent((*series[0], *series[1]))
@@ -202,8 +208,7 @@ def reference_convergence_svg(
         '  <text x="92" y="42" class="title">Deformetrica objective history</text>',
         (
             f'  <text x="92" y="68" class="subtitle">{len(observations)} logged states; '
-            f"last logged iteration {x_high} of maximum {maximum_iterations}; "
-            f"{runtime_text}</text>"
+            f"{history_text}</text>"
         ),
     ]
     for top, height, low, high in (
@@ -322,7 +327,7 @@ def write_reference_convergence_svg(
     path: Path | str,
     rows: Sequence[ConvergenceRow],
     *,
-    maximum_iterations: int,
+    maximum_iterations: int | None,
     duration_seconds: float | None,
     stop_evidence: ReferenceStopEvidence,
 ) -> Path:

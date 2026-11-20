@@ -15,6 +15,7 @@ from pathlib import Path
 
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
+from diffeoforge.reference_atlas_stop import atlas_iteration_limit
 from diffeoforge.runs import (
     ITERATION_RE,
     execute_run,
@@ -136,7 +137,12 @@ def checkpoint_iteration(path: Path) -> int:
     return found[0]
 
 
-def export_stop_evidence(source: Path, iteration: int, maximum: int) -> dict:
+def export_stop_evidence(source: Path, iteration: int, maximum: int | None) -> dict:
+    if maximum is None:
+        raise ConfigurationError(
+            "Native-stop export recovery requires a bounded run. "
+            "Resume the uncapped atlas from its saved checkpoint."
+        )
     matching = []
     for log in sorted((source / "output").glob("*_info.log")):
         if log.is_symlink():
@@ -199,7 +205,7 @@ def prepare_final_export(source: Path, *, run_id: str) -> Path:
     stop = export_stop_evidence(
         source,
         iteration,
-        int(evidence.manifest["effective_config"]["optimization"]["max_iterations"]),
+        atlas_iteration_limit(evidence.manifest["effective_config"]),
     )
     required = required_export_space(source, evidence.manifest)
     available = shutil.disk_usage(source.parent).free

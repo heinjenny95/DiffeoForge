@@ -355,27 +355,55 @@ def test_direct_joint_rejects_edited_link_or_missing_recorded_review(completed_j
 
 
 @pytest.mark.parametrize("direct", [False, True])
-@pytest.mark.parametrize("mode", ["optimizer_convergence", "morphospace_stability"])
+@pytest.mark.parametrize(("mode", "unlimited"), [
+    ("optimizer_convergence", False), ("morphospace_stability", False),
+    ("morphospace_stability", True),
+])
 def test_atlas_stop_is_independent_of_approved_pilot_initialization(
-    completed_joint_pilot, direct, mode,
+    completed_joint_pilot, direct, mode, unlimited,
 ):
-    from diffeoforge.reference_atlas_stop import choose_atlas_stop, stop_policy
+    from diffeoforge.reference_atlas_stop import (
+        atlas_iteration_limit,
+        choose_atlas_stop,
+        stop_policy,
+    )
 
     source = completed_joint_pilot.final_config_path
     initializer = choose_direct_joint_start(source, enabled=direct)
     previous = initializer.read_bytes()
-    selected = choose_atlas_stop(initializer, mode)
+    selected = choose_atlas_stop(initializer, mode, unlimited_iterations=unlimited)
     assert initializer.read_bytes() == previous
-    assert choose_atlas_stop(selected, mode) == selected
+    assert choose_atlas_stop(selected, mode, unlimited_iterations=unlimited) == selected
     run = prepare_run(selected, run_id=f"stop-{mode}")
     reopened = verify_prepared_run(run)["effective_config"]
-    assert reopened["project"]["atlas_stop"] == stop_policy(mode)
+    assert reopened["project"]["atlas_stop"] == stop_policy(mode, unlimited_iterations=unlimited)
+    stored_budget = load_config(initializer)["optimization"]["max_iterations"]
+    assert reopened["optimization"]["max_iterations"] == stored_budget
+    assert atlas_iteration_limit(reopened) == (None if unlimited else stored_budget)
     assert direct_joint_start_enabled(initialization(reopened)) is direct
     assert initialization(reopened) == initialization(load_config(initializer))
     native = (run / "engine/sitecustomize.py").read_text(encoding="utf-8")
     assert "_df_ms_install_update(" in native
     assert ("def _df_atlas_update(" in native) is not direct
     compile(native, "sitecustomize.py", "exec")
+
+
+def test_unlimited_stop_setup_is_explicit_and_uses_separate_linked_config(tmp_path):
+    from diffeoforge.config import validate_schema
+    from diffeoforge.reference_atlas_stop import choose_atlas_stop, stop_policy
+
+    source = write_run_config(tmp_path)
+    original = source.read_bytes()
+    capped = choose_atlas_stop(source, "morphospace_stability")
+    unlimited = choose_atlas_stop(capped, "morphospace_stability", unlimited_iterations=True)
+    assert unlimited != capped and source.read_bytes() == original
+    assert choose_atlas_stop(unlimited, "morphospace_stability") == capped
+    with pytest.raises(ConfigurationError, match="Only automatic"):
+        stop_policy("optimizer_convergence", unlimited_iterations=True)
+    config = load_config(unlimited)
+    config["project"]["atlas_stop"]["mode"] = "optimizer_convergence"
+    with pytest.raises(ConfigurationError, match="project.atlas_stop.mode"):
+        validate_schema(config)
 
 
 def test_flagged_initial_fit_requires_its_own_review_and_keeps_pilot_gate(early):

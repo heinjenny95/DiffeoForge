@@ -116,6 +116,8 @@ def _atlas_stop_review(run: Path, report: RunReport) -> AtlasStopReview | None:
     iteration = terminal["iteration"]
     label = _ATLAS_STOP_LABELS[reason]
     interpretation = f"{label} at accepted joint-atlas iteration {iteration}."
+    if policy.get("unlimited_iterations"):
+        interpretation += " The joint atlas had no iteration limit."
     items = [ResultReviewItem(
         "Verified atlas stop", f"{label} · accepted iteration {iteration}",
         "The retained native record identifies the final accepted atlas checkpoint. "
@@ -1109,7 +1111,11 @@ def review_reference_result(
     ratios = tuple(float(value) for value in verified.pca.explained_variance_ratio)
     backend = report.manifest["backend"]
     result = report.result
-    configured_max = int(optimization_evidence["configured_maximum_iterations"])
+    configured_max = optimization_evidence["configured_maximum_iterations"]
+    iteration_limit_text = (
+        " · no joint iteration limit" if configured_max is None
+        else f" of maximum {configured_max}"
+    )
     final_iteration = int(optimization_evidence["last_observed_iteration"])
     observations = int(optimization_evidence["observations"])
     raw_duration = optimization_evidence["duration_seconds"]
@@ -1159,9 +1165,11 @@ def review_reference_result(
             "Original fit history"
             if "recovery" in optimization_evidence
             else "Observed iterations",
-            f"{observations} logged states · last iteration {final_iteration} "
-            f"of maximum {configured_max}",
-            "The maximum is an upper limit, not a convergence target.",
+            f"{observations} logged states · last iteration {final_iteration}"
+            f"{iteration_limit_text}",
+            "An iteration limit is a computational budget."
+            if configured_max is not None else
+            "Morphospace stability governs the joint atlas stop.",
         ),
         ResultReviewItem(
             "Original run duration" if "recovery" in optimization_evidence else "Duration",

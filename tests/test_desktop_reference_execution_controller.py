@@ -6,10 +6,12 @@ import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 import diffeoforge.desktop.reference_execution_controller as controller_module
 from diffeoforge.config import load_config
@@ -24,6 +26,8 @@ from diffeoforge.desktop.reference_execution_controller import (
 from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
 from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
 from diffeoforge.desktop.worker_protocol import sha256_file
+from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY, stop_policy
+from diffeoforge.runs import ToleranceContinuation
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -131,14 +135,42 @@ def test_default_reference_execution_command_has_source_and_frozen_forms(
     )
 
 
+@pytest.mark.parametrize("launch", ["bounded", "open_ended", "tolerance_resume"])
 def test_reference_execution_controller_accepts_verified_completed_result(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    launch: str,
 ) -> None:
     request = _request(tmp_path)
     result_bytes = b'{"status":"completed"}\n'
     result_hash = hashlib.sha256(result_bytes).hexdigest()
-    maximum = int(load_config(request.config_path)["optimization"]["max_iterations"])
+    config = load_config(request.config_path)
+    maximum = int(config["optimization"]["max_iterations"])
+    iteration = 1
+    if launch == "open_ended":
+        config["project"]["atlas_stop"] = stop_policy(
+            MORPHOSPACE_STABILITY, unlimited_iterations=True
+        )
+        request.config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+        request = replace(request, expected_config_sha256=sha256_file(request.config_path))
+        iteration = maximum + 1
+        maximum = None
+    elif launch == "tolerance_resume":
+        continuation = ToleranceContinuation(
+            checkpoint_iteration=40, source_maximum_iterations=maximum,
+            additional_iterations=300, maximum_iterations=340, source_tolerance=0.001,
+            tolerance=0.0001, checkpoint_sha256="a" * 64, source_log_sha256="b" * 64,
+        )
+        request = replace(
+            request, resume_source=tmp_path / "source", additional_iterations=300,
+            tolerance_continuation=continuation,
+        )
+        # Review already re-verifies this request-bound plan. The controller only
+        # needs the successor's checkpoint-derived cap when it binds live events.
+        monkeypatch.setattr(DesktopReferenceLaunchRequest, "verify_launch_inputs",
+                            lambda _self: None)
+        maximum = continuation.maximum_iterations
+        iteration = continuation.checkpoint_iteration + 1
     lines = [
         _accepted(request),
         _phase(request, 1, "verify_request"),
@@ -150,7 +182,7 @@ def test_reference_execution_controller_accepts_verified_completed_result(
             5,
             "progress",
             {
-                "iteration": 1,
+                "iteration": iteration,
                 "maximum_iterations": maximum,
                 "log_likelihood": -1.0,
                 "attachment": -0.8,
@@ -158,12 +190,17 @@ def test_reference_execution_controller_accepts_verified_completed_result(
                 "elapsed_seconds": 12.0,
                 "seconds_per_iteration": None,
                 "eta_to_iteration_cap_seconds": None,
-                "estimate_status": "warming_up",
+                "estimate_status": "no_iteration_limit" if maximum is None else "warming_up",
             },
         ),
-        _phase(request, 6, "finalize"),
-        _phase(request, 7, "verify_result"),
-        _terminal(request, 8, "completed", result_sha256=result_hash),
+        _event(request, 6, "activity", {
+            "state": "optimizing", "elapsed_seconds": 13.0,
+            "maximum_iterations": maximum, "last_iteration": iteration,
+            "latest_message": "Observed native progress", "log_source": None,
+        }),
+        _phase(request, 7, "finalize"),
+        _phase(request, 8, "verify_result"),
+        _terminal(request, 9, "completed", result_sha256=result_hash),
     ]
     prefix = (
         "from pathlib import Path",
@@ -234,8 +271,10 @@ def test_reference_execution_controller_preserves_windows_crash_status(tmp_path)
     assert controller.state == "failed"
 
 
+@pytest.mark.parametrize("reported_limit", [None, 999])
 def test_reference_execution_controller_rejects_progress_limit_mismatch(
     tmp_path: Path,
+    reported_limit: int | None,
 ) -> None:
     request = _request(tmp_path)
     lines = [
@@ -250,14 +289,16 @@ def test_reference_execution_controller_rejects_progress_limit_mismatch(
             "progress",
             {
                 "iteration": 1,
-                "maximum_iterations": 999,
+                "maximum_iterations": reported_limit,
                 "log_likelihood": -1.0,
                 "attachment": -0.8,
                 "regularity": -0.2,
                 "elapsed_seconds": 1.0,
                 "seconds_per_iteration": None,
                 "eta_to_iteration_cap_seconds": None,
-                "estimate_status": "warming_up",
+                "estimate_status": (
+                    "no_iteration_limit" if reported_limit is None else "warming_up"
+                ),
             },
         ),
     ]

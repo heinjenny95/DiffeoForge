@@ -21,13 +21,23 @@ iterations with the state 200 accepted iterations earlier and, once a full
 longer window is available, with the state 400 iterations earlier. Each full
 required window must pass both the cohort threshold (strictly below 1%) and
 each specimen's profile threshold (strictly below 2%). Single-specimen
-initialization steps are excluded. The native
-GradientAscent stopping test can trigger without ending automatic mode. The
-optimizer continues in the same invocation with its original reference and
-step-size history. It retains the configured iteration cap and distinct
-technical failure and cancellation states. At termination, both comparisons
-report their available spans. A partial comparison cannot satisfy a required
-full window.
+initialization steps are excluded. The native GradientAscent stopping test can
+trigger without ending automatic mode. The optimizer continues in the same
+invocation with its original reference and step-size history. This choice
+uses the configured iteration cap.
+
+**Run until morphospace stabilizes · no iteration limit** uses the same
+stability checks with an open-ended joint optimizer loop. The setup must
+explicitly select this policy. Individual initialization keeps its declared
+budget. Cancellation, numerical and line-search failures, and explicitly
+enabled anatomical review pauses retain their behavior. Live progress shows
+accepted iteration measurements and observed runtime. Completion time is
+unknown until the stopping condition is met. The saved policy persists when
+resuming an interrupted open-ended run.
+
+At termination, both comparisons report their available spans. A partial
+comparison cannot satisfy a required full window. Resuming from a saved
+checkpoint starts a new comparison history at that checkpoint.
 
 ## What the run measures
 

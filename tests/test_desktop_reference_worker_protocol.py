@@ -208,6 +208,21 @@ def test_reference_worker_accepts_strictly_increasing_progress_only_during_execu
         before_execute.accept(_progress(4, 0))
 
 
+def test_open_ended_reference_events_round_trip_without_iteration_cap() -> None:
+    progress = _progress(5, 100_001).as_dict()
+    progress["payload"].update(maximum_iterations=None, estimate_status="no_iteration_limit")
+    event = DesktopReferenceWorkerEvent.from_dict(progress)
+    assert json.loads(event.to_json_line())["payload"]["maximum_iterations"] is None
+    activity = _activity(6, 10.0).as_dict()
+    activity["payload"].update(maximum_iterations=None, last_iteration=100_001)
+    event = DesktopReferenceWorkerEvent.from_dict(activity)
+    assert json.loads(event.to_json_line())["payload"]["maximum_iterations"] is None
+
+    progress["payload"]["eta_to_iteration_cap_seconds"] = 83.0
+    with pytest.raises(DesktopReferenceWorkerProtocolError, match="eta_to_iteration_cap_seconds"):
+        DesktopReferenceWorkerEvent.from_dict(progress)
+
+
 def test_reference_worker_accepts_increasing_activity_only_during_execute() -> None:
     ledger = _ledger_with_phases("verify_request", "preflight", "prepare", "execute")
     ledger.accept(_activity(5, 10.0))

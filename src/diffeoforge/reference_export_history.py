@@ -14,6 +14,7 @@ from diffeoforge.analysis.reference_convergence_visualization import (
 )
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
+from diffeoforge.reference_atlas_stop import atlas_iteration_limit
 from diffeoforge.result_report import ConvergenceRow, RunReport, _load_convergence
 from diffeoforge.runs import _verify_existing_convergence
 from diffeoforge.strict_json import load_strict_json_object
@@ -37,10 +38,12 @@ def read_export_history(
     convergence_path: Path,
     native_log_path: Path,
     *,
-    maximum_iterations: int,
+    maximum_iterations: int | None,
 ) -> ExportHistory:
     """Verify copied history against its protected native log and unchanged-state receipt."""
     paths = (declaration_path, state_path, source_result_path, convergence_path, native_log_path)
+    if maximum_iterations is None:
+        raise ConfigurationError("Native-stop export recovery requires a bounded run")
     if any(path.is_symlink() or not path.is_file() for path in paths):
         raise ConfigurationError("Export recovery history is missing or symbolic")
     declaration = load_strict_json_object(
@@ -178,8 +181,6 @@ def verified_export_history(run: Path, report: RunReport) -> tuple[ExportHistory
         paths["source_result"],
         paths["convergence"],
         paths["terminal_log"],
-        maximum_iterations=int(
-            report.manifest["effective_config"]["optimization"]["max_iterations"]
-        ),
+        maximum_iterations=atlas_iteration_limit(report.manifest["effective_config"]),
     )
     return history, paths

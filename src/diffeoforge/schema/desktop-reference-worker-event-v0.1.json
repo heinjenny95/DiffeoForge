@@ -148,7 +148,7 @@
       ],
       "properties": {
         "iteration": {"type": "integer", "minimum": 0},
-        "maximum_iterations": {"type": "integer", "minimum": 1},
+        "maximum_iterations": {"type": ["integer", "null"], "minimum": 1},
         "log_likelihood": {"type": "number"},
         "attachment": {"type": "number"},
         "regularity": {"type": "number"},
@@ -176,10 +176,23 @@
           "enum": [
             "warming_up",
             "observed_rate_to_iteration_cap",
-            "observed_rate_to_cap_with_resource_contention"
+            "observed_rate_to_cap_with_resource_contention",
+            "no_iteration_limit"
           ]
         }
-      }
+      },
+      "if": {"properties": {"maximum_iterations": {"type": "null"}}},
+      "then": {
+        "properties": {
+          "estimate_status": {"const": "no_iteration_limit"},
+          "eta_to_iteration_cap_seconds": {"type": "null"},
+          "likely_convergence_iteration_lower": {"type": "null"},
+          "likely_convergence_iteration_upper": {"type": "null"},
+          "eta_to_likely_convergence_lower_seconds": {"type": "null"},
+          "eta_to_likely_convergence_upper_seconds": {"type": "null"}
+        }
+      },
+      "else": {"properties": {"estimate_status": {"not": {"const": "no_iteration_limit"}}}}
     },
     "activity": {
       "type": "object",
@@ -197,7 +210,7 @@
           "enum": ["computing_first_iteration", "optimizing", "exporting"]
         },
         "elapsed_seconds": {"type": "number", "minimum": 0},
-        "maximum_iterations": {"type": "integer", "minimum": 1},
+        "maximum_iterations": {"type": ["integer", "null"], "minimum": 1},
         "latest_message": {"type": "string", "minLength": 1},
         "log_source": {"type": ["string", "null"]},
         "last_iteration": {"type": ["integer", "null"], "minimum": 0},

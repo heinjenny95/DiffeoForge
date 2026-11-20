@@ -40,6 +40,7 @@ from diffeoforge.analysis.shape_space import (
 )
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
+from diffeoforge.reference_atlas_stop import atlas_iteration_limit
 from diffeoforge.reference_export_history import read_export_history, verified_export_history
 from diffeoforge.result_report import ConvergenceRow, RunReport, collect_run_report
 from diffeoforge.runs import publish_directory_exclusive
@@ -192,6 +193,10 @@ def _schema(version: str) -> dict[str, Any]:
             },
         }
         optimization_schema = schema["properties"]["optimization"]
+        optimization_schema["properties"]["configured_maximum_iterations"] = {
+            "type": ["integer", "null"],
+            "minimum": 1,
+        }
         optimization_schema["properties"]["duration_seconds"] = {
             "type": ["number", "null"],
             "minimum": 0,
@@ -521,7 +526,7 @@ def _source_run_document(inputs: ReferenceMomentaInput) -> dict[str, object]:
 class _ReferenceOptimizationInput:
     convergence_path: Path
     log_path: Path
-    maximum_iterations: int
+    maximum_iterations: int | None
     convergence_tolerance: float
     duration_seconds: float | None
     stop_evidence: ReferenceStopEvidence
@@ -533,6 +538,7 @@ def _reference_optimization_input(
     inputs: ReferenceMomentaInput,
 ) -> _ReferenceOptimizationInput:
     report = inputs.run_report
+    config = report.manifest["effective_config"]
     if not report.convergence:
         try:
             history, paths = verified_export_history(inputs.run_directory, report)
@@ -541,12 +547,11 @@ def _reference_optimization_input(
                 "Reference result analysis requires a logged objective history or a "
                 f"verified export-only recovery with retained original history: {error}"
             ) from error
-        optimization = report.manifest["effective_config"]["optimization"]
         return _ReferenceOptimizationInput(
             paths["convergence"],
             paths["terminal_log"],
-            int(optimization["max_iterations"]),
-            float(optimization["convergence_tolerance"]),
+            atlas_iteration_limit(config),
+            float(config["optimization"]["convergence_tolerance"]),
             history.duration_seconds,
             history.stop,
             history.rows,
@@ -562,10 +567,8 @@ def _reference_optimization_input(
             raise ReferencePCAError(f"{label} is missing or symbolic: {path}")
     try:
         log_text = log_path.read_text(encoding="utf-8", errors="replace")
-        maximum = int(report.manifest["effective_config"]["optimization"]["max_iterations"])
-        tolerance = float(
-            report.manifest["effective_config"]["optimization"]["convergence_tolerance"]
-        )
+        maximum = atlas_iteration_limit(config)
+        tolerance = float(config["optimization"]["convergence_tolerance"])
         duration = float(report.result["duration_seconds"])
     except (KeyError, TypeError, ValueError, OSError) as error:
         raise ReferencePCAError("Reference optimization evidence is missing or invalid") from error
@@ -1053,6 +1056,10 @@ def _verify_source_binding(manifest: Mapping[str, Any], inputs: ReferenceMomenta
         raise ReferencePCAError("PCA deformation kernel width differs from the exact source run")
     if manifest["bundle_version"] in {"0.2", "0.3", QC_REFERENCE_PCA_BUNDLE_VERSION}:
         optimization = manifest["optimization"]
+        if optimization["configured_maximum_iterations"] != atlas_iteration_limit(
+            inputs.run_report.manifest["effective_config"]
+        ):
+            raise ReferencePCAError("Configured iteration limit differs from the source run")
         if "recovery" in optimization:
             if inputs.run_report.convergence:
                 raise ReferencePCAError(
@@ -1143,7 +1150,7 @@ def _verify_optimization(root: Path, manifest: Mapping[str, Any]) -> None:
         ):
             raise ReferencePCAError(f"Copied Deformetrica {label} differs from source hash")
     convergence = _read_convergence_rows(convergence_path)
-    maximum = int(document["configured_maximum_iterations"])
+    maximum = document["configured_maximum_iterations"]
     if "recovery" in document:
         recovery = document["recovery"]
         copied_paths = {}

@@ -19,7 +19,11 @@ from diffeoforge._atlas_distance_metric import (
 )
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
-from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY, OPTIMIZER_CONVERGENCE
+from diffeoforge.reference_atlas_stop import (
+    MORPHOSPACE_STABILITY,
+    OPTIMIZER_CONVERGENCE,
+    atlas_iteration_limit,
+)
 from diffeoforge.reference_morphospace_native import REPORT_NAME, manifest_subject_labels
 from diffeoforge.strict_json import load_strict_json_object
 
@@ -218,6 +222,9 @@ def read_morphospace_stability(
         if reason == "native_tolerance":
             _require(policy["mode"] == OPTIMIZER_CONVERGENCE,
                      "has a native tolerance stop in morphospace mode")
+        if reason == "iteration_limit":
+            _require(atlas_iteration_limit(config) is not None,
+                     "reports an iteration limit for an uncapped atlas")
         digest = terminal.get("checkpoint_sha256")
         if rows or digest is not None or export == "complete":
             verify_artifact(EXECUTION_CHECKPOINT_PATH.relative_to("output").as_posix(), digest)

@@ -11,7 +11,6 @@ import time
 from collections.abc import Iterator, Mapping, Sequence
 from typing import Protocol, TextIO
 
-from diffeoforge.config import load_config
 from diffeoforge.desktop.pipe_input import (
     UnbufferedUtf8LineInput as _UnbufferedUtf8LineInput,
 )
@@ -26,7 +25,7 @@ from diffeoforge.desktop.reference_worker_protocol import (
     DesktopReferenceWorkerProtocolError,
 )
 from diffeoforge.desktop.worker_protocol import parse_json_object, sha256_file
-from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY
+from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY, atlas_iteration_limit
 from diffeoforge.reference_morphospace_native import LIVE_PREFIX
 from diffeoforge.reference_morphospace_stopping import read_morphospace_stability
 from diffeoforge.report import PreflightInspectionProgress, collect_preflight
@@ -209,8 +208,6 @@ def run_reference_execution_worker(
                     "Reference storage/recovery readiness failed: "
                     + " ".join(production_readiness.blockers)
                 )
-        config = load_config(request.config_path)
-        maximum_iterations = int(config["optimization"]["max_iterations"])
         if cancel_event.is_set():
             if parent_disconnected.is_set():
                 return 130
@@ -280,7 +277,7 @@ def run_reference_execution_worker(
         # A continuation may have a larger protected effective budget than its
         # unchanged original source-config. Observe the actual successor settings.
         config = verify_prepared_run(run_directory)["effective_config"]
-        maximum_iterations = int(config["optimization"]["max_iterations"])
+        maximum_iterations = atlas_iteration_limit(config)
         tracker = ReferenceProgressTracker(
             maximum_iterations,
             convergence_tolerance=float(config["optimization"]["convergence_tolerance"]),

@@ -106,6 +106,8 @@ def _review_advice(source):
             if evidence["policy"]["mode"] == "morphospace_stability" else
             "Stop at optimizer convergence and review"
         )
+        if evidence["policy"].get("unlimited_iterations"):
+            mode += " (no iteration limit)"
         advice = f"{mode} · {reason}\n{diagnostic}{fit_history}"
         if terminal is not None and terminal["export"] == "complete":
             advice += "\nReview the saved reconstructions in Visual QC for anatomical plausibility."

@@ -21,6 +21,7 @@ from diffeoforge.desktop.reference_worker_protocol import (
     ReferenceWorkerEventLedger,
 )
 from diffeoforge.desktop.worker_protocol import parse_json_object, sha256_file
+from diffeoforge.reference_atlas_stop import atlas_iteration_limit
 from diffeoforge.reference_process_control import request_live_cancel
 from diffeoforge.result_report import collect_run_report
 from diffeoforge.runs import verify_prepared_run
@@ -233,18 +234,21 @@ class ReferenceExecutionController:
             self._state = "running"
         try:
             self.request.verify_launch_inputs()
-            config = load_config(self.request.config_path)
-            maximum_iterations = int(config["optimization"]["max_iterations"])
-            if self.request.resume_source is not None:
+            continuation = self.request.tolerance_continuation
+            if continuation is not None:
+                maximum_iterations = continuation.maximum_iterations
+            elif self.request.resume_source is not None:
                 from diffeoforge.runs import inspect_resume_source
 
                 evidence = inspect_resume_source(
                     self.request.resume_source,
                     additional_iterations=self.request.additional_iterations,
                 )
-                maximum_iterations = int(
-                    evidence.manifest["effective_config"]["optimization"]["max_iterations"]
-                ) + self.request.additional_iterations
+                maximum_iterations = atlas_iteration_limit(evidence.manifest["effective_config"])
+                if maximum_iterations is not None:
+                    maximum_iterations += self.request.additional_iterations
+            else:
+                maximum_iterations = atlas_iteration_limit(load_config(self.request.config_path))
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             with self._lock:
                 self._state = "failed"
@@ -460,11 +464,15 @@ class ReferenceExecutionController:
     def _verify_event_binding(
         self,
         event: DesktopReferenceWorkerEvent,
-        maximum_iterations: int,
+        maximum_iterations: int | None,
     ) -> None:
-        if event.kind == "progress" and (
+        if event.kind not in {"activity", "progress"}:
+            return
+        iteration = event.payload["iteration" if event.kind == "progress" else "last_iteration"]
+        if (
             event.payload["maximum_iterations"] != maximum_iterations
-            or event.payload["iteration"] > maximum_iterations
+            or (maximum_iterations is not None and iteration is not None
+                and iteration > maximum_iterations)
         ):
             raise ReferenceExecutionProtocolViolation(
                 "Reference progress differs from the reviewed iteration limit"

@@ -27,7 +27,7 @@ class BaseEstimator:
         self.invocations += 1
 
 
-def _adapt(monkeypatch, mode, *, long_window=400):
+def _adapt(monkeypatch, mode, *, long_window=400, unlimited_iterations=False):
     class Gradient(BaseEstimator):
         def __init__(self, folder, *, origin=0, maximum=325, pattern=None, subjects=3):
             self.output_dir = str(folder)
@@ -44,6 +44,7 @@ def _adapt(monkeypatch, mode, *, long_window=400):
             self.numerical_failure = None
             self.cancel_at = None
             self.printed = []
+            self.gradient_iterations = []
             self.exports = []
             self.dataset = SimpleNamespace(subject_ids=[f"specimen-{i}" for i in range(subjects)])
             self.base_momenta = np.zeros((subjects, 1, 3))
@@ -68,6 +69,7 @@ def _adapt(monkeypatch, mode, *, long_window=400):
                 raise KeyboardInterrupt
             objective = -40.0 if iteration == 0 else -10.0 + iteration * 0.005
             if with_grad:
+                self.gradient_iterations.append(iteration)
                 gradient = math.nan if iteration == self.numerical_failure else 0.01
                 return objective, 0.0, {"momenta": np.array([gradient])}
             if iteration == self.bad_trial:
@@ -151,6 +153,8 @@ def _adapt(monkeypatch, mode, *, long_window=400):
         }
         if long_window is not None:
             config["project"]["atlas_stop"]["long_window_iterations"] = long_window
+        if unlimited_iterations:
+            config["project"]["atlas_stop"]["unlimited_iterations"] = True
         labels = tuple(f"specimen-{i}" for i in range(subjects))
         scope = {}
         # Make a failed hook raise during tests instead of exiting the Python process.
@@ -287,6 +291,53 @@ def test_cap_at_400_with_long_window_open_is_budget_stop(monkeypatch, tmp_path):
     assert report["terminal"]["reason"] == "iteration_limit"
 
 
+def test_unlimited_joint_run_checks_both_windows_past_declared_budget(monkeypatch, tmp_path):
+    gradient, install = _adapt(
+        monkeypatch, "morphospace_stability", unlimited_iterations=True,
+    )
+    install()
+
+    def pattern(momenta, iteration):
+        return momenta * (1.04 if iteration >= 200 else 1.0)
+
+    estimator = gradient(tmp_path, maximum=400, pattern=pattern)
+    estimator.update()
+    estimator.write()
+    report = _report(tmp_path)
+    at_declared_limit = next(row for row in report["observations"] if row["iteration"] == 400)
+    assert at_declared_limit["stable"]
+    assert not at_declared_limit["long_window"]["stable"]
+    assert report["policy"]["unlimited_iterations"] is True
+    assert report["terminal"]["reason"] == "morphospace_stable"
+    assert report["terminal"]["iteration"] == 600
+    assert report["terminal"]["export"] == "complete"
+    assert report["observations"][-1]["long_window"]["stable"]
+    assert estimator.invocations == 1
+    assert estimator.max_iterations == 400
+    assert 400 in estimator.gradient_iterations
+    assert estimator.exports[0][0] == 600
+
+
+def test_unlimited_joint_run_respects_explicit_optimizer_callback(monkeypatch, tmp_path):
+    gradient, install = _adapt(
+        monkeypatch, "morphospace_stability", unlimited_iterations=True,
+    )
+    install()
+    estimator = gradient(tmp_path, maximum=10)
+    estimator.callback = lambda: estimator.current_iteration < 60
+    estimator.update()
+    report = _report(tmp_path)
+    assert report["terminal"]["reason"] == "optimizer_callback"
+    assert report["terminal"]["iteration"] == 60
+    assert estimator.invocations == 1
+
+
+def test_unlimited_native_tolerance_policy_is_rejected(monkeypatch):
+    _, install = _adapt(monkeypatch, "optimizer_convergence", unlimited_iterations=True)
+    with pytest.raises(ValueError, match="require automatic morphospace stopping"):
+        install()
+
+
 def test_already_prepared_policy_keeps_legacy_observations(monkeypatch, tmp_path):
     gradient, install = _adapt(monkeypatch, "morphospace_stability", long_window=None)
     install()
@@ -296,14 +347,20 @@ def test_already_prepared_policy_keeps_legacy_observations(monkeypatch, tmp_path
     assert report["terminal"]["iteration"] == 200
 
 
-@pytest.mark.parametrize("mode", ["optimizer_convergence", "morphospace_stability"])
-def test_prior_iterations_and_individual_fits_do_not_count(monkeypatch, tmp_path, mode):
-    gradient, install = _adapt(monkeypatch, mode)
+@pytest.mark.parametrize(("mode", "unlimited_iterations"), [
+    ("optimizer_convergence", False),
+    ("morphospace_stability", False),
+    ("morphospace_stability", True),
+])
+def test_prior_iterations_and_individual_fits_do_not_count(
+    monkeypatch, tmp_path, mode, unlimited_iterations,
+):
+    gradient, install = _adapt(monkeypatch, mode, unlimited_iterations=unlimited_iterations)
     install()
-    individual = gradient(tmp_path, subjects=1)
+    individual = gradient(tmp_path, subjects=1, maximum=1)
     individual._df_individual_initialization = True
     individual.update()
-    assert individual.current_iteration == 2
+    assert individual.current_iteration == 1
     assert not (tmp_path / native.REPORT_NAME).exists()
     estimator = gradient(tmp_path, origin=100, maximum=301)
     estimator.update()
@@ -322,12 +379,15 @@ def test_prior_iterations_and_individual_fits_do_not_count(monkeypatch, tmp_path
     ("numerical_failure", "numerical_failure", 51),
     ("cancel_at", "cancelled", 50),
 ])
+@pytest.mark.parametrize("unlimited_iterations", [False, True])
 def test_failure_and_cancellation_keep_true_accepted_iteration(
-    monkeypatch, tmp_path, failure, reason, accepted,
+    monkeypatch, tmp_path, failure, reason, accepted, unlimited_iterations,
 ):
-    gradient, install = _adapt(monkeypatch, "morphospace_stability")
+    gradient, install = _adapt(
+        monkeypatch, "morphospace_stability", unlimited_iterations=unlimited_iterations,
+    )
     install()
-    estimator = gradient(tmp_path)
+    estimator = gradient(tmp_path, maximum=10 if unlimited_iterations else 325)
     setattr(estimator, failure, 51)
     if failure == "cancel_at":
         with pytest.raises(KeyboardInterrupt):

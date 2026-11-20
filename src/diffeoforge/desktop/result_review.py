@@ -78,7 +78,7 @@ class ModernResultReview:
     optimizer_converged: bool | None
     optimizer_termination_reason: str
     optimizer_cycles_completed: int
-    optimizer_max_cycles: int
+    optimizer_max_cycles: int | None
     overview: tuple[ResultReviewItem, ...]
     optimization: tuple[ResultReviewItem, ...]
     pca: tuple[ResultReviewItem, ...]

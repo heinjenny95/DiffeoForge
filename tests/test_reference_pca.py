@@ -47,6 +47,7 @@ from diffeoforge.modern_reference_qualification import (
     verify_modern_reference_qualification_design,
 )
 from diffeoforge.modern_workflow import run_modern_workflow
+from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY, stop_policy
 from diffeoforge.reference_pca import (
     CARTESIAN_REFERENCE_PCA_METHOD_ID,
     LDDMM_REFERENCE_PCA_METHOD_ID,
@@ -495,6 +496,22 @@ def test_ordinary_run_without_objective_history_remains_blocked(tmp_path):
     _reseal_export_fixture(run)
     with pytest.raises(ReferencePCAError, match="logged objective history"):
         write_reference_pca_bundle(run)
+
+
+def test_unbounded_atlas_pca_history_and_review_have_no_joint_iteration_limit(tmp_path):
+    run = _completed_reference_run(
+        tmp_path, atlas_stop=stop_policy(MORPHOSPACE_STABILITY, unlimited_iterations=True),
+    )
+    bundle_path = write_reference_pca_bundle(run)
+    bundle = verify_reference_pca_bundle(bundle_path, source_run=run)
+    optimization = bundle.manifest["optimization"]
+
+    assert optimization["configured_maximum_iterations"] is None
+    assert optimization["reported_stop_signal"] == "unknown"
+    assert "no joint iteration limit" in (bundle_path / optimization["plot_path"]).read_text(
+        encoding="utf-8",
+    )
+    assert review_reference_result(run).optimizer_max_cycles is None
 
 
 def test_result_open_verifies_full_source_once_and_each_reopen_verifies_again(

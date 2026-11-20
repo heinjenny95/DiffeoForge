@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 import diffeoforge.desktop.reference_execution_worker as execution_worker
+from diffeoforge.config import load_config
 from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
 from diffeoforge.desktop.reference_worker_protocol import (
     DesktopReferenceWorkerCommand,
@@ -26,8 +27,6 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture(autouse=True)
 def prepared_manifest_for_fake_workers(monkeypatch):
     # These supervisor unit fixtures stub preparation, not its protected artifact I/O.
-    from diffeoforge.config import load_config
-
     monkeypatch.setattr(
         execution_worker, "verify_prepared_run",
         lambda path: {"effective_config": load_config(path.parent.parent / "atlas.yaml")},
@@ -133,19 +132,26 @@ def test_failed_worker_reports_specific_guard_reason(tmp_path, monkeypatch):
     assert "different gradient" in events[-1].payload["message"]
 
 
-@pytest.mark.parametrize("mode", [None, "optimizer_convergence", "morphospace_stability"])
+@pytest.mark.parametrize(("mode", "unlimited_iterations"), [
+    (None, False),
+    ("optimizer_convergence", False),
+    ("morphospace_stability", False),
+    ("morphospace_stability", True),
+])
 def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     mode: str | None,
+    unlimited_iterations: bool,
 ) -> None:
     request = _request(tmp_path)
     if mode is not None:
-        from diffeoforge.config import load_config
         from diffeoforge.reference_atlas_stop import stop_policy
 
         config = load_config(request.config_path)
-        config["project"]["atlas_stop"] = stop_policy(mode)
+        config["project"]["atlas_stop"] = stop_policy(
+            mode, unlimited_iterations=unlimited_iterations
+        )
         monkeypatch.setattr(execution_worker, "verify_prepared_run",
                             lambda _path: {"effective_config": config})
         monkeypatch.setattr(execution_worker, "read_morphospace_stability",
@@ -166,6 +172,9 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
         assert preflight is not None
         request.destination.mkdir(parents=True)
         return request.destination
+
+    first_iteration = 100 if unlimited_iterations else 0
+    final_iteration = first_iteration + 3
 
     def execute(
         run_directory,
@@ -207,18 +216,21 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
             "Started estimator: GradientAscent",
             "output/reference_info.log",
         )
-        for iteration in range(4):
+        for offset in range(4):
+            iteration = first_iteration + offset
             line_callback(f"---------------- Iteration: {iteration} ----------------\n")
             line_callback(
-                f">> Log-likelihood = {-10 + iteration:.3E} "
+                f">> Log-likelihood = {-10 + offset:.3E} "
                 "[ attachment = -8.000E+00 ; regularity = -2.000E+00 ]\n"
             )
         if mode is not None:
             preview = {
-                "previous_iteration": 0, "window_iterations": 3, "status": "measured",
+                "previous_iteration": first_iteration, "window_iterations": 3,
+                "status": "measured",
                 "cohort_percent": 0.45, "max_subject_percent": 0.66, "worst_subjects": ["test"],
             }
-            row = dict(preview, iteration=3, weighted_fit_error=8.0, long_window=preview)
+            row = dict(preview, iteration=final_iteration, weighted_fit_error=8.0,
+                       long_window=preview)
             line_callback("DiffeoForge morphospace stability: invalid JSON")
             line = "INFO DiffeoForge morphospace stability: " + json.dumps(row)
             line_callback(line)
@@ -268,10 +280,17 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
     )
     assert first_activity.payload["resources"]["process_tree"]["rss_bytes"] == 1024
     assert export_activity.payload["state"] == "exporting"
-    assert export_activity.payload["last_iteration"] == 3
-    assert progress[-1].payload["iteration"] == 3
-    assert progress[-1].payload["estimate_status"] == "observed_rate_to_iteration_cap"
-    assert progress[-1].payload["eta_to_iteration_cap_seconds"] == pytest.approx(97 * 6)
+    assert export_activity.payload["last_iteration"] == final_iteration
+    assert progress[-1].payload["iteration"] == final_iteration
+    assert progress[-1].payload["seconds_per_iteration"] == pytest.approx(6)
+    if unlimited_iterations:
+        assert all(event.payload["maximum_iterations"] is None
+                   for event in (*progress, first_activity, export_activity))
+        assert progress[-1].payload["estimate_status"] == "no_iteration_limit"
+        assert progress[-1].payload["eta_to_iteration_cap_seconds"] is None
+    else:
+        assert progress[-1].payload["estimate_status"] == "observed_rate_to_iteration_cap"
+        assert progress[-1].payload["eta_to_iteration_cap_seconds"] == pytest.approx(97 * 6)
     if mode is not None:
         stability = next(event.payload for event in events if event.kind == "morphospace_progress")
         assert stability["weighted_fit_error"] == 8.0
@@ -305,7 +324,7 @@ def test_intermediate_review_wait_is_excluded_and_finish_reports_exporting(tmp_p
     monkeypatch.setattr(execution_worker, "collect_preflight", lambda *a, **k: object())
     monkeypatch.setattr(execution_worker, "assess_reference_production_readiness",
                         lambda _: SimpleNamespace(production_scale=False, ready=True, blockers=()))
-    config = execution_worker.load_config(request.config_path)
+    config = load_config(request.config_path)
     config["project"].setdefault("parameter_provenance", {})["pilot_review"] = {
         "version": "accepted-pilot-review-v1", "interval_seconds": 600,
     }

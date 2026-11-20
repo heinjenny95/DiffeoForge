@@ -302,15 +302,21 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         early_review_enabled,
         initialization,
     )
-    from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY, atlas_stop_available
+    from diffeoforge.reference_atlas_stop import (
+        MORPHOSPACE_STABILITY,
+        MORPHOSPACE_STABILITY_UNLIMITED,
+        atlas_stop_available,
+        atlas_stop_choice,
+    )
 
     shared, sources = desktop_locations()
     preflight = collect_preflight(config_path, cache_project=config_path.parent,
                                  shared_cache=shared, cache_sources=sources)
-    runtime_estimate = estimate_reference_runtime(preflight)
     production_readiness = assess_reference_production_readiness(preflight)
     config = preflight.config
-    stop_mode = config["project"].get("atlas_stop", {}).get("mode")
+    stop_mode = atlas_stop_choice(config)
+    unlimited = stop_mode == MORPHOSPACE_STABILITY_UNLIMITED
+    runtime_estimate = None if unlimited else estimate_reference_runtime(preflight)
     model = config["model"]
     deformation = model["deformation"]
     optimization = config["optimization"]
@@ -545,10 +551,14 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         ),) if cold_individual else ()),
         *((ReviewItem(
             "Atlas stopping rule",
-            "Run until morphospace stabilizes" if stop_mode == MORPHOSPACE_STABILITY
-            else "Stop at optimizer convergence and review",
-            "The iteration budget remains binding. The stability window counts only joint "
-            "atlas iterations. Visual QC is a separate decision.",
+            {
+                MORPHOSPACE_STABILITY: "Run until morphospace stabilizes",
+                MORPHOSPACE_STABILITY_UNLIMITED: "Run until morphospace stabilizes · no limit",
+            }.get(stop_mode, "Stop at optimizer convergence and review"),
+            (
+                "Joint fitting has no iteration limit. Cancel and technical stops stay available. "
+                if unlimited else "The configured iteration budget applies. "
+            ) + "The stability windows count joint atlas iterations. Visual QC is separate.",
         ),) if stop_mode else ()),
         ReviewItem(
             "Coordinate unit",
@@ -590,8 +600,9 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         ReviewItem(
             "Optimization",
             (
-                f"max. {optimization['max_iterations']} iterations · step "
-                f"{_number(optimization['initial_step_size'])}"
+                ("No joint iteration limit" if unlimited else
+                 f"max. {optimization['max_iterations']} iterations")
+                + f" · step {_number(optimization['initial_step_size'])}"
             ),
             "Starter values for gradient ascent; convergence and biological "
             "plausibility must be reviewed.",
@@ -683,11 +694,15 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
                 f"roughly {_duration(runtime_estimate.typical_seconds)} typical "
                 f"({_duration(runtime_estimate.lower_seconds)} to "
                 f"{_duration(runtime_estimate.upper_seconds)} broad range)"
+                if runtime_estimate is not None else "Open-ended joint optimization"
             ),
-            "Low-confidence engineering planning estimate from mesh faces, cohort size, "
-            "time points, control spacing, acceleration, threads, and an expected early-stop "
-            "window. It is not a convergence prediction and is replaced by observed timing "
-            "during the run.",
+            (
+                "Live progress shows elapsed time, observed rate, and stability measurements."
+                if unlimited else
+                "Low-confidence engineering planning estimate from mesh faces, cohort size, "
+                "time points, control spacing, acceleration, threads, and an expected early-stop "
+                "window. It is replaced by observed timing during the run."
+            ),
         ),
         ReviewItem(
             "Storage and recovery check",
@@ -722,8 +737,10 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             "validated presets."
         ),
         *preflight.notices,
-        "The computation-time range is an uncalibrated planning heuristic. Actual runtime "
-        "depends on GPU/CPU hardware, line search, stopping behavior, and numerical workload.",
+        *((
+            "The computation-time range is an uncalibrated planning heuristic. Actual runtime "
+            "depends on GPU/CPU hardware, line search, stopping behavior, and numerical workload.",
+        ) if not unlimited else ()),
         *production_readiness.blockers,
         *production_readiness.warnings,
     )

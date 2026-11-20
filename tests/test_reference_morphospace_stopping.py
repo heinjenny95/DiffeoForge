@@ -113,15 +113,17 @@ def test_large_diagnostic_uses_bounded_blocks_without_changing_the_metric(monkey
     np.testing.assert_array_equal(actual, actual.T)
 
 
-def _retained_report(tmp_path, *, interrupted=False, full_window=None, reason=None):
+def _retained_report(
+    tmp_path, *, interrupted=False, full_window=None, reason=None, unlimited=False,
+):
     configuration_path = write_run_config(tmp_path)
     config = yaml.safe_load(configuration_path.read_text(encoding="utf-8"))
     mode = OPTIMIZER_CONVERGENCE if full_window is None else MORPHOSPACE_STABILITY
-    policy = stop_policy(mode)
+    policy = stop_policy(mode, unlimited_iterations=unlimited)
     config["project"]["atlas_stop"] = policy
     config["output"]["checkpoint_mode"] = "compact_final_export"
     end = 2 if full_window is None else 400
-    config["optimization"]["max_iterations"] = end
+    config["optimization"]["max_iterations"] = 2 if unlimited else end
     configuration_path.write_text(yaml.safe_dump(config), encoding="utf-8")
     run = prepare_run(configuration_path, run_id="native-report")
     assert read_morphospace_stability(run) is None
@@ -231,6 +233,14 @@ def test_reader_verifies_the_independent_long_window_when_eligible(tmp_path):
     last = reopened["observations"][-1]
     assert last["window_iterations"] == 200 and last["stable"]
     assert last["long_window"]["window_iterations"] == 400 and last["long_window"]["stable"]
+
+
+def test_reader_rejects_budget_stop_for_an_unbounded_atlas(tmp_path):
+    run, _ = _retained_report(
+        tmp_path, full_window=False, reason="iteration_limit", unlimited=True,
+    )
+    with pytest.raises(ConfigurationError, match="iteration limit for an uncapped atlas"):
+        read_morphospace_stability(run)
 
 
 def test_reader_refuses_short_only_automatic_stop_when_long_window_open(tmp_path):

@@ -16,6 +16,7 @@ import yaml
 
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
+from diffeoforge.reference_atlas_stop import atlas_iteration_limit
 from diffeoforge.runs import run_status
 
 _REPORT_MARKER = '<meta name="generator" content="DiffeoForge result report">'
@@ -61,8 +62,8 @@ class RunReport:
     notices: tuple[str, ...]
 
     @property
-    def max_iterations(self) -> int:
-        return int(self.manifest["effective_config"]["optimization"]["max_iterations"])
+    def max_iterations(self) -> int | None:
+        return atlas_iteration_limit(self.manifest["effective_config"])
 
     @property
     def final_iteration(self) -> int | None:
@@ -83,14 +84,21 @@ class RunReport:
                 f"The run was interrupted after the observation at iteration {final_iteration}; "
                 "interruption is not convergence."
             )
-        if final_iteration >= self.max_iterations:
+        maximum = self.max_iterations
+        if maximum is None:
             return (
-                f"The observed iteration reached the requested maximum of {self.max_iterations}. "
+                f"The last logged iteration was {final_iteration}. This atlas ran with no "
+                "joint iteration limit. See the saved atlas stopping evidence for the "
+                "accepted-state stop reason."
+            )
+        if final_iteration >= maximum:
+            return (
+                f"The observed iteration reached the requested maximum of {maximum}. "
                 "This report does not label that outcome as convergence."
             )
         return (
             f"The backend completed before the requested maximum ({final_iteration} of "
-            f"{self.max_iterations}). The recorded artifacts alone do not prove which stopping "
+            f"{maximum}). The recorded artifacts alone do not prove which stopping "
             "criterion caused termination."
         )
 
@@ -599,6 +607,8 @@ def render_result_html(report: RunReport) -> str:
     started_at = escape(str(result.get("started_at")))
     ended_at = escape(str(result.get("ended_at")))
     tolerance = escape(str(config["optimization"]["convergence_tolerance"]))
+    maximum = report.max_iterations
+    iteration_limit = "No joint iteration limit" if maximum is None else f"{maximum} iterations"
 
     return f"""<!doctype html>
 <html lang="en">
@@ -672,7 +682,7 @@ def render_result_html(report: RunReport) -> str:
       <tr><th>Backend</th><td>{backend_id}, contract {backend_contract}</td></tr>
       <tr><th>Return code</th><td>{escape(str(result.get("return_code")))}</td></tr>
       <tr><th>Started / ended</th><td>{started_at} / {ended_at}</td></tr>
-      <tr><th>Requested maximum</th><td>{report.max_iterations} iterations</td></tr>
+      <tr><th>Requested maximum</th><td>{iteration_limit}</td></tr>
       <tr><th>Convergence tolerance</th><td>{tolerance}</td></tr>
       <tr><th>Observed objective change</th>
         <td>{escape(objective_change)}; final {escape(final_objective)}</td></tr>

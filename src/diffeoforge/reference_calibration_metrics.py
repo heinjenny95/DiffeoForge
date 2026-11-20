@@ -42,7 +42,7 @@ class ReferenceCalibrationRunMetrics:
     optimizer_stop_signal: str
     stop_interpretation: str
     final_iteration: int | None
-    maximum_iterations: int
+    maximum_iterations: int | None
     residual_p95: float
     residual_median: float
     resampling_sensitivity: float

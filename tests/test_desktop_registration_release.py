@@ -825,7 +825,9 @@ def test_direct_pilot_option_requires_review_before_launch(review_window, monkey
 
 
 @pytest.mark.parametrize("direct", [False, True])
-@pytest.mark.parametrize("mode", ["optimizer_convergence", "morphospace_stability"])
+@pytest.mark.parametrize("mode", [
+    "optimizer_convergence", "morphospace_stability", "morphospace_stability_unlimited",
+])
 def test_atlas_review_dispatches_two_independent_choices(review_window, monkeypatch, direct, mode):
     from types import SimpleNamespace
 
@@ -849,6 +851,8 @@ def test_atlas_review_dispatches_two_independent_choices(review_window, monkeypa
     window.atlas_stop_combo.setCurrentIndex(window.atlas_stop_combo.findData(mode))
     window._sync_ready_state()
     assert not window.atlas_stop_card.isHidden()
+    if mode == "morphospace_stability_unlimited":
+        assert "no iteration limit" in window.atlas_stop_detail.text()
     assert window._pilot_atlas_start_pending()
     window._show_run_page()
     assert len(queued) == 1

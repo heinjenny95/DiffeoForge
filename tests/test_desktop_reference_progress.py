@@ -34,6 +34,24 @@ def test_reference_progress_reports_observed_rate_eta_to_cap_only_after_warmup()
     assert final.fraction_of_iteration_cap == pytest.approx(0.03)
 
 
+def test_open_ended_reference_progress_reports_rate_without_eta() -> None:
+    tracker = ReferenceProgressTracker(None)
+    final = None
+    for offset in range(13):
+        elapsed = offset * 5.0
+        assert tracker.observe(_iteration(100_001 + offset), elapsed_seconds=elapsed) is None
+        final = tracker.observe(_objective(-10 + offset), elapsed_seconds=elapsed)
+        assert final is not None and final.estimate_status == "no_iteration_limit"
+
+    assert final.iteration == 100_013
+    assert final.maximum_iterations is None
+    assert final.fraction_of_iteration_cap is None
+    assert final.seconds_per_iteration == pytest.approx(5.0)
+    assert final.eta_to_iteration_cap_seconds is None
+    assert final.likely_convergence_iteration_lower is None
+    assert final.likely_convergence_iteration_upper is None
+
+
 def test_reference_progress_ignores_unpaired_and_regressing_iterations() -> None:
     tracker = ReferenceProgressTracker(50)
     assert tracker.observe(_objective(-10), elapsed_seconds=1) is None

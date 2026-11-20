@@ -289,6 +289,7 @@ class DesktopReferenceLaunchRequest:
             if self.final_export_only:
                 import shutil
 
+                from diffeoforge.reference_atlas_stop import atlas_iteration_limit
                 from diffeoforge.reference_final_export_recovery import (
                     checkpoint_iteration,
                     export_stop_evidence,
@@ -297,7 +298,7 @@ class DesktopReferenceLaunchRequest:
 
                 export_stop_evidence(
                     evidence.source_run, checkpoint_iteration(evidence.checkpoint_path),
-                    int(evidence.manifest["effective_config"]["optimization"]["max_iterations"]),
+                    atlas_iteration_limit(evidence.manifest["effective_config"]),
                 )
                 if shutil.disk_usage(evidence.source_run.parent).free < required_export_space(
                     evidence.source_run, evidence.manifest
