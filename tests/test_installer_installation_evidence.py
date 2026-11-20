@@ -85,6 +85,40 @@ def test_contract_schema_wrapper_and_package_boundaries() -> None:
     assert "Get-NetUDPEndpoint" in wrapper
     assert "verify-retained" in wrapper
     assert "setup upload" not in wrapper.lower()
+    assert "DiffeoForge 0.0.0.dev0" not in wrapper
+    assert "$registration.DisplayName -cne $preflight.expected_registration.display_name" in wrapper
+    assert (
+        "$registration.DisplayVersion -cne $preflight.expected_registration.display_version"
+        in wrapper
+    )
+
+
+@pytest.mark.parametrize(
+    "version,display",
+    [("0.0.0.dev0", None), ("0.0.0.dev82", "v82 (Private Alpha)"),
+     ("0.0.0.dev123", "v123 (Private Alpha)"), ("1.2.3", None)],
+)
+def test_registration_expectations_follow_verified_compiler_defines(version, display) -> None:
+    arguments = ["/Qp", f"/DAppVersion={version}", "/DSourceCommit=" + "a" * 40]
+    if display is not None:
+        arguments.append(f"/DAppDisplayVersion={display}")
+    plan = {"source": {"application_version": version}, "compiler": {"arguments": arguments}}
+    assert evidence._expected_registration(plan) == {
+        "display_name": f"DiffeoForge {display or version} (Windows CPU x86-64)",
+        "display_version": version,
+    }
+
+
+@pytest.mark.parametrize("arguments", [
+    [], ["/DAppVersion=wrong"], ["/DAppVersion="],
+    ["/DAppVersion=0.0.0.dev82", "/DAppVersion=0.0.0.dev82"],
+    ["/DAppVersion=0.0.0.dev82", "/DAppDisplayVersion="],
+])
+def test_registration_expectations_fail_closed(arguments) -> None:
+    plan = {"source": {"application_version": "0.0.0.dev82"},
+            "compiler": {"arguments": arguments}}
+    with pytest.raises(evidence.InstallerInstallationEvidenceError):
+        evidence._expected_registration(plan)
 
 
 def test_pr_gated_manual_workflow_is_pinned_ephemeral_and_evidence_only() -> None:

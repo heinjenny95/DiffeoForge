@@ -14,8 +14,8 @@ from pathlib import Path, PurePosixPath
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-SCHEMA_VERSION = "0.3"
-SUPPORTED_SCHEMA_VERSIONS = ("0.1", "0.2", SCHEMA_VERSION)
+SCHEMA_VERSION = "0.4"
+SUPPORTED_SCHEMA_VERSIONS = ("0.1", "0.2", "0.3", SCHEMA_VERSION)
 STATUS = "engineering_evidence_not_a_release"
 TARGET = "windows-x86_64-cpu"
 MANIFEST_NAME = "freeze-evidence.json"
@@ -26,6 +26,7 @@ REFERENCE_WORKER_EXECUTABLE = "DiffeoForgeReferenceWorker.exe"
 REFERENCE_PREPARATION_WORKER_EXECUTABLE = (
     "DiffeoForgeReferencePreparationWorker.exe"
 )
+REFERENCE_EXECUTION_WORKER_EXECUTABLE = "DiffeoForgeReferenceExecutionWorker.exe"
 SCIENTIFIC_BOUNDARY = (
     "This exact-file inventory is engineering evidence for one Windows CPU freeze. "
     "It is not an installer, signature, SBOM, license approval, clean-machine result, "
@@ -216,10 +217,12 @@ def _package_versions(value: Mapping[str, str] | None) -> dict[str, str]:
 
 def _entry_point_names(version: str) -> tuple[str, ...]:
     names = (DESKTOP_EXECUTABLE, WORKER_EXECUTABLE)
-    if version in ("0.2", SCHEMA_VERSION):
+    if version in ("0.2", "0.3", SCHEMA_VERSION):
         names += (REFERENCE_WORKER_EXECUTABLE,)
-    if version == SCHEMA_VERSION:
+    if version in ("0.3", SCHEMA_VERSION):
         names += (REFERENCE_PREPARATION_WORKER_EXECUTABLE,)
+    if version == SCHEMA_VERSION:
+        names += (REFERENCE_EXECUTION_WORKER_EXECUTABLE,)
     return names
 
 
@@ -377,6 +380,7 @@ def create_desktop_freeze_evidence(
             "reference_preparation_worker": (
                 REFERENCE_PREPARATION_WORKER_EXECUTABLE
             ),
+            "reference_execution_worker": REFERENCE_EXECUTION_WORKER_EXECUTABLE,
         },
         "bundle": {
             "directory_name": root.name,

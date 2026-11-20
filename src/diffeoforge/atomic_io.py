@@ -4,7 +4,30 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 from pathlib import Path
+
+_REPLACE_ATTEMPTS = 4
+_REPLACE_RETRY_SECONDS = 0.01
+
+
+def replace_atomically(source: Path, destination: Path) -> None:
+    """Publish one prepared path, tolerating bounded transient access denial.
+
+    Windows indexers and security scanners can briefly hold a just-written file
+    open even after DiffeoForge closed its own handle. Only ``PermissionError``
+    is retried, the source bytes are never rewritten between attempts, and the
+    final failure remains visible to the caller.
+    """
+
+    for attempt in range(_REPLACE_ATTEMPTS):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if attempt + 1 == _REPLACE_ATTEMPTS:
+                raise
+            time.sleep(_REPLACE_RETRY_SECONDS * (2**attempt))
 
 
 def write_text_safely(
@@ -41,7 +64,7 @@ def write_text_safely(
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, destination)
+        replace_atomically(temporary, destination)
     except BaseException:
         try:
             temporary.unlink(missing_ok=True)

@@ -3,8 +3,25 @@ from __future__ import annotations
 import pytest
 
 engine = pytest.importorskip("diffeoforge.engine")
+from diffeoforge.engine.execution import (  # noqa: E402
+    ENGINE_IMPLEMENTATION_VERSION,
+    supports_exact_engine_resume,
+)
 
 PairwiseEvaluationPlan = engine.PairwiseEvaluationPlan
+
+
+def test_exact_resume_compatibility_is_explicit_and_fail_closed() -> None:
+    assert supports_exact_engine_resume(ENGINE_IMPLEMENTATION_VERSION) is True
+    assert supports_exact_engine_resume("1.5") is True
+    assert supports_exact_engine_resume("1.6") is True
+    assert supports_exact_engine_resume("1.7") is False
+    assert supports_exact_engine_resume("1.4") is False
+    assert supports_exact_engine_resume(
+        ENGINE_IMPLEMENTATION_VERSION,
+        successor_implementation="99.0",
+    ) is False
+    assert supports_exact_engine_resume(None) is False
 
 
 def test_dense_plan_is_explicit_and_has_no_gaussian_tiles() -> None:
@@ -34,6 +51,21 @@ def test_blockwise_plan_normalizes_and_constructs_gaussian_tiles() -> None:
     assert plan.engine_id == "diffeoforge_modern_blockwise"
 
 
+def test_blockwise_recompute_plan_is_explicit_in_execution_identity() -> None:
+    plan = PairwiseEvaluationPlan.from_mapping(
+        {
+            "mode": "blockwise",
+            "query_tile_size": 17,
+            "source_tile_size": 23,
+            "autograd_strategy": "recompute",
+        }
+    )
+
+    assert plan.gaussian_tile_plan.autograd_strategy == "recompute"
+    assert plan.engine_id == "diffeoforge_modern_blockwise_recompute"
+    assert plan.as_manifest()["autograd_strategy"] == "recompute"
+
+
 @pytest.mark.parametrize(
     "arguments",
     [
@@ -60,4 +92,44 @@ def test_mapping_rejects_missing_or_extra_fields() -> None:
                 "source_tile_size": None,
                 "automatic": True,
             }
+        )
+
+
+
+def test_analytical_varifold_plan_round_trips_with_distinct_identity() -> None:
+    baseline = PairwiseEvaluationPlan("blockwise", 17, 23, "recompute")
+    assert "varifold_backward" not in baseline.as_manifest()
+    assert baseline.gaussian_tile_plan.varifold_backward is None
+
+    manifest = {**baseline.as_manifest(), "varifold_backward": "analytical"}
+    plan = PairwiseEvaluationPlan.from_mapping(manifest)
+    assert plan.as_manifest() == manifest
+    assert plan.gaussian_tile_plan.varifold_backward == "analytical"
+    assert plan.engine_id == "diffeoforge_modern_blockwise_recompute_varifold_analytical"
+    assert plan != baseline
+
+
+@pytest.mark.parametrize("strategy", ["automatic", True, 1])
+def test_analytical_varifold_plan_rejects_unsupported_selectors(strategy) -> None:
+    with pytest.raises(ValueError, match="varifold_backward"):
+        PairwiseEvaluationPlan("blockwise", 17, 23, "recompute", strategy)
+    with pytest.raises(ValueError, match="varifold_backward"):
+        engine.GaussianTilePlan(17, 23, "recompute", strategy)
+
+
+def test_analytical_varifold_plan_requires_blockwise_recompute() -> None:
+    with pytest.raises(ValueError, match="requires blockwise recompute"):
+        PairwiseEvaluationPlan(varifold_backward="analytical")
+    with pytest.raises(ValueError, match="requires blockwise recompute"):
+        PairwiseEvaluationPlan("blockwise", 17, 23, varifold_backward="analytical")
+    with pytest.raises(ValueError, match="requires recompute"):
+        engine.GaussianTilePlan(17, 23, varifold_backward="analytical")
+
+
+
+def test_explicit_null_varifold_backward_is_rejected_in_provenance() -> None:
+    baseline = PairwiseEvaluationPlan("blockwise", 17, 23, "recompute")
+    with pytest.raises(ValueError, match="must be omitted"):
+        PairwiseEvaluationPlan.from_mapping(
+            {**baseline.as_manifest(), "varifold_backward": None},
         )

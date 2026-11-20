@@ -18,6 +18,7 @@ from diffeoforge.modern_benchmark import (  # noqa: E402
 )
 from diffeoforge.modern_benchmark_design import (  # noqa: E402
     create_modern_benchmark_design,
+    verify_modern_benchmark_design,
 )
 from diffeoforge.modern_benchmark_study import (  # noqa: E402
     EVENTS_NAME,
@@ -35,6 +36,25 @@ ROOT = Path(__file__).parents[1]
 EXAMPLE = ROOT / "examples" / "minimal-modern-atlas.yaml"
 MESHES = ROOT / "examples" / "synthetic" / "meshes"
 FIXED_TIME = "2026-07-16T10:00:00+00:00"
+PUBLIC_STUDY_ROOT = ROOT / "reference" / "modern-engine-v0.5"
+
+
+def test_committed_public_study_design_and_raw_run_verify() -> None:
+    design = verify_modern_benchmark_design(
+        PUBLIC_STUDY_ROOT / "paired-standard-recompute-design"
+    )
+    manifest = verify_modern_benchmark_study_run(
+        PUBLIC_STUDY_ROOT / "paired-standard-recompute-run"
+    )
+    status = inspect_modern_benchmark_study_run(
+        PUBLIC_STUDY_ROOT / "paired-standard-recompute-run"
+    )
+
+    assert len(design["conditions"]) == 6
+    assert len(manifest["conditions"]) == 6
+    assert manifest["analysis_performed"] is False
+    assert status["verified_report_count"] == 6
+    assert status["completion_manifest_verified"] is True
 
 
 def _write_config(path: Path) -> Path:

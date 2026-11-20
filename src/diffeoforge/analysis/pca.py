@@ -83,6 +83,8 @@ class PCAResult:
     numerical_rank: int
     tied_component_groups: tuple[tuple[int, ...], ...]
     zero_variance_components: tuple[int, ...]
+    projection_components: np.ndarray | None = None
+    method: str = "centered linear PCA by deterministic float64 SVD"
     sign_convention: str = "largest-absolute loading is positive; ties use lowest feature index"
 
     def __post_init__(self) -> None:
@@ -95,6 +97,13 @@ class PCAResult:
             "explained_variance_ratio",
         ):
             object.__setattr__(self, name, _readonly(getattr(self, name)))
+        if self.projection_components is not None:
+            projection = _readonly(self.projection_components)
+            if projection.shape != self.components.shape:
+                raise ValueError("projection_components must match components")
+            object.__setattr__(self, "projection_components", projection)
+        if not isinstance(self.method, str) or not self.method.strip():
+            raise ValueError("method must be a non-empty string")
 
     @property
     def number_of_components(self) -> int:
@@ -108,7 +117,12 @@ class PCAResult:
             raise ValueError(
                 f"features must contain exactly {self.mean.shape[0]} columns in stored order"
             )
-        return (values - self.mean) @ self.components.T
+        projection = (
+            self.components
+            if self.projection_components is None
+            else self.projection_components
+        )
+        return (values - self.mean) @ projection.T
 
     def inverse_transform(self, scores: np.ndarray) -> np.ndarray:
         """Reconstruct feature rows from retained PCA scores."""

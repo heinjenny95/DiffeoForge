@@ -7,6 +7,7 @@ import json
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from heapq import nlargest
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -158,6 +159,8 @@ def compare_reference_run(
         fixture = _read_artifact(fixture_path, specification["kind"])
         candidate = _read_artifact(candidate_path, specification["kind"])
         shape_matches = fixture.signature == candidate.signature
+        largest_differences: list[dict[str, object]] = []
+        different_value_count: int | None = None
         if shape_matches and len(fixture.values) == len(candidate.values):
             differences = tuple(
                 abs(reference - observed)
@@ -165,6 +168,24 @@ def compare_reference_run(
             )
             maximum = max(differences, default=0.0)
             rms = math.sqrt(sum(value * value for value in differences) / len(differences))
+            different_value_count = sum(value != 0.0 for value in differences)
+            # Explain the failing values without changing either frozen threshold.
+            # Keep the payload bounded even when comparing large research meshes.
+            for index in nlargest(5, range(len(differences)), key=differences.__getitem__):
+                if differences[index] == 0.0:
+                    continue
+                item: dict[str, object] = {
+                    "value_index": index + 1,
+                    "reference": fixture.values[index],
+                    "candidate": candidate.values[index],
+                    "absolute_difference": differences[index],
+                }
+                if specification["kind"] == "numeric_csv":
+                    header = fixture.signature["header"]
+                    item.update(
+                        {"csv_row": index // len(header) + 2, "column": header[index % len(header)]}
+                    )
+                largest_differences.append(item)
         else:
             maximum = None
             rms = None
@@ -189,6 +210,13 @@ def compare_reference_run(
                 "value_count": len(fixture.values),
                 "max_absolute_difference": maximum,
                 "rms_difference": rms,
+                "threshold_checks": {
+                    "max_absolute_pass": maximum is not None
+                    and maximum <= tolerances["max_absolute"],
+                    "rms_pass": rms is not None and rms <= tolerances["rms"],
+                },
+                "different_value_count": different_value_count,
+                "largest_differences": largest_differences,
                 "tolerances": tolerances,
             }
         )

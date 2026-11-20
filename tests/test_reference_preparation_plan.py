@@ -12,6 +12,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
+import yaml
 
 import diffeoforge.reference_preparation_plan as preparation_plan_module
 from diffeoforge.backends import render_engine_file_bytes
@@ -94,15 +95,16 @@ def test_reference_preparation_plan_is_deterministic_and_read_only(
     assert first["run"]["run_id"] == "pilot-K-fer-001"
     assert first["run"]["destination_exists"] is False
     assert first["input_count"] == {"templates": 1, "subjects": 5}
-    assert first["protected_file_count"] == 11
+    assert first["protected_file_count"] == 12
     assert first["protected_file_count"] == len(first["protected_files"])
     assert first["total_protected_bytes"] == sum(
         item["bytes"] for item in first["protected_files"]
     )
-    assert [item["path"] for item in first["protected_files"]][-3:] == [
+    assert [item["path"] for item in first["protected_files"]][-4:] == [
         "engine/model.xml",
         "engine/data_set.xml",
         "engine/optimization_parameters.xml",
+        "engine/sitecustomize.py",
     ]
     assert "creates no directory" in first["scientific_boundary"]
 
@@ -131,6 +133,36 @@ def test_reference_preparation_plan_matches_real_preparation_byte_for_byte(
         assert hashlib.sha256(payload).hexdigest() == planned["sha256"]
         if planned["kind"] == "generated":
             assert payload == planned["content_utf8"].encode("utf-8")
+
+
+def test_reference_plan_matches_explicit_control_point_preparation(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    config_path = root / "atlas.yaml"
+    control_points = root / "trained-control-points.txt"
+    control_points.write_text("0 0 0\n1 1 1\n", encoding="ascii")
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["model"]["deformation"]["initial_control_points"] = (
+        "./trained-control-points.txt"
+    )
+    config["optimization"]["freeze_template"] = True
+    config["optimization"]["freeze_control_points"] = True
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    plan = plan_reference_preparation(config_path, run_id="holdout-parity")
+    run = prepare_run(config_path, run_id="holdout-parity")
+    manifest = verify_prepared_run(run)
+
+    assert "input/control-points" in plan["directories"]
+    assert manifest["protected_artifacts"] == [
+        {
+            "path": item["path"],
+            "bytes": item["bytes"],
+            "sha256": item["sha256"],
+        }
+        for item in plan["protected_files"]
+    ]
 
 
 def test_pure_xml_renderer_preserves_established_native_bytes() -> None:
@@ -266,7 +298,7 @@ def test_reference_preparation_html_scales_to_305_subject_inventory(
     rendered = render_reference_preparation_plan_html(plan)
 
     assert plan["input_count"] == {"templates": 1, "subjects": 305}
-    assert plan["protected_file_count"] == 311
+    assert plan["protected_file_count"] == 312
     assert "Subjects<strong>305</strong>" in rendered
     assert "input/subjects/subject-305.vtk" in rendered
     assert plan["inputs"][-1]["geometry"]["sha256"] in rendered

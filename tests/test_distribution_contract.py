@@ -29,6 +29,9 @@ def test_desktop_contract_freezes_safe_first_distribution_boundary() -> None:
     assert "engine execution unauthorized" in contract["process_boundaries"][
         "reference_preparation_worker"
     ]
+    assert "supervised external Deformetrica execution" in contract[
+        "process_boundaries"
+    ]["reference_execution_worker"]
     assert contract["data_ownership"]["uninstall_preserves_projects"] is True
 
 

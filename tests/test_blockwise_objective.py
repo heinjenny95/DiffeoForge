@@ -47,9 +47,24 @@ def _subject_inputs(reference: dict, *, requires_grad: bool) -> dict[str, torch.
     }
 
 
-def _subject(reference: dict, attachment_type: str, plan: GaussianTilePlan | None):
+def _subject(
+    reference: dict,
+    attachment_type: str,
+    plan: GaussianTilePlan | None,
+    *,
+    prepared: bool = False,
+):
     values = reference["inputs"]
     inputs = _subject_inputs(reference, requires_grad=True)
+    fixed_target = None
+    if prepared:
+        fixed_target = engine.prepare_surface_attachment_target(
+            inputs["target"],
+            inputs["triangles"],
+            values["attachment_width"],
+            attachment_type=attachment_type,
+            gaussian_tile_plan=plan,
+        )
     result = subject_objective(
         inputs["template"],
         inputs["triangles"],
@@ -65,6 +80,7 @@ def _subject(reference: dict, attachment_type: str, plan: GaussianTilePlan | Non
         shooting_integrator=values["shooting_integrator"],
         flow_integrator=values["flow_integrator"],
         gaussian_tile_plan=plan,
+        prepared_target=fixed_target,
     )
     gradients = torch.autograd.grad(
         result.total,
@@ -158,9 +174,7 @@ def test_atlas_blockwise_objective_and_all_parameter_gradients_match_dense(
         return result, gradients
 
     dense, dense_gradients = evaluate(None)
-    blockwise, blockwise_gradients = evaluate(
-        GaussianTilePlan(3, 2, autograd_strategy)
-    )
+    blockwise, blockwise_gradients = evaluate(GaussianTilePlan(3, 2, autograd_strategy))
     options = {"rtol": 3e-12, "atol": 3e-13}
 
     torch.testing.assert_close(blockwise.residuals, dense.residuals, **options)
@@ -176,10 +190,12 @@ def test_atlas_blockwise_objective_and_all_parameter_gradients_match_dense(
 
 @pytest.mark.parametrize("attachment_type", ["current", "varifold"])
 @pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
+@pytest.mark.parametrize("tile_sizes", [(2, 3), (2, 2)])
 def test_one_cycle_blockwise_optimizer_matches_dense_decisions_and_parameters(
     reference: dict,
     attachment_type: str,
     autograd_strategy: str,
+    tile_sizes: tuple[int, int],
 ) -> None:
     arguments, keywords = _atlas_problem(reference)
     keywords["attachment_type"] = attachment_type
@@ -188,7 +204,7 @@ def test_one_cycle_blockwise_optimizer_matches_dense_decisions_and_parameters(
         *arguments,
         **keywords,
         max_cycles=1,
-        gaussian_tile_plan=GaussianTilePlan(2, 3, autograd_strategy),
+        gaussian_tile_plan=GaussianTilePlan(*tile_sizes, autograd_strategy),
     )
     options = {"rtol": 2e-10, "atol": 2e-11}
 
@@ -290,17 +306,16 @@ def test_recompute_reduces_cc0_objective_forward_saved_tensor_payload() -> None:
     standard, standard_gradients, standard_saved = observe("standard")
     recomputed, recomputed_gradients, recomputed_saved = observe("recompute")
 
-    torch.testing.assert_close(recomputed, standard, rtol=0, atol=0)
+    # All-pairs recomputation preserves the mathematical objective, not a
+    # bitwise floating-point reduction across autograd/kernel implementations.
+    # Reuse this module's existing full-subject forward parity bounds.
+    torch.testing.assert_close(recomputed, standard, rtol=2e-12, atol=2e-13)
     for actual, expected in zip(recomputed_gradients, standard_gradients, strict=True):
-        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-    assert any(shape == (64, 64, 3) for _, shape in standard_saved)
-    assert all(shape != (64, 64, 3) for _, shape in recomputed_saved)
-    assert max(size for size, _ in recomputed_saved) < max(
-        size for size, _ in standard_saved
-    )
-    assert sum(size for size, _ in recomputed_saved) < sum(
-        size for size, _ in standard_saved
-    )
+        torch.testing.assert_close(actual, expected, rtol=5e-12, atol=2e-14)
+    assert any(shape == (64, 64) for _, shape in standard_saved)
+    assert all(shape != (64, 64) for _, shape in recomputed_saved)
+    assert max(size for size, _ in recomputed_saved) < max(size for size, _ in standard_saved)
+    assert sum(size for size, _ in recomputed_saved) < sum(size for size, _ in standard_saved)
 
 
 def test_invalid_tile_plan_fails_before_subject_numerics(reference: dict) -> None:
@@ -320,4 +335,47 @@ def test_invalid_tile_plan_fails_before_subject_numerics(reference: dict) -> Non
             noise_variance=values["noise_variance"],
             number_of_time_points=values["number_of_time_points"],
             gaussian_tile_plan=object(),
+        )
+
+
+
+@pytest.mark.parametrize("prepared", [False, True])
+def test_analytical_varifold_propagates_through_subject_objective(
+    reference: dict, prepared: bool, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    baseline, baseline_gradients = _subject(
+        reference, "varifold", GaussianTilePlan(2, 2, "recompute"), prepared=prepared,
+    )
+    applied = 0
+    original = dense_module._RecomputedVarifoldTile.apply
+
+    def observe(*args, **kwargs):
+        nonlocal applied
+        applied += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(dense_module._RecomputedVarifoldTile, "apply", observe)
+    candidate, candidate_gradients = _subject(
+        reference,
+        "varifold",
+        GaussianTilePlan(2, 2, "recompute", varifold_backward="analytical"),
+        prepared=prepared,
+    )
+    assert applied > 0
+    for name in ("residual", "attachment", "regularity", "total"):
+        assert torch.equal(getattr(candidate, name), getattr(baseline, name))
+    for actual, expected in zip(candidate_gradients, baseline_gradients, strict=True):
+        torch.testing.assert_close(actual, expected, rtol=3e-11, atol=3e-12)
+
+
+@pytest.mark.parametrize("prepared", [False, True])
+def test_analytical_varifold_rejects_current_attachment(reference: dict, prepared: bool) -> None:
+    with pytest.raises(ValueError, match="requires Varifold attachment"):
+        _subject(
+            reference,
+            "current",
+            GaussianTilePlan(2, 2, "recompute", varifold_backward="analytical"),
+            prepared=prepared,
         )

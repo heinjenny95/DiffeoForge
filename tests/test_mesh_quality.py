@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 
 import pytest
 
 from diffeoforge.mesh_quality import (
     MeshQualityError,
     MeshQualitySettings,
+    assess_normalized_triangle_mesh,
     assess_triangle_mesh,
     compare_triangle_meshes,
     enforce_deformation_quality,
     enforce_mesh_quality,
 )
+from diffeoforge.mesh_quality_report import mesh_quality_reports_match
 
 TETRA_VERTICES = (
     (0.0, 0.0, 0.0),
@@ -20,6 +23,60 @@ TETRA_VERTICES = (
     (0.0, 0.0, 1.0),
 )
 TETRA_FACES = ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3))
+
+
+@pytest.mark.parametrize(
+    ("metric", "statistic", "steps", "allowed"),
+    [
+        ("minimum_angle_degrees", "q95", 1, True),
+        ("minimum_angle_degrees", "maximum", 2, True),
+        ("minimum_angle_degrees", "maximum", 3, False),
+        ("minimum_angle_degrees", "minimum", 1, False),
+        ("edge_ratio", "maximum", 1, False),
+    ],
+)
+def test_quality_report_limits_angle_roundoff_to_two_float_steps(
+    metric: str, statistic: str, steps: int, allowed: bool
+) -> None:
+    recomputed = {
+        "settings": {"minimum_triangle_angle_degrees": 31.0},
+        "meshes": [
+            {
+                "metrics": {
+                    "minimum_angle_degrees": {"minimum": 31.0, "q95": 32.0, "maximum": 32.0},
+                    "edge_ratio": {"maximum": 32.0},
+                }
+            }
+        ]
+    }
+    saved = deepcopy(recomputed)
+    summary = saved["meshes"][0]["metrics"][metric]
+    for _ in range(steps):
+        # Below 32, the spacing halves. A tolerance based on the larger ULP
+        # would admit three representable values here.
+        summary[statistic] = math.nextafter(summary[statistic], -math.inf)
+
+    assert mesh_quality_reports_match(saved, recomputed) is allowed
+    assert mesh_quality_reports_match(recomputed, saved) is allowed
+
+
+@pytest.mark.parametrize(
+    "metrics",
+    [
+        {"boundary_edges": False, "minimum_angle_degrees": {"median": 32.0}},
+        {"boundary_edges": 0, "minimum_angle_degrees": {"median": 32}},
+        {"boundary_edges": 0, "minimum_angle_degrees": {"median": 32.0, "extra": 32.0}},
+        {"boundary_edges": 0, "minimum_angle_degrees": None},
+    ],
+)
+def test_quality_report_requires_exact_structure_and_types(metrics: dict) -> None:
+    expected_metrics = {
+        "boundary_edges": 0,
+        "minimum_angle_degrees": {"median": 32.0},
+    }
+    recomputed = {"meshes": [{"metrics": expected_metrics}]}
+
+    assert not mesh_quality_reports_match({"meshes": [{"metrics": metrics}]}, recomputed)
 
 
 def test_closed_tetrahedron_has_exact_topology_and_quality() -> None:
@@ -41,6 +98,21 @@ def test_closed_tetrahedron_has_exact_topology_and_quality() -> None:
     assert result.minimum_angle_degrees.minimum == pytest.approx(45.0)
     assert result.edge_ratio is not None
     assert result.edge_ratio.maximum == pytest.approx(math.sqrt(2.0))
+
+
+def test_trusted_normalized_geometry_path_preserves_exact_quality_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = assess_triangle_mesh(TETRA_VERTICES, TETRA_FACES)
+
+    def fail_if_geometry_is_copied(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("normalized geometry must not be copied and revalidated")
+
+    monkeypatch.setattr(
+        "diffeoforge.mesh_quality._normalized_geometry", fail_if_geometry_is_copied
+    )
+
+    assert assess_normalized_triangle_mesh(TETRA_VERTICES, TETRA_FACES) == expected
 
 
 def test_open_disconnected_mesh_records_boundary_components_and_isolated_vertex() -> None:

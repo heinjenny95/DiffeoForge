@@ -109,3 +109,40 @@ def test_optimizer_progress_rejects_nonfinite_values() -> None:
             accepted_step_size=None,
             line_search_evaluations=0,
         )
+
+
+def test_optimizer_progress_accepts_momenta_only_decision_bound() -> None:
+    progress = ModernOptimizerProgress(
+        completed_decisions=2,
+        maximum_decisions=3,
+        cycle=2,
+        max_cycles=3,
+        block="momenta",
+        status="stationary",
+        objective=-1.0,
+        attachment=-0.75,
+        regularity=-0.25,
+        gradient_norm=0.0,
+        accepted_step_size=None,
+        line_search_evaluations=0,
+    )
+
+    assert progress.maximum_decisions == 3
+
+
+def test_optimizer_progress_rejects_nonintegral_configured_block_count() -> None:
+    with pytest.raises(ValueError, match="one to 102 configured block decisions"):
+        ModernOptimizerProgress(
+            completed_decisions=0,
+            maximum_decisions=103,
+            cycle=0,
+            max_cycles=3,
+            block=None,
+            status="initial",
+            objective=-1.0,
+            attachment=-0.75,
+            regularity=-0.25,
+            gradient_norm=None,
+            accepted_step_size=None,
+            line_search_evaluations=0,
+        )

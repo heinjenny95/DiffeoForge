@@ -1,0 +1,474 @@
+"""Inspected fit preferences and feedback, independent of anatomical approval."""
+
+from pathlib import Path
+from time import time_ns
+
+from diffeoforge import reference_calibration_study as study
+from diffeoforge import reference_guided_pilot as guided
+from diffeoforge.mesh import sha256_file
+
+OUTCOMES = {"better": "Better", "same": "About the same", "worse": "Worse", "unsure": "Unsure"}
+
+
+def severe_regression(snapshot, identifier):
+    candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
+    subjects = (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
+    return any(r.get("refinement_guard", {}).get("severe") is True
+               or any(r.get(kind) and not r[kind]["numerical_selection_suitable"]
+                      for kind in ("regional_quality", "ordinary_quality", "cohort_quality"))
+               for r in subjects.values())
+
+
+def reference(snapshot, identifier, target=None):
+    candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
+    metrics = candidate.metrics or {}
+    if (candidate.status != "completed" or metrics.get("completed") is not True
+            or type(metrics.get("invalid_face_count")) is not int
+            or metrics["invalid_face_count"] != 0
+            or metrics.get("subject_reconstruction_count") != snapshot.plan.pilot_subject_count):
+        raise ValueError("Only a complete, technically valid fit can be a starting point")
+    info = guided.record(snapshot)
+    target = target or info["target"]
+    if not target or target not in {s.filename for s in snapshot.plan.selected_pilot_subjects}:
+        raise ValueError("Choose an individual original pilot form")
+    return dict(directory=str(snapshot.study_directory), candidate_id=identifier,
+        manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST),
+        binding=study._candidate_review_binding(candidate), target=target,
+        method=snapshot.attachment_comparison["methods"][identifier],
+        values=next(c.values for c in snapshot.current_stage.candidates
+                    if c.candidate_id == identifier))
+
+
+def _local_events(snapshot, identifier=None):
+    for event in study._load_events(snapshot.study_directory):
+        if event["event"] == "guided_fit_feedback":
+            ref = event["current"]
+            if identifier is not None and ref["candidate_id"] != identifier:
+                continue
+            if ref != reference(snapshot, ref["candidate_id"], ref["target"]):
+                raise ValueError("Saved feedback no longer matches this fit")
+            if (event["outcome"] not in OUTCOMES or event["inspected_subjects"] != [ref["target"]]
+                    or event["anatomical_approval_created"] is not False):
+                raise ValueError("Invalid guided fit feedback")
+            from diffeoforge.pilot_regions import SYMPTOMS
+
+            if event.get("symptom", "unsure") not in SYMPTOMS:
+                raise ValueError("Unknown saved fit problem")
+            from diffeoforge.pilot_regions import validate
+
+            manifest = study._verify_manifest(snapshot.study_directory)
+            validate(event.get("problem_regions", {}), {
+                r["filename"]: r["sha256"] for r in manifest["inputs"]["subjects"]})
+            yield event
+
+
+def inspected(snapshot, identifier):
+    return identifier in snapshot.visual_reviews or any(_local_events(snapshot, identifier))
+
+
+def verify_reference(ref):
+    root = Path(ref["directory"])
+    if sha256_file(root / study.STUDY_MANIFEST) != ref["manifest_sha256"]:
+        raise ValueError("Preferred starting-fit manifest changed")
+    parent = study.load_reference_calibration_study(root)
+    if reference(parent, ref["candidate_id"], ref["target"]) != ref:
+        raise ValueError("Preferred starting fit or inspection binding changed")
+    if not inspected(parent, ref["candidate_id"]):
+        from diffeoforge.pilot_adaptive_run import trusted_reference
+
+        if not trusted_reference(parent, ref):
+            raise ValueError("Preferred starting fit or inspection binding changed")
+    return parent
+
+
+def _same_source(snapshot, ref):
+    parent = verify_reference(ref)
+    info, other = guided.record(snapshot), guided.record(parent)
+    if (Path(info["origin"]).resolve() != Path(other["origin"]).resolve()
+            or ref["target"] != info["target"]):
+        raise ValueError("A starting fit must use the same cohort and original form")
+    return parent
+
+
+def local_strategy_reference(snapshot, role):
+    """Keep legacy coverage history without treating another form as a local fit."""
+    info = guided.record(snapshot)
+    ref = (info.get("strategy") or {}).get(role)
+    if ref is None and role == "baseline" and (info.get("strategy") or {}).get(
+            "common_multiscale"):
+        reviews = info["strategy"]["form_progress"]["reviews"]
+        row = next((r for r in reviews if r["filename"] == info["target"]), None)
+        if row:
+            ref = dict(row)
+            ref["target"] = ref.pop("filename")
+    if ref is None:
+        return None
+    parent = verify_reference(ref)
+    other = guided.record(parent)
+    if Path(info["origin"]).resolve() != Path(other["origin"]).resolve():
+        raise ValueError("A starting fit must use the same cohort and original form")
+    if ref["target"] != info["target"]:
+        # Earlier immutable coverage studies retained the previous form's
+        # refinement history. Its valid shared settings/control basis remain
+        # provenance, but its field cannot be this form's comparison or seed.
+        if (info["phase"] in {"screen", "validate", "joint"}
+                and not snapshot.attachment_comparison.get("regional_objective")):
+            return None
+        raise ValueError("A starting fit must use the same cohort and original form")
+    return ref
+
+
+def _starting_warning_reasons(snapshot, identifier):
+    candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
+    subjects = (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
+    flags = (
+        ("no_new_intersection_flags", "New surface-intersection flags need review."),
+        ("spatial_resolution_sufficient", "Source-surface resolution checks did not pass."),
+        ("temporal_grid_stable", "Saved-field time-resolution checks did not pass."),
+        ("outside_preserved", "The surrounding shape was not preserved by the numerical checks."),
+        ("explicit_fixed_preserved",
+         "An explicitly retained area did not pass its position check."),
+        ("transition_preserved", "The marked area's transition did not pass its surface check."),
+        ("shape_preserved", "A retained shape did not pass its shape check."),
+    )
+    reasons = []
+    for row in subjects.values():
+        if row.get("refinement_guard", {}).get("severe") is True:
+            reasons.append("The full-surface comparison reports a substantial regression.")
+        for kind in ("regional_quality", "ordinary_quality", "cohort_quality"):
+            quality = row.get(kind)
+            if not quality or quality.get("numerical_selection_suitable") is not False:
+                continue
+            found = [message for flag, message in flags if quality.get(flag) is False]
+            reasons.extend(found or ["The saved fit did not pass its numerical selection checks."])
+    return tuple(dict.fromkeys(reasons))
+
+
+def verify_choice_event(snapshot, identifier, event):
+    """A numerically reusable field is not, by itself, a human-inspected choice."""
+    kind = event["event"]
+    ref = event["preference" if kind == "guided_method_preference" else "reference"]
+    parent = _same_source(snapshot, ref)
+    from diffeoforge.pilot_adaptive_run import marker
+
+    # Historical ordinary choices already inherit verify_reference's inspection
+    # requirement. Only the new internal-field exception needs another witness.
+    if not marker(getattr(parent, "attachment_comparison", {})) or inspected(
+            parent, ref["candidate_id"]):
+        return parent
+    target = ref["target"]
+    scope = (event.get("display_scopes") or {}).get(target)
+    edit = event.get("region_edit") or {}
+    if (kind != "guided_starting_fit_selected"
+            or event.get("editing_candidate_id") != identifier
+            or event.get("inspected_subjects") != [target]
+            or not isinstance(scope, str) or not scope
+            or edit.get("version") != 2
+            or type(edit.get("recorded_at")) is not int or edit["recorded_at"] <= 0
+            or event.get("anatomical_approval_created") is not False
+            or event.get("optimizer_started") is not False):
+        raise ValueError("Inspect this internal field in the settled working-fit viewer first")
+    from diffeoforge.guided_working_fit import edits
+
+    rows = list(edits(snapshot, identifier, target))
+    expected = (edit["recorded_at"], (event.get("problem_regions") or {}).get(target, []),
+                target in edit.get("cleared", []))
+    if expected not in rows:
+        raise ValueError("The internal starting-fit choice has no verified inspected area edit")
+    return parent
+
+
+def starting_fit_choice(snapshot, identifier):
+    """Expose a Better/quality conflict without silently choosing a different field.
+
+    Existing feedback journals remain unchanged. Only a newer, verified explicit
+    inspected starting-fit choice resolves the conflict; a Better rating itself
+    never changes numerical eligibility or creates anatomical approval.
+    """
+    feedback = list(_local_events(snapshot, identifier))
+    if (not feedback or feedback[-1]["outcome"] != "better"
+            or not severe_regression(snapshot, identifier)):
+        return None
+    latest = feedback[-1]
+    current, comparison = latest["current"], latest["comparison"]
+    _same_source(snapshot, current)
+    previous = _same_source(snapshot, comparison)
+    events = study._load_events(snapshot.study_directory)
+    position = next(i for i in reversed(range(len(events))) if events[i] == latest)
+    for event in reversed(events[position + 1:]):
+        kind = event["event"]
+        if kind == "guided_joint_starting_fit_selected":
+            if event["current"]["candidate_id"] != identifier:
+                continue
+            from diffeoforge.guided_accepted_fit import verify_selection
+
+            chosen = verify_selection(snapshot, identifier, event)
+        elif kind in {"guided_starting_fit_selected", "guided_method_preference"}:
+            chosen = event["reference" if kind == "guided_starting_fit_selected" else "preference"]
+            verify_choice_event(snapshot, identifier, event)
+            if (event.get("anatomical_approval_created") is not False
+                    or event.get("optimizer_started") is not False
+                    or chosen not in [row["reference"] for row in choices(snapshot, identifier)]):
+                raise ValueError("The explicit starting-fit choice is not a verified inspected fit")
+        else:
+            continue
+        return None
+    reasons = _starting_warning_reasons(snapshot, identifier)
+    info = guided.record(snapshot)
+    earlier = guided.record(previous)
+    return dict(
+        choice_required=True, identifier=identifier, current=current, latest=current,
+        comparison=comparison, target=current["target"], reasons=reasons, warnings=reasons,
+        latest_label=f"{current['method'].title()} · Test {info['screen_trials_spent']}",
+        comparison_label=f"{comparison['method'].title()} · Test {earlier['screen_trials_spent']}",
+        feedback_sequence=latest.get("sequence", position),
+        reason="You rated the latest fit Better, but its quality checks still need review. "
+               "Choose the inspected starting fit explicitly before preparing another test. "
+               "No earlier fit has been selected automatically.",
+    )
+
+
+def require_starting_fit_choice(snapshot, identifier):
+    """Fresh preparation gate; presentation state cannot authorize a seed choice."""
+    pending = starting_fit_choice(snapshot, identifier)
+    if pending:
+        raise ValueError(pending["reason"])
+
+
+def selection(snapshot, identifier):
+    """Latest explicit preference wins; no geometry metric invents a human preference."""
+    from diffeoforge.retained_mark_source import context as retained_context
+
+    if starting_fit_choice(snapshot, identifier):
+        return None
+    retention = retained_context(snapshot, identifier)
+    if retention and retention["available"] and retention["automatic_start_allowed"]:
+        return retention["reference"]
+    for event in reversed(study._load_events(snapshot.study_directory)):
+        if event["event"] == "guided_method_preference":
+            verify_choice_event(snapshot, identifier, event)
+            return event["preference"]
+        if (event["event"] == "guided_joint_starting_fit_selected"
+                and event["current"]["candidate_id"] == identifier):
+            from diffeoforge.guided_accepted_fit import verify_selection
+
+            return verify_selection(snapshot, identifier, event)
+        if event["event"] == "guided_starting_fit_selected":
+            verify_choice_event(snapshot, identifier, event)
+            return event["reference"]
+        if (event["event"] == "guided_fit_feedback"
+                and event["current"]["candidate_id"] == identifier):
+            # Validate the current binding before allowing feedback to change a proposal.
+            list(_local_events(snapshot, identifier))
+            _same_source(snapshot, event["comparison"])
+            return (event["current"] if event["outcome"] == "better"
+                    and not severe_regression(snapshot, identifier) else event["comparison"])
+    return local_strategy_reference(snapshot, "anchor") or local_strategy_reference(
+        snapshot, "baseline"
+    )
+
+
+def choices(snapshot, identifier):
+    info = guided.record(snapshot)
+    if not info or not info["target"]:
+        return []
+    result = []
+    for row in [*reversed(info["history"]), None]:
+        if (row and sha256_file(Path(row["directory"]) / study.STUDY_MANIFEST)
+                != row["manifest_sha256"]):
+            raise ValueError("Saved starting-fit history changed")
+        other = study.load_reference_calibration_study(Path(row["directory"])) if row else snapshot
+        other_info = guided.record(other)
+        if not other_info or other_info["target"] != info["target"]:
+            continue
+        if Path(other_info["origin"]).resolve() != Path(info["origin"]).resolve():
+            raise ValueError("Pilot history belongs to another cohort")
+        for candidate in other.candidates:
+            try:
+                ref = reference(other, candidate.candidate_id)
+            except ValueError:
+                continue
+            was_inspected = inspected(other, candidate.candidate_id)
+            if not was_inspected:
+                from diffeoforge.pilot_adaptive_run import trusted_reference
+
+                if not trusted_reference(other, ref):
+                    continue
+            label = f"Test {other_info['screen_trials_spent']} · {candidate.label}"
+            result.append(dict(reference=ref, label=label,
+                trial_index=other_info["screen_trials_spent"],
+                inspected=was_inspected,
+                approved=other.visual_reviews.get(candidate.candidate_id) is True,
+                current=other.study_directory == snapshot.study_directory
+                        and identifier == candidate.candidate_id))
+    return list({(r["reference"]["directory"], r["reference"]["candidate_id"]): r
+                 for r in result}.values())
+
+
+def presentation(snapshot, identifier):
+    """Background-only verified data for the compact feedback/history controls."""
+    info = guided.record(snapshot)
+    if not info or not info["target"]:
+        return None
+    with study.calibration_verification_scope():
+        rows = choices(snapshot, identifier)
+        pending_choice = starting_fit_choice(snapshot, identifier)
+        comparison = local_strategy_reference(snapshot, "baseline")
+        selected = selection(snapshot, identifier)
+        current = None
+        try:
+            current = reference(snapshot, identifier)
+        except ValueError:
+            pass
+        if selected and selected != current:
+            comparison = selected
+        feedback = list(_local_events(snapshot, identifier))
+        explicitly_selected = any(e["event"] == "guided_starting_fit_selected"
+                                  for e in study._load_events(snapshot.study_directory))
+        from diffeoforge.guided_accepted_fit import rejected_joint
+        from diffeoforge.retained_mark_source import context as retained_context
+
+        joint_blocked = rejected_joint(snapshot, selected) if selected and any(
+            row["reference"] == selected and row["approved"] for row in rows) else None
+        return dict(choices=rows, comparison=comparison, selected=selected,
+                    starting_fit_choice=pending_choice,
+                    retention_context=retained_context(snapshot, identifier),
+                    joint_blocked=joint_blocked,
+                    current_inspected=bool(current and inspected(snapshot, identifier)),
+                    feedback=feedback[-1] if feedback else None,
+                    problem_regions={info["target"]: regions(snapshot, identifier, info["target"])},
+                    cleared_region_subjects=[info["target"]] if region_state(
+                        snapshot, identifier, info["target"])[1] else [],
+                    # An old chain without feedback starts with an explicit user choice.
+                    needs_direction=bool(pending_choice or comparison and not feedback
+                                         and not explicitly_selected))
+
+
+def save_feedback(directory, identifier, decision):
+    """Record an explicit inspected opinion; never record anatomical acceptance or run."""
+    snapshot = study.load_reference_calibration_study(directory)
+    current = reference(snapshot, identifier)
+    outcome = decision["outcome"]
+    comparison = decision["comparison"]
+    _same_source(snapshot, comparison)
+    if (outcome not in OUTCOMES or comparison == current
+            or decision["inspected_subjects"] != [current["target"]]
+            or not decision.get("display_scopes", {}).get(current["target"])):
+        raise ValueError("Inspect the current original/reconstruction before saving feedback")
+    note = decision.get("note", "")
+    if not isinstance(note, str) or len(note) > 2000:
+        raise ValueError("Feedback notes must contain at most 2000 characters")
+    from diffeoforge.pilot_regions import SYMPTOMS, validate
+
+    regions = dict(decision.get("problem_regions", {}))
+    cleared = decision.get("cleared_region_subjects", [])
+    target = current["target"]
+    if (not isinstance(cleared, (list, tuple)) or len(set(cleared)) != len(cleared)
+            or set(cleared) - {target} or set(cleared) & set(regions)):
+        raise ValueError("Only explicitly cleared inspected areas may be removed")
+    # Missing/empty UI payloads are not deletion requests. Preserve legacy patches too.
+    if not regions.get(target) and target not in cleared:
+        existing, was_cleared = region_state(snapshot, identifier, target)
+        if existing:
+            regions[target] = existing
+        elif was_cleared:
+            cleared = [target]
+    symptom = decision.get("symptom", "unsure")
+    if symptom not in SYMPTOMS:
+        raise ValueError("Choose what still needs improvement, or Unsure")
+    manifest = study._verify_manifest(snapshot.study_directory)
+    validate(regions, {r["filename"]: r["sha256"] for r in manifest["inputs"]["subjects"]})
+    from diffeoforge.reconstruction_feedback import verify_review_regions
+
+    candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
+    verify_review_regions(snapshot, candidate, regions)
+    study._append_event(snapshot.study_directory, "guided_fit_feedback", dict(
+        current=current, comparison=comparison, outcome=outcome, note=note,
+        symptom=symptom,
+        inspected_subjects=decision["inspected_subjects"],
+        display_scopes=decision["display_scopes"],
+        comparison_displayed=bool(decision.get("comparison_displayed")),
+        problem_regions=regions,
+        region_edit=dict(version=2, recorded_at=time_ns(), cleared=list(cleared)),
+        anatomical_approval_created=False, optimizer_started=False))
+    return study.load_reference_calibration_study(directory)
+
+
+def regions(snapshot, identifier, target):
+    return region_state(snapshot, identifier, target)[0]
+
+
+def local_region_edit(snapshot, identifier, target):
+    """Latest explicit local edit with its original timestamp; no history inference."""
+    candidates = []
+    from diffeoforge.guided_working_fit import edits
+
+    candidates.extend(edits(snapshot, identifier, target))
+    for event in _local_events(snapshot, identifier):
+        edit = event.get("region_edit", {})
+        rows = event.get("problem_regions", {}).get(target, [])
+        clear = target in edit.get("cleared", [])
+        if rows or clear:
+            candidates.append((edit.get("recorded_at", 0), rows, clear))
+    edit = snapshot.region_edits.get(identifier, {})
+    rows = snapshot.problem_regions.get(identifier, {}).get(target, [])
+    if rows or target in edit.get("cleared", []):
+        candidates.append((edit.get("recorded_at", -1), rows, target in edit.get("cleared", [])))
+    if candidates:
+        return max(candidates, key=lambda r: r[0])
+    return None
+
+
+def region_state(snapshot, identifier, target, *, _seen=None, _search_history=True):
+    """A patch lives until explicit Clear, across reviews, saved starts and successors.
+
+    Older empty payloads cannot prove the user pressed Clear. Never rewrite those
+    journals; recover a same-source patch in presentation only.
+    """
+    seen = set() if _seen is None else _seen
+    key = (str(snapshot.study_directory), identifier, target)
+    if key in seen:
+        raise ValueError("Cyclic marked-area history")
+    seen.add(key)
+    local = local_region_edit(snapshot, identifier, target)
+    if local is not None:
+        _, rows, clear = local
+        return rows, clear
+    info = guided.record(snapshot) or {}
+    inherited = info.get("feedback") or {}
+    if inherited.get("target") == target:
+        if inherited.get("regions") or inherited.get("regions_cleared"):
+            return inherited.get("regions", []), bool(inherited.get("regions_cleared"))
+    if not _search_history:
+        return [], False
+    for row in reversed(info.get("history", [])):
+        root = Path(row["directory"])
+        if sha256_file(root / study.STUDY_MANIFEST) != row["manifest_sha256"]:
+            raise ValueError("Marked-area history changed")
+        parent = study.load_reference_calibration_study(root)
+        parent_info = guided.record(parent) or {}
+        if parent_info.get("target") != target:
+            continue
+        if parent_info.get("origin") != info.get("origin"):
+            raise ValueError("Marked-area history belongs to another source")
+        if not any(c.candidate_id == identifier for c in parent.candidates):
+            continue
+        # The sealed history already contains all predecessors in order. Do not
+        # recursively rescan every prefix of this list (exponential for empty marks).
+        rows, clear = region_state(parent, identifier, target, _seen=seen.copy(),
+                                  _search_history=False)
+        if rows or clear:
+            return rows, clear
+    return [], False
+
+
+def select(directory, identifier, ref):
+    snapshot = study.load_reference_calibration_study(directory)
+    parent = _same_source(snapshot, ref)
+    if not inspected(parent, ref["candidate_id"]):
+        raise ValueError("Inspect this saved field before selecting it as a working source")
+    if ref not in [r["reference"] for r in choices(snapshot, identifier)]:
+        raise ValueError("Choose a verified inspected fit from this form's saved history")
+    study._append_event(snapshot.study_directory, "guided_starting_fit_selected", dict(
+        reference=ref, anatomical_approval_created=False, optimizer_started=False))
+    return study.load_reference_calibration_study(directory)

@@ -26,7 +26,7 @@
             "additionalProperties": false,
             "required": ["engine", "config_sha256", "destination", "cancellation"],
             "properties": {
-              "engine": {"const": "modern_cpu"},
+              "engine": {"enum": ["modern_cpu", "modern_cuda"]},
               "config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
               "destination": {"type": "string", "minLength": 1},
               "cancellation": {"const": "cooperative_safe_points"}
