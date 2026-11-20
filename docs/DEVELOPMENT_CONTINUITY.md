@@ -1,6 +1,6 @@
 # Development continuity
 
-## Independent atlas initialization and stopping policy
+## dev230 — independent atlas initialization and stopping policy
 
 The atlas review offers separate choices for initialization and stopping.
 Opted-in GradientAscent runs preserve accepted joint checkpoints for
