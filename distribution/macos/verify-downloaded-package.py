@@ -11,6 +11,7 @@ import plistlib
 import subprocess
 import time
 from pathlib import Path
+from threading import Timer
 
 import yaml
 
@@ -18,6 +19,11 @@ from diffeoforge import __version__
 from diffeoforge.config import load_config
 from diffeoforge.desktop.reference_execution_controller import ReferenceExecutionController
 from diffeoforge.mesh import read_vtk_polydata, write_vtk_polydata
+from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY, stop_policy
+from diffeoforge.reference_final_export_recovery import checkpoint_iteration
+from diffeoforge.reference_morphospace_stopping import read_morphospace_stability
+from diffeoforge.result_report import collect_run_report
+from diffeoforge.runs import EXECUTION_CHECKPOINT_PATH
 
 
 def run(arguments, **kwargs):
@@ -70,6 +76,82 @@ def live_cancellation(checker, repository, root, native, worker):
     assert seconds < 20, f"Native cancellation took {seconds:.2f}s"
     return dict(outcome=result.outcome, seconds_after_request=seconds,
                 public_template_vertices=len(vertices), cancelled_after_progress=True)
+
+
+def verified_open_ended_checkpoint(destination, policy, capped_fixture_limit):
+    """Verify retained files and check the saved iteration without loading a pickle."""
+    report = collect_run_report(destination)
+    failed_checks = [check.label for check in report.checks if check.status != "pass"]
+    assert not failed_checks, failed_checks
+    assert report.result["status"] == "interrupted"
+    assert report.max_iterations is None
+    assert report.manifest["effective_config"]["optimization"]["max_iterations"] == (
+        capped_fixture_limit
+    )
+    stability = read_morphospace_stability(destination, verified_run_report=report)
+    assert stability is not None and stability["policy"] == policy and stability["observations"]
+    terminal = stability["terminal"]
+    assert terminal is None or terminal["reason"] == "cancelled", terminal
+    saved_iteration = checkpoint_iteration(destination / EXECUTION_CHECKPOINT_PATH)
+    assert saved_iteration > capped_fixture_limit, (
+        "The verified checkpoint did not advance beyond the fixture's declared limit"
+    )
+    return saved_iteration
+
+
+def open_ended_cancellation(checker, repository, root, native, worker):
+    """Observe and cancel the installed uncapped worker beyond a real fixture limit."""
+    root.mkdir()
+    public_meshes = repository / "examples/synthetic/meshes"
+    config = load_config(repository / "examples/minimal-atlas.yaml")
+    policy = stop_policy(MORPHOSPACE_STABILITY, unlimited_iterations=True)
+    config["project"]["atlas_stop"] = policy
+    config["input"].update(directory=str(public_meshes),
+                           template=str(public_meshes / "template.vtk"))
+    config["output"]["directory"] = str(root / "runs")
+    config["runtime"].update(threads=1, kernel_backend="torch",
+                             launcher={"type": "native", "executable": str(native)})
+    # Saving every step leaves an accepted state beyond this limit before the
+    # cancellation request, even when a platform stops with SIGTERM.
+    limit = 1
+    config["optimization"].update(
+        max_iterations=limit, save_every_n_iterations=1, print_every_n_iterations=1,
+    )
+    path = root / "open-ended.yaml"
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    destination = root / "runs/open-ended"
+    request = checker.reference_request(path, destination, native, "open-ended")
+    controller = ReferenceExecutionController(request, worker_command=(str(worker),))
+    observed_iteration = None
+    sent_at = None
+
+    def observe(event):
+        nonlocal observed_iteration, sent_at
+        if event.kind != "progress":
+            return
+        assert event.payload["maximum_iterations"] is None
+        assert event.payload["eta_to_iteration_cap_seconds"] is None
+        iteration = event.payload["iteration"]
+        if iteration > limit + 1 and sent_at is None:
+            assert controller.request_cancel()
+            observed_iteration, sent_at = iteration, time.monotonic()
+
+    # The test must bound its own wall time even though the reviewed optimizer
+    # is open-ended. A deadline cancellation does not count as observed proof.
+    deadline = Timer(180, controller.request_cancel)
+    deadline.start()
+    try:
+        result = controller.run(event_callback=observe)
+    finally:
+        deadline.cancel()
+    assert sent_at is not None and result.interrupted, (result.outcome, result.stderr)
+    elapsed = time.monotonic() - sent_at
+    assert elapsed < 20, f"Open-ended native cancellation took {elapsed:.2f}s"
+    saved_iteration = verified_open_ended_checkpoint(destination, policy, limit)
+    return dict(outcome=result.outcome, seconds_after_request=elapsed,
+                declared_fixture_iterations=limit, reported_iteration_limit=None,
+                observed_iteration=observed_iteration,
+                verified_checkpoint_iteration=saved_iteration)
 
 
 def main():
@@ -133,6 +215,9 @@ def main():
     results = checker.reference_check(repository, output / "public-workflows", native, worker)
     results["in_flight_cancellation"] = live_cancellation(
         checker, repository, output / "cancellation-check", native, worker
+    )
+    results["open_ended_cancellation"] = open_ended_cancellation(
+        checker, repository, output / "open-ended-check", native, worker
     )
     assert checker.inventory(installed) == proof["application_files"]
     run(["codesign", "--verify", "--deep", "--strict", installed], capture_output=True)

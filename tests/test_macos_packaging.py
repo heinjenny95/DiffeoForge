@@ -1,5 +1,7 @@
 """Mac package entrypoints retain their production worker dispatch contracts."""
 import importlib.util
+import json
+import pickle
 import runpy
 import sys
 from pathlib import Path
@@ -107,3 +109,39 @@ def test_mac_packaging_binds_runner_sha_and_clean_source(tmp_path, monkeypatch):
     status = " M src/diffeoforge/__init__.py\n"
     with pytest.raises(RuntimeError, match="clean source checkout"):
         module.checked_source_commit(tmp_path)
+
+
+@pytest.mark.parametrize(("saved_iteration", "tampered", "error"), [
+    (4, False, None),
+    (2, False, "did not advance"),
+    (4, True, "Output artifact integrity"),
+])
+def test_mac_open_ended_proof_requires_verified_post_limit_checkpoint(
+    tmp_path, saved_iteration, tampered, error,
+):
+    from test_reference_morphospace_stopping import _retained_report
+
+    from diffeoforge.runs import EXECUTION_CHECKPOINT_PATH, _inventory_outputs
+
+    spec = importlib.util.spec_from_file_location(
+        "mac_package_verify", ROOT / "verify-downloaded-package.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    run, evidence = _retained_report(
+        tmp_path, interrupted=True, full_window=False, unlimited=True,
+    )
+    checkpoint = run / EXECUTION_CHECKPOINT_PATH
+    checkpoint.write_bytes(pickle.dumps({"current_iteration": saved_iteration}))
+    result_path = run / "result.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    (run / "output-inventory.json").unlink()
+    result["outputs"] = _inventory_outputs(run)
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    if tampered:
+        checkpoint.write_bytes(pickle.dumps({"current_iteration": saved_iteration + 1}))
+    if error is None:
+        assert module.verified_open_ended_checkpoint(run, evidence["policy"], 2) == saved_iteration
+    else:
+        with pytest.raises(AssertionError, match=error):
+            module.verified_open_ended_checkpoint(run, evidence["policy"], 2)

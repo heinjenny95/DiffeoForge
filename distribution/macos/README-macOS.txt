@@ -1,7 +1,8 @@
-DiffeoForge v207 - macOS colleague test build
+DiffeoForge - macOS colleague test build
 
-Requires macOS 15 or newer. Choose AppleSilicon for M-series Macs or Intel for Intel Macs. These packages
-contain the v207 application code, supervised workers and an isolated Deformetrica
+Requires macOS 15 or newer. Choose AppleSilicon for M-series Macs or Intel for Intel Macs.
+The package contains the version identified by the DMG filename, supervised workers
+and an isolated Deformetrica
 4.3.0 / Python 3.8 / Torch 1.6 CPU environment. On Apple Silicon the reference
 environment uses Rosetta 2. The application interface itself uses the selected
 native architecture. GPU/MPS and the optional Modern engine are not included.
@@ -29,6 +30,9 @@ pip installation is needed. The example is a software check, not anatomy approva
 The first KeOps computation compiles formula-specific CPU kernels and can take
 several minutes. Later runs reuse the local cache. This one-time setup is separate
 from optimization iterations; detailed compiler messages remain in the run log.
+Under Atlas stopping rule, Run until morphospace stabilizes · no iteration limit
+uses the 200- and 400-iteration stability checks with an open-ended joint fit.
+Cancellation and technical stops still apply.
 
 Keep Windows projects unchanged while testing a copy on Mac. Existing native
 checkpoints are tied to their original runtime and platform; do not move a Windows
