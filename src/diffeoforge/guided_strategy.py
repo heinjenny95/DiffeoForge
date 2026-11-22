@@ -479,6 +479,8 @@ def _selected_start_direction(snapshot, context, chosen):
             start_label=choice["label"], partial=False), chosen)
     direction = direction or _default_trial_direction(snapshot, selected_context, chosen)
     if direction is not None:
+        if direction["mode"] == "blocked":
+            return dict(direction, explicit_start=True)
         return dict(direction, explicit_start=True, reason=f"Continue from your selected "
                     f"{reference['method'].title()} fit. " + direction["reason"])
     quality = local_quality_note(parent, reference)
@@ -707,8 +709,11 @@ def _prepare_return_direction(context, direction, chosen):
     request = "regional:" + symptom
     proposal = working[request]
     if not proposal["available"] or proposal["initialization_reference"] != reference:
-        reason = proposal.get("blocked_reason") or "The saved field cannot seed this adjustment."
-        return dict(start, reason=" ".join(filter(None, (reason, quality))))
+        reason = (proposal.get("blocked_reason") if not proposal["available"] else "")
+        reason = reason or "The saved field cannot seed this adjustment."
+        return dict(start, mode="blocked", reason=" ".join(filter(None, (
+            "Your starting fit and marked areas are saved.", reason, quality,
+        ))))
     focused = (proposal.get("regional_recipe") or {}).get("protected_capture")
     next_step = proposal["reason"] if focused else " ".join((
         proposal.get("bounded_fit_note") or "Prepare a protected local test from this saved fit.",

@@ -83,6 +83,7 @@ def inputs(snapshot, identifier, context, *, verified=None):
     # geometry. A newer failed result is neither the current seed nor its quality.
     context = dict(context, feedback={**context["feedback"], ref["candidate_id"]: {}})
     data.update(current=candidate, current_reference=ref, baseline=ref,
+                required_starting_reference=ref,
                 severe=feedback.severe_regression(parent, ref["candidate_id"]), context=context)
     data["references"][ref["directory"]] = parent
     from diffeoforge.regional_continuation import prepare_preview

@@ -223,9 +223,13 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         if r.get('family') == 'regional' and r['target'] == reference['target']
         and r.get('regions', marked) == marked and r.get('reference')
         and (r.get('regional_recipe') or {}).get('phase') == 'initial_warm'), None)
+    # A same-start method comparison must not replace an explicitly chosen successor.
+    comparison_seed = initial_case['reference'] if initial_case else None
     coarse_other = bool(not resolution and evidence
                         and previous_recipe.get('phase') == 'initial_warm'
-                        and initial_case
+                        and comparison_seed
+                        and data.get('required_starting_reference', comparison_seed)
+                        == comparison_seed
                         and not any((r.get('regional_recipe') or {}).get('phase')
                                     == 'coarse_method_check'
                                     and r['target'] == reference['target']
@@ -296,7 +300,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         if coarse_other:
             # Both models must start from the same saved field. Chaining the
             # second model after the first model confounds this comparison.
-            seed = initial_case['reference']
+            seed = comparison_seed
             values = dict(seed['values'])
         recipe.update(version='protected-local-v7', residual=False,
             phase='initial_warm' if initial_warm else 'coarse_method_check',

@@ -224,7 +224,7 @@ class GuidedFeedbackControls(QWidget):
         self.save.setEnabled(self.decision is not None)
 
 
-def render_starting_fits(window, snapshot, identifier, layout, data):
+def render_starting_fits(window, snapshot, identifier, layout, data, *, edit_current=False):
     """The escape route is a visible button; no optimizer or automatic approval."""
     if not data or not data["choices"]:
         return
@@ -253,13 +253,15 @@ def render_starting_fits(window, snapshot, identifier, layout, data):
         caption.setWordWrap(True)
         caption.setObjectName("guidedStartingFit")
         layout.addWidget(caption)
-        if not selection["current"]:
+        if edit_current or not selection["current"]:
             work = QPushButton("Work from this starting fit · mark / edit areas…")
             work.setObjectName("workingStartingFit")
             target = getattr(window, "_guided_review_target", None)
-            _set_action_emphasis(work, not (target and target["kind"] == "common"))
+            _set_action_emphasis(work, not edit_current
+                                 and not (target and target["kind"] == "common"))
             work.clicked.connect(lambda: window._open_guided_working_fit(identifier, selected))
             layout.addWidget(work)
+        if not selection["current"]:
             inspect_start = QPushButton("Inspect retained starting fit")
             inspect_start.clicked.connect(lambda: window._open_guided_saved_fit(selected))
             layout.addWidget(inspect_start)

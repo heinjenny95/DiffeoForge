@@ -1,5 +1,14 @@
 # Development continuity
 
+## dev233 — advance from a selected saved pilot fit
+
+A protected correction uses the saved fit explicitly chosen by the researcher.
+The automatic same-start method comparison remains available when its starting
+field matches that choice. If the proposed correction is genuinely unavailable,
+the pilot reports the reason and keeps marked-area editing and earlier fits
+accessible. It no longer asks for the same selection again. Numerical warnings,
+approval state and the separate Run action retain their meaning.
+
 ## dev232 — keep the atlas choices in review
 
 Checking linked atlas choices keeps the user on Step 3 while verifying the

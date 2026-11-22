@@ -148,6 +148,72 @@ def test_explicit_selected_fit_input_concern_keeps_a_named_input_action(
     assert state["feedback"]["guided-current"]["problem_regions"][selected["target"]] == marks
 
 
+def test_saved_marks_with_blocked_adjustment_do_not_reopen_the_working_fit(
+    tmp_path, monkeypatch,
+):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from diffeoforge import guided_working_fit
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    snapshot, current, _other, marks = _selected_other_method(
+        tmp_path, monkeypatch, selected_symptom="detail")
+    identifier, target = current["candidate_id"], current["target"]
+    snapshot = guided.next_action(snapshot.study_directory, "adaptive_working_start", identifier,
+        goal=dict(reference=current, inspected_subjects=[target],
+                  display_scopes={target: "preview"}, problem_regions={target: marks}))
+    reason = "The marked-area correction is incompatible with this saved field."
+    propose = guided_working_fit.propose
+
+    def blocked_regional_proposal(parent, request, data):
+        proposal = propose(parent, request, data)
+        if request.startswith("regional:"):
+            proposal = dict(proposal, available=False, blocked_reason=reason)
+        return proposal
+
+    monkeypatch.setattr(guided_working_fit, "propose", blocked_regional_proposal)
+    monkeypatch.setattr(study.ReferenceCalibrationStudyRunner, "run_current_stage",
+                        lambda *_a, **_k: pytest.fail("Recovery started an optimizer"))
+    journal = snapshot.study_directory / study.STUDY_EVENTS
+    before = journal.read_bytes()
+    state = guided_strategy.prepare_proposals(snapshot, guided_strategy.state(snapshot))
+    result = state["fit_direction"]
+    assert result["mode"] == "blocked" and result["current"] == current
+    assert reason in result["reason"]
+    assert state["feedback"][identifier]["problem_regions"][target] == marks
+
+    app = QApplication.instance() or QApplication([])
+    view = ReferenceCalibrationDialog(snapshot.study_directory)
+    opened = []
+    monkeypatch.setattr(view, "_open_guided_working_fit", lambda *args: opened.append(args))
+    view.show()
+    try:
+        wait_pilot_view(view)
+        assert "starting fit and marked areas are saved" in view.status.text()
+        assert reason in view.status.text()
+        assert not (view.next_step_button.isVisible()
+                    and view.next_step_button.text().startswith("Work from saved fit"))
+        assert not view._worker
+        assert not view._guided_footer_action or view._guided_footer_action[1] != (
+            "fit_direction_working")
+        choices = [button for button in view.content.findChildren(QPushButton)
+                   if button.isVisible() and button.isEnabled()]
+        assert any("earlier fit" in button.text().lower() for button in choices)
+        editor = next(button for button in choices if "mark / edit" in button.text().lower())
+        assert editor.objectName() != "primary"
+        editor.click()
+        assert opened == [(identifier, current)]
+        assert journal.read_bytes() == before
+        assert study.load_reference_calibration_study(snapshot.study_directory).visual_reviews == (
+            snapshot.visual_reviews)
+    finally:
+        view.close()
+        app.processEvents()
+
+
 def test_selected_no_mark_footer_prepares_exact_working_fit_without_starting_optimizer(
     tmp_path, monkeypatch,
 ):

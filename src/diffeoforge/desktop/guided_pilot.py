@@ -516,6 +516,8 @@ def render(window, prepared):
                     "Open the saved reconstruction to confirm areas to improve and retain.",
                     goal=direction.get("partial", False),
                 )
+            elif mode == "blocked":
+                window.status.setText(direction["reason"])
             elif mode == "trial":
                 from diffeoforge.pilot_adaptive_run import eligible as adaptive_eligible
 
@@ -665,7 +667,11 @@ def render(window, prepared):
             start_card.setObjectName("card")
             start_card.setProperty("workingFit", True)
             start_layout = QVBoxLayout(start_card)
-            render_starting_fits(window, snapshot, candidate.candidate_id, start_layout, feedback)
+            render_starting_fits(
+                window, snapshot, candidate.candidate_id, start_layout, feedback,
+                edit_current=bool(direction and direction["mode"] == "blocked"
+                                  and direction["identifier"] == candidate.candidate_id),
+            )
             if not unresolved:
                 recovery_tools(candidate, start_layout)
             if review and review["pending"] and review["kind"] == "common":

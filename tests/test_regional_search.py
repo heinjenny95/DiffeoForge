@@ -75,6 +75,7 @@ def test_first_marked_fit_reoptimizes_the_existing_broad_basis_then_checks_other
 ):
     from test_regional_fit import proposal_data
 
+    from diffeoforge import guided_feedback, guided_working_fit
     from diffeoforge import reference_guided_pilot as guided
 
     info = dict(goal='regional', pilot_order=[1])
@@ -111,6 +112,30 @@ def test_first_marked_fit_reoptimizes_the_existing_broad_basis_then_checks_other
     assert other['initialization_reference'] == common
     assert other['regional_recipe']['protection_reference'] == common
     assert other['anchor'] == data['anchor']  # Human comparison stays available.
+
+    # A person can inspect the improved successor and deliberately keep working
+    # from it, even when that fit still needs spatial and intersection repair.
+    # The optional common-basis method comparison must not replace this choice.
+    selected = data['anchor']
+    data['current'].candidate_id = selected['candidate_id']
+    snapshot.candidates = [data['current']]
+    quality = data['current'].metrics['attachment_comparison']['subjects']['shape.vtk'][
+        'regional_quality']
+    quality.update(numerical_selection_suitable=False,
+                   no_new_intersection_flags=False, spatial_resolution_sufficient=False)
+    monkeypatch.setattr(guided_feedback, 'require_starting_fit_choice', lambda *_: None)
+    monkeypatch.setattr(guided_feedback, 'verify_reference', lambda _: snapshot)
+    working, verified = guided_working_fit.inputs(
+        snapshot, selected['candidate_id'], data['context'], verified=data)
+    correction = guided_working_fit.propose(working, 'regional:detail', verified)
+    assert correction['available'], correction['blocked_reason']
+    assert correction['regional_recipe']['phase'] != 'coarse_method_check'
+    assert correction['initialization_reference'] == selected
+    assert correction['anchor'] == selected and correction['regions'] == data['regions']
+    assert correction['method'] == selected['method']
+    assert not correction['numerical_extension']
+    assert guided_feedback.severe_regression(snapshot, selected['candidate_id'])
+
     data['regions'] = [dict(symptom='detail', radius=.2)]
     changed = regional_pilot.proposal(snapshot, 'x', data, symptom='detail')
     assert changed['regional_recipe']['phase'] != 'coarse_method_check'
