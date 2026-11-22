@@ -93,7 +93,7 @@ def inputs(snapshot, identifier, context, *, regions_override=None, allow_contin
                 response_baseline=response_baseline,
                 regional_capture=regional_capture,
                 common_optimization=common_optimization,
-                capacity_context=capacity_context,
+                capacity_context=capacity_context, review_snapshot=snapshot,
                 spatial_diagonal=study._verify_manifest(snapshot.study_directory)['template_diagonal'])
     from diffeoforge.regional_continuation import prepare_preview
 

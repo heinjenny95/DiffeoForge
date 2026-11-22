@@ -44,6 +44,89 @@ def materials(tmp_path):
                            points=fine,triangles=triangles)
 
 
+@pytest.fixture
+def saved_warm_frame(materials, monkeypatch):
+    from diffeoforge import config
+    from diffeoforge import reference_calibration_study as study
+
+    root = Path(materials.coarse['source_run'])
+    target = 'target.vtk'
+    template = materials.coarse['reference_source']
+    manifest = dict(inputs=dict(template=dict(copy=Path(template['path']).name,
+                                             sha256=template['sha256'])))
+    candidate = SimpleNamespace(candidate_id='saved', config_path=root/'seed.yaml',
+                                run_directory=Path(materials.fine['source_run']))
+    quality = dict(evaluation=deepcopy(materials.fine))
+    reviewed = SimpleNamespace(metrics=dict(attachment_comparison=dict(
+        subjects={target: dict(regional_quality=quality)})))
+    seed = SimpleNamespace(study_directory=root, candidates=[candidate],
+        plan=SimpleNamespace(selected_pilot_subjects=[SimpleNamespace(filename=target)]),
+        attachment_comparison=dict(guided=dict(target=target)))
+    previous = SimpleNamespace(candidates=[reviewed])
+    monkeypatch.setattr(study, '_verify_manifest', lambda _: manifest)
+    monkeypatch.setattr(config, 'load_config', lambda _: {})
+    return SimpleNamespace(seed=seed, previous=previous, candidate=candidate, quality=quality)
+
+
+def test_saved_fine_material_requires_residual_before_adaptive_prepare(saved_warm_frame):
+    selection = saved_warm_frame
+    assert frame.warm_start_requires_residual(selection.seed, 'saved', selection.previous)
+
+
+def test_warm_material_preflight_refuses_a_nonnested_saved_grid(
+    tmp_path, materials, saved_warm_frame,
+):
+    selection = saved_warm_frame
+    shifted = materials.points.copy()
+    shifted[0, 0] += .01
+    incompatible = receipt(tmp_path/'nonnested', shifted, materials.triangles, shift=.05)
+    selection.quality['evaluation'] = incompatible
+    selection.candidate.run_directory = Path(incompatible['source_run'])
+    with pytest.raises(ValueError, match='unchanged original material'):
+        frame.warm_start_requires_residual(selection.seed, 'saved', selection.previous)
+
+
+def test_same_warm_connectivity_is_accepted_on_reserialized_material(
+    tmp_path, materials, saved_warm_frame,
+):
+    selection = saved_warm_frame
+    matching = receipt(tmp_path/'matching', materials.vertices, materials.faces, shift=.05)
+    original = Path(matching['reference_source']['path'])
+    original.write_bytes(original.read_bytes()+b'\n')
+    matching['reference_source']['sha256'] = sha256_file(original)
+    assert matching['reference_source']['sha256'] != materials.coarse['reference_source']['sha256']
+    selection.quality['evaluation'] = matching
+    selection.candidate.run_directory = Path(matching['source_run'])
+    assert not frame.warm_start_requires_residual(selection.seed, 'saved', selection.previous)
+
+
+def test_material_evidence_from_a_different_run_does_not_redirect_warm_start(
+    materials, saved_warm_frame,
+):
+    selection = saved_warm_frame
+    selection.candidate.run_directory = Path(materials.coarse['source_run'])
+    assert not frame.warm_start_requires_residual(selection.seed, 'saved', selection.previous)
+
+
+def test_existing_residual_does_not_require_another_prefix(saved_warm_frame, monkeypatch):
+    from diffeoforge import regional_fit
+
+    selection = saved_warm_frame
+    monkeypatch.setattr(regional_fit, 'read_plan', lambda _: dict(residual={'parent_run': 'older'}))
+    assert not frame.warm_start_requires_residual(selection.seed, 'saved', selection.previous)
+
+
+@pytest.mark.parametrize('changed', ['endpoint.vtk', 'p.txt', 'original.vtk'])
+def test_warm_material_preflight_fails_closed_on_changed_saved_evidence(
+    saved_warm_frame, changed,
+):
+    selection = saved_warm_frame
+    path = selection.candidate.run_directory/changed
+    path.write_bytes(path.read_bytes()+b'\n')
+    with pytest.raises(ValueError, match='changed'):
+        frame.warm_start_requires_residual(selection.seed, 'saved', selection.previous)
+
+
 def test_existing_fine_grid_is_selected_without_replacing_old_points(materials):
     selected = frame.common_grid(materials.coarse['reference_source']['path'],
                                  [materials.coarse,materials.fine])

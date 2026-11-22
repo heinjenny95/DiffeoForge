@@ -15,6 +15,12 @@ on one side, the pilot offers the protected single-trial workflow if eligible.
 The same marks and selected field are used, with ordinary spatial, temporal,
 intersection and preservation checks.
 
+The pilot also compares the bound warm-start mesh to the verified saved material
+frame. A finer nested frame that needs a new residual basis uses the protected
+single-trial workflow. This keeps the complete selected deformation as a prefix
+and carries over the marks. Adaptive preparation rechecks this compatibility
+before sealing a new action.
+
 The first stage continues the selected field for at most 100 updates. If a red
 region stalls, three short, controlled residual tests compare the original
 basis, a nested basis with additional controls, and that same nested basis with

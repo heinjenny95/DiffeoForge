@@ -1,5 +1,14 @@
 # Development continuity
 
+## dev234 — guide a refined saved field to a protected local test
+
+The pilot checks whether a selected saved field was qualified on a finer
+original material grid than its warm initialization uses. When the correction
+requires preserving that field as a prefix and preparing new residual controls,
+the primary action prepares a single protected local trial. It keeps the selected
+field and marked areas. Adaptive preparation checks the same compatibility before
+sealing an action. Numerical checks and explicit Run remain required.
+
 ## dev233 — advance from a selected saved pilot fit
 
 A protected correction uses the saved fit explicitly chosen by the researcher.

@@ -329,6 +329,32 @@ def test_preparation_creates_only_new_action_and_normalizes_warm_field(action):
     assert result.visual_reviews == {}
 
 
+def test_stale_adaptive_prepare_refuses_refined_material_before_sealing(
+    tmp_path, monkeypatch, action,
+):
+    from diffeoforge import regional_material_frame
+
+    destination = tmp_path / "adaptive-actions"
+    destination.mkdir()
+    previous = SimpleNamespace(study_directory=tmp_path / "reviewed")
+    arguments = dict(action.arguments, destination_parent=destination, previous=previous)
+    original = {p: sha256_file(p) for p in action.base.study_directory.rglob("*") if p.is_file()}
+
+    def requires_residual(seed, identifier, reviewed):
+        assert seed is action.base and identifier == action.seed["candidate_id"]
+        assert reviewed is previous
+        return True
+
+    monkeypatch.setattr(regional_material_frame, "warm_start_requires_residual", requires_residual)
+    with pytest.raises(ValueError, match="protected local"):
+        orchestration.prepare(arguments)
+
+    assert not list(destination.iterdir())
+    assert not action.args_seen and not action.launches
+    assert {p: sha256_file(p) for p in action.base.study_directory.rglob("*")
+            if p.is_file()} == original
+
+
 @pytest.mark.parametrize(
     "change",
     [

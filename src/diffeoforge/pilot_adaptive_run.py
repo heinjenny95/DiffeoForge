@@ -252,6 +252,13 @@ def prepare(arguments):
     field = native.inspect_field(seed_snapshot, ref["candidate_id"])
     if field["reference"] != ref:
         raise ValueError("Adaptive initial field changed; choose an unchanged-field test")
+    from diffeoforge.regional_material_frame import (
+        PROTECTED_RESIDUAL_NOTE,
+        warm_start_requires_residual,
+    )
+
+    if warm_start_requires_residual(seed_snapshot, ref["candidate_id"], args["previous"]):
+        raise ValueError("Reopen pilot guidance. " + PROTECTED_RESIDUAL_NOTE)
     incoming = args["feedback"]
     identity_keys = ("directory", "candidate_id", "manifest_sha256", "binding", "target")
     if any(incoming.get(key) != ref[key] for key in identity_keys):

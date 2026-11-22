@@ -18,22 +18,32 @@ def retained_evaluation(record, run, target):
     ):
         raise ValueError("Regional predecessor changed")
     latest = study.load_reference_calibration_study(previous["directory"])
-    for row in latest.candidates:
+    return matching_retained_evaluation(retained_evaluations(latest, target), run)
+
+
+def retained_evaluations(snapshot, target):
+    from diffeoforge.regional_frame import compatible
+
+    for row in snapshot.candidates:
         q = (
-            (row.metrics or {})
+            (getattr(row, "metrics", None) or {})
             .get("attachment_comparison", {})
             .get("subjects", {})
             .get(target, {})
             .get("regional_quality", {})
         )
         for entry in (q.get("evaluation"), q.get("baseline_evaluation")):
-            from diffeoforge.regional_frame import compatible
+            if compatible(entry):
+                yield entry
 
-            if (compatible(entry)
-                    and Path(entry["source_run"]).resolve() == Path(run).resolve()):
-                if sha256_file(Path(entry["endpoint"]["path"])) != entry["endpoint"]["sha256"]:
-                    raise ValueError("Retained original-grid endpoint changed")
-                return entry
+
+def matching_retained_evaluation(evaluations, run):
+    run = Path(run).resolve()
+    for entry in evaluations:
+        if Path(entry["source_run"]).resolve() == run:
+            if sha256_file(Path(entry["endpoint"]["path"])) != entry["endpoint"]["sha256"]:
+                raise ValueError("Retained original-grid endpoint changed")
+            return entry
     return None
 
 

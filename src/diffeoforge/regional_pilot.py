@@ -515,6 +515,21 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     )
     bounded_note = ""
     if bounded_available:
+        from diffeoforge.regional_material_frame import (
+            PROTECTED_RESIDUAL_NOTE,
+            warm_start_requires_residual,
+        )
+
+        checks = data.setdefault("adaptive_warm_frame_checks", {})
+        key = (seed["directory"], seed["candidate_id"])
+        if key not in checks:
+            checks[key] = warm_start_requires_residual(
+                selected_parent, seed["candidate_id"], data.get("review_snapshot", snapshot),
+            )
+        if checks[key]:
+            bounded_available = False
+            bounded_note = PROTECTED_RESIDUAL_NOTE
+    if bounded_available:
         from diffeoforge.guided_response import measured
 
         baseline = data.get("response_baseline") if seed == data["anchor"] else None
@@ -526,7 +541,8 @@ def proposal(snapshot, identifier, data, *, symptom=None):
                 "A red area has no surface samples in one direction. Use one protected "
                 "local test from this saved fit."
             )
-            reason = bounded_note + " " + reason
+    if bounded_note:
+        reason = bounded_note + " " + reason
     from diffeoforge.pilot_iteration_effort import legacy_checkpoint, regional_allowance
 
     inherited = getattr(snapshot, "attachment_comparison", {}).get("iterations", 120)

@@ -5,6 +5,11 @@ import numpy as np
 
 from diffeoforge.mesh import sha256_file
 
+PROTECTED_RESIDUAL_NOTE = (
+    "The saved fit was checked on a refined original mesh. Prepare one protected "
+    "local test that keeps its complete deformation and fits a new correction."
+)
+
 
 def _geometry(path):
     from diffeoforge.surface_io import load_surface_mesh
@@ -15,6 +20,51 @@ def _geometry(path):
 def _same_connectivity(a, b):
     return (len(a.vertices) == len(b.vertices)
             and np.array_equal(a.triangles, b.triangles))
+
+
+def _verify_nested_material(refined, original):
+    vertices = np.asarray(original.vertices)
+    if not np.array_equal(np.asarray(refined.vertices)[:len(vertices)], vertices):
+        raise ValueError('Saved fields do not share unchanged original material vertices')
+    if len(vertices) == len(refined.vertices) and not _same_connectivity(original, refined):
+        raise ValueError('Saved fields have conflicting original material connectivity')
+
+
+def warm_start_requires_residual(seed_snapshot, identifier, previous_snapshot):
+    """Check the same saved material evidence used when binding a warm trial."""
+    from diffeoforge import reference_calibration_study as study
+    from diffeoforge.config import load_config
+    from diffeoforge.reference_guided_pilot import record
+    from diffeoforge.regional_fit import read_plan
+    from diffeoforge.regional_frame import verify_source
+    from diffeoforge.regional_residual import matching_retained_evaluation, retained_evaluations
+
+    target = (record(seed_snapshot) or {}).get("target")
+    if not target:
+        return False
+    evaluations = tuple(retained_evaluations(previous_snapshot, target))
+    if not evaluations:
+        return False
+    candidate = next(c for c in seed_snapshot.candidates if c.candidate_id == identifier)
+    run = study.calibration_candidate_run_directory(candidate)
+    evaluation = matching_retained_evaluation(evaluations, run)
+    if evaluation is None:
+        return False
+    plan = read_plan(load_config(candidate.config_path))
+    if plan and plan.get("residual"):
+        return False  # Warm refinement already uses the staged residual material grid.
+    verify_source(evaluation)
+    manifest = study._verify_manifest(seed_snapshot.study_directory)
+    template = manifest["inputs"]["template"]["copy"]
+    incoming = _geometry(study._safe_study_path(seed_snapshot.study_directory, template))
+    endpoint = _geometry(evaluation["endpoint"]["path"])
+    if _same_connectivity(incoming, endpoint):
+        return False
+    refined = _geometry(evaluation["reference_source"]["path"])
+    if not _same_connectivity(refined, endpoint):
+        raise ValueError("Saved evaluation endpoint and reference grid have different connectivity")
+    _verify_nested_material(refined, incoming)
+    return True
 
 
 def common_grid(source, evaluations):
@@ -29,11 +79,7 @@ def common_grid(source, evaluations):
         grids.append((row, _geometry(row['path'])))
     chosen, geometry = max(grids, key=lambda item: len(item[1].vertices))
     for other in [original, *(g for _, g in grids)]:
-        vertices = np.asarray(other.vertices)
-        if not np.array_equal(np.asarray(geometry.vertices)[:len(vertices)], vertices):
-            raise ValueError('Saved fields do not share unchanged original material vertices')
-        if len(vertices) == len(geometry.vertices) and not _same_connectivity(other, geometry):
-            raise ValueError('Saved fields have conflicting original material connectivity')
+        _verify_nested_material(geometry, other)
     return chosen
 
 
