@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.guided_strategy import remaining_forms
-from diffeoforge.reference_guided_pilot import record
+from diffeoforge.reference_guided_pilot import ATLAS_FIRST, record
 
 
 def _extension_reason(offer):
@@ -211,6 +211,17 @@ def render(window, prepared):
     explanation.setObjectName("pilotScope")
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
+    if strategy.get("correction_policy") == ATLAS_FIRST and info["phase"] == "screen":
+        from diffeoforge.regional_pilot import MINIMUM_NEW_NATIVE_TIMEPOINTS
+
+        basis_note = QLabel(
+            "Each specimen starts on the shared template and control grid. The pilot uses "
+            f"RK2 integration with at least {MINIMUM_NEW_NATIVE_TIMEPOINTS} timepoints "
+            "so a protected correction can "
+            "reuse this basis. A correction with different settings requires a transfer check."
+        )
+        basis_note.setWordWrap(True)
+        window.content_layout.addWidget(basis_note)
     if bounded_action:
         extension_from = bounded_action.get("extension_from")
         effort_label = (
@@ -288,6 +299,10 @@ def render(window, prepared):
             f"{progress_summary['total']}.")
         progress_note.setWordWrap(True)
         window.content_layout.addWidget(progress_note)
+        if progress_summary.get("transfer_note"):
+            transfer_note = QLabel(progress_summary["transfer_note"])
+            transfer_note.setWordWrap(True)
+            window.content_layout.addWidget(transfer_note)
         proposed_start = (progress_summary.get("common_reuse") or {}).get("start_description")
         if proposed_start:
             note = QLabel(proposed_start)
@@ -486,6 +501,10 @@ def render(window, prepared):
                 if reuse.get("mode") in {"review", "feedback"}:
                     window._guided_footer_action = (snapshot.study_directory,
                         "common_review", reuse["reference"])
+                elif reuse.get("mode") == "project_approved":
+                    window._guided_footer_action = (snapshot.study_directory,
+                        "project_approved", reuse)
+                    window.next_step_button.setToolTip(reuse["reason"])
                 _set_action_emphasis(window.next_step_button, True)
                 break
 

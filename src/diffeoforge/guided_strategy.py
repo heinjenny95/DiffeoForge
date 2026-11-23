@@ -268,7 +268,9 @@ def _read_state(snapshot):
             if snapshot.visual_reviews.get(c.candidate_id) is True}
     if (snapshot.plan.pilot_subject_count == 1 and info["phase"] != "joint"
             and (snapshot.attachment_comparison.get("regional_objective")
-                 or (info.get("strategy") or {}).get("form_progress"))):
+                 or (info.get("strategy") or {}).get("form_progress")
+                 or ((info.get("strategy") or {}).get("correction_policy") == guided.ATLAS_FIRST
+                     and sum(v is True for v in snapshot.visual_reviews.values()) == 1))):
         from diffeoforge.pilot_form_progress import preview
 
         result["next_forms"] = {c.candidate_id: preview(snapshot, c.candidate_id, result)
@@ -771,11 +773,16 @@ def verify_strategy(info, record, manifest, study_root=None):
             or type(info["screen_trials_spent"]) is not int or info["screen_trials_spent"] < 2):
         return False
     previous = strategy.get("previous")
+    policy = strategy.get("correction_policy")
+    if policy is not None and policy != guided.ATLAS_FIRST:
+        return False
     if previous:
         root = Path(previous["directory"])
         if sha256_file(root / study.STUDY_MANIFEST) != previous["manifest_sha256"]:
             raise ValueError("Interactive pilot predecessor changed")
         parent = study._verify_manifest(root)["attachment_comparison"]["guided"]
+        if policy != (parent.get("strategy") or {}).get("correction_policy"):
+            return False
         if (parent["origin"] != info["origin"] or info["screen_trials_spent"] !=
                 parent["screen_trials_spent"] + (0 if info["phase"] == "joint"
                                                   else len(record["methods"]))):
@@ -888,6 +895,10 @@ def verify_strategy(info, record, manifest, study_root=None):
         from diffeoforge.pilot_common_capacity import verify
 
         verify(info, record, manifest, study_root)
+    if strategy.get("approved_projection"):
+        from diffeoforge.pilot_common_projection_child import verify
+
+        verify(info, record, manifest, study_root)
     if strategy.get("common_candidate_step"):
         from diffeoforge.pilot_common_candidate import verify
 
@@ -913,6 +924,7 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
     strategy.pop("common_diagnosis_test", None)
     strategy.pop("common_basis_step", None)
     strategy.pop("common_capacity_request", None)
+    strategy.pop("approved_projection", None)
     strategy.pop("common_candidate_step", None)
     strategy.pop("common_multiscale", None)
     strategy.pop("control_capacity_request", None)

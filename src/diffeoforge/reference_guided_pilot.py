@@ -17,6 +17,7 @@ from diffeoforge.reference_calibration import CalibrationCandidate
 
 VERSION = "guided-pilot-v2"
 ADAPTIVE_VERSION = "guided-pilot-v3"
+ATLAS_FIRST = "shared-basis-first-v1"
 MAX_SCREEN_TRIALS = 12
 
 
@@ -189,7 +190,8 @@ def prepare(directory):
         approved=(),
         history=(),
         spent=0,
-        strategy={} if config["project"]["parameter_provenance"]["attachment_selection"].get(
+        strategy={"correction_policy": ATLAS_FIRST}
+        if config["project"]["parameter_provenance"]["attachment_selection"].get(
             "workflow") == ADAPTIVE_VERSION else None,
     )
 
@@ -209,6 +211,15 @@ def _batch(
 
     manifest = study._verify_manifest(source.study_directory)
     config = copy.deepcopy(load_config(source.study_directory / manifest["source_config"]["copy"]))
+    if (strategy or {}).get("correction_policy") == ATLAS_FIRST:
+        # Initialize the common and individual branches on the same integration
+        # grid required by directly learned protected fields. A later declared
+        # numerical contrast still loads its exact saved configuration below.
+        from diffeoforge.regional_pilot import MINIMUM_NEW_NATIVE_TIMEPOINTS
+
+        deformation = config["model"]["deformation"]
+        deformation.update(use_rk2=True, timepoints=max(
+            deformation["timepoints"], MINIMUM_NEW_NATIVE_TIMEPOINTS))
     # Saved singleton fields are frozen for initialization. Their optimizer
     # settings must not replace the source project's eventual joint update choices.
     confirmation_freeze_settings = {
@@ -281,6 +292,15 @@ def _batch(
         from diffeoforge.pilot_form_progress import configure
 
         configure(config, strategy["form_progress"], cohort_method)
+    if (strategy or {}).get("approved_projection"):
+        from diffeoforge.guided_feedback import verify_reference
+        from diffeoforge.pilot_common_projection import BUDGET
+
+        ref = strategy["control_basis"]
+        basis = verify_reference(ref)
+        candidate = next(c for c in basis.candidates if c.candidate_id == ref["candidate_id"])
+        config = copy.deepcopy(load_config(candidate.config_path))
+        iterations = BUDGET
     if multiscale:
         from diffeoforge.pilot_multiscale_study import configure_source
 
@@ -470,6 +490,15 @@ def _batch(
     )
     parent_directory = (Path(destination_parent).resolve() if destination_parent is not None
                         else source.study_directory.parent)
+    if destination_parent is None and previous:
+        prior_folder = previous.study_directory.parent
+        if (prior_folder / "original-study.json").is_file():
+            from diffeoforge.pilot_common_projection import original_directory
+
+            transferred = original_directory(prior_folder)
+            history_roots = {Path(row["directory"]).resolve() for row in history}
+            if transferred == previous.study_directory or transferred in history_roots:
+                parent_directory = prior_folder
     destination = parent_directory / ("guided-pilot-" + uuid4().hex[:12])
     config_path = destination.with_suffix(".yaml")
     study._write_yaml(config_path, config, overwrite=False)

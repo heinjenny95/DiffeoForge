@@ -55,6 +55,30 @@ def _quality_for_regions(candidate, target, regions):
     return quality if quality.get('marked_regions') == regions else {}
 
 
+def _first_shared_correction(snapshot, info, data, reference):
+    from diffeoforge import reference_guided_pilot as guided
+
+    if ((info.get("strategy") or {}).get("correction_policy") != guided.ATLAS_FIRST
+            or not data.get("regional_capture") or not reference):
+        return False
+    selected = data["references"].get(reference["directory"])
+    if selected is None and snapshot and Path(reference["directory"]) == snapshot.study_directory:
+        selected = snapshot
+    if selected is None or selected.attachment_comparison.get("regional_objective") or any(
+            row.get("target") == reference["target"] and row.get("family") == "regional"
+            and row.get("method", reference["method"]) == reference["method"]
+            for row in data["context"]["cases"]):
+        return False
+    from diffeoforge.regional_material_frame import warm_start_requires_residual
+
+    checks = data.setdefault("adaptive_warm_frame_checks", {})
+    key = (reference["directory"], reference["candidate_id"])
+    if key not in checks:
+        checks[key] = warm_start_requires_residual(
+            selected, reference["candidate_id"], data.get("review_snapshot", snapshot))
+    return not checks[key]
+
+
 def proposal(snapshot, identifier, data, *, symptom=None):
     from diffeoforge import reference_guided_pilot as guided
     from diffeoforge.regional_continuation import proposal as numerical_proposal
@@ -63,7 +87,13 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     info = guided.record(snapshot)
     from diffeoforge.regional_protected_capture import proposal as protected_proposal
 
-    protected = protected_proposal(snapshot, identifier, data, info, symptom)
+    # A new atlas pilot first tests whether the marked structures can be
+    # recovered in a single field on the inspected ordinary basis. Keep the
+    # saved-fit material/retention guards and the more local rescue available.
+    reference = data["anchor"] or data["current_reference"]
+    shared_first = _first_shared_correction(snapshot, info, data, reference)
+    protected = None if shared_first else protected_proposal(
+        snapshot, identifier, data, info, symptom)
     if protected:
         return protected
     numerical = numerical_proposal(snapshot, identifier, data, symptom=symptom)
@@ -77,7 +107,6 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     resolution = resolution_response(data, info, resolution_evidence, symptom)
     if numerical and not resolution:
         return numerical
-    reference = data["anchor"] or data["current_reference"]
     marked = data["regions"]
     symptom = symptom or next((r["symptom"] for r in marked if r["symptom"] != "unsure"), "detail")
     cases = [
@@ -218,7 +247,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         or any(r["symptom"] == "curvature" for r in problem)
         or level >= 2
     ) and not (quality and seed == data["current_reference"] and quality.get("local_improved"))
-    initial_warm = bool(evidence and not cases and not quality)
+    initial_warm = shared_first or bool(evidence and not cases and not quality)
     initial_case = next((r for r in reversed(data['context']['cases'])
         if r.get('family') == 'regional' and r['target'] == reference['target']
         and r.get('regions', marked) == marked and r.get('reference')
@@ -543,6 +572,10 @@ def proposal(snapshot, identifier, data, *, symptom=None):
             )
     if bounded_note:
         reason = bounded_note + " " + reason
+    if shared_first:
+        reason = ("First test the saved control grid and movement scale for this atlas. "
+                  "Use the marked surfaces to improve this specimen, then check the result "
+                  "under the shared settings. " + reason)
     from diffeoforge.pilot_iteration_effort import legacy_checkpoint, regional_allowance
 
     inherited = getattr(snapshot, "attachment_comparison", {}).get("iterations", 120)
@@ -569,7 +602,8 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         goal="regional",
         bounded_fit_available=bounded_available,
         bounded_fit_note=bounded_note,
-        title=("Improve remaining areas while retaining local detail" if recovery else
+        title=("Improve marked areas on the shared starting basis" if shared_first else
+               "Improve remaining areas while retaining local detail" if recovery else
                "Improve marked areas and protect the rest"),
         reason=reason,
         target=reference["target"],

@@ -238,3 +238,36 @@ match independent queries exactly, and existing process-failure/timeout behavior
 is retained. Current-field annotation, cache-identity and recommendation checks
 remain in the focused 38-test qualification. Fewer helper launches shorten
 comparison preparation, independently of native optimizer performance.
+
+## Following a saved approval into the common model
+
+New guided pilots first try to correct a marked feature using a field that the
+common model can initialize. The approval identifies the individual surface
+and its marks. A change to the shared settings requires testing their effect
+on other forms. Saved pilot families retain their original correction policy.
+
+When an approved individual surface comes from a sequence of local deformations,
+the pilot can test whether a single field on the shared controls reproduces it.
+The first native registration targets the approved surface. The pilot compares
+its endpoint with the original using the whole shape and the saved regions.
+A passing transfer makes a separate registration to the original available.
+Each registration has its own explicit start, fresh optimizer history and a
+maximum of 120 iterations. Using the second result as a common fit requires its
+numerical checks, the retention comparison and an explicit visual approval.
+
+**Trace approved anatomy across stages** opens linked views of the approved
+individual reconstruction and a selected later surface. Choose a saved area to
+compare its measured distances in both directions. Distances are expressed as a
+percentage of the original specimen's bounding-box diagonal. Two independent
+samples identify changes that are large compared with sampling variation.
+For a green area marked **Retain in place**, the trace also measures movement of
+the same material vertices relative to their approved positions. It uses the
+existing fixed-area allowance of 0.01% of the original diagonal. A missing
+material correspondence leaves that check open.
+The trace opens at the earliest observed loss. A missing intermediate surface
+leaves the timing of the change unresolved. Surface distances describe agreement
+in shape. Anatomical correspondence still requires visual or independent evidence.
+
+The final atlas trace is available for specimens with a verified link from the
+atlas back to the pilot and its saved approval. Opening or closing the trace
+reads the saved evidence and records no anatomical decision.

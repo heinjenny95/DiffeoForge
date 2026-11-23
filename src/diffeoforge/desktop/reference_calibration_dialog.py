@@ -570,6 +570,19 @@ class _FullscreenPilotDialog(QDialog):
         super().keyPressEvent(event)
 
 
+def candidate_review_payload(dialog, candidate_id):
+    subjects = tuple(p.original_path.name for p in dialog._pairs
+                     if p.required and p.pair_id in dialog._reviewed_pair_ids)
+    return dict(candidate_id=candidate_id, approved=dialog.review_passed,
+                reviewed_subjects=subjects, anatomical_notes=dialog.anatomical_notes.text(),
+                feature_observations=dialog.feature_observations,
+                problem_regions={name: dialog.problem_regions[name] for name in subjects
+                                 if dialog.problem_regions.get(name)},
+                subject_decisions=dialog.subject_decisions,
+                cleared_region_subjects=tuple(dialog.cleared_region_subjects),
+                display_scopes={name: dialog.display_scopes[name] for name in subjects})
+
+
 class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
     """Review the atlas and all subject reconstructions from one immutable run."""
 
@@ -748,6 +761,11 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             self.joint_transfer_button.setEnabled(False)
             toggles.addWidget(self.joint_transfer_button)
         layout.addLayout(toggles)
+        self.retention_button = None
+        if self._common_review or joint_transfer:
+            self.retention_button = QPushButton("Trace approved anatomy across stages…")
+            self.retention_button.clicked.connect(self._open_anatomy_retention)
+            layout.addWidget(self.retention_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.status = QLabel()
         self.status.setObjectName("statusSuccess")
         self.status.setWordWrap(True)
@@ -1288,6 +1306,20 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
                 pair.original_path, pair.original_sha256, preview, cache),
         )
 
+    def _open_anatomy_retention(self) -> None:
+        from functools import partial
+
+        from diffeoforge.anatomy_retention import prepare_pilot_retention
+        from diffeoforge.desktop.anatomy_retention_dialog import open_retention
+
+        index = self.mesh_combo.currentData()
+        if index is None or not self._pairs[int(index)].required:
+            return
+        name = self._pairs[int(index)].original_path.name
+        context = (self._common_review or {}).get("context_directory")
+        open_retention(self, name, partial(prepare_pilot_retention, *self._joint_transfer_source,
+                                           name, context_directory=context))
+
     def _open_joint_transfer(self) -> None:
         from copy import deepcopy
 
@@ -1487,6 +1519,8 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         current_seen = bool(pair and pair.required and self.canvas.comparison_ready)
         if self.joint_transfer_button is not None:
             self.joint_transfer_button.setEnabled(bool(pair and pair.required))
+        if self.retention_button is not None:
+            self.retention_button.setEnabled(bool(pair and pair.required))
         if self.guided_feedback:
             self.guided_feedback.set_ready(current_seen and self._valid_individual)
         self.mark_region_button.setEnabled(current_seen)
@@ -3198,6 +3232,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             if root == self.study_directory:
                 if action == "common_review":
                     self._open_common_saved_fit(identifier)
+                elif action == "project_approved":
+                    from diffeoforge.desktop.common_projection_dialog import open_projection
+
+                    open_projection(self, self.snapshot, identifier)
                 elif action == "common_retained":
                     self._open_guided_saved_fit(identifier)
                 elif action == "bounded_retained":
@@ -5314,30 +5352,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             record_review = dialog.review_recorded
             if not record_review and not dialog.keep_as_plan_b and guided_decision is None:
                 return
-            review = dict(
-                    candidate_id=candidate.candidate_id,
-                    approved=dialog.review_passed,
-                    reviewed_subjects=tuple(
-                        p.original_path.name
-                        for p in dialog._pairs
-                        if p.required and p.pair_id in dialog._reviewed_pair_ids
-                    ),
-                    anatomical_notes=dialog.anatomical_notes.text(),
-                    feature_observations=dialog.feature_observations,
-                    problem_regions={
-                        p.original_path.name: dialog.problem_regions[p.original_path.name]
-                        for p in dialog._pairs if p.required
-                        and p.pair_id in dialog._reviewed_pair_ids
-                        and dialog.problem_regions.get(p.original_path.name)
-                    },
-                    subject_decisions=dialog.subject_decisions,
-                    cleared_region_subjects=tuple(dialog.cleared_region_subjects),
-                    display_scopes={
-                        p.original_path.name: dialog.display_scopes[p.original_path.name]
-                        for p in dialog._pairs
-                        if p.required and p.pair_id in dialog._reviewed_pair_ids
-                    },
-            )
+            review = candidate_review_payload(dialog, candidate.candidate_id)
             keep = dialog.keep_as_plan_b
             origin = self.study_directory
 

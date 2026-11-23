@@ -83,6 +83,18 @@ def test_multistage_support_follows_exact_ancestor_children_without_moving_mark(
     assert all(not p.flags.writeable for p in obj._parents)
 
 
+def test_shared_material_prefixes_require_both_the_sealed_root_and_exact_endpoint(chain):
+    current = lineage.from_evaluation(chain["last"])
+    grid = chain["last"]["material_lineage"]
+    valid_root = grid["root"]["sha256"]
+    topology = grid["current"]["topology_sha256"]
+    prefixes = current.shared_vertex_prefixes(valid_root, topology)
+    assert prefixes[valid_root] == len(chain["vertices"][0])
+    assert prefixes[grid["current"]["sha256"]] == len(chain["vertices"][-1])
+    assert current.shared_vertex_prefixes("other-template", topology) == {}
+    assert current.shared_vertex_prefixes(valid_root, "other-endpoint") == {}
+
+
 def test_factory_and_mapping_do_not_rewrite_receipts_or_files(chain):
     original = deepcopy(chain["last"])
     obj = lineage.from_evaluation(chain["last"])

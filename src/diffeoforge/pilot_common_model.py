@@ -112,8 +112,41 @@ def preview(snapshot, context, target, *, value=None):
     value = value or marker(snapshot)
     if not value or value["stage"] != "model" or not target:
         return None
+    from diffeoforge.pilot_common_projection import default_directory, offer, status
+
+    transfer = offer(snapshot, target=target, value=value)
+    if transfer:
+        path = default_directory(snapshot, transfer)
+        evidence = status(path) if path.exists() else {}
+        finished = (evidence.get("original") == "completed" and (
+            evidence.get("approved") is False
+            or evidence.get("original_retention", {}).get("status") != "comparable"
+            or evidence.get("original_numerical", {}).get("passed") is not True))
+        blocked = (evidence.get("projection") == "completed" and
+                   not evidence.get("can_fit_original"))
+        if not (finished or blocked):
+            return transfer
     previous = _preview(snapshot, context, target, value=value)
     result = choice(snapshot, value, target, previous)
+    if transfer:
+        fallback = dict(mode="stalled", available=False, target=target,
+                        retained_reference=transfer["approved_reference"],
+                        label="Inspect the approved individual fit",
+                        reason="Review the common model before another parameter trial.")
+        result = result or fallback
+        if finished and evidence.get("approved") is False:
+            why = "You rejected the fit to the original."
+        else:
+            phase = "original" if finished else "projection"
+            retained = evidence.get(phase + "_retention", {}).get("status")
+            if retained == "regression":
+                why = "The transfer lost anatomy relative to the approved individual fit."
+            elif retained == "unmeasured":
+                why = "The transfer could not verify all reviewed anatomy."
+            else:
+                why = "The transfer failed numerical checks."
+        result = dict(result, transfer_experiment=transfer,
+                      reason=why + " " + result.get("reason", "Inspect the saved evidence."))
     ref = (result or {}).get("review_reference") or (result or {}).get("reference")
     if ref and result["mode"] in {
             "candidate_refine", "capacity", "broad_detail", "stalled", "feedback"}:

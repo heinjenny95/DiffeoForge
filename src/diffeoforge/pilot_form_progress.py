@@ -25,7 +25,7 @@ def is_common_check(info):
             or any(strategy.get(key) for key in (
                 "shared_model_check", "common_diagnosis_test", "common_capacity_request",
                 "common_model_step", "common_candidate_step", "common_basis_step",
-                "common_multiscale"))
+                "common_multiscale", "approved_projection"))
             or bool((strategy.get("optimization") or {}).get("common_model")))
 
 
@@ -160,10 +160,13 @@ def _reviewed_source(snapshot, identifier, starting_fit):
 
 def uses_starting_progress(snapshot, identifier):
     accepted, _ = _reviewed_source(snapshot, identifier, True)
-    return bool(marker(snapshot) or accepted.attachment_comparison.get("regional_objective"))
+    strategy = guided.record(snapshot).get("strategy") or {}
+    return bool(marker(snapshot) or accepted.attachment_comparison.get("regional_objective")
+                or strategy.get("correction_policy") == guided.ATLAS_FIRST)
 
 
-def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, revise=False):
+def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, revise=False,
+             preview_common=True):
     info = guided.record(snapshot)
     if snapshot.plan.pilot_subject_count != 1 or info["phase"] == "joint":
         raise ValueError("Review an individual form before continuing to another")
@@ -196,7 +199,8 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
     if not ((common_result or revise) and any(
             r["filename"] == row["filename"] for r in value["reviews"])):
         value["reviews"] = list({r["filename"]: r for r in [*value["reviews"], row]}.values())
-    if model:
+    early = (info.get("strategy") or {}).get("correction_policy") == guided.ATLAS_FIRST
+    if model or (early and len(value["reviews"]) == len(info["pilot_order"])):
         value["stage"] = "model"
     start = None
     if (value["stage"] == "model" and saved and saved["stage"] == "forms"
@@ -208,12 +212,22 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
                                       if r.get("approval")), row]
     common = list({r["filename"]: r for r in candidates
                    if compatible(r, value["protocol"])}.values())
-    shapes = {r["filename"] for r in value["reviews"]} | {r["filename"] for r in common}
-    covered = {r["filename"] for r in common} if value["stage"] == "model" else shapes
+    reviewed = {r["filename"] for r in value["reviews"]}
+    checked = {r["filename"] for r in common}
+    shapes = reviewed | checked
     order = info["pilot_order"]
     pos = order.index(info["target"])
     ordered = [*order[pos + 1:], *order[:pos + 1]]
-    target = next((name for name in ordered if name not in covered), None)
+    # Recheck every already accepted shape affected by a new model before
+    # requesting more individual work. For unseen animals keep the ordinary
+    # individual review/correction route, even if an earlier transfer failed.
+    pending = reviewed - checked
+    if early:
+        value["stage"] = "model" if pending or len(shapes) == len(order) else "forms"
+    covered = checked if value["stage"] == "model" else shapes
+    target = next((name for name in ordered if name in pending), None) if early else None
+    if target is None:
+        target = next((name for name in ordered if name not in covered), None)
     if start and target:
         target = max((name for name in ordered if name not in covered),
                      key=lambda name: start["demand"].get(name, 0))
@@ -237,7 +251,8 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
     if target is None and not joint and recorded and value["stage"] == "forms":
         # All shapes were explicitly saved; the next opt-in action checks the
         # common protocol. It never relabels regional approval as atlas coverage.
-        return proposal(snapshot, identifier, context, model=True, starting_fit=starting_fit)
+        return proposal(snapshot, identifier, context, model=True, starting_fit=starting_fit,
+                        preview_common=preview_common)
     result = dict(available=True, target=target, marker=value, common=common,
                 shapes=len(shapes), checked=len(common), total=len(order), joint=joint,
                 action="form_model_check" if value["stage"] == "model" else "next_form",
@@ -247,7 +262,15 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
                       if target else "Save suitable fit → finish individual reviews")
     if start:
         result["common_start"] = start
-    if value["stage"] == "model" and target:
+    if early and target:
+        result["transfer_note"] = (
+            "Check this approved anatomy on the shared settings before reviewing another "
+            "specimen. The individual fit and its marks stay available."
+            if value["stage"] == "model" else
+            "Use the same control grid and settings on the next representative specimen. "
+            "This specimen receives its own deformation and review."
+        )
+    if value["stage"] == "model" and target and preview_common:
         from diffeoforge.pilot_common_model import preview
 
         choice = preview(snapshot, context, target, value=value)
@@ -257,6 +280,56 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
         if not result["available"]:
             result["reason"] = choice["reason"]
     return result
+
+
+def transfer_marker(snapshot, target, approved_reference=None):
+    """Reopen the exact recorded or pending individual review for a transfer.
+
+    The first approved local fit may not have a form ledger until Next. Derive
+    that ledger from the same reviews without launching another proposal preview.
+    """
+    from diffeoforge.guided_feedback import reference, selection, verify_reference
+    from diffeoforge.guided_strategy import _context
+    from diffeoforge.pilot_common_diagnosis import accepted_reference
+
+    info = guided.record(snapshot)
+    saved = marker(snapshot)
+    if saved:
+        verify_marker(saved, info["origin"], info["pilot_order"])
+    can_derive = (
+        (info.get("strategy") or {}).get("correction_policy") == guided.ATLAS_FIRST
+        and info["target"] == target and snapshot.plan.pilot_subject_count == 1
+        and info["phase"] != "joint" and not is_common_check(info)
+    )
+    if can_derive:
+        choices = []
+        for candidate in snapshot.candidates:
+            identifier = candidate.candidate_id
+            if snapshot.visual_reviews.get(identifier) is True:
+                current = reference(snapshot, identifier)
+                if approved_reference is None or approved_reference == current:
+                    choices.append((identifier, False))
+                    continue
+            if (candidate.status == "completed" and approved_reference is not None
+                    and selection(snapshot, identifier) == approved_reference):
+                parent = verify_reference(approved_reference)
+                if parent.visual_reviews.get(approved_reference["candidate_id"]) is True:
+                    choices.append((identifier, True))
+        if len(choices) == 1:
+            identifier, starting = choices[0]
+            cases, _ = _context(snapshot)
+            proposed = proposal(snapshot, identifier, {"cases": cases}, model=True,
+                                starting_fit=starting, preview_common=False)
+            value = proposed["marker"]
+            if (proposed["target"] == target and value["stage"] == "model" and
+                    (approved_reference is None or accepted_reference(value, target)
+                     == approved_reference)):
+                verify_marker(value, info["origin"], info["pilot_order"])
+                return value
+    if saved and (approved_reference is None or
+                  accepted_reference(saved, target) == approved_reference):
+        return saved
+    return None
 
 
 def preview(snapshot, identifier, context, *, starting_fit=False):
@@ -282,7 +355,8 @@ def verify(info, record, manifest, root):
 
     value = info["strategy"]["form_progress"]
     verify_marker(value, info["origin"], info["pilot_order"])
-    if (info["strategy"].get("common_capacity_request")
+    if (info["strategy"].get("approved_projection")
+            or info["strategy"].get("common_capacity_request")
             or info["strategy"].get("common_basis_step")
             or info["strategy"].get("common_candidate_step")
             or info["strategy"].get("common_multiscale")):
@@ -342,7 +416,7 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False, common_
                         "optimization", "failure_parent_recovery", "shared_model_check",
                         "search_family", "common_model_step", "control_capacity_request",
                         "common_diagnosis_test", "common_basis_step", "common_capacity_request",
-                        "common_candidate_step", "common_multiscale"):
+                        "common_candidate_step", "common_multiscale", "approved_projection"):
                 strategy.pop(key, None)
             previous = dict(directory=str(snapshot.study_directory),
                 manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))

@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from diffeoforge.analysis.method_labels import shape_method_label
+from diffeoforge.anatomy_retention import atlas_retention_targets
 from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.desktop.result_review import (
     ModernResultArtifact,
@@ -925,6 +926,9 @@ def review_reference_result(
                 "Complete the required visual reviews before computing the morphospace.",
             ),
             engine_route="deformetrica_reference",
+            anatomy_retention_targets=atlas_retention_targets(
+                report.manifest.get("effective_config", {})
+            ),
             pca_method_id="lddmm_deformation_kernel_pca",
             pca_method_label="LDDMM deformation-kernel PCA",
             execution_duration_seconds=optimization.duration_seconds,
@@ -1309,6 +1313,9 @@ def review_reference_result(
             else str(pca["plots"]["scores_pc2_pc3_unavailable_reason"])
         ),
         engine_route="deformetrica_reference",
+        anatomy_retention_targets=atlas_retention_targets(
+            report.manifest.get("effective_config", {})
+        ),
         pca_method_id=str(pca["method_id"]),
         pca_method_label=(
             shape_method_label(str(pca["method_id"]), str(pca["method"]))

@@ -103,6 +103,7 @@ class ModernResultReview:
     pca_excluded_subjects: tuple[str, ...] = ()
     pca_review_sha256: str | None = None
     optimizer_last_logged_iteration: int | None = None
+    anatomy_retention_targets: tuple[str, ...] = ()
 
     @property
     def registration_source(self) -> dict[str, str]:

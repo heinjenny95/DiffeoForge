@@ -38,7 +38,10 @@ def pin_recovery(window, snapshot, choice, *, current_target=None):
         return
     mode = choice["mode"]
     goal = None
-    if mode == "inspect_alignment":
+    if mode == "project_approved" and choice["available"]:
+        action, identifier = "project_approved", choice
+        tooltip = "Open the saved-anatomy transfer. Each fitting step starts explicitly."
+    elif mode == "inspect_alignment":
         action, identifier = "fit_direction_inputs", choice["reference"]
         tooltip = "Open the template and original in the saved coordinate frame."
     elif mode == "stalled" and choice.get("retained_reference"):
@@ -89,6 +92,22 @@ def dispatch(window, following, identifier, *, starting=False):
 def recovery(window, layout, identifier, choice):
     """Preparation and inspection only; native execution keeps its normal button."""
     pinned = getattr(window, "_guided_footer_action", None)
+    if choice["mode"] == "project_approved":
+        if not pinned or pinned[1] != "project_approved":
+            from diffeoforge.desktop.common_projection_dialog import open_projection
+
+            button = QPushButton(choice["label"])
+            button.setToolTip(choice["reason"])
+            button.clicked.connect(lambda: open_projection(window, window.snapshot, choice))
+            layout.addWidget(button)
+        return
+    experiment = choice.get("transfer_experiment")
+    if experiment:
+        from diffeoforge.desktop.common_projection_dialog import open_projection
+
+        inspect = QPushButton("Inspect the previous anatomy transfer…")
+        inspect.clicked.connect(lambda: open_projection(window, window.snapshot, experiment))
+        layout.addWidget(inspect)
     if not pinned or pinned[1] not in {"adaptive_common_continue", "adaptive_multiscale_detail",
                                       "common_retained", "fit_direction_inputs"}:
         reason = QLabel(_explanation(choice))

@@ -135,6 +135,16 @@ class MaterialLineage:
     _files: tuple
     _cancelled: Callable[[], bool] = field(default=_not_cancelled, repr=False, compare=False)
 
+    def shared_vertex_prefixes(self, root_sha256, endpoint_topology):
+        """Return exact prefixes shared by retained material on this verified subdivision."""
+        if (self._grids[0]["sha256"] != root_sha256
+                or self._grids[-1]["topology_sha256"] != endpoint_topology):
+            return {}
+        for row in self._files:
+            _poll(self._cancelled)
+            _checked_file(row, grid="topology_sha256" in row)
+        return {row["sha256"]: row["vertices"] for row in self._grids}
+
     def material_mask(self, vertices, faces, evidence):
         from diffeoforge.reconstruction_feedback import topology_sha256, validate_evidence
 

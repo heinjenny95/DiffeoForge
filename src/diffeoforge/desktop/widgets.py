@@ -3317,6 +3317,11 @@ class DiffeoForgeWindow(QMainWindow):
         reset_atlas_view_button.setObjectName("secondary")
         reset_atlas_view_button.clicked.connect(self._reset_atlas_view)
         atlas_view_controls.addWidget(reset_atlas_view_button)
+        self.result_retention_button = QPushButton("Trace approved anatomy…")
+        self.result_retention_button.setObjectName("secondary")
+        self.result_retention_button.clicked.connect(self._open_atlas_retention)
+        self.result_retention_button.hide()
+        atlas_view_controls.addWidget(self.result_retention_button)
         atlas_view_controls.addStretch()
         self.result_atlas_status_label = QLabel("Awaiting a verified atlas or reconstruction.")
         self.result_atlas_status_label.setObjectName("status")
@@ -13166,6 +13171,19 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_atlas_mesh_combo.setEnabled(True)
         self._load_selected_atlas_mesh(selected_index)
 
+    def _open_atlas_retention(self) -> None:
+        from functools import partial
+
+        from diffeoforge.anatomy_retention import prepare_atlas_retention
+        from diffeoforge.desktop.anatomy_retention_dialog import open_retention
+
+        review = self._result_review
+        target = self._loaded_qc_subject
+        if review and target in review.anatomy_retention_targets:
+            open_retention(
+                self, target, partial(prepare_atlas_retention, review.run_directory, target)
+            )
+
     def _update_atlas_mesh_counter(self) -> None:
         current = self.result_atlas_mesh_combo.currentIndex() + 1
         if self._result_atlas_mesh_filtered == 0:
@@ -13823,6 +13841,10 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _sync_visual_decision_controls(self) -> None:
+        review = self._result_review
+        self.result_retention_button.setVisible(
+            bool(review and self._loaded_qc_subject in review.anatomy_retention_targets)
+        )
         canvas = self.result_registration_qc_canvas
         self.result_registration_surface_review.sync_selection()
         enabled = bool(

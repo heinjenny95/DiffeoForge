@@ -161,6 +161,9 @@ def prepare_controls(root, manifest, record):
         record,
         controls=chosen,
     )
+    from diffeoforge.pilot_common_projection_child import bind as bind_projected
+
+    result = bind_projected(root, manifest, result)
     from diffeoforge.guided_refinement import bind
 
     recipe = (record.get("guided", {}).get("strategy") or {}).get("regional_recipe") or {}
@@ -318,6 +321,9 @@ def configure(config, root, manifest, candidate_id):
             initial_control_point_spacing=controls["spacing"],
         )
         refinement = refinement_for(record, candidate_id)
+        from diffeoforge.pilot_common_projection_child import configure as configure_projected
+
+        configure_projected(config, root, record)
         joint = record.get("joint_initialization")
         if joint:
             deformation.update(initial_momenta=str(root / joint["momenta"]["copy"]),

@@ -1,5 +1,20 @@
 # Development continuity
 
+## dev237 — carry approved anatomy into common-model testing
+
+New guided pilots first try a marked correction on a basis the common model can
+use. New method screens share the regional field's RK2 integration with at least
+37 time points, which can take longer than a coarser screen. The pilot checks a
+proposed shared revision on another form before expanding its use. Existing
+pilot contracts retain their recorded basis and budgets.
+
+A saved composed individual fit can serve as the target of a separate transfer
+experiment. The pilot measures the resulting shared field against the original
+specimen and its saved marks. Further fitting to the original requires passing
+transfer checks and an explicit Run. Using that original-target result in the
+pilot requires its own review. The [common-model review](PILOT_ACCEPTED_COMMON_DIAGNOSIS.md)
+describes the comparison across the transfer, common fit and atlas.
+
 ## dev236 — compare the common fit with the approved individual fit
 
 The common-model reviewer opens the approved individual fit for the same
