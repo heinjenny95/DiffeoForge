@@ -13,6 +13,11 @@ def choose(snapshot, guidance, info):
         scope = ("control-point comparison" if common.get("comparison_kind") == "capacity"
                  else "common-model result")
         pending = common.get("mode") in {"review", "feedback"}
+        if common.get("mode") == "feedback" and common.get("requested_comparison"):
+            return dict(root=snapshot.study_directory, kind="common",
+                reference=common.get("review_reference") or common["reference"], pending=True,
+                label="Review progress from the starting fit" + attempt + " · " + common["target"],
+                explanation=common["reason"])
         return dict(root=snapshot.study_directory, kind="common",
             reference=common.get("review_reference") or common["reference"],
             pending=pending, label=("Compare and give feedback · "
@@ -56,6 +61,14 @@ def choose(snapshot, guidance, info):
     pending = candidate.candidate_id not in snapshot.visual_reviews and not feedback_only
     name = info["target"] or f"{snapshot.plan.pilot_subject_count} forms"
     method = " · " + candidate.label if len(completed) > 1 else ""
+    if (pending and scope == "individual" and any(
+            proposal.get("available") and snapshot.visual_reviews.get(identifier) is True
+            for identifier, proposal in guidance.get("next_forms", {}).items())):
+        return dict(root=snapshot.study_directory, kind="current",
+                    candidate_id=candidate.candidate_id, pending=False,
+                    label=f"Inspect alternative fit{method} · {name}",
+                    explanation="You already approved an individual fit for this specimen. "
+                                "You can still inspect the other method.")
     return dict(root=snapshot.study_directory, kind="current", candidate_id=candidate.candidate_id,
         pending=pending, label=("Review " if pending else "Reopen inspected "
                                if feedback_only else "Reopen reviewed ") + scope

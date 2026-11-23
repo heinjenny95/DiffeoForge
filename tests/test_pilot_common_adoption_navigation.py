@@ -23,8 +23,9 @@ def test_approved_candidate_pins_adoption_and_preserves_individual_reviews(tmp_p
     app, dialog = dialog_for(approved, monkeypatch)
     try:
         assert dialog.next_step_button.isVisible() and dialog.next_step_button.isEnabled()
+        proposed = guidance["common_revision"]["guided-varifold"]
         assert dialog.next_step_button.text() == (
-            "Use approved common settings → check next form · " + guided.record(approved)["target"])
+            f"Use approved settings → check {proposed['target']} · 1 specimen")
         assert not dialog.scroll.isAncestorOf(dialog.next_step_button)
         assert [button for button in dialog.findChildren(QPushButton, "primary")
                 if button.isVisible()] == [dialog.next_step_button]

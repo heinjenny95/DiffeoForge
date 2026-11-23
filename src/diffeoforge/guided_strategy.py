@@ -120,7 +120,7 @@ def _context(snapshot):
 
 def _read_context(snapshot):
     from diffeoforge.guided_density import controls_for
-    from diffeoforge.pilot_common_review import seed_outcome
+    from diffeoforge.pilot_common_review import progress_feedback
     from diffeoforge.pilot_form_progress import is_common_check
 
     cases, goals = [], []
@@ -145,6 +145,10 @@ def _read_context(snapshot):
                             if e["event"] == "guided_fit_feedback"
                             and not (individual and "common_review" in e)
                             and e["current"]["candidate_id"] == candidate.candidate_id]
+                progress = progress_feedback(feedback)
+                outcome = progress["outcome"] if progress else None
+                if not feedback and other.visual_reviews.get(candidate.candidate_id) is False:
+                    outcome = "rejected"
                 cases.append(dict(method=other.attachment_comparison["methods"][candidate.candidate_id],
                     values=next(c.values for c in other.current_stage.candidates
                                 if c.candidate_id == candidate.candidate_id),
@@ -170,9 +174,7 @@ def _read_context(snapshot):
                     region_outcomes=[r["marked_regions"]["outcome"] for r in
                         (candidate.metrics or {}).get("attachment_comparison", {}).get(
                             "subjects", {}).values() if r.get("marked_regions")],
-                    outcome=seed_outcome(feedback[-1]) if feedback else
-                    "rejected" if other.visual_reviews.get(candidate.candidate_id) is False
-                    else None,
+                    outcome=outcome,
                     approval=guided._approved_record(other, candidate.candidate_id)
                     if other.visual_reviews.get(candidate.candidate_id) is True else None))
     return cases, goals[-1] if goals else None
@@ -260,12 +262,6 @@ def _read_state(snapshot):
     result["accepted_fits"] = {c.candidate_id: accepted_fit(snapshot, c.candidate_id, cases)
                                for c in snapshot.candidates
                                if result["allowed"].get(c.candidate_id)}
-    if snapshot.attachment_comparison.get("regional_objective"):
-        from diffeoforge.guided_shared_check import preview as shared_preview
-
-        result["shared_model_checks"] = {
-            c.candidate_id: shared_preview(snapshot, c.candidate_id) for c in snapshot.candidates
-            if snapshot.visual_reviews.get(c.candidate_id) is True}
     if (snapshot.plan.pilot_subject_count == 1 and info["phase"] != "joint"
             and (snapshot.attachment_comparison.get("regional_objective")
                  or (info.get("strategy") or {}).get("form_progress")
@@ -276,10 +272,19 @@ def _read_state(snapshot):
         result["next_forms"] = {c.candidate_id: preview(snapshot, c.candidate_id, result)
                                 for c in snapshot.candidates
                                 if snapshot.visual_reviews.get(c.candidate_id) is True}
+    if snapshot.attachment_comparison.get("regional_objective"):
+        from diffeoforge.guided_shared_check import preview as shared_preview
+
+        # While an unseen specimen needs an individual review, keep early shared
+        # checks out of the default choices for this already approved fit.
+        result["shared_model_checks"] = {
+            c.candidate_id: shared_preview(snapshot, c.candidate_id) for c in snapshot.candidates
+            if snapshot.visual_reviews.get(c.candidate_id) is True and
+            result.get("next_forms", {}).get(c.candidate_id, {}).get("action") != "next_form"}
     if (info.get("strategy") or {}).get("form_progress"):
         from diffeoforge.pilot_common_model import approvals
         from diffeoforge.pilot_common_model import preview as common_preview
-        from diffeoforge.pilot_form_progress import individual_reviews, marker
+        from diffeoforge.pilot_form_progress import individual_reviews, is_common_check, marker
 
         progress = marker(snapshot)
         result["checked"] = len(approvals(snapshot, result, progress))
@@ -287,14 +292,25 @@ def _read_state(snapshot):
             shapes=len(individual_reviews(progress, result, info["pilot_order"])),
             checked=result["checked"], total=result["total"])
         result["common_recovery"] = common_preview(snapshot, result, info["target"])
-        from diffeoforge.pilot_form_progress import compatible, proposal
+        from diffeoforge.pilot_form_progress import compatible, preview, proposal
 
         result["common_revision"] = {}
+        if (progress["stage"] == "model" and is_common_check(info)
+                and result["form_progress_summary"]["shapes"] < result["total"]
+                and len(snapshot.candidates) == 1):
+            item = snapshot.candidates[0]
+            if (item.status == "completed"
+                    and snapshot.visual_reviews.get(item.candidate_id) is False
+                    and any(r["filename"] == info["target"] for r in progress["reviews"])):
+                result["defer_common"] = preview(snapshot, item.candidate_id, result,
+                                                 defer_common=True)
         failure = (result["common_recovery"] or {}).get("stage_failure")
         if (failure and failure["directory"] == snapshot.study_directory
                 and failure["candidate_id"] not in checks_pending):
             result["common_stage_failures"][failure["candidate_id"]] = failure
         if (snapshot.plan.pilot_subject_count == 1 and info["phase"] != "joint"
+                and (is_common_check(info)
+                     or result["form_progress_summary"]["shapes"] == result["total"])
                 and not snapshot.attachment_comparison.get("regional_objective")
                 and not (multiscale and multiscale["stage"] == "capture")):
             for candidate in snapshot.candidates:
@@ -1138,6 +1154,10 @@ def transition(snapshot, action, identifier, *, goal=None):
         from diffeoforge.pilot_form_progress import transition as next_form
 
         return next_form(snapshot, identifier, model=action == "form_model_check")
+    if action == "defer_common":
+        from diffeoforge.pilot_form_progress import transition as next_form
+
+        return next_form(snapshot, identifier, defer_common=True)
     if action == "confirm_start":
         from diffeoforge.pilot_form_progress import transition as next_form
         from diffeoforge.pilot_form_progress import uses_starting_progress

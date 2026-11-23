@@ -2,19 +2,20 @@
 
 ## Make the pilot easier to follow (23 November 2026)
 
-- [ ] At each decision, explain in plain English what the user is deciding,
+- [x] At individual and common-model review decisions, explain in plain English what the user is deciding,
   which specimen and fit it concerns, and why the recommended next action
   will help. Give that action visual priority and keep alternatives accessible.
-- [ ] In common-model review, ask separately whether the marked anatomy improved
+- [x] In common-model review, ask separately whether the marked anatomy improved
   from this trial’s actual starting fit and whether it is good enough for the
   study. Show the relevant comparison for each question, naming the test and
-  the approved individual fit used as the anatomical reference. Verify that a
-  first-time user can record “Improved, still needs work” and reach a justified
-  next step using the saved marks, without coaching or changing earlier approvals.
+  the approved individual fit used as the anatomical reference.
+- [ ] Observe a first-time user recording “Improved, still needs work” and reaching
+  a justified next step using the saved marks without coaching. Extend the same
+  guidance to any other pilot decisions the observed user finds unclear.
 
 ## Common-model review on laptop screens (23 November 2026)
 
-- [ ] In “Review common-model fit”, keep the current and approved fits side by
+- [x] In “Review common-model fit”, keep the current and comparison fits side by
   side with both meshes fully visible at the initial zoom. Give the entire
   lower panel its own vertical scrollbar for ratings, notes, marked areas and
   review actions. On a laptop-sized window, verify that scrolling to the last
@@ -22,7 +23,7 @@
 
 ## Pilot fit labels (23 November 2026)
 
-- [ ] When the pilot checks shared settings on one animal after its individual
+- [x] When the pilot checks shared settings on one animal after its individual
   fit was approved, name the specimen and scope on the button, for example
   “Check shared settings on {specimen} · 1 specimen”. Explain that this checks
   whether the shared settings preserve the approved anatomy. Reserve “Prepare

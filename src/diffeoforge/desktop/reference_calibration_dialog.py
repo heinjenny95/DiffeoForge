@@ -602,6 +602,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         guided_feedback_context: dict | None = None,
         preview_cache: Path | None = None,
         joint_transfer: bool = False,
+        common_model: bool = False,
     ) -> None:
         super().__init__(parent)
         if candidate.run_directory is None and not (read_only and pairs):
@@ -636,6 +637,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         self._read_only = read_only
         self._compact_review = compact_review
         self._common_review = (guided_feedback_context or {}).get("common_review")
+        self._pinned_mesh_review = common_model or bool(self._common_review)
         self.fit_preferences = None
         self.guided_feedback = None
         self._guided_feedback_only = False
@@ -666,6 +668,12 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         self.setWindowTitle(f"Visual registration check — {candidate.candidate_id}")
         self.resize(1080, 900)
         self.setMinimumSize(760, 640)
+        if self._pinned_mesh_review:
+            # Leave room for the native title bar and taskbar on a laptop.
+            available = (parent.screen() if parent else self.screen()).availableGeometry()
+            self.setMinimumSize(min(760, available.width() - 24),
+                                min(600, available.height() - 48))
+            self.resize(min(1080, available.width() - 24), min(900, available.height() - 48))
         root = self._root_layout = QVBoxLayout(self)
         self.body_scroll = QScrollArea()
         self.body_scroll.setWidgetResizable(True)
@@ -677,7 +685,18 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             QSizePolicy.Policy.Preferred,
         )
         layout = self._body_layout = QVBoxLayout(body)
-        self.body_scroll.setWidget(body)
+        if self._pinned_mesh_review:
+            root.addWidget(body, 3)
+            layout.setContentsMargins(0, 0, 0, 0)
+            feedback_body = QWidget()
+            assessment = QVBoxLayout(feedback_body)
+            assessment.setContentsMargins(0, 0, 0, 0)
+            assessment.setAlignment(Qt.AlignmentFlag.AlignTop)
+            self.body_scroll.setAccessibleName("Fit assessment and review actions")
+            self.body_scroll.setWidget(feedback_body)
+        else:
+            assessment = layout
+            self.body_scroll.setWidget(body)
         root.addWidget(self.body_scroll, 1)
         title = QLabel("Does the reconstruction preserve the original anatomy?")
         if read_only:
@@ -698,16 +717,15 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         layout.addWidget(intro)
         if self._common_review:
             seed = self._common_review["seed_label"]
-            text = ("Numerical starting fit · " + seed if seed else
-                    "No saved numerical starting fit is identified for this check.")
-            approved = self._common_review["approved_individual"]
-            if seed and approved and approved != self._common_review["numerical_seed"]:
-                text += (". The common model used this compatible field. "
-                         "Your approved individual fit is the anatomical reference.")
+            text = (f"This trial started from {seed}." if seed else
+                    "This trial has no recorded starting fit to rate progress against.")
+            if seed and not any(pair.rating_reference == self._common_review["numerical_seed"]
+                                for _, _, pair in alternative_pairs):
+                text += " Assess the anatomy against the original. Progress cannot be rated here."
             seed_info = QLabel(text)
             seed_info.setObjectName("commonNumericalSeed")
             seed_info.setWordWrap(True)
-            layout.addWidget(seed_info)
+            assessment.addWidget(seed_info)
         instructions = QLabel(
             "What to check\n"
             "1. Open every pilot specimen in the list.\n"
@@ -765,12 +783,15 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         if self._common_review or joint_transfer:
             self.retention_button = QPushButton("Trace approved anatomy across stages…")
             self.retention_button.clicked.connect(self._open_anatomy_retention)
-            layout.addWidget(self.retention_button, alignment=Qt.AlignmentFlag.AlignLeft)
+            assessment.addWidget(self.retention_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.status = QLabel()
         self.status.setObjectName("statusSuccess")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
-        self.canvas = CalibrationComparisonCanvas3D()
+        self.canvas = CalibrationComparisonCanvas3D(fit_review_viewport=self._pinned_mesh_review)
+        if self._pinned_mesh_review:
+            self.canvas.setMinimumHeight(150)
+            assessment.addWidget(self.canvas.original_detail, alignment=Qt.AlignmentFlag.AlignLeft)
         self.canvas.fullResolutionReadyChanged.connect(self._pair_original_presented)
         self.canvas.originalDetailRequested.connect(self._load_original_detail)
         self.show_original.toggled.connect(self.canvas.set_show_original)
@@ -802,7 +823,9 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             layout.removeWidget(self.canvas)
             self.saved_comparison = SavedFitComparison(
                 self.canvas, alternative_pairs, self, cache_directory=self._preview_cache,
-                common_review=self._common_review)
+                common_review=self._common_review, fit_review_viewport=self._pinned_mesh_review)
+            if self._pinned_mesh_review:
+                toggles.insertWidget(2, self.saved_comparison.toggle)
             layout.addWidget(self.saved_comparison, 1)
             self.finished.connect(self.saved_comparison.loader.cancel)
         canvas_help = QLabel(
@@ -870,7 +893,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             tip_controls.addWidget(QLabel(label))
             tip_controls.addWidget(spin)
         feature_layout.addLayout(tip_controls)
-        layout.addWidget(InfoDisclosure("Optional anatomical checks", feature_box))
+        assessment.addWidget(InfoDisclosure("Optional anatomical checks", feature_box))
 
         self.decision_panel = QFrame()
         policy = self.decision_panel.sizePolicy()
@@ -901,7 +924,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             "Optional individual assessment", self.specimen_decision
         )
         individual_assessment.setVisible(self.fit_preferences is None)
-        layout.addWidget(individual_assessment)
+        assessment.addWidget(individual_assessment)
         self.review_progress = QLabel()
         self.review_progress.setWordWrap(True)
         decision_layout.addWidget(self.review_progress)
@@ -936,7 +959,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         self.close_button.clicked.connect(self.reject)
         _set_action_emphasis(self.close_button, False)
         self.fail_button = QPushButton("Reject option")
-        self.fail_button.setObjectName("danger")
+        self.fail_button.setObjectName("secondary" if self._common_review else "danger")
         self.fail_button.clicked.connect(self._record_visual_qc_fail)
         self.complete_button = QPushButton("Approve all specimens")
         if self.fit_preferences:
@@ -966,11 +989,25 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             )
         self.complete_button.setEnabled(False)
         self.complete_button.clicked.connect(self._record_visual_qc_pass)
-        controls.addStretch()
-        controls.addWidget(self.fail_button)
-        controls.addWidget(self.complete_button)
-        decision_layout.addLayout(controls)
-        root.addWidget(self.decision_panel)
+        if self._common_review:
+            self.complete_button.setObjectName("secondary")
+            for button in (self.fail_button, self.complete_button):
+                button.setAutoDefault(False)
+                controls.addWidget(button, 1)
+        else:
+            controls.addStretch()
+            controls.addWidget(self.fail_button)
+            controls.addWidget(self.complete_button)
+        if compact_review and self._common_review:
+            suitability_actions = QWidget()
+            controls.setContentsMargins(0, 0, 0, 0)
+            suitability_actions.setLayout(controls)
+        else:
+            decision_layout.addLayout(controls)
+        if self._pinned_mesh_review:
+            assessment.insertWidget(0, self.decision_panel)
+        else:
+            root.addWidget(self.decision_panel)
         # Closing must remain possible while geometry is loading or unavailable.
         self._window_actions = QWidget()
         window_actions = QHBoxLayout(self._window_actions)
@@ -1020,8 +1057,8 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
                 title.setText("Review common-model fit")
                 if not alternative_pairs:
                     title.setText("Review common-model fit · " + label)
-                quality.setText(f"Is the anatomy in the common-model fit ({label}) suitable? "
-                                "Check its important features against the orange original.")
+                quality.setText(f"Is {label} good enough for your study? "
+                                "Check the features that matter against the orange original.")
             quality.setWordWrap(True)
             decision_layout.insertWidget(0, quality)
             if self.fit_preferences is None:
@@ -1035,13 +1072,26 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
 
                     self.guided_feedback = GuidedFeedbackControls(
                         guided_feedback_context, visible_reference=bool(self._common_review))
+                    if self._common_review:
+                        self.guided_feedback.buttons.buttonClicked.connect(
+                            self._review_common_suitability)
+                        self.guided_feedback.reviseProgressRequested.connect(
+                            self._revise_common_progress)
+                        recorded = guided_feedback_context.get("recorded_suitability")
+                        if recorded is not None:
+                            existing = "Suitable fit" if recorded else "Still needs work"
+                            self.guided_feedback.save.setText(f"Save feedback · keep “{existing}”")
                     self.guided_feedback.saveRequested.connect(self._record_guided_feedback)
                     self.guided_feedback.buttons.buttonClicked.connect(self._update_review_progress)
-                    decision_layout.insertWidget(1, self.guided_feedback)
+                    decision_layout.insertWidget(0 if self._common_review else 1,
+                                                 self.guided_feedback)
                     feature_layout.addWidget(self.anatomical_notes)
                 else:
                     self.anatomical_notes.setPlaceholderText("What needs work? (optional)")
                     decision_layout.insertWidget(1, self.anatomical_notes)
+            if self._common_review:
+                decision_layout.insertWidget(decision_layout.indexOf(quality) + 1,
+                                             suitability_actions)
         if self._required_pair_indexes:
             first_required = self._required_pair_indexes[0]
             combo_index = self.mesh_combo.findData(first_required)
@@ -1056,6 +1106,9 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         self._update_review_progress()
 
     def _full_screen_layout(self, enabled: bool) -> None:
+        if self._pinned_mesh_review:
+            # The meshes already have a dedicated viewport in both window modes.
+            return
         panel = self.decision_panel
         hidden = panel.isHidden()
         if enabled:
@@ -1112,6 +1165,40 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
     def preference_decision(self):
         return self.fit_preferences.decision if self.fit_preferences else None
 
+    def _select_common_reference(self, reference):
+        saved = self.saved_comparison
+        for index in range(saved.choice.count()):
+            if reference and saved.choice.itemData(index).rating_reference == reference:
+                saved.choice.setCurrentIndex(index)
+                saved.toggle.setChecked(True)
+                return
+
+    def _review_common_suitability(self, _button):
+        # Capture the opinion while both exact starting-pair previews are settled.
+        # Viewing the anatomical reference after this must not reinterpret the rating.
+        decision = self.guided_feedback_decision
+        if not decision or decision["comparison"] != self._common_review["numerical_seed"]:
+            return
+        self.guided_feedback.keep_progress(
+            decision["outcome"], decision["comparison"], self._common_review["seed_label"])
+        self._select_common_reference(self._common_review["approved_individual"])
+        self._update_review_progress()
+        QTimer.singleShot(0, self, lambda: self.body_scroll.ensureWidgetVisible(self.fail_button))
+
+    def _revise_common_progress(self):
+        self._select_common_reference(self._common_review["numerical_seed"])
+        self.guided_feedback.edit_progress_again()
+        self._bind_common_question()
+        self._update_review_progress()
+        QTimer.singleShot(0, self, lambda: self.body_scroll.ensureWidgetVisible(
+            self.guided_feedback.title))
+
+    def _bind_common_question(self):
+        saved = self.saved_comparison
+        pair = saved.choice.currentData() if saved.toggle.isChecked() else None
+        self.guided_feedback.bind_displayed_reference(
+            pair.rating_reference if pair else None, saved.choice.currentText() if pair else "")
+
     @property
     def guided_feedback_decision(self):
         if not self.guided_feedback or not self.guided_feedback.decision:
@@ -1128,7 +1215,8 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         saved = getattr(self, "saved_comparison", None)
         if self._common_review:
             pair = saved.choice.currentData() if saved and saved.toggle.isChecked() else None
-            if not (pair and saved.full_comparison_ready
+            if not self.guided_feedback.progress_choice and not (
+                    pair and saved.full_comparison_ready
                     and pair.rating_reference == decision["comparison"]):
                 return None
             decision.update(
@@ -1158,11 +1246,17 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
     def _ranking_ready(self):
         if self._common_review:
             saved = getattr(self, "saved_comparison", None)
-            if (not saved or not saved.toggle.isChecked() or saved.retry_button.isVisible()
-                    or not saved.choice.currentData().rating_reference):
+            if not saved or not saved.toggle.isChecked():
                 return True  # The anatomical decision can be made on the original and current fit.
-            if self.guided_feedback and self.guided_feedback.data.get("require_fit_decision"):
-                return self.guided_feedback_decision is not None
+            if self.guided_feedback and self.guided_feedback.progress_choice:
+                return saved.full_comparison_ready
+            ref = saved.choice.currentData().rating_reference
+            if (ref is None or ref != self._common_review["numerical_seed"]
+                    or saved.retry_button.isVisible()):
+                return True
+            return (not self.guided_feedback
+                    or not self.guided_feedback.data.get("require_fit_decision")
+                    or self.guided_feedback_decision is not None)
         return ((self.fit_preferences is None or self.fit_preferences.selection_ready)
             and (not self.guided_feedback
                  or not self.guided_feedback.data.get('require_fit_decision')
@@ -1366,12 +1460,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         )
         try:
             if dialog.exec() == QDialog.DialogCode.Accepted and dialog.regions is not None:
-                if dialog.regions:
-                    self.problem_regions[name] = dialog.regions
-                    self.cleared_region_subjects.discard(name)
-                else:
-                    self.problem_regions.pop(name, None)
-                    self.cleared_region_subjects.add(name)
+                self._set_reviewed_regions(name, dialog.regions)
         finally:
             dialog.deleteLater()
         self._update_review_progress()
@@ -1380,9 +1469,24 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         index = self.mesh_combo.currentData()
         if index is not None:
             name = self._pairs[int(index)].original_path.name
+            self._set_reviewed_regions(name, [])
+        self._update_review_progress()
+
+    def _set_reviewed_regions(self, name, rows):
+        changed = self.problem_regions.get(name, []) != rows
+        if rows:
+            self.problem_regions[name] = rows
+            self.cleared_region_subjects.discard(name)
+        else:
             self.problem_regions.pop(name, None)
             self.cleared_region_subjects.add(name)
-        self._update_review_progress()
+        if changed and self._common_review and self.guided_feedback:
+            self.guided_feedback.data["problem_regions"] = self.problem_regions
+            if self.guided_feedback.progress_choice:
+                self._revise_common_progress()
+            else:
+                self.guided_feedback.edit_progress_again()
+                self._bind_common_question()
 
     def _manage_regions(self):
         self._mark_region()
@@ -1528,11 +1632,18 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         self.clear_regions_button.setVisible(count > 0)
         self.manage_regions_button.setVisible(count > 0)
         self.region_summary.setVisible(count > 0)
-        self.region_summary.setText(
-            f"{count} marked area(s). Save the corrections to continue with this result."
-        )
+        if self._common_review:
+            area = "area" if count == 1 else "areas"
+            self.region_summary.setText(f"This review keeps {count} marked {area}.")
+        else:
+            self.region_summary.setText(
+                f"{count} marked area(s). Save the corrections to continue with this result."
+            )
         if self._compact_review and total == 1 and not self._read_only:
-            label = "Save corrections → next step" if count else "Needs improvement"
+            if self._common_review:
+                label = "Still needs work → next step"
+            else:
+                label = "Save corrections → next step" if count else "Needs improvement"
             self.fail_button.setText(label)
             self.fail_button.setToolTip(
                 "Record a needs-improvement review with your marked corrections."
@@ -1588,7 +1699,8 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             self.decision_panel.hide()
             self.close_button.setText("Close comparison")
         _set_action_emphasis(self.next_specimen_button, not all_pass)
-        _set_action_emphasis(self.complete_button, all_pass and not conflicts)
+        if not self._common_review:
+            _set_action_emphasis(self.complete_button, all_pass and not conflicts)
 
     @Slot()
     def _record_visual_qc_pass(self) -> None:
@@ -5255,6 +5367,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                 self,
                 subject_fit=fit,
                 read_only=key[0] == "guided-saved",
+                common_model=key[0] == "guided-common",
                 pairs=pairs,
                 alternative_pairs=prepared[3] if len(prepared) >= 4 else (),
                 guided_feedback_context=prepared[4] if len(prepared) >= 5 else None,

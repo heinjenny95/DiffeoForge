@@ -32,11 +32,10 @@ def is_common_check(info):
 def individual_reviews(value, context, pilot_order):
     """Fill gaps in the individual ledger from verified same-pilot history."""
     rows = {row["filename"]: row for row in value["reviews"]}
-    if value["stage"] == "forms":
-        for case in reversed(context["cases"]):
-            row = case.get("approval")
-            if case.get("individual") and row and row["filename"] in pilot_order:
-                rows.setdefault(row["filename"], row)
+    for case in reversed(context["cases"]):
+        row = case.get("approval")
+        if case.get("individual") and row and row["filename"] in pilot_order:
+            rows.setdefault(row["filename"], row)
     return list(rows.values())
 
 
@@ -49,6 +48,7 @@ def retain_review_for_trial(snapshot, identifier, strategy):
     """
     saved = strategy.get("form_progress")
     if (not saved or snapshot.plan.pilot_subject_count != 1
+            or is_common_check(guided.record(snapshot))
             or snapshot.visual_reviews.get(identifier) is not True):
         return strategy
     row = guided._approved_record(snapshot, identifier)
@@ -166,11 +166,28 @@ def uses_starting_progress(snapshot, identifier):
 
 
 def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, revise=False,
-             preview_common=True):
+             preview_common=True, defer_common=False):
     info = guided.record(snapshot)
     if snapshot.plan.pilot_subject_count != 1 or info["phase"] == "joint":
         raise ValueError("Review an individual form before continuing to another")
-    accepted, accepted_id = _reviewed_source(snapshot, identifier, starting_fit)
+    saved = marker(snapshot)
+    if saved:
+        verify_marker(saved, info["origin"], info["pilot_order"])
+    if defer_common:
+        from diffeoforge.guided_feedback import verify_reference
+        from diffeoforge.pilot_common_diagnosis import accepted_reference
+
+        if (not saved or saved["stage"] != "model" or not is_common_check(info)
+                or snapshot.visual_reviews.get(identifier) is not False
+                or not any(c.candidate_id == identifier and c.status == "completed"
+                           for c in snapshot.candidates)):
+            raise ValueError("Review this common fit before moving to another specimen.")
+        ref = accepted_reference(saved, info["target"])
+        if not ref:
+            raise ValueError("This specimen needs an approved individual fit first.")
+        accepted, accepted_id = verify_reference(ref), ref["candidate_id"]
+    else:
+        accepted, accepted_id = _reviewed_source(snapshot, identifier, starting_fit)
     from diffeoforge.pilot_multiscale_study import marker as multiscale_marker
 
     multiscale = multiscale_marker(accepted.attachment_comparison)
@@ -180,9 +197,6 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
     if accepted.plan.pilot_subject_count != 1 or guided.record(accepted)["phase"] == "joint":
         raise ValueError("Choose a reviewed individual starting fit")
     row = guided._approved_record(accepted, accepted_id)
-    saved = marker(snapshot)
-    if saved:
-        verify_marker(saved, info["origin"], info["pilot_order"])
     value = deepcopy(saved) if saved else dict(version=VERSION, reviews=[], origin_review=row,
                          protocol=_protocol(accepted, accepted_id),
                          stage="forms", common_approval_created=False)
@@ -196,11 +210,20 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
         value.update(origin_review=row, protocol=_protocol(accepted, accepted_id), stage="model")
     common_result = is_common_check(guided.record(accepted))
     # Common-model review must not erase the accepted individual comparison target.
-    if not ((common_result or revise) and any(
+    if not common_result and not (revise and any(
             r["filename"] == row["filename"] for r in value["reviews"])):
         value["reviews"] = list({r["filename"]: r for r in [*value["reviews"], row]}.values())
-    early = (info.get("strategy") or {}).get("correction_policy") == guided.ATLAS_FIRST
-    if model or (early and len(value["reviews"]) == len(info["pilot_order"])):
+    order = info["pilot_order"]
+    reviewed = {r["filename"] for r in value["reviews"]}
+    all_reviewed = reviewed == set(order)
+    shared_grid = (info.get("strategy") or {}).get("correction_policy") == guided.ATLAS_FIRST
+    # An old mixed-stage study can already have a checked common candidate.
+    # Keep its result, but resume the individual sequence for unseen specimens.
+    if defer_common and all_reviewed:
+        raise ValueError("Every selected specimen already has an individual review.")
+    if not all_reviewed and (not model or revise):
+        value["stage"] = "forms"
+    elif model or shared_grid:
         value["stage"] = "model"
     start = None
     if (value["stage"] == "model" and saved and saved["stage"] == "forms"
@@ -212,26 +235,16 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
                                       if r.get("approval")), row]
     common = list({r["filename"]: r for r in candidates
                    if compatible(r, value["protocol"])}.values())
-    reviewed = {r["filename"] for r in value["reviews"]}
     checked = {r["filename"] for r in common}
-    shapes = reviewed | checked
-    order = info["pilot_order"]
     pos = order.index(info["target"])
     ordered = [*order[pos + 1:], *order[:pos + 1]]
-    # Recheck every already accepted shape affected by a new model before
-    # requesting more individual work. For unseen animals keep the ordinary
-    # individual review/correction route, even if an earlier transfer failed.
-    pending = reviewed - checked
-    if early:
-        value["stage"] = "model" if pending or len(shapes) == len(order) else "forms"
-    covered = checked if value["stage"] == "model" else shapes
-    target = next((name for name in ordered if name in pending), None) if early else None
-    if target is None:
-        target = next((name for name in ordered if name not in covered), None)
+    covered = checked if value["stage"] == "model" else reviewed
+    eligible = (reviewed if value["stage"] == "model" else set(order)) - covered
+    target = next((name for name in ordered if name in eligible), None)
     if start and target:
-        target = max((name for name in ordered if name not in covered),
+        target = max((name for name in ordered if name in eligible),
                      key=lambda name: start["demand"].get(name, 0))
-    joint = len(common) == len(order)
+    joint = all_reviewed and checked == set(order)
     if value["stage"] == "model":
         from diffeoforge.pilot_common_capacity import describe
 
@@ -254,28 +267,34 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
         return proposal(snapshot, identifier, context, model=True, starting_fit=starting_fit,
                         preview_common=preview_common)
     result = dict(available=True, target=target, marker=value, common=common,
-                shapes=len(shapes), checked=len(common), total=len(order), joint=joint,
-                action="form_model_check" if value["stage"] == "model" else "next_form",
-                label="Prepare joint check" if joint else
-                      "Prepare common-model check · " + target if value["stage"] == "model"
-                      and target else "Use suitable fit → next pilot form · " + target
-                      if target else "Save suitable fit → finish individual reviews")
+                  shapes=len(reviewed), checked=len(common), total=len(order), joint=joint,
+                  action="form_model_check" if value["stage"] == "model" else "next_form")
+    if joint:
+        result.update(label=f"Prepare joint check · {len(order)} specimens",
+                      transfer_note="Every selected specimen has an approved fit with the "
+                                    "shared settings. You can now test them together.")
+    elif target and value["stage"] == "model":
+        result.update(label=f"Check shared settings on {target} · 1 specimen",
+                      transfer_note="Check whether the shared settings preserve the anatomy "
+                                    f"you approved for {target}.")
+    elif target:
+        result.update(label=f"Prepare individual fit · {target}",
+                      transfer_note=f"{target} needs an individual review before the joint check.")
+    else:
+        result["label"] = "Save suitable fit → finish individual reviews"
     if start:
         result["common_start"] = start
-    if early and target:
-        result["transfer_note"] = (
-            "Check this approved anatomy on the shared settings before reviewing another "
-            "specimen. The individual fit and its marks stay available."
-            if value["stage"] == "model" else
-            "Use the same control grid and settings on the next representative specimen. "
-            "This specimen receives its own deformation and review."
-        )
     if value["stage"] == "model" and target and preview_common:
         from diffeoforge.pilot_common_model import preview
 
         choice = preview(snapshot, context, target, value=value)
         result["common_reuse"] = choice
-        result["label"] = choice["label"]
+        # Inspection, adoption and specialized experiments must keep their actual action.
+        if choice["mode"] == "project_approved":
+            result["label"] = f"Open approved-shape transfer · {target} · 1 specimen"
+        elif choice["mode"] not in {
+                "fresh", "fresh_capacity", "basis", "capacity", "accepted_warm"}:
+            result["label"] = choice["label"]
         result["available"] = choice["available"]
         if not result["available"]:
             result["reason"] = choice["reason"]
@@ -332,9 +351,10 @@ def transfer_marker(snapshot, target, approved_reference=None):
     return None
 
 
-def preview(snapshot, identifier, context, *, starting_fit=False):
+def preview(snapshot, identifier, context, *, starting_fit=False, defer_common=False):
     try:
-        return proposal(snapshot, identifier, context, starting_fit=starting_fit)
+        return proposal(snapshot, identifier, context, starting_fit=starting_fit,
+                        defer_common=defer_common)
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         return dict(available=False, reason=str(error))
 
@@ -380,7 +400,7 @@ def verify(info, record, manifest, root):
 
 
 def transition(snapshot, identifier, *, model=False, starting_fit=False, common_target=None,
-               revise=False):
+               revise=False, defer_common=False):
     from diffeoforge.guided_strategy import state
 
     with study.calibration_verification_scope():
@@ -389,7 +409,7 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False, common_
         context = state(snapshot)
         if common_target is None:
             proposed = proposal(snapshot, identifier, context, model=model,
-                                starting_fit=starting_fit, revise=revise)
+                                starting_fit=starting_fit, revise=revise, defer_common=defer_common)
         else:
             from diffeoforge.pilot_common_model import approvals
 
@@ -407,6 +427,7 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False, common_
             proposed = dict(target=common_target, marker=value, common=common, joint=False,
                             action="form_model_check")
         value = proposed["marker"]
+        decision = "adaptive_defer_common" if defer_common else "adaptive_" + proposed["action"]
         if proposed["target"] is None and not proposed["joint"]:
             plan = None
         else:
@@ -427,7 +448,7 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False, common_
                 methods=(value["protocol"]["reference"]["method"],),
                 values=value["protocol"]["reference"]["values"], approved=proposed["common"],
                 history=[*info["history"],
-                         dict(previous, outcome="adaptive_" + proposed["action"])],
+                         dict(previous, outcome=decision)],
                 spent=info["screen_trials_spent"], strategy=strategy,
                 goal=None if proposed["joint"] else proposed["action"], feedback=None)
             if value["stage"] == "model" and proposed["target"]:
@@ -440,7 +461,7 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False, common_
         return study.load_reference_calibration_study(snapshot.study_directory)
     result = guided._batch(**plan)
     study._append_event(snapshot.study_directory, "guided_pilot_decision", dict(
-        action="adaptive_" + proposed["action"], candidate_id=identifier,
+        action=decision, candidate_id=identifier,
         next_directory=str(result.study_directory),
         next_manifest_sha256=sha256_file(result.study_directory / study.STUDY_MANIFEST),
         anatomical_approval_created=False, optimizer_started=False))

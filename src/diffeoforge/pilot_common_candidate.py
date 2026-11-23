@@ -58,7 +58,11 @@ def preview(snapshot, tested, target, value, *, ordinary_basis=False):
     from diffeoforge.guided_feedback import inspected, reference, verify_reference
     from diffeoforge.guided_progress import iteration_limited
     from diffeoforge.pilot_common_diagnosis import alignment_advice, diagnose, experiment
-    from diffeoforge.pilot_common_review import seed_outcome
+    from diffeoforge.pilot_common_review import (
+        current_progress_feedback,
+        inspected_start,
+        starting_reference,
+    )
     from diffeoforge.pilot_iteration_accounting import branch_total
 
     def pending():
@@ -110,7 +114,8 @@ def preview(snapshot, tested, target, value, *, ordinary_basis=False):
                    "Old decisions stay saved.")
     strategy = guided.record(latest).get("strategy") or {}
     step = strategy.get("common_candidate_step")
-    previous = step["reference"] if step else strategy.get("baseline")
+    start = starting_reference(latest, candidate.candidate_id)
+    previous = inspected_start(start or (step["reference"] if step else strategy.get("baseline")))
     feedback = [event for event in study._load_events(latest.study_directory)
         if event["event"] == "guided_fit_feedback"
         and event["current"]["candidate_id"] == candidate.candidate_id]
@@ -123,11 +128,23 @@ def preview(snapshot, tested, target, value, *, ordinary_basis=False):
             label="Compare this common fit · tell us what changed · " + target,
             reason="Compare the common fit with the fit shown on the right. Choose Better, "
                    "About the same, Worse or Unsure for this pair.")
-    event = feedback[-1]
-    progress = seed_outcome(event)
+    progress_event = current_progress_feedback(snapshot, latest, ref, feedback)
+    progress = progress_event["outcome"] if progress_event else None
     counts = {kind: sum(m["kind"] == kind for _, m in trials) for kind in KINDS}
-    kind = ("detail" if ordinary_basis and not trials else decide(
-        measured, capped=iteration_limited(candidate), counts=counts, outcome=progress))
+    if ordinary_basis and not trials:
+        kind = "detail"
+    else:
+        capped = iteration_limited(candidate)
+        seed = (feedback[-1].get("common_review") or {}).get("numerical_seed")
+        if (progress is None and seed and previous == seed and
+                decide(measured, capped=capped, counts=counts, outcome="better") == "iterations"):
+            return dict(base, mode="feedback", available=True, diagnosis=measured,
+                requested_comparison=seed,
+                label="Review progress from the starting fit · " + target,
+                reason="The measurements suggest another short attempt could help. Compare "
+                       "the marked anatomy with this trial’s starting fit before choosing.")
+        kind = decide(measured, capped=capped, counts=counts, outcome=progress)
+    event = progress_event if kind == "iterations" else feedback[-1]
     # A rating against an individual fit does not rank two common fields. For
     # such ratings retain a newer common field only with a measured positive trend.
     useful = progress == "better" or (progress is None and measured

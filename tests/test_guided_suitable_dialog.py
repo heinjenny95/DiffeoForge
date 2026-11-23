@@ -74,7 +74,7 @@ def panel(monkeypatch, tmp_path):
         lambda *_a, **_kw: pytest.fail("UI rendering dispatched a fit"),
     )
     monkeypatch.setattr(guided_feedback, "render_feedback", lambda *_a: None)
-    monkeypatch.setattr(guided_feedback, "render_starting_fits", lambda *_a: None)
+    monkeypatch.setattr(guided_feedback, "render_starting_fits", lambda *_a, **_kw: None)
     monkeypatch.setattr(guided_diagnosis, "render", lambda *_a: None)
     info = dict(
         phase="refine",

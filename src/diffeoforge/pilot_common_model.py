@@ -224,7 +224,11 @@ def _preview(snapshot, context, target, *, value=None):
     from diffeoforge.pilot_common_candidate import family as candidate_family
     from diffeoforge.pilot_common_candidate import preview as candidate_preview
     from diffeoforge.pilot_common_diagnosis import alignment_advice, diagnose, recommend
-    from diffeoforge.pilot_common_review import seed_outcome
+    from diffeoforge.pilot_common_review import (
+        current_progress_feedback,
+        inspected_start,
+        starting_reference,
+    )
 
     if candidate_family(snapshot, ref):
         return candidate_preview(snapshot, parent, target, value, ordinary_basis=True)
@@ -236,28 +240,35 @@ def _preview(snapshot, context, target, *, value=None):
     if alignment:
         return dict(alignment, test_number=guided.record(parent)["screen_trials_spent"])
     earlier = [r for r in saved[:-1] if r[3]]
-    diagnosis = diagnose(snapshot, value, ref, earlier[-1][2] if earlier else None)
+    # Independent branches may share a seed. Their chronological order does not
+    # describe progress from the field that initialized this trial.
+    start = starting_reference(parent, candidate.candidate_id)
+    previous = earlier[-1][2] if earlier else None
+    if start and start["target"] == target:
+        previous = inspected_start(start)
+    diagnosis = diagnose(snapshot, value, ref, previous)
     strategy = guided.record(parent).get("strategy") or {}
     optimization = strategy.get("optimization") or {}
     step = strategy.get("common_model_step") or (
         optimization if optimization.get("version") == EFFORT_VERSION
         and optimization.get("common_model") is True else None)
-    if step and not feedback and not diagnosis:
+    if step and start and previous and not feedback and not diagnosis:
         return dict(mode="feedback", available=True, target=target, reference=ref,
                     review_reference=ref,
                     label="Compare with the previous common-model fit · " + target,
                     reason="Tell us whether this continuation improved the shape before "
                     "another continuation. Your earlier suitable individual fit stays saved.")
-    progress = seed_outcome(feedback[-1]) if feedback else None
+    progress_event = current_progress_feedback(snapshot, parent, ref, feedback)
+    progress = progress_event["outcome"] if progress_event else None
     stalled = bool(step and progress in {"same", "worse"})
-    separate_comparison = bool(feedback and "common_review" in feedback[-1] and progress is None)
+    can_rate_start = bool(start and previous == start)
     prior_steps = [(guided.record(p).get("strategy") or {}) for p, _, _, _ in saved]
     iteration_tests = sum(bool(s.get("common_model_step") or
         (s.get("optimization") or {}).get("common_model")) for s in prior_steps)
     recommendation = recommend(diagnosis, capped=iteration_limited(candidate),
         iteration_tests=iteration_tests,
         density_tested=any(t["kind"] == "capacity" for _, t in tests),
-        veto=stalled or separate_comparison)
+        veto=progress in {"same", "worse", "unsure"} or (not progress and not can_rate_start))
     if shortfall or recommendation and recommendation["kind"] == "capacity":
         choice = capacity_choice(value, target, grow=not shortfall, reference=ref,
                                  diagnosis=diagnosis)
@@ -309,28 +320,21 @@ def _preview(snapshot, context, target, *, value=None):
                     label=f"Inspect retained common fit · Test {retained_number} · {target}",
                     reason="This shared-model result stopped or did not improve. Open the "
                            "retained common fit and review the remaining mismatch.")
-    if progress != 'better' or not feedback[-1].get('event_hash'):
-        requested = None
-        if separate_comparison:
-            from diffeoforge.guided_feedback import inspected as was_inspected
-
-            requested = feedback[-1]["common_review"]["numerical_seed"]
-            if not requested or not was_inspected(
-                    study.load_reference_calibration_study(Path(requested["directory"])),
-                    requested["candidate_id"]):
-                return dict(mode="stalled", available=False, target=target, reference=ref,
-                            retained_reference=ref,
-                            retained_test_number=guided.record(parent)["screen_trials_spent"],
-                            label="Inspect saved common fit · " + target,
-                            reason="This fit has no inspected numerical starting fit to compare. "
-                                   "The measurements do not identify a further bounded adjustment.")
+    if progress != 'better' or not progress_event.get('event_hash'):
+        if not can_rate_start:
+            return dict(mode="stalled", available=False, target=target, reference=ref,
+                        retained_reference=ref,
+                        retained_test_number=guided.record(parent)["screen_trials_spent"],
+                        label="Inspect the remaining mismatch · " + target,
+                        reason="This trial has no reviewed starting fit for a progress comparison. "
+                               "The available measurements do not support another short run. "
+                               "Inspect the saved fit against the original.")
         return dict(mode="feedback", available=True, target=target, reference=ref,
                     review_reference=ref, diagnosis=diagnosis,
-                    requested_comparison=requested,
-                    label="Compare this common fit · tell us what changed · " + target,
-                    reason="Unchanged continuation needs your explicit Better feedback against "
-                           "the numerical starting fit. Select that fit on the right to assess "
-                           "the change from the start.")
+                    requested_comparison=start,
+                    label="Review progress from the starting fit · " + target,
+                    reason="Compare this result with its starting fit to judge what changed. "
+                           "You can record an improvement and still request more work.")
     from diffeoforge.pilot_iteration_accounting import branch_total, total
 
     recorded = total(candidate.metrics)
@@ -340,8 +344,8 @@ def _preview(snapshot, context, target, *, value=None):
                 expected=(recommendation or {}).get("expected"),
                 additional_iterations=ITERATIONS, previous_iterations=previous,
                 previous_recorded_iterations=recorded,
-                human_feedback=dict(reference=ref, event_hash=feedback[-1]['event_hash'],
-                                    outcome=feedback[-1]['outcome']),
+                human_feedback=dict(reference=ref, event_hash=progress_event['event_hash'],
+                                    outcome=progress),
                 label=f"Continue common-model fit from {label} · +{ITERATIONS} · {target}",
                 reason=(f"Saved-field branch: {previous} iterations; the last native counter "
                         f"is {candidate.metrics['final_iteration']} and the older branch "

@@ -31,10 +31,13 @@ class CalibrationComparisonCanvas3D(QWidget):
     cameraChanged = Signal(object)
 
     def __init__(
-        self, parent: QWidget | None = None, *, show_inspection_hints: bool = True
+        self, parent: QWidget | None = None, *, show_inspection_hints: bool = True,
+        fit_review_viewport: bool = False,
     ) -> None:
         super().__init__(parent)
         self._show_inspection_hints = show_inspection_hints
+        self._fit_review_viewport = fit_review_viewport
+        self._home_view_size: tuple[float, float] | None = None
         self._original: MeshPreviewModel | None = None
         self._reconstruction: MeshPreviewModel | None = None
         self._original_vertices = np.empty((0, 3), dtype=np.float64)
@@ -132,6 +135,7 @@ class CalibrationComparisonCanvas3D(QWidget):
             self._scale = float(np.max(maximum - minimum))
             if not math.isfinite(self._scale) or self._scale <= 0:
                 raise ValueError("Comparison meshes must have positive finite extent")
+            self._set_home_view_size(maximum - minimum)
         self.update()
 
     def set_inspection_markers(self, markers: dict[str, tuple[float, float, float]]) -> None:
@@ -243,7 +247,9 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._base_orientation = state[5] if len(state) > 5 else None
         self.update()
 
-    def set_comparison_extent(self, center: np.ndarray, scale: float) -> None:
+    def set_comparison_extent(
+        self, center: np.ndarray, scale: float, *, bounds_size: np.ndarray | None = None
+    ) -> None:
         center = np.asarray(center, dtype=np.float64)
         if (
             center.shape != (3,)
@@ -253,6 +259,8 @@ class CalibrationComparisonCanvas3D(QWidget):
         ):
             raise ValueError("Comparison extent must be finite and positive")
         self._center, self._scale = center.copy(), float(scale)
+        if bounds_size is not None:
+            self._set_home_view_size(bounds_size)
         self._frames.clear()
         self._presented_key = None
         self.update()
@@ -312,11 +320,26 @@ class CalibrationComparisonCanvas3D(QWidget):
         rotation = camera_rotation(self._yaw, self._pitch)
         return rotation if self._base_orientation is None else rotation @ self._base_orientation
 
+    def _set_home_view_size(self, bounds_size: np.ndarray) -> None:
+        if self._fit_review_viewport:
+            # Project the shared bounding box at the initial three-quarter view once.
+            # Using that same frame at every angle preserves the user's zoom while rotating.
+            span = np.abs(camera_rotation(-0.55, 0.30)[:2]) @ bounds_size / self._scale
+            self._home_view_size = (float(span[0]), float(span[1]))
+
+    def _display_zoom(self) -> float:
+        if self._home_view_size is None:
+            return self._zoom
+        x, y = self._home_view_size
+        fit = min(max(1, self.width() - 24) / max(x, 1e-12),
+                  max(1, self.height() - 56) / max(y, 1e-12))
+        return self._zoom * fit / max(1, min(self.width(), self.height()) - 72)
+
     def _project(self, vertices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         rotation = self.view_rotation()
         camera = ((vertices - self._center) / self._scale) @ rotation.T
         viewport = max(1.0, min(float(self.width()), float(self.height())) - 72.0)
-        factor = 0.9 * viewport * self._zoom
+        factor = 0.9 * viewport * self._display_zoom()
         screen = np.empty((vertices.shape[0], 2), dtype=np.float64)
         screen[:, 0] = self.width() / 2.0 + self._pan[0] + camera[:, 0] * factor
         screen[:, 1] = self.height() / 2.0 + self._pan[1] - camera[:, 1] * factor
@@ -444,7 +467,7 @@ class CalibrationComparisonCanvas3D(QWidget):
             self._center,
             self._scale,
             self.view_rotation(),
-            self._zoom,
+            self._display_zoom(),
             self._pan,
             tuple(layers),
             navigation=key[-1],
@@ -504,14 +527,15 @@ class CalibrationComparisonCanvas3D(QWidget):
             painter.drawText(12, 23, "Show both layers before confirming the QC inspection.")
         elif self._show_inspection_hints and not self.full_resolution_ready:
             painter.setPen(QColor("#705419"))
+            size = f"{len(reconstruction_triangles):,} faces"
+            hint = (f"Preview · {size}" if self._fit_review_viewport else
+                    f"Display proxies: reconstruction {size}. "
+                    "Preview ready — you can assess this fit. Full detail is optional.")
             painter.drawText(
                 12,
                 23,
                 self._original.display_proxy_error
                 or self._reconstruction.display_proxy_error
-                or (
-                    f"Display proxies: reconstruction {len(reconstruction_triangles):,} faces. "
-                    "Preview ready — you can assess this fit. Full detail is optional."
-                ),
+                or hint,
             )
         painter.end()

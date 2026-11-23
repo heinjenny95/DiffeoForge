@@ -2,21 +2,28 @@
 
 ### Reviewing a saved common fit
 
-The left pane shows the common-model result under review. The right pane
-initially shows the approved individual fit recorded for that specimen.
-The numerical starting fit is named separately and can also be inspected.
-For a shared-control trial, the pilot explains the initialization before Run.
-A local correction composed with an earlier deformation can serve as the
-anatomical reference even when the shared model needs a different starting field.
+The left pane shows the current common fit against the original specimen.
+When the trial has a reviewed starting fit, the right pane initially shows that
+exact fit. After the previews settle, rate how the relevant features changed.
+For example, choose **Better** when a projection is closer to the original than
+it was at the start of this trial. Two successive trials can share the same start.
 
-Use the relative rating to compare the common result with the fit displayed on
-the right. The rating becomes available when both previews have settled.
-Selecting another fit clears the rating. The suitability decision applies to
-the common result. A newly recorded rating stores the displayed fit identity,
-the approved individual reference and the numerical seed when one exists.
-The next-step logic uses each rating in that context. A shared fit can improve
-over its start and still miss a feature preserved in the individual fit.
-Previously saved decisions retain their original comparison references.
+Next, assess whether the common fit preserves the features needed for the study.
+The approved individual fit supplies an anatomical reference where available.
+Choose **Still needs work** if a projection improved but still falls short.
+The pilot records the comparison and suitability separately, retains the marked
+areas and checks the measured progress, safeguards and remaining effort before
+offering another trial. Preparing a trial and starting it remain separate actions.
+
+When the trial started from scratch, only anatomy and available saved comparisons
+can be assessed. A numerical checkpoint without its own review may be inspected.
+An opinion about the approved anatomy cannot authorize extra iterations from a
+different starting fit. A later rating about another reference preserves an
+earlier progress rating for the same fit and marks. Changing the marks requires a
+fresh judgement before that rating can support continuation.
+
+The two mesh views stay in place while the assessment below scrolls. The review
+can use the settled previews, with full detail available on request.
 
 Reopening an older common field does not discard later working annotations.
 The diagnosis checks the sealed descendant history for explicit edits on the
@@ -240,6 +247,20 @@ remain in the focused 38-test qualification. Fewer helper launches shorten
 comparison preparation, independently of native optimizer performance.
 
 ## Following a saved approval into the common model
+
+After an individual fit is approved, the pilot offers the next selected
+specimen that needs an individual review. Once all individual fits are
+approved, it counts the approvals already obtained on compatible shared
+settings. **Check shared settings on … · 1 specimen** prepares a test where
+coverage is missing. **Prepare joint check** becomes available when every
+selected specimen has an approved fit on the same protocol and the shared
+control budget meets the recorded demand. Both steps require an explicit Run.
+
+An older pilot may already be testing shared settings while individual reviews
+are still open. After reviewing a completed common fit as unsuitable, the user
+can choose **Review next specimen** and return to the unresolved shared check
+after the individual reviews. The saved individual approval, problem marks
+and common-fit decision retain their original identities.
 
 New guided pilots first try to correct a marked feature using a field that the
 common model can initialize. The approval identifies the individual surface

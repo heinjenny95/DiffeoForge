@@ -200,9 +200,9 @@ def render(window, prepared):
     title.setObjectName("sectionTitle")
     window.content_layout.addWidget(title)
     explanation = QLabel(
-        f"One common configuration · {snapshot.plan.pilot_subject_count} pilot specimens."
+        f"One joint fit of all {snapshot.plan.pilot_subject_count} selected specimens."
         if info["phase"] == "joint"
-        else f"{info['target']} · {guidance['total']} pilot forms"
+        else f"{info['target']} · 1 specimen from the {guidance['total']} selected"
         if common_flow
         else f"{info['target']}\n{guidance['total']} selected pilot forms · "
         f"{guidance['checked']} checked with these settings · "
@@ -459,8 +459,8 @@ def render(window, prepared):
         if resume_checks
         else "A trial failed. Inspect details, retry, or choose an approved alternative."
         if failed
-        else "Suitable fit saved. Use the next-form action below."
-        if any(row.get("available") for row in next_forms.values())
+        else valid_next.get("transfer_note") or "Suitable fit saved. Prepare the next check."
+        if valid_next
         else "Suitable fit saved. Review the next-form input issue below."
         if next_forms
         else "Suitable fit saved. Next: prepare its atlas-model check below."
@@ -483,7 +483,11 @@ def render(window, prepared):
         elif common_failure.get("reference"):
             pin_action(window, snapshot, common_failure["label"], "common_retained",
                        common_failure["reference"], common_failure["message"])
-    if not running and not unresolved and not common_failure and not starting_choice:
+    if (approved_common_revision and not unresolved and not common_failure and not starting_choice
+            and (guidance.get("common_recovery") or {}).get("mode") == "adopt"):
+        pin_revision(window, snapshot, guidance, info.get("target"))
+    if (not running and not unresolved and not common_failure and not starting_choice
+            and not window._guided_footer_action):
         for identifier, following in next_forms.items():
             if following.get("available"):
                 if ((following.get("common_reuse") or {}).get("mode") in {"review", "feedback"}
@@ -493,8 +497,7 @@ def render(window, prepared):
                 window.next_step_button.setVisible(True)
                 window.next_step_button.setEnabled(True)
                 window.next_step_button.setToolTip(
-                    "Save this individual review and prepare one separate next check. "
-                    "Earlier fits remain unchanged. Run starts only when you choose it.")
+                    following.get("transfer_note") or "Prepare the next pilot step.")
                 window._guided_footer_action = (snapshot.study_directory,
                     "adaptive_" + following["action"], identifier)
                 reuse = following.get("common_reuse") or {}
@@ -510,6 +513,16 @@ def render(window, prepared):
 
     direction_pinned = False
     direction = None if starting_choice else guidance.get("fit_direction")
+    deferred = guidance.get("defer_common") or {}
+    defer_label = "Review next specimen · " + (deferred.get("target") or "")
+    defer_reason = ("This shared-settings check stays open. Prepare the individual fit for "
+                    f"{deferred.get('target')}, then return to the shared checks.")
+    if (deferred.get("available") and not running and not unresolved and not common_failure
+            and not starting_choice
+            and (guidance.get("common_recovery") or {}).get("mode") == "stalled"):
+        if pin_action(window, snapshot, defer_label, "adaptive_defer_common",
+                      snapshot.candidates[0].candidate_id, defer_reason):
+            window.status.setText(defer_reason)
     marked_direction = bool(direction and direction["mode"] == "trial" and not common_flow
                             and direction["request"]["goal"] == "regional")
     offers = guidance.get("density_comparisons", {})
@@ -893,6 +906,11 @@ def render(window, prepared):
 
             following = next_forms.get(candidate.candidate_id)
             revision = guidance.get("common_revision", {}).get(candidate.candidate_id)
+            if (deferred.get("available") and not starting_choice and not common_failure
+                    and not (window._guided_footer_action and
+                             window._guided_footer_action[1] == "adaptive_defer_common")):
+                button = action(layout, defer_label, "defer_common", candidate.candidate_id)
+                button.setToolTip(defer_reason)
             if revision:
                 from diffeoforge.desktop.pilot_common_model import revision as render_revision
 

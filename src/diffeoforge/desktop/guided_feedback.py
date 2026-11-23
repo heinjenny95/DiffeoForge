@@ -145,6 +145,7 @@ def prepare_context(snapshot, identifier, *, common_origin=None):
             common, current_label=trial_label(snapshot, current), seed_label=seed_label,
             current_distances=sampled_fit_label(current, common["current"]["target"]))
         data["require_fit_decision"] = identifier not in snapshot.visual_reviews
+        data["recorded_suitability"] = snapshot.visual_reviews.get(identifier)
         return data
     if data and data["comparison"]:
         ref = data["comparison"]
@@ -160,11 +161,13 @@ def prepare_context(snapshot, identifier, *, common_origin=None):
 
 class GuidedFeedbackControls(QWidget):
     saveRequested = Signal(object)
+    reviseProgressRequested = Signal()
 
     def __init__(self, data, parent=None, *, visible_reference=False):
         super().__init__(parent)
         self.data = data
         self.rating_reference = None if visible_reference else data["comparison"]
+        self.progress_choice = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.title = QLabel()
@@ -191,6 +194,10 @@ class GuidedFeedbackControls(QWidget):
             self.outcomes[key] = button
             grid.addWidget(button, index // 2, index % 2)
         layout.addLayout(grid)
+        self.edit_progress = QPushButton("Change progress rating")
+        self.edit_progress.clicked.connect(self.reviseProgressRequested)
+        self.edit_progress.hide()
+        layout.addWidget(self.edit_progress)
         self.symptom = QComboBox()
         self.symptom.setAccessibleName("What still needs improvement?")
         for key, text in SYMPTOMS.items():
@@ -212,9 +219,7 @@ class GuidedFeedbackControls(QWidget):
         layout.addWidget(mark_hint)
         if data.get('require_fit_decision'):
             self.save.hide()
-            hint = QLabel("Rate the two visible fits, then decide whether the common fit "
-                          "is suitable. "
-                          "Hide the comparison to assess the common fit on its own."
+            hint = QLabel("You can record improvement and still choose “Still needs work”."
                           if visible_reference else
                           "Choose how this changed, then Suitable fit or Needs improvement "
                           "below. Both decisions are saved together.")
@@ -233,24 +238,56 @@ class GuidedFeedbackControls(QWidget):
 
     @property
     def decision(self):
-        outcome = next((k for k, b in self.outcomes.items() if b.isChecked()), None)
-        return (dict(outcome=outcome, comparison=self.rating_reference, note=self.note.text(),
-                     symptom=self.symptom.currentData())
-                if self._ready and outcome and self.rating_reference is not None else None)
+        if self.progress_choice:
+            outcome, reference = self.progress_choice
+        else:
+            outcome = next((k for k, b in self.outcomes.items() if b.isChecked()), None)
+            reference = self.rating_reference
+            if not self._ready or not outcome or reference is None:
+                return None
+        return dict(outcome=outcome, comparison=reference, note=self.note.text(),
+                    symptom=self.symptom.currentData())
+
+    def keep_progress(self, outcome, reference, label):
+        """Hold an explicitly rated, verified starting pair while inspecting anatomy."""
+        self.progress_choice = outcome, reference
+        self.title.setText(f"Progress from {label} · {OUTCOMES[outcome]}")
+        for button in self.outcomes.values():
+            button.hide()
+        self.edit_progress.show()
+        self._update()
+
+    def edit_progress_again(self):
+        self.progress_choice = None
+        self.buttons.setExclusive(False)
+        for button in self.outcomes.values():
+            button.setChecked(False)
+            button.show()
+        self.buttons.setExclusive(True)
+        self.edit_progress.hide()
 
     def bind_displayed_reference(self, reference, label):
         self.rating_reference = reference
-        self.title.setText("How does the common-model fit on the left compare with " + label + "?"
-                           if reference else "Choose a reviewed fit to rate the difference."
-                           if label else
-                           "Show a saved comparison to rate the difference between fits.")
+        if self.progress_choice:
+            return
+        for button in self.outcomes.values():
+            button.setVisible(reference is not None)
+        seed = self.data["common_review"]["numerical_seed"]
+        if seed and reference == seed:
+            focus = ("the marked areas" if any(self.data.get("problem_regions", {}).values())
+                     else "the features that matter for your study")
+            self.title.setText(f"Compared with {label}, how well does this fit match {focus}?")
+        elif reference:
+            self.title.setText(f"Optional comparison · How does the anatomy compare with {label}?")
+        else:
+            self.title.setText("Assess the current fit against the original specimen.")
 
     def set_ready(self, ready):
         self._ready = ready
         for button in self.outcomes.values():
             button.setEnabled(ready)
-        self.note.setEnabled(ready)
-        self.symptom.setEnabled(ready)
+        self.note.setEnabled(ready or bool(self.progress_choice))
+        self.symptom.setEnabled(ready or bool(self.progress_choice))
         self._update()
 
     def _update(self, *_):

@@ -4,28 +4,26 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QGridLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from diffeoforge.desktop.calibration_comparison_widget import CalibrationComparisonCanvas3D
 from diffeoforge.desktop.full_review_policy import FullSavedComparisonMixin
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
+from diffeoforge.pilot_common_review import common_seed_source
 
 
 def trial_label(snapshot, candidate):
     from diffeoforge.reference_guided_pilot import record
 
     return f"Test {record(snapshot)['screen_trials_spent']} · {candidate.label}"
-
-
-def common_seed_source(ref):
-    """A verified numerical checkpoint may have no separate anatomical review."""
-    from diffeoforge.guided_feedback import reference
-    from diffeoforge.reference_calibration_study import load_reference_calibration_study
-
-    parent = load_reference_calibration_study(Path(ref["directory"]))
-    if reference(parent, ref["candidate_id"], ref["target"]) != ref:
-        raise ValueError("The common model's saved numerical starting fit changed")
-    return parent
 
 
 def _common_alternatives(context):
@@ -36,7 +34,10 @@ def _common_alternatives(context):
     common = context["common_review"]
     approved, seed = common["approved_individual"], common["numerical_seed"]
     history = [r["reference"] for r in context["choices"] if r["inspected"]]
-    refs = [common.get("requested_comparison"), approved, seed, *history]
+    # Start with the field this trial actually changed whenever it can be rated.
+    # An unreviewed numerical checkpoint remains available for inspection.
+    refs = [common.get("requested_comparison"), seed if seed in history else None,
+            approved, seed, *history]
     result = []
     seen = set()
     for ref in refs:
@@ -55,7 +56,8 @@ def _common_alternatives(context):
                        pair_id=f"{other.study_directory.name}/{ref['candidate_id']}/{pair.pair_id}",
                        rating_reference=ref if eligible else None,
                        fit_distance_label=sampled_fit_label(candidate, ref["target"]))
-        role = ("Approved individual fit" if ref == approved else
+        role = ("Starting fit and approved individual fit" if ref == approved == seed else
+                "Approved individual fit" if ref == approved else
                 "Numerical starting fit" if ref == seed else "Saved alternative")
         result.append((ref == approved, role + " · " + trial_label(other, candidate), pair))
     return result, seen
@@ -136,7 +138,8 @@ def alternatives(snapshot, identifier, feedback=None):
 
 
 class _SavedFitComparison(QWidget):
-    def __init__(self, current, choices, parent=None, *, cache_directory, common_review=None):
+    def __init__(self, current, choices, parent=None, *, cache_directory, common_review=None,
+                 fit_review_viewport=False):
         super().__init__(parent)
         self.current = current
         self.choices = choices
@@ -151,31 +154,25 @@ class _SavedFitComparison(QWidget):
         self.toggle = QCheckBox("Show comparison" if common_review else
                                 "Show best approved fit / alternatives")
         layout.addWidget(self.toggle)
-        views = QHBoxLayout()
-        current_panel = QWidget()
-        current_layout = QVBoxLayout(current_panel)
-        current_layout.setContentsMargins(0, 0, 0, 0)
+        self.views = QGridLayout()
+        self.views.setColumnStretch(0, 1)
         self.current_label = QLabel("Common-model check · " + common_review["current_label"]
                                     if common_review else "Current fit")
         self.current_label.setWordWrap(True)
-        current_layout.addWidget(self.current_label)
-        if common_review:
-            metric = QLabel(common_review["current_distances"])
-            metric.setWordWrap(True)
-            current_layout.addWidget(metric)
-        current_layout.addWidget(self.current, 1)
+        self.views.addWidget(self.current_label, 0, 0)
         self.current_label.hide()
-        views.addWidget(current_panel, 1)
-        self.panel = QWidget()
-        panel_layout = QVBoxLayout(self.panel)
-        panel_layout.setContentsMargins(0, 0, 0, 0)
         self.choice = QComboBox()
+        self.choice.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.choice.setAccessibleName("Saved fit alternative")
         for approved, label, pair in choices:
             prefix = "" if common_review else ("Approved · " if approved else "Alternative · ")
             self.choice.addItem(prefix + label, pair)
-        panel_layout.addWidget(self.choice)
+        self.views.addWidget(self.choice, 0, 1)
+        self.reference_widgets = [self.choice]
         if common_review:
+            metric = QLabel(common_review["current_distances"])
+            metric.setWordWrap(True)
+            self.views.addWidget(metric, 1, 0)
             comparison_metric = QLabel()
             comparison_metric.setWordWrap(True)
 
@@ -184,26 +181,31 @@ class _SavedFitComparison(QWidget):
 
             self.choice.currentIndexChanged.connect(show_distance)
             show_distance(0)
-            panel_layout.addWidget(comparison_metric)
-        self.current_label.setMinimumHeight(self.choice.sizeHint().height())
-        self.canvas = CalibrationComparisonCanvas3D()
-        self.canvas.setMinimumHeight(250)
+            self.views.addWidget(comparison_metric, 1, 1)
+            self.reference_widgets.append(comparison_metric)
+        self.canvas = CalibrationComparisonCanvas3D(fit_review_viewport=fit_review_viewport)
+        self.canvas.setMinimumHeight(current.minimumHeight() if fit_review_viewport else 250)
         self.canvas.original_detail.hide()
-        panel_layout.addWidget(self.canvas, 1)
-        views.addWidget(self.panel, 1)
-        layout.addLayout(views, 1)
+        self.reference_widgets.append(self.canvas)
+        self.views.addWidget(self.current, 2, 0)
+        self.views.addWidget(self.canvas, 2, 1)
+        self.views.setRowStretch(2, 1)
+        layout.addLayout(self.views, 1)
         self.status = QLabel("Saved comparison; acceptance applies to the current fit on the left.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.status.hide()
-        self.panel.hide()
+        for widget in self.reference_widgets:
+            widget.hide()
         self.toggle.toggled.connect(self._toggle)
         self.choice.currentIndexChanged.connect(self._request)
         current.cameraChanged.connect(self.canvas.set_linked_camera)
         self.canvas.cameraChanged.connect(current.set_linked_camera)
 
     def _toggle(self, visible):
-        self.panel.setVisible(visible)
+        self.views.setColumnStretch(1, int(visible))
+        for widget in self.reference_widgets:
+            widget.setVisible(visible)
         self.current_label.setVisible(visible or bool(self.common_review))
         self.status.setVisible(visible)
         if visible:
@@ -237,7 +239,8 @@ class _SavedFitComparison(QWidget):
         points = np.vstack([original.vertices, reconstructed.vertices, models[1].vertices])
         low, high = points.min(axis=0), points.max(axis=0)
         for canvas in (self.current, self.canvas):
-            canvas.set_comparison_extent((low + high) / 2, float(np.max(high - low)))
+            canvas.set_comparison_extent((low + high) / 2, float(np.max(high - low)),
+                                         bounds_size=high - low)
         self.canvas.set_linked_camera(self.current.camera_state())
         self.status.setText("Saved comparison. Acceptance applies to the current fit on the left.")
 

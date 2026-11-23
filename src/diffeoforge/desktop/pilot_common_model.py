@@ -70,13 +70,20 @@ def pin_revision(window, snapshot, guidance, target):
     if (snapshot.visual_reviews.get(identifier) is not True
             or not guidance.get("common_revision", {}).get(identifier)):
         return
-    attempt = f" · {target}" if target else ""
+    proposed = guidance["common_revision"][identifier]
+    if proposed.get("joint"):
+        label = f"Use approved settings → prepare joint check · {proposed['total']} specimens"
+    elif proposed.get("action") == "next_form":
+        label = f"Use approved settings → prepare individual fit · {proposed['target']}"
+    else:
+        label = f"Use approved settings → check {proposed.get('target') or target} · 1 specimen"
     pin_action(
-        window, snapshot, "Use approved common settings → check next form" + attempt,
+        window, snapshot, label,
         "adaptive_adopt_common_model", identifier,
-        "Adopt this reviewed fit's settings and prepare the next common-model check.",
+        proposed.get("transfer_note") or "Use this reviewed fit’s settings for the next check.",
     )
-    window.status.setText("This common fit is approved. The next check needs the same settings.")
+    window.status.setText(proposed.get("transfer_note") or
+                          "This common fit is approved. The next check needs the same settings.")
 
 
 def dispatch(window, following, identifier, *, starting=False):

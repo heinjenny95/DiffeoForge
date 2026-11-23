@@ -1,4 +1,4 @@
-"""New pilot correction and early shared-model handoffs; synthetic data only."""
+"""Shared-grid corrections and individual-first handoffs; synthetic data only."""
 
 from test_guided_pilot import approve, run_batch
 from test_guided_suitable_dialog import panel as panel
@@ -28,14 +28,20 @@ def new_pilot(tmp_path):
 
 
 def test_new_pilot_uses_one_grid_on_distinct_representative_forms(tmp_path, monkeypatch):
+    from diffeoforge.desktop.pilot_review_target import choose
+
     first = new_pilot(tmp_path)
     source_config = load_config(first.candidates[0].config_path)
     assert guided.record(first)["strategy"]["correction_policy"] == guided.ATLAS_FIRST
     grid = source_config["model"]["deformation"]
     assert grid["use_rk2"] and grid["timepoints"] >= regional_pilot.MINIMUM_NEW_NATIVE_TIMEPOINTS
     accepted = approve(run_batch(first, monkeypatch), "guided-varifold")
-    following = guided_strategy.state(accepted)["next_forms"]["guided-varifold"]
+    state = guided_strategy.state(accepted)
+    following = state["next_forms"]["guided-varifold"]
     assert following["action"] == "next_form" and following["checked"] == 1
+    alternate = choose(accepted, state, guided.record(accepted))
+    assert alternate["candidate_id"] == "guided-current"
+    assert not alternate["pending"] and alternate["label"].startswith("Inspect alternative fit")
     second = guided.next_action(accepted.study_directory, "adaptive_next_form", "guided-varifold")
     assert guided.record(second)["target"] != guided.record(first)["target"]
     assert second.attachment_comparison["controls"]["sha256"] == first.attachment_comparison[
@@ -48,7 +54,8 @@ def test_new_pilot_uses_one_grid_on_distinct_representative_forms(tmp_path, monk
     assert "initial_momenta" not in settings["model"]["deformation"]
 
 
-def test_off_protocol_approval_checks_transfer_before_more_individual_fits(tmp_path, monkeypatch):
+def test_off_protocol_approval_reviews_other_individuals_before_checking_shared_settings(
+        tmp_path, monkeypatch):
     first = reject(run_batch(new_pilot(tmp_path), monkeypatch), "guided-varifold")
     trial = guided.next_action(first.study_directory, "adaptive_recover", "guided-varifold",
                                goal="goal:detail")
@@ -61,24 +68,33 @@ def test_off_protocol_approval_checks_transfer_before_more_individual_fits(tmp_p
     assert following["shapes"] == 1 < following["total"]
     exact = reference(accepted, "guided-varifold")
     assert progress.marker(accepted) is None
-    assert progress.transfer_marker(accepted, target, exact) == following["marker"]
+    historical = progress.transfer_marker(accepted, target, exact)
+    assert historical["stage"] == "model" and historical["reviews"] == [row]
     changed = dict(exact, manifest_sha256="changed")
     assert progress.transfer_marker(accepted, target, changed) is None
+    order = guided.record(accepted)["pilot_order"]
+    seen = {target}
+    for _ in order[1:]:
+        assert following["action"] == "next_form" and following["target"] not in seen
+        assert "Prepare individual fit" in following["label"]
+        assert not following.get("common_reuse")
+        assert not guided_strategy.state(accepted).get("shared_model_checks")
+        child = guided.next_action(accepted.study_directory, "adaptive_next_form",
+                                   "guided-varifold")
+        assert row in progress.marker(child)["reviews"]
+        assert child.candidates[0].attempts == 0 and not child.visual_reviews
+        seen.add(guided.record(child)["target"])
+        accepted = approve(run_batch(child, monkeypatch), "guided-varifold")
+        following = guided_strategy.state(accepted)["next_forms"]["guided-varifold"]
+    assert seen == set(order)
     assert following["action"] == "form_model_check" and following["target"] == target
     assert following["common_reuse"]["mode"] in {"capacity", "fresh_capacity"}
-    child = guided.next_action(accepted.study_directory, "adaptive_form_model_check",
+    assert following["label"] == f"Check shared settings on {target} · 1 specimen"
+    check = guided.next_action(accepted.study_directory, "adaptive_form_model_check",
                                "guided-varifold")
-    assert progress.marker(child)["reviews"] == [row]
-    assert child.attachment_comparison["controls"]["count"] == 480
-    assert not child.visual_reviews and child.candidates[0].attempts == 0
-    qualified = approve(run_batch(child, monkeypatch), "guided-varifold")
-    next_form = guided.next_action(qualified.study_directory, "adaptive_adopt_common_model",
-                                   "guided-varifold")
-    assert guided.record(next_form)["target"] != target
-    assert progress.marker(next_form)["reviews"] == [row]
-    assert next_form.attachment_comparison["controls"]["sha256"] == (
-        child.attachment_comparison["controls"]["sha256"])
-    assert not next_form.visual_reviews and next_form.candidates[0].attempts == 0
+    assert {r["filename"] for r in progress.marker(check)["reviews"]} == set(order)
+    assert check.attachment_comparison["controls"]["count"] == 480
+    assert check.candidates[0].attempts == 0 and not check.visual_reviews
 
 
 def test_first_far_feature_with_fixed_areas_prefers_direct_shared_field(monkeypatch):
@@ -98,7 +114,7 @@ def test_first_far_feature_with_fixed_areas_prefers_direct_shared_field(monkeypa
     assert later["regions"] == data["regions"]
 
 
-def test_revision_checks_previously_approved_form_before_unseen_one(tmp_path, monkeypatch):
+def test_resuming_an_early_model_revision_reviews_unseen_specimen_next(tmp_path, monkeypatch):
     first = approve(run_batch(new_pilot(tmp_path), monkeypatch), "guided-varifold")
     first_target = guided.record(first)["target"]
     first_approval = guided._approved_record(first, "guided-varifold")
@@ -114,39 +130,71 @@ def test_revision_checks_previously_approved_form_before_unseen_one(tmp_path, mo
                                   "guided-varifold")
     assert guided.record(transfer)["target"] == second_target
     accepted_transfer = approve(run_batch(transfer, monkeypatch), "guided-varifold")
+    incomplete = dict(progress.marker(accepted_transfer), reviews=[first_approval])
+    assert progress.retain_review_for_trial(
+        accepted_transfer, "guided-varifold", {"form_progress": incomplete}
+    )["form_progress"]["reviews"] == [first_approval]
     check = guided.next_action(accepted_transfer.study_directory, "adaptive_adopt_common_model",
                                "guided-varifold")
-    assert guided.record(check)["target"] == first_target
+    assert guided.record(check)["target"] not in {first_target, second_target}
+    assert guided.record(check)["goal"] == "next_form"
     assert progress.marker(check)["reviews"] == [first_approval, second_approval]
     assert check.attachment_comparison["controls"]["sha256"] == (
         transfer.attachment_comparison["controls"]["sha256"])
-    assert "initial_momenta" not in (
-        load_config(check.candidates[0].config_path)["model"]["deformation"]
-    ) or check.attachment_comparison["refinement"]["reference"]["target"] == first_target
+    config = load_config(check.candidates[0].config_path)
+    assert "initial_momenta" not in config["model"]["deformation"]
     assert not check.visual_reviews and check.candidates[0].attempts == 0
 
 
-def test_primary_action_explains_and_prepares_the_early_transfer(panel):
+def test_old_rejected_common_fit_can_wait_while_remaining_specimens_get_reviewed(
+        tmp_path, monkeypatch):
+    first = reject(run_batch(new_pilot(tmp_path), monkeypatch), "guided-varifold")
+    repair = guided.next_action(first.study_directory, "adaptive_recover", "guided-varifold",
+                                goal="goal:detail")
+    accepted = regional_fit(run_batch(repair, monkeypatch), monkeypatch)
+    row = guided._approved_record(accepted, "guided-varifold")
+    monkeypatch.setattr(capacity, "demand", lambda _: {row["filename"]: 480})
+    # Explicitly reproduce the early shared check prepared by an older version.
+    early = guided.next_action(accepted.study_directory, "adaptive_form_model_check",
+                               "guided-varifold")
+    assert early.candidates[0].attempts == 0
+    assert not guided_strategy.state(early).get("defer_common")
+    rejected = reject(run_batch(early, monkeypatch), "guided-varifold")
+    state = guided_strategy.state(rejected)
+    pending = state["defer_common"]
+    assert pending["available"] and pending["target"] != row["filename"]
+    child = guided.next_action(rejected.study_directory, "adaptive_defer_common", "guided-varifold")
+    info = guided.record(child)
+    assert info["goal"] == "next_form" and info["target"] == pending["target"]
+    assert progress.marker(child)["reviews"] == [row] and guided.record(child)["approved"] == []
+    assert not child.visual_reviews and child.candidates[0].attempts == 0
+    assert study.load_reference_calibration_study(rejected.study_directory).visual_reviews == {
+        "guided-varifold": False}
+    assert guided._approved_record(study.load_reference_calibration_study(accepted.study_directory),
+                                   "guided-varifold") == row
+
+
+def test_primary_action_explains_and_prepares_next_individual(panel):
     from PySide6.QtWidgets import QLabel
 
     from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
 
     identifier = "guided-varifold"
     panel.snapshot.visual_reviews[identifier] = True
-    note = "Check this approved anatomy on the shared settings before reviewing another specimen."
+    note = "next.vtk still needs an individual review before the joint check."
     panel.guidance["next_forms"] = {identifier: dict(
-        available=True, target="specimen.vtk", label="Test shared controls for accepted shapes",
-        action="form_model_check", shapes=1, checked=0, total=3, transfer_note=note)}
+        available=True, target="next.vtk", label="Prepare individual fit · next.vtk",
+        action="next_form", shapes=1, checked=0, total=3, transfer_note=note)}
     panel.render()
     assert any(label.text() == note and label.isVisible()
                for label in panel.window.findChildren(QLabel))
-    assert panel.window.next_step_button.text() == "Test shared controls for accepted shapes"
+    assert panel.window.next_step_button.text() == "Prepare individual fit · next.vtk"
     panel.window._worker = None
     panel.window._restoring_search = False
     panel.window.next_step_button.clicked.connect(
         lambda: ReferenceCalibrationDialog._perform_final_next_step(panel.window))
     panel.window.next_step_button.click()
-    assert panel.invoked[-1][1]["guided_action"] == ("adaptive_form_model_check", identifier, None)
+    assert panel.invoked[-1][1]["guided_action"] == ("adaptive_next_form", identifier, None)
 
 
 def test_restored_old_transfer_uses_saved_approval_and_rejects_the_other_fit(tmp_path, monkeypatch):
@@ -157,6 +205,25 @@ def test_restored_old_transfer_uses_saved_approval_and_rejects_the_other_fit(tmp
     assert progress.transfer_marker(rejected, exact["target"], exact) == progress.marker(rejected)
     different = reference(rejected, "guided-varifold")
     assert progress.transfer_marker(rejected, exact["target"], different) is None
+
+
+def test_stalled_early_common_check_offers_next_specimen_without_approval(panel):
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    identifier = panel.candidate.candidate_id
+    panel.snapshot.visual_reviews[identifier] = False
+    panel.guidance["defer_common"] = dict(available=True, target="unseen.vtk")
+    panel.guidance["common_recovery"] = dict(
+        available=False, mode="stalled", retained_reference={"target": "specimen.vtk"},
+        label="Inspect saved fit", target="specimen.vtk", reason="No measured improvement.")
+    panel.window.next_step_button.clicked.connect(
+        lambda: ReferenceCalibrationDialog._perform_final_next_step(panel.window))
+    panel.render()
+    assert panel.window.next_step_button.text() == "Review next specimen · unseen.vtk"
+    assert "stays open" in panel.window.status.text()
+    panel.window.next_step_button.click()
+    assert panel.invoked[-1][1]["guided_action"] == ("adaptive_defer_common", identifier, None)
+    assert panel.snapshot.visual_reviews[identifier] is False
 
 
 def test_first_approved_projection_opens_its_bounded_workspace(panel, monkeypatch):

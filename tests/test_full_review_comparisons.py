@@ -75,10 +75,13 @@ def case(tmp_path, monkeypatch, request):
         comparison_reconstruction_path=str(choices[0].reconstruction_path),
         comparison_reconstruction_sha256=choices[0].reconstruction_sha256,
     )
-    if getattr(request, "param", None) == "common":
-        seed = dict(reference, candidate_id="seed")
+    common_case = getattr(request, "param", None)
+    if common_case in {"common", "same_reference", "no_seed", "unreviewed_seed"}:
+        seed = (reference if common_case == "same_reference" else
+                None if common_case == "no_seed" else dict(reference, candidate_id="seed"))
         choices = [replace(choices[0], rating_reference=reference),
-                   replace(choices[1], rating_reference=seed)]
+                   replace(choices[1], rating_reference=(
+                       None if common_case == "unreviewed_seed" else seed))]
         context.update(require_fit_decision=True, common_review=dict(
             current_label="Test 3", seed_label="Test 1", current_distances="",
             approved_individual=reference, numerical_seed=seed, context_directory=str(tmp_path)))
@@ -97,6 +100,7 @@ def case(tmp_path, monkeypatch, request):
         alternative_pairs=tuple((False, "alternative " + str(i), p) for i, p in enumerate(choices)),
         guided_feedback_context=context,
         compact_review=True,
+        common_model=common_case == "legacy_saved_common",
     )
     viewer.resize(1250, 850)
     viewer.show()
@@ -226,12 +230,156 @@ def test_common_review_switch_binds_the_displayed_reference_and_hidden_view_allo
     assert not viewer.guided_feedback.note.text()
     assert viewer.guided_feedback_decision is None
     viewer.guided_feedback.outcomes["better"].click()
+    assert (saved.choice.currentData().rating_reference
+            == viewer._common_review["approved_individual"])
+    wait(case.app, lambda: viewer.canvas.comparison_ready)
     assert viewer.guided_feedback_decision["comparison"] == viewer._common_review["numerical_seed"]
+    viewer.guided_feedback.edit_progress.click()
+    assert saved.choice.currentData().rating_reference == viewer._common_review["numerical_seed"]
+    deliver(case, 1)
+    wait(case.app, lambda: relative_enabled(case))
+    assert viewer.guided_feedback_decision is None
     saved.toggle.setChecked(False)
     wait(case.app, lambda: viewer.canvas.comparison_ready and viewer.fail_button.isEnabled())
     assert not relative_enabled(case) and viewer.guided_feedback_decision is None
     viewer.fail_button.click()
     assert viewer.review_recorded and not viewer.review_passed
+
+
+@pytest.mark.parametrize("case", ["same_reference", "no_seed"], indirect=True)
+def test_review_with_same_reference_or_without_a_start(case):
+    viewer = case.v
+    deliver(case, 0)
+    wait(case.app, lambda: relative_enabled(case))
+    if viewer._common_review["numerical_seed"] is not None:
+        assert not viewer.fail_button.isEnabled()
+        viewer.guided_feedback.outcomes["better"].click()
+        assert (viewer.guided_feedback_decision["comparison"]
+                == viewer._common_review["numerical_seed"])
+        assert case.saved.choice.currentIndex() == 0
+    else:
+        assert "Optional comparison" in viewer.guided_feedback.title.text()
+        assert viewer.guided_feedback_decision is None
+    assert viewer.fail_button.isEnabled()
+    assert all(button.objectName() == "secondary" and not button.autoDefault()
+               for button in (viewer.complete_button, viewer.fail_button))
+    viewer.fail_button.click()
+    assert viewer.review_recorded and not viewer.review_passed
+
+
+@pytest.mark.parametrize("case", ["common"], indirect=True)
+def test_editing_reviewed_marks_reopens_progress_and_cancel_records_nothing(case):
+    viewer, comparison = case.v, case.saved
+    name = case.pair.original_path.name
+    mark = {"center": [1, 2, 3], "radius": 1}
+    viewer._set_reviewed_regions(name, [mark])
+    comparison.choice.setCurrentIndex(1)
+    deliver(case, 1)
+    wait(case.app, lambda: relative_enabled(case))
+    viewer.guided_feedback.outcomes["better"].click()
+    deliver(case, 0)
+    wait(case.app, lambda: viewer.fail_button.isEnabled())
+    viewer._set_reviewed_regions(name, [dict(mark)])
+    assert viewer.guided_feedback_decision["problem_regions"] == {name: [mark]}
+    viewer._clear_regions()
+    assert (comparison.choice.currentData().rating_reference
+            == viewer._common_review["numerical_seed"])
+    assert viewer.guided_feedback_decision is None
+    viewer.close_button.click()
+    assert not viewer.review_recorded and not viewer._guided_feedback_only
+
+
+@pytest.mark.parametrize("case", ["unreviewed_seed"], indirect=True)
+def test_inspection_only_checkpoint_allows_suitability_without_a_progress_rating(case):
+    case.saved.choice.setCurrentIndex(1)
+    deliver(case, 1)
+    wait(case.app, lambda: case.saved.full_comparison_ready and case.v.fail_button.isEnabled())
+    assert not any(button.isVisible() for button in case.v.guided_feedback.outcomes.values())
+    assert case.v.guided_feedback_decision is None
+    case.v.fail_button.click()
+    assert case.v.review_recorded and not case.v.review_passed
+
+
+@pytest.mark.parametrize("size", [(960, 640), (1280, 720)])
+@pytest.mark.parametrize("case", ["common"], indirect=True)
+def test_common_review_keeps_both_meshes_visible_while_scrolling_actions(case, size):
+    from PySide6.QtCore import QPoint, QRect
+
+    from diffeoforge.desktop.widgets import _STYLE
+
+    dialog = case.v
+    dialog.setStyleSheet(_STYLE)
+    dialog.resize(*size)
+    def long_specimen(mesh):
+        return replace(mesh, vertices=tuple((5 * x, 0.3 * y, z) for x, y, z in mesh.vertices),
+                       bounds=(-5, 5, -0.3, 0.3, -0.2, 0.2))
+
+    original, current = map(long_specimen, case.models)
+    dialog._pair_loaded(0, (original, current))
+    selected = case.saved.choice.currentData()
+    reference = long_specimen(model(selected.reconstruction_path, selected.reconstruction_sha256,
+                                    proxy=True))
+    case.saved._loaded(selected.pair_id, (original, reference))
+    wait(case.app, lambda: dialog.canvas.comparison_ready and case.saved.full_comparison_ready)
+    assert dialog.width() == size[0] and dialog.height() == size[1]
+    scroll = dialog.body_scroll
+    viewports = (dialog.canvas, case.saved.canvas)
+
+    def rectangles():
+        return tuple(QRect(c.mapTo(dialog, QPoint()), c.size()) for c in viewports)
+
+    for rect, canvas in zip(rectangles(), viewports, strict=True):
+        assert dialog.rect().contains(rect)
+        assert rect.bottom() < scroll.mapTo(dialog, QPoint()).y()
+        assert rect.height() >= 150
+        for vertices in (canvas.original_model.vertices, canvas.reconstruction_model.vertices):
+            _, points = canvas._project(np.asarray(vertices))
+            assert (points >= 0).all()
+            assert (points < [canvas.width(), canvas.height()]).all()
+            assert np.ptp(points[:, 0]) > canvas.width() / 2
+    assert abs(dialog.canvas.width() - case.saved.canvas.width()) <= 2
+    assert rectangles()[0].top() == rectangles()[1].top()
+    assert dialog.canvas.height() == case.saved.canvas.height()
+
+    dialog.canvas.set_view_preset("left")
+    dialog.guided_feedback.note.setText("Better projection, more work needed")
+    wait(case.app, lambda: dialog.canvas.comparison_ready and case.saved.full_comparison_ready)
+    bounds = rectangles()
+    cameras = [canvas.camera_state() for canvas in viewports]
+    assert scroll.verticalScrollBar().maximum() > 0
+    scroll.ensureWidgetVisible(dialog.fail_button)
+    case.app.processEvents()
+    button_position = dialog.fail_button.mapTo(scroll.viewport(), QPoint(1, 1))
+    assert scroll.viewport().rect().contains(button_position)
+    scroll.verticalScrollBar().setValue(scroll.verticalScrollBar().maximum())
+    case.app.processEvents()
+    assert rectangles() == bounds
+    assert [canvas.camera_state() for canvas in viewports] == cameras
+    assert dialog.guided_feedback.note.text() == "Better projection, more work needed"
+    assert not dialog.review_recorded
+    dialog.full_screen_button.click()
+    wait(case.app, lambda: dialog.isFullScreen() and case.saved.full_comparison_ready)
+    for rect in rectangles():
+        assert dialog.rect().contains(rect)
+        assert rect.bottom() < scroll.mapTo(dialog, QPoint()).y()
+    dialog.full_screen_button.click()
+    wait(case.app, lambda: not dialog.isFullScreen() and case.saved.full_comparison_ready)
+    assert rectangles() == bounds
+    assert [canvas.camera_state() for canvas in viewports] == cameras
+
+
+@pytest.mark.parametrize("case", ["legacy_saved_common"], indirect=True)
+def test_older_common_review_pins_mesh_without_inventing_a_progress_reference(case):
+    from PySide6.QtCore import QPoint
+
+    viewer = case.v
+    viewer.resize(960, 640)
+    wait(case.app, lambda: viewer.canvas.comparison_ready)
+    assert not viewer._common_review and not case.saved.toggle.isChecked()
+    assert viewer.body_scroll.isAncestorOf(viewer.decision_panel)
+    assert not viewer.body_scroll.isAncestorOf(viewer.canvas)
+    bottom = viewer.canvas.mapTo(viewer, viewer.canvas.rect().bottomRight()).y()
+    assert bottom < viewer.body_scroll.mapTo(viewer, QPoint()).y()
 
 
 def test_legacy_relative_panel_accepts_matching_preview_and_optional_full_detail(

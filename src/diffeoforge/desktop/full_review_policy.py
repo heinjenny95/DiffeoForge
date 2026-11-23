@@ -85,13 +85,10 @@ class FullGeometryReviewMixin:
             group.setExclusive(True)
             self.guided_feedback._update()
         if self._common_review:
-            saved = getattr(self, "saved_comparison", None)
-            pair = saved.choice.currentData() if saved and saved.toggle.isChecked() else None
-            if previous is not None:
+            if previous is not None and not self.guided_feedback.progress_choice:
                 self.guided_feedback.note.clear()
                 self.guided_feedback.symptom.setCurrentIndex(self.guided_feedback.symptom.findData("unsure"))
-            self.guided_feedback.bind_displayed_reference(
-                pair.rating_reference if pair else None, saved.choice.currentText() if pair else "")
+            self._bind_common_question()
 
     def _load_selected(self, index):
         self.display_started_at = time.monotonic()
@@ -225,6 +222,8 @@ class FullGeometryReviewMixin:
             # The canvas shows its pending-frame banner; decisions stay disabled.
         if self.guided_feedback:
             self.guided_feedback.set_ready(self._relative_ready() and self._valid_individual)
+            if self.guided_feedback.progress_choice:
+                self.guided_feedback.save.setEnabled(ready and self._valid_individual)
         self._display_phase()
 
     def _pair_original_presented(self):
@@ -246,14 +245,15 @@ class FullGeometryReviewMixin:
             self._update_review_progress()
 
     def _record_guided_feedback(self, decision=None):
-        if self._relative_ready():
+        if self.guided_feedback_decision:
             super()._record_guided_feedback(decision)
         else:
             self._update_review_progress()
 
     @property
     def guided_feedback_decision(self):
-        if not self._relative_ready():
+        captured = self.guided_feedback and self.guided_feedback.progress_choice
+        if not (self.canvas.comparison_ready if captured else self._relative_ready()):
             return None
         return super().guided_feedback_decision
 
@@ -349,9 +349,7 @@ class FullSavedComparisonMixin:
         if self.canvas.reconstruction_model is None:
             return
         self._shown_pair_id = pair.pair_id
-        self.status.setText(
-            "Selected comparison loaded; relative feedback waits for its image."
-        )
+        self.status.setText("Rotate either view to inspect the same feature in both fits.")
 
     def _full_comparison_failed(self, key, message):
         pair = self.choice.currentData()

@@ -1,5 +1,19 @@
 # Development continuity
 
+## dev238 — review progress and anatomy separately
+
+The common-model review first compares a trial with its reviewed starting fit.
+The researcher can record that the marked features improved and that the result
+still needs work. The approved individual fit is available for the anatomical
+decision. The next-step policy reads the comparison for the relevant starting
+fit and marks, including when another saved fit was inspected later.
+
+New proposals give the remaining individual reviews priority. The next action
+names the specimen and distinguishes a shared-settings check on one form from a
+joint cohort check. Older prepared trials keep their recorded settings and
+approvals. The laptop review keeps the previews together above a scrollable
+assessment. See the [common-model workflow](PILOT_ACCEPTED_COMMON_DIAGNOSIS.md).
+
 ## dev237 — carry approved anatomy into common-model testing
 
 New guided pilots first try a marked correction on a basis the common model can

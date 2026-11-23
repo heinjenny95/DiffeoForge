@@ -55,10 +55,14 @@ def test_approved_individual_feedback_never_implies_progress_from_shared_seed(
                 common_review_references=dict(approved_individual=seed, numerical_seed=seed),
             ),
         )
+    seed_vote = None
     for outcome, against, expected in [
-        ("worse", reference, "detail"),
-        ("better", reference, "detail"),
+        ("worse", reference, "feedback"),
+        ("better", reference, "feedback"),
         ("better", seed, "iterations"),
+        ("worse", reference, "iterations"),
+        ("same", seed, "detail"),
+        ("better", reference, "detail"),
     ]:
         candidate = feedback.save_feedback(
             candidate.study_directory,
@@ -69,17 +73,24 @@ def test_approved_individual_feedback_never_implies_progress_from_shared_seed(
         assert event["comparison_displayed"] and event["comparison"] == against
         assert event["common_review"]["approved_individual"] == reference
         assert event["common_review"]["numerical_seed"] == seed
-        assert seed_outcome(event) == ("better" if against == seed else None)
+        assert seed_outcome(event) == (outcome if against == seed else None)
         context = guided_strategy.state(candidate)
         choice = context["common_recovery"]
-        assert choice["kind"] == expected
-        assert choice["reference"] == current and choice["additional_iterations"] == 120
-        assert choice["human_feedback"]["event_hash"] == event["event_hash"]
-        assert choice["human_feedback"]["outcome"] == outcome
-        if against == reference:
+        if against == seed:
+            seed_vote = event
+        if expected == "feedback":
+            assert choice["mode"] == "feedback" and choice["requested_comparison"] == seed
+        else:
+            assert choice["kind"] == expected
+            assert choice["reference"] == current and choice["additional_iterations"] == 120
+            cited = seed_vote if expected == "iterations" else event
+            assert choice["human_feedback"]["event_hash"] == cited["event_hash"]
+            assert choice["human_feedback"]["outcome"] == cited["outcome"]
+        if against == reference and not seed_vote:
             assert context["feedback"][identifier]["feedback"] is None
-            assert next(row for row in context["cases"] if row["fit"] == current)["outcome"] is None
-        if outcome == "worse":
+        recorded = next(row for row in context["cases"] if row["fit"] == current)["outcome"]
+        assert recorded == (seed_vote["outcome"] if seed_vote else None)
+        if against == reference and outcome == "worse":
             assert "worse than the approved individual fit" in choice["reason"]
         assert (
             pilot_form_progress.marker(candidate) == ledger
@@ -108,6 +119,35 @@ def test_only_a_rating_against_the_bound_seed_reports_numerical_progress():
         == "better"
     )
     assert seed_outcome(dict(outcome="better", comparison=seed)) == "better"
+
+
+def test_seed_rating_lookup_stops_at_changed_marks_or_start():
+    from diffeoforge.pilot_common_review import progress_feedback
+
+    rating = dict(current="trial", comparison="start", outcome="better",
+                  problem_regions={"specimen": ["A"]}, common_review={"numerical_seed": "start"})
+    other = dict(rating, comparison="approved", outcome="worse")
+    assert progress_feedback([rating, other]) is rating
+    assert progress_feedback([rating, dict(other, problem_regions={}), other]) is None
+    sibling = dict(other, common_review={"numerical_seed": "sibling"})
+    assert progress_feedback([rating, sibling]) is None
+    assert progress_feedback([rating, dict(other, current="another trial")]) is None
+    unseeded = dict(rating, comparison=None, common_review={"numerical_seed": None})
+    assert progress_feedback([unseeded]) is None
+
+
+def test_later_mark_edit_requires_new_progress_review(monkeypatch):
+    from diffeoforge import pilot_common_diagnosis
+    from diffeoforge.pilot_common_review import current_progress_feedback
+
+    ref = {"target": "specimen"}
+    marks = ["A"]
+    event = dict(current=ref, common_review={"numerical_seed": "start"}, comparison="start",
+                 problem_regions={"specimen": list(marks)}, outcome="better")
+    monkeypatch.setattr(pilot_common_diagnosis, "comparison_regions", lambda *args: marks)
+    assert current_progress_feedback(None, None, ref, [event]) == event
+    marks.clear()
+    assert current_progress_feedback(None, None, ref, [event]) is None
 
 
 def test_common_review_from_later_protocol_preserves_exact_historical_seed(tmp_path, monkeypatch):
