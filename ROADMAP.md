@@ -1,5 +1,13 @@
 # Roadmap
 
+## Pilot fit labels (23 November 2026)
+
+- [ ] When the pilot checks shared settings on one animal after its individual
+  fit was approved, name the specimen and scope on the button, for example
+  “Check shared settings on {specimen} · 1 specimen”. Explain that this checks
+  whether the shared settings preserve the approved anatomy. Reserve “Prepare
+  joint check” for the step that fits the selected pilot specimens together.
+
 ## Reconstruction QC before PCA (19 November 2026)
 
 - [x] In the Deformetrica desktop workflow, wait for the required visual decisions on flagged
