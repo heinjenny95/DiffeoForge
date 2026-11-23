@@ -556,7 +556,7 @@ def test_actual_saved_pilot_open_path_has_recordable_owner(application, tmp_path
     application.processEvents()
 
 
-def test_finish_recording_from_open_pilot_keeps_pilot_open(application, tmp_path, monkeypatch):
+def test_manage_recording_from_open_pilot_keeps_pilot_open(application, tmp_path, monkeypatch):
     from test_reference_calibration_study import _review_ready_stage
 
     from diffeoforge.desktop import process_recorder
@@ -588,20 +588,50 @@ def test_finish_recording_from_open_pilot_keeps_pilot_open(application, tmp_path
     dialog = window._reference_calibration_dialog
     journal = runner.study_directory / "events.jsonl"
     saved_events = journal.read_bytes()
+
+    def exported(reason, previous=None):
+        wait(application, lambda: recorder.last_output != previous and not recorder.encoders)
+        output = recorder.last_output
+        receipt = json.loads(output.with_suffix(".json").read_text(encoding="utf-8"))
+        assert receipt["finish_reason"] == reason
+        return output
+
     try:
+        enabled = dialog.recording_enabled_check
         finish = dialog.finish_recording_button
         assert not window.centralWidget().isEnabled()
+        assert enabled.isChecked() and enabled.isEnabled()
         assert finish.isVisible() and finish.isEnabled()
         assert not recorder.finish_button.isEnabled()
         dialog.activateWindow()
         application.processEvents()
         assert recorder._capture_window() is dialog
         QTest.mouseClick(finish, Qt.MouseButton.LeftButton)
-        wait(application, lambda: recorder.last_output is not None and not recorder.encoders)
-        receipt = json.loads(recorder.last_output.with_suffix(".json").read_text(encoding="utf-8"))
-        assert receipt["finish_reason"] == "manual_finish"
-        assert recorder.finish_button.text() == "New recording"
+        first = exported("manual_finish")
+        assert enabled.isChecked() and recorder.settings.value("enabled", type=bool)
+        assert finish.text() == recorder.finish_button.text() == "New recording"
+
+        recorder.enabled.setChecked(False)
+        assert not enabled.isChecked() and not recorder.settings.value("enabled", type=bool)
         assert finish.isHidden() and not finish.isEnabled()
+        assert recorder.last_output == first and not recorder.encoders
+
+        QTest.mouseClick(enabled, Qt.MouseButton.LeftButton)
+        assert recorder.enabled.isChecked() and recorder.settings.value("enabled", type=bool)
+        assert recorder.current is not None
+        assert finish.text() == recorder.finish_button.text() == "Finish recording"
+        QTest.mouseClick(finish, Qt.MouseButton.LeftButton)
+        second = exported("manual_finish", first)
+        assert finish.text() == "New recording"
+
+        QTest.mouseClick(finish, Qt.MouseButton.LeftButton)
+        assert recorder.current is not None and finish.text() == "Finish recording"
+        QTest.mouseClick(enabled, Qt.MouseButton.LeftButton)
+        third = exported("disabled", second)
+        assert not recorder.enabled.isChecked()
+        assert not recorder.settings.value("enabled", type=bool)
+        assert finish.isHidden() and not finish.isEnabled()
+        assert set(recorder.root.glob("process-*/*.mp4")) == {first, second, third}
         assert window._reference_calibration_dialog is dialog and dialog.isVisible()
         assert dialog._worker is None and dialog.study_directory == snapshot.study_directory
         assert journal.read_bytes() == saved_events

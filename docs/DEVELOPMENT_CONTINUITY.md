@@ -6,8 +6,9 @@ Closing an unfinished pilot refreshes the saved-pilot action even when a resumed
 project has no active preflight or in-memory calibration plan. Opening a saved
 pilot shares evidence verification within each request, and a missing binding
 returns a visible error. Reading a saved study does not prepare a replacement.
-An active process recording can be finished from the pilot window without closing
-that window or changing its review and computation state.
+The pilot window shares the main window's recording switch. It can turn capture
+on or off and finish or start a new recording while the pilot stays open and
+keeps its review and computation state.
 
 ## dev234 — guide a refined saved field to a protected local test
 

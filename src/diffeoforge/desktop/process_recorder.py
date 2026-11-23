@@ -101,7 +101,8 @@ class _Encoder:
 class ProcessRecorder(QObject):
     """Own the recording lifecycle separately from scientific ActivityPool workers."""
 
-    capture_active_changed = Signal(bool)
+    recording_action_text_changed = Signal(str)
+    recording_action_available_changed = Signal(bool)
 
     def __init__(
         self, window, *, settings=None, staging_root=None, allowed=True, size=(1920, 1080)
@@ -165,7 +166,7 @@ class ProcessRecorder(QObject):
         row = QHBoxLayout()
         self.finish_button = QPushButton("Finish recording")
         self.finish_button.setToolTip(
-            "Save this continuous video. This does not stop the pilot or atlas."
+            "Start or save a recording independently of the pilot or atlas."
         )
         self.folder_button = QPushButton("Videos")
         self.recover_button = QPushButton("Recover interrupted video…")
@@ -184,7 +185,7 @@ class ProcessRecorder(QObject):
         self.folder_button.setEnabled(False)
         self.enabled.setChecked(allowed and self.settings.value("enabled", False, type=bool))
         self.enabled.toggled.connect(self._toggle)
-        self.finish_button.clicked.connect(self.finish_manually)
+        self.finish_button.clicked.connect(self._perform_recording_action)
         self.folder_button.clicked.connect(self.open_folder)
         self.recover_button.clicked.connect(self.recover)
         self.timer = QTimer(self)
@@ -197,19 +198,51 @@ class ProcessRecorder(QObject):
             self.timer.start()
         QTimer.singleShot(0, self._tick)
 
+    def enabled_control(self, parent: QWidget) -> QCheckBox:
+        """Mirror the same persisted opt-in while the main controls are unavailable."""
+        checkbox = QCheckBox(self.enabled.text(), parent)
+        checkbox.setToolTip(self.enabled.toolTip())
+        checkbox.setChecked(self.enabled.isChecked())
+        checkbox.toggled.connect(self.enabled.setChecked)
+        self.enabled.toggled.connect(checkbox.setChecked)
+        return checkbox
+
     def finish_control(self, parent: QWidget) -> QPushButton:
-        """Expose the live recording action while the main controls are unavailable."""
-        button = QPushButton("Finish recording", parent)
+        """Expose the shared finish or restart action inside the pilot."""
+        text, available = self._recording_action_state()
+        button = QPushButton(text, parent)
         button.setObjectName("secondary")
         button.setToolTip(self.finish_button.toolTip())
         button.setAutoDefault(False)
-        button.clicked.connect(self.finish_manually)
-        self.capture_active_changed.connect(button.setVisible)
-        self.capture_active_changed.connect(button.setEnabled)
-        active = self.current is not None
-        button.setVisible(active)
-        button.setEnabled(active)
+        button.clicked.connect(self._perform_recording_action)
+        self.recording_action_text_changed.connect(button.setText)
+        self.recording_action_available_changed.connect(button.setVisible)
+        self.recording_action_available_changed.connect(button.setEnabled)
+        button.setVisible(available)
+        button.setEnabled(available)
         return button
+
+    def _can_restart(self) -> bool:
+        return (self.current is None and self._finished_manually
+                and self.enabled.isChecked() and not self._closing)
+
+    def _recording_action_state(self) -> tuple[str, bool]:
+        if self._can_restart():
+            return "New recording", True
+        return "Finish recording", self.current is not None and not self._closing
+
+    def _update_recording_action(self):
+        text, available = self._recording_action_state()
+        self.finish_button.setText(text)
+        self.finish_button.setEnabled(available)
+        self.recording_action_text_changed.emit(text)
+        self.recording_action_available_changed.emit(available)
+
+    def _perform_recording_action(self):
+        if self.current is not None and not self._closing:
+            self.finish_manually()
+        elif self._can_restart():
+            self._restart()
 
     def _owned(self, widget):
         if not isinstance(widget, QWidget) or not isValid(widget):
@@ -264,6 +297,7 @@ class ProcessRecorder(QObject):
             self._capture(force=True)
             self._finish_current("disabled")
             self.timer.stop()
+        self._update_recording_action()
 
     def _context(self):
         # Landmarking can finish before a config exists. An explicitly selected,
@@ -309,8 +343,7 @@ class ProcessRecorder(QObject):
         encoder.signals.failed.connect(self._failed)
         self.current = encoder
         encoder.thread.start()
-        self.finish_button.setEnabled(True)
-        self.capture_active_changed.emit(True)
+        self._update_recording_action()
         self.timer.start()
 
     def _tick(self):
@@ -513,27 +546,22 @@ class ProcessRecorder(QObject):
             pauses=tuple(self._pending_pauses),
         )
         self._pending_pauses.clear()
-        self.finish_button.setEnabled(False)
-        self.capture_active_changed.emit(False)
+        self._update_recording_action()
         self.status.setText("Exporting MP4…")
 
     def finish_manually(self):
+        if self.current is None:
+            return
         self._capture(force=True)
         self._finished_manually = True
         self._finish_current("manual_finish")
         self.timer.stop()
-        self.finish_button.setText("New recording")
-        self.finish_button.setEnabled(True)
-        self.finish_button.clicked.disconnect()
-        self.finish_button.clicked.connect(self._restart)
 
     def _restart(self):
         self._finished_manually = False
-        self.finish_button.setText("Finish recording")
-        self.finish_button.clicked.disconnect()
-        self.finish_button.clicked.connect(self.finish_manually)
         self.last_input = time.monotonic()
         self._tick()
+        self._update_recording_action()
 
     @Slot(object, object)
     def _saved(self, encoder, value):
@@ -569,8 +597,8 @@ class ProcessRecorder(QObject):
             self.current = None
             self._finished_manually = True
             self.timer.stop()
-            self.capture_active_changed.emit(False)
         self._closing = False
+        self._update_recording_action()
         self.status.setText("Recording/export failed · completed fragments retained")
         self.status.setToolTip(str(message) + "\n" + str(self.root))
 

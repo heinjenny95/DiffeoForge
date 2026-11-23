@@ -2006,8 +2006,11 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         extra_actions.addWidget(self.use_provisional_button)
         extra_actions.addStretch()
         recorder = getattr(parent, "process_recorder", None)
-        self.finish_recording_button = recorder.finish_control(self) if recorder else None
-        if self.finish_recording_button is not None:
+        self.recording_enabled_check = self.finish_recording_button = None
+        if recorder is not None and recorder.allowed:
+            self.recording_enabled_check = recorder.enabled_control(self)
+            self.finish_recording_button = recorder.finish_control(self)
+            extra_actions.addWidget(self.recording_enabled_check)
             extra_actions.addWidget(self.finish_recording_button)
         footer.addLayout(extra_actions)
         main_actions = QHBoxLayout()
