@@ -1,5 +1,17 @@
 # Roadmap
 
+## Make the pilot easier to follow (23 November 2026)
+
+- [ ] At each decision, explain in plain English what the user is deciding,
+  which specimen and fit it concerns, and why the recommended next action
+  will help. Give that action visual priority and keep alternatives accessible.
+- [ ] In common-model review, ask separately whether the marked anatomy improved
+  from this trial’s actual starting fit and whether it is good enough for the
+  study. Show the relevant comparison for each question, naming the test and
+  the approved individual fit used as the anatomical reference. Verify that a
+  first-time user can record “Improved, still needs work” and reach a justified
+  next step using the saved marks, without coaching or changing earlier approvals.
+
 ## Common-model review on laptop screens (23 November 2026)
 
 - [ ] In “Review common-model fit”, keep the current and approved fits side by
