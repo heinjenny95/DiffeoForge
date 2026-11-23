@@ -1,5 +1,14 @@
 # Development continuity
 
+## dev235 — reopen the saved pilot after closing it
+
+Closing an unfinished pilot refreshes the saved-pilot action even when a resumed
+project has no active preflight or in-memory calibration plan. Opening a saved
+pilot shares evidence verification within each request, and a missing binding
+returns a visible error. Reading a saved study does not prepare a replacement.
+An active process recording can be finished from the pilot window without closing
+that window or changing its review and computation state.
+
 ## dev234 — guide a refined saved field to a protected local test
 
 The pilot checks whether a selected saved field was qualified on a finer

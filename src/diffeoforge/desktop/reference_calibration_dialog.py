@@ -2005,6 +2005,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         extra_actions.addWidget(self.collect_evidence_button)
         extra_actions.addWidget(self.use_provisional_button)
         extra_actions.addStretch()
+        recorder = getattr(parent, "process_recorder", None)
+        self.finish_recording_button = recorder.finish_control(self) if recorder else None
+        if self.finish_recording_button is not None:
+            extra_actions.addWidget(self.finish_recording_button)
         footer.addLayout(extra_actions)
         main_actions = QHBoxLayout()
         main_actions.addWidget(self.cancel_button)

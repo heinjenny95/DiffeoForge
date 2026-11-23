@@ -243,6 +243,103 @@ def test_saved_pilot_review_never_creates_a_missing_study(tmp_path, monkeypatch)
     assert failed and not created and not missing.exists()
 
 
+def test_unfinished_pilot_can_reopen_after_close_without_a_live_calibration_plan(
+    pilot_window, monkeypatch,
+):
+    from PySide6.QtWidgets import QDialog
+
+    app, window, source = pilot_window
+    queued = []
+    window._thread_pool = SimpleNamespace(start=queued.append)
+    monkeypatch.setattr(window, "_sync_ready_state",
+                        lambda: module.DiffeoForgeWindow._sync_ready_state(window))
+    monkeypatch.setattr(window, "_reference_calibration_plan_matches_current_inputs", lambda: False)
+
+    class SavedDialog(QDialog):
+        def __init__(self, directory, parent=None, *, verified_snapshot):
+            super().__init__(parent)
+            self.study_directory = directory
+            self.snapshot = verified_snapshot
+
+    monkeypatch.setattr(module, "ReferenceCalibrationDialog", SavedDialog)
+    window._sync_ready_state()
+    button = window.review_saved_reference_pilot_button
+    before = (source.study_directory / "events.jsonl").read_bytes()
+    for _ in range(2):
+        assert button.isEnabled()
+        button.click()
+        assert len(queued) == 1 and not button.isEnabled()
+        queued.pop().run()
+        app.processEvents()
+        dialog = window._reference_calibration_dialog
+        assert dialog is not None and dialog.snapshot.study_directory == source.study_directory
+        assert window.status_label.text().startswith("Pilot open.")
+        dialog.reject()
+        app.processEvents()
+        assert window._reference_calibration_dialog is None and window.centralWidget().isEnabled()
+        assert window.status_label.text().startswith("Pilot closed.")
+    assert (source.study_directory / "events.jsonl").read_bytes() == before
+
+
+def test_reopen_verifies_the_manifest_once_per_click(pilot_window, monkeypatch):
+    from diffeoforge import reference_calibration_study as study
+
+    _app, window, snapshot = pilot_window
+    checks, opened = [], []
+    verify = study._verify_manifest_uncached
+
+    def count_manifest(directory):
+        checks.append(directory)
+        return verify(directory)
+
+    monkeypatch.setattr(study, "_verify_manifest_uncached", count_manifest)
+    for count in (1, 2):
+        worker = module._ReferenceCalibrationOpenWorker(
+            window._review.config_path, snapshot.study_directory, existing_only=True,
+        )
+        worker.signals.succeeded.connect(opened.append)
+        worker.run()
+        assert checks == [snapshot.study_directory] * count
+        assert opened[-1].study_directory == snapshot.study_directory
+
+
+def test_saved_study_reopen_does_not_bootstrap_a_guided_candidate(pilot_window, monkeypatch):
+    from diffeoforge import reference_attachment_comparison as comparison
+    from diffeoforge import reference_guided_pilot as guided
+
+    _app, window, snapshot = pilot_window
+    monkeypatch.setattr(comparison, "pending", lambda _config: True)
+    monkeypatch.setattr(guided, "enabled", lambda _config: True)
+    monkeypatch.setattr(guided, "prepare", lambda *_: pytest.fail("Reopen prepared a fit"))
+    worker = module._ReferenceCalibrationOpenWorker(
+        window._review.config_path, snapshot.study_directory, existing_only=True,
+    )
+    opened = []
+    worker.signals.succeeded.connect(opened.append)
+    worker.run()
+    assert opened[0].study_directory == snapshot.study_directory
+    assert not (snapshot.study_directory / "fit-search-latest.json").exists()
+
+
+def test_malformed_saved_binding_returns_from_open_and_releases_the_worker(
+    pilot_window, monkeypatch,
+):
+    app, window, _snapshot = pilot_window
+    warnings = []
+
+    def bad_binding(_directory):
+        raise KeyError("manifest_sha256")
+
+    monkeypatch.setattr(module, "latest_reference_calibration_search_extension_directory",
+                        bad_binding)
+    monkeypatch.setattr(module.QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    window._review_saved_reference_pilot()
+    _wait(app, lambda: window._worker is None)
+    assert warnings == ["Saved pilot binding is missing 'manifest_sha256'."]
+    assert window._pilot_open_context_key is None
+    assert window._reference_calibration_dialog is None
+
+
 def test_dialog_reuses_fresh_worker_snapshot_without_loading_again(
     pilot_window, monkeypatch, tmp_path: Path,
 ):

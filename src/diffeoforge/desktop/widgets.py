@@ -241,6 +241,7 @@ from diffeoforge.reference_calibration_report import (
     export_reference_calibration_plan,
 )
 from diffeoforge.reference_calibration_study import (
+    calibration_verification_scope,
     create_reference_calibration_study,
     latest_reference_calibration_search_extension_directory,
     load_reference_calibration_study,
@@ -822,25 +823,34 @@ class _ReferenceCalibrationOpenWorker(QRunnable):
                 create_reference_calibration_study(
                     self.config_path, directory, pilot_max_iterations=150
                 )
-            directory = latest_reference_calibration_search_extension_directory(directory)
             from diffeoforge.reference_attachment_comparison import pending
             from diffeoforge.reference_guided_pilot import _pointer, enabled, prepare
-            from diffeoforge.reference_sequential_fit import (
-                current_sequence_directory,
-                resume_directory,
-            )
+            from diffeoforge.reference_sequential_fit import current_sequence_directory
 
-            manifest = load_config(self.config_path)
-            if (enabled(manifest) and pending(manifest)
-                    and not (directory / "fit-search-latest.json").exists()):
-                snapshot = load_reference_calibration_study(directory)
-                if not snapshot.attachment_comparison and not snapshot.selected_candidate_ids:
-                    child = prepare(directory)
-                    _pointer(directory, child.study_directory)
-            directory = resume_directory(directory)
-
-            directory = current_sequence_directory(directory)
-            snapshot = load_reference_calibration_study(directory)
+            with calibration_verification_scope():
+                directory = latest_reference_calibration_search_extension_directory(directory)
+                config = load_config(self.config_path)
+                bootstrap = False
+                if (not self.existing_only and enabled(config) and pending(config)
+                        and not (directory / "fit-search-latest.json").exists()):
+                    snapshot = load_reference_calibration_study(directory)
+                    bootstrap = not (snapshot.attachment_comparison
+                                     or snapshot.selected_candidate_ids)
+                if not bootstrap:
+                    snapshot = load_reference_calibration_study(
+                        current_sequence_directory(directory)
+                    )
+            if bootstrap:
+                # New preparation writes a child and pointer outside the read scope.
+                child = prepare(directory)
+                _pointer(directory, child.study_directory)
+                with calibration_verification_scope():
+                    snapshot = load_reference_calibration_study(
+                        current_sequence_directory(child.study_directory)
+                    )
+        except KeyError as error:
+            self.signals.failed.emit(f"Saved pilot binding is missing {error}.")
+            return
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
             return
@@ -10324,13 +10334,14 @@ class DiffeoForgeWindow(QMainWindow):
         self._pilot_status_loading = True
 
         def inspect():
-            resolved = latest_reference_calibration_search_extension_directory(directory)
             from diffeoforge.reference_calibration_study import _search_extension_series
             from diffeoforge.reference_sequential_fit import current_sequence_directory
 
-            resolved = current_sequence_directory(resolved)
-            snapshot = load_reference_calibration_study(resolved)
-            series_root, _depth = _search_extension_series(resolved)
+            with calibration_verification_scope():
+                resolved = latest_reference_calibration_search_extension_directory(directory)
+                resolved = current_sequence_directory(resolved)
+                snapshot = load_reference_calibration_study(resolved)
+                series_root, _depth = _search_extension_series(resolved)
             watches = (
                 resolved, resolved / "events.jsonl", resolved / "study.json",
                 series_root / "visual-reviews.json", series_root / "specimen-sequence.json",
@@ -10764,7 +10775,7 @@ class DiffeoForgeWindow(QMainWindow):
                 dialog = ReferenceCalibrationDialog(
                     snapshot.study_directory, self, verified_snapshot=snapshot
                 )
-            except (OSError, RuntimeError, TypeError, ValueError) as error:
+            except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
                 self._reference_calibration_open_failed(str(error))
                 return
             dialog.setStyleSheet(self.styleSheet())
@@ -10774,6 +10785,7 @@ class DiffeoForgeWindow(QMainWindow):
                 if review_only and snapshot.status == "completed" else None
             )
             dialog.finished.connect(self._reference_calibration_closed)
+            self.status_label.setText("Pilot open. Review or continue in the pilot window.")
             self.centralWidget().setEnabled(False)
             dialog.show()
             return
@@ -11067,26 +11079,25 @@ class DiffeoForgeWindow(QMainWindow):
         review_source = self._pilot_review_source
         self._pilot_review_source = None
         self.centralWidget().setEnabled(True)
+        self.status_label.setText("Pilot closed. Open the saved pilot to continue.")
         dialog.deleteLater()
         self._reference_calibration_study_directory = directory
         try:
             snapshot = dialog.snapshot
             if snapshot is None:
                 self._pilot_status_key = None
-                self._refresh_reference_calibration_execution_card()
                 self._sync_ready_state()
                 return
             if snapshot.study_directory.resolve() != directory:
                 raise ValueError("Pilot snapshot belongs to a different study")
             self._pilot_status_key = None
             if review_source == (directory, snapshot.final_config_path):
-                self._refresh_reference_calibration_execution_card()
                 self._sync_ready_state()
             else:
                 self._finish_reference_calibration(snapshot)
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
+        except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
             QMessageBox.warning(self, "Pilot calibration unavailable", str(error))
-            self._refresh_reference_calibration_execution_card()
+            self._sync_ready_state()
 
     def _finish_reference_calibration(self, snapshot) -> None:
         if (
@@ -11095,7 +11106,9 @@ class DiffeoForgeWindow(QMainWindow):
             or self._result is None
             or self._result.config_path.resolve() == snapshot.final_config_path.resolve()
         ):
-            self._refresh_reference_calibration_execution_card()
+            # The open worker disabled the saved-pilot button. An unfinished
+            # resumed project can lack a live preflight or in-memory pilot plan.
+            self._sync_ready_state()
             return
         self._apply_reference_calibrated_configuration(snapshot.final_config_path)
         self._result = replace(

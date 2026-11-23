@@ -101,6 +101,8 @@ class _Encoder:
 class ProcessRecorder(QObject):
     """Own the recording lifecycle separately from scientific ActivityPool workers."""
 
+    capture_active_changed = Signal(bool)
+
     def __init__(
         self, window, *, settings=None, staging_root=None, allowed=True, size=(1920, 1080)
     ):
@@ -194,6 +196,20 @@ class ProcessRecorder(QObject):
             QApplication.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeDialogs, True)
             self.timer.start()
         QTimer.singleShot(0, self._tick)
+
+    def finish_control(self, parent: QWidget) -> QPushButton:
+        """Expose the live recording action while the main controls are unavailable."""
+        button = QPushButton("Finish recording", parent)
+        button.setObjectName("secondary")
+        button.setToolTip(self.finish_button.toolTip())
+        button.setAutoDefault(False)
+        button.clicked.connect(self.finish_manually)
+        self.capture_active_changed.connect(button.setVisible)
+        self.capture_active_changed.connect(button.setEnabled)
+        active = self.current is not None
+        button.setVisible(active)
+        button.setEnabled(active)
+        return button
 
     def _owned(self, widget):
         if not isinstance(widget, QWidget) or not isValid(widget):
@@ -294,6 +310,7 @@ class ProcessRecorder(QObject):
         self.current = encoder
         encoder.thread.start()
         self.finish_button.setEnabled(True)
+        self.capture_active_changed.emit(True)
         self.timer.start()
 
     def _tick(self):
@@ -497,6 +514,7 @@ class ProcessRecorder(QObject):
         )
         self._pending_pauses.clear()
         self.finish_button.setEnabled(False)
+        self.capture_active_changed.emit(False)
         self.status.setText("Exporting MP4…")
 
     def finish_manually(self):
@@ -551,6 +569,7 @@ class ProcessRecorder(QObject):
             self.current = None
             self._finished_manually = True
             self.timer.stop()
+            self.capture_active_changed.emit(False)
         self._closing = False
         self.status.setText("Recording/export failed · completed fragments retained")
         self.status.setToolTip(str(message) + "\n" + str(self.root))

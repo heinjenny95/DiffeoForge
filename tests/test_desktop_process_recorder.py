@@ -556,6 +556,60 @@ def test_actual_saved_pilot_open_path_has_recordable_owner(application, tmp_path
     application.processEvents()
 
 
+def test_finish_recording_from_open_pilot_keeps_pilot_open(application, tmp_path, monkeypatch):
+    from test_reference_calibration_study import _review_ready_stage
+
+    from diffeoforge.desktop import process_recorder
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    monkeypatch.setattr(
+        "diffeoforge.desktop.project_setup.select_preferred_reference_launcher",
+        lambda: {"type": "native", "executable": "deformetrica"},
+    )
+    runner, snapshot = _review_ready_stage(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        process_recorder, "ProcessRecorder",
+        lambda window, *, allowed: ProcessRecorder(
+            window, allowed=allowed,
+            staging_root=tmp_path / "staging", size=(640, 400),
+        ),
+    )
+    window = DiffeoForgeWindow(recording_allowed=True)
+    recorder = window.process_recorder
+    window._pilot_open_context_key = "public-owner-fixture"
+    monkeypatch.setattr(window, "_reference_calibration_context", lambda: None)
+    monkeypatch.setattr(
+        window, "_pilot_status_context_key", lambda _context: "public-owner-fixture"
+    )
+    window.show()
+    recorder.enabled.setChecked(True)
+    wait(application, lambda: recorder.current is not None)
+    window._reference_calibration_opened(snapshot)
+    dialog = window._reference_calibration_dialog
+    journal = runner.study_directory / "events.jsonl"
+    saved_events = journal.read_bytes()
+    try:
+        finish = dialog.finish_recording_button
+        assert not window.centralWidget().isEnabled()
+        assert finish.isVisible() and finish.isEnabled()
+        assert not recorder.finish_button.isEnabled()
+        dialog.activateWindow()
+        application.processEvents()
+        assert recorder._capture_window() is dialog
+        QTest.mouseClick(finish, Qt.MouseButton.LeftButton)
+        wait(application, lambda: recorder.last_output is not None and not recorder.encoders)
+        receipt = json.loads(recorder.last_output.with_suffix(".json").read_text(encoding="utf-8"))
+        assert receipt["finish_reason"] == "manual_finish"
+        assert recorder.finish_button.text() == "New recording"
+        assert finish.isHidden() and not finish.isEnabled()
+        assert window._reference_calibration_dialog is dialog and dialog.isVisible()
+        assert dialog._worker is None and dialog.study_directory == snapshot.study_directory
+        assert journal.read_bytes() == saved_events
+    finally:
+        dialog.close()
+        stop(application, window, recorder)
+
+
 def test_external_focus_keeps_last_owned_workflow_window(application, tmp_path, monkeypatch):
     window, rec, _settings = setup(tmp_path)
     dialog = QDialog(window)
