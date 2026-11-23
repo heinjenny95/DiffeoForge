@@ -1,5 +1,13 @@
 # Roadmap
 
+## Common-model review on laptop screens (23 November 2026)
+
+- [ ] In “Review common-model fit”, keep the current and approved fits side by
+  side with both meshes fully visible at the initial zoom. Give the entire
+  lower panel its own vertical scrollbar for ratings, notes, marked areas and
+  review actions. On a laptop-sized window, verify that scrolling to the last
+  action keeps both previews in place and preserves their zoom and orientation.
+
 ## Pilot fit labels (23 November 2026)
 
 - [ ] When the pilot checks shared settings on one animal after its individual
