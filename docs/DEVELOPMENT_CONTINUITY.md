@@ -1,5 +1,14 @@
 # Development continuity
 
+## dev239 — reuse an approved specimen's deformation
+
+When preparing a shared-settings check, the pilot can start from the approved
+specimen's complete field on matching template and control points. The
+preparation binds the saved momenta to their source and target. A new specimen
+can use the approved settings and control points while learning its own field.
+The prepared view identifies the source of each start. See the
+[common-model workflow](PILOT_ACCEPTED_COMMON_DIAGNOSIS.md).
+
 ## dev238 — review progress and anatomy separately
 
 The common-model review first compares a trial with its reviewed starting fit.

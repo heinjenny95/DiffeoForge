@@ -89,15 +89,35 @@ def offer(snapshot, candidate_id=None, *, target=None, value=None, approved_refe
 
 
 def _eligible_basis(basis, accepted):
+    from diffeoforge.pilot_common_basis import transferable_direct_field
+    from diffeoforge.regional_fit import declaration
+
     parent, individual = verify_reference(basis), verify_reference(accepted)
     config = load_config(_candidate(parent, basis).config_path)
     return bool(
         parent.plan.pilot_subject_count == 1
-        and not parent.attachment_comparison.get("regional_objective")
+        and (not parent.attachment_comparison.get("regional_objective")
+             or (parent.visual_reviews.get(basis["candidate_id"]) is True and declaration(config)))
         and guided.record(parent)["origin"] == guided.record(individual)["origin"]
-        and config["optimization"]["freeze_template"]
-        and config["optimization"]["freeze_control_points"]
+        and transferable_direct_field(config)
     )
+
+
+def basis_configuration(parent, reference):
+    """Use this verified basis's global settings for both projection stages."""
+    cfg = load_config(_candidate(parent, reference).config_path)
+    if parent.attachment_comparison.get("regional_objective"):
+        from diffeoforge.reference_finite_accepted_guard import clear_runtime_markers
+
+        origin = Path(guided.record(parent)["origin"])
+        saved = study._verify_manifest(origin)
+        cohort = load_config(study._safe_study_path(origin, saved["source_config"]["copy"]))
+        cfg["project"]["parameter_provenance"].pop("regional_fit", None)
+        clear_runtime_markers(cfg)
+        cfg["optimization"] = dict(cohort["optimization"], freeze_template=True,
+                                   freeze_control_points=True, convergence_tolerance=
+                                   cfg["optimization"]["convergence_tolerance"])
+    return cfg
 
 
 def default_directory(snapshot, choice):
@@ -155,7 +175,7 @@ def _sources(choice):
             and not s.get("refinement_guard", {}).get("severe")
             and all(
                 q.get("numerical_selection_suitable") is True
-                for key in ("ordinary_quality", "cohort_quality")
+                for key in ("ordinary_quality", "cohort_quality", "regional_quality")
                 if (q := s.get(key))
             )
         )
@@ -219,7 +239,7 @@ def prepare(snapshot, choice, directory):
             for key, (src, digest) in paths.items():
                 study._copy_bound(src, stage / files[key], digest)
                 assets[key] = dict(copy=files[key], sha256=digest)
-            cfg = deepcopy(load_config(_candidate(basis, b).config_path))
+            cfg = basis_configuration(basis, b)
             cfg["input"].update(
                 directory=str(root / "approved"),
                 template=str(root / files["template"]),

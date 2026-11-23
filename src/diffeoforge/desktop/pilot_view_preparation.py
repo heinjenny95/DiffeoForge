@@ -67,7 +67,8 @@ def _guidance(snapshot, manifest):
     from diffeoforge.guided_strategy import prepare_proposals, state
     from diffeoforge.reference_guided_pilot import record
 
-    if record(snapshot) and snapshot.current_stage and snapshot.current_stage.order == 1:
+    info = record(snapshot)
+    if info and snapshot.current_stage and snapshot.current_stage.order == 1:
         from diffeoforge.pilot_input_topology import prepare_for_snapshot
 
         context = state(snapshot)
@@ -83,6 +84,7 @@ def _guidance(snapshot, manifest):
         }
         context["input_topology"] = prepare_for_snapshot(snapshot, manifest)
         result = prepare_proposals(snapshot, context)
+        result["prepared_start_note"] = _prepared_start_note(snapshot, info)
         from diffeoforge.pilot_adaptive_run import presentation as adaptive_presentation
 
         result['bounded_adaptive'] = adaptive_presentation(snapshot)
@@ -96,3 +98,44 @@ def _guidance(snapshot, manifest):
                 parameter_provenance=dict(regional_fit=declaration)))))
         return result
     return None
+
+
+def _prepared_start_note(snapshot, info):
+    """Describe the prepared specimen's bound field independently of its settings."""
+    from diffeoforge.desktop.saved_fit_comparison import trial_label
+    from diffeoforge.guided_feedback import verify_reference
+    from diffeoforge.guided_fit_direction import local_quality_note
+    from diffeoforge.pilot_common_diagnosis import accepted_reference
+
+    goal, target = info.get("goal"), info.get("target")
+    if goal not in {"shared_check", "next_form", "form_model_check"} or not target:
+        return ""
+    strategy = info.get("strategy") or {}
+    ledger = strategy.get("form_progress")
+    refinement = snapshot.attachment_comparison.get("refinement") or {}
+    if info["phase"] == "validate" and goal in {"next_form", "form_model_check"}:
+        if not ledger or refinement or strategy.get("common_multiscale"):
+            return ""
+        protocol_ref = ledger["protocol"]["reference"]
+        return (f"{target} starts from the template with zero initial momenta. "
+                f"It uses the shared settings and control grid from {protocol_ref['target']}. "
+                "Review the fit on this specimen.")
+
+    seed = refinement.get("reference")
+    approved = (strategy.get("shared_model_check") or {}).get("reference")
+    if goal == "form_model_check" and ledger:
+        approved = accepted_reference(ledger, target)
+    if (not seed or seed != approved or seed["target"] != target
+            or refinement.get("initialization") not in {"learned", "nested"}):
+        return ""
+    source = verify_reference(seed)
+    if source.visual_reviews.get(seed["candidate_id"]) is not True:
+        return ""
+    candidate = next(c for c in source.candidates if c.candidate_id == seed["candidate_id"])
+    note = (f"{target} starts from its approved individual fit, {trial_label(source, candidate)}. "
+            "Its saved momenta initialize the deformation. ")
+    if refinement["initialization"] == "nested":
+        note += "Additional control points start with zero momentum. "
+    note += "The optimizer starts a new history. Review the resulting common fit separately."
+    warnings = local_quality_note(source, seed)
+    return note + (" " + warnings if warnings else "")

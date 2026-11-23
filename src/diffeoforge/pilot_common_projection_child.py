@@ -52,7 +52,7 @@ def configure(config, root, record):
 
 def verify(info, record, manifest, root):
     from diffeoforge.pilot_common_model import physics
-    from diffeoforge.pilot_common_projection import contract, verified_endpoint
+    from diffeoforge.pilot_common_projection import basis_configuration, contract, verified_endpoint
 
     request = mark(record)
     if not request:
@@ -64,7 +64,6 @@ def verify(info, record, manifest, root):
     vals = manifest["plan"]["baseline_effective_values"]
     ref = point["basis_reference"]
     parent = verify_reference(ref)
-    candidate = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
     source = load_config(study._safe_study_path(root, manifest["source_config"]["copy"]))
     row = record["projected_initial_momenta"]
     previous = info["strategy"]["previous"]
@@ -95,7 +94,7 @@ def verify(info, record, manifest, root):
         or record.get("regional_objective")
         or record.get("refinement")
         or record["iterations"] != BUDGET
-        or physics(source) != physics(load_config(candidate.config_path))
+        or physics(source) != physics(basis_configuration(parent, ref))
         or sha256_file(study._safe_study_path(root, row["copy"])) != point["momenta_sha256"]
         or row["sha256"] != point["momenta_sha256"]
     ):

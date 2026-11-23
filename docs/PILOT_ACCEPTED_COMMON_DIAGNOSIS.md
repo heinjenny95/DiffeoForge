@@ -256,6 +256,20 @@ coverage is missing. **Prepare joint check** becomes available when every
 selected specimen has an approved fit on the same protocol and the shared
 control budget meets the recorded demand. Both steps require an explicit Run.
 
+For a new shared-settings check on the same specimen, DF prefers its approved
+deformation when it can verify a complete field on the required template,
+control points and integration settings. Deformetrica receives the saved
+momenta as its initial values. The optimizer starts a fresh history and fits
+the whole surface. A protected individual fit can therefore start at the
+approved shape and move during the shared test.
+
+The prepared test identifies the source specimen and fit. Intersection or
+source-resolution warnings on an explicitly approved direct regional field
+remain visible when its protection and stability checks allow it to serve as a
+start. The shared result has its own numerical checks and anatomical review.
+For a new specimen, the pilot can carry over the successful settings and control
+points. Each specimen contributes its own compatible momenta to the joint check.
+
 An older pilot may already be testing shared settings while individual reviews
 are still open. After reviewing a completed common fit as unsuitable, the user
 can choose **Review next specimen** and return to the unresolved shared check

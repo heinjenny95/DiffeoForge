@@ -185,12 +185,12 @@ def _preview(snapshot, context, target, *, value=None):
                     label="Common-model fit already approved · " + target,
                     reason="This matching result is already approved. Continue to the next "
                            "missing common-model check; no repeat is needed.")
-    if not shortfall:
-        from diffeoforge import pilot_common_warm_start as warm
+    from diffeoforge import pilot_common_warm_start as warm
 
-        seed = warm.seed_for(value, target)
+    seed = warm.seed_evidence(value, target)
+    if not shortfall:
         if seed:
-            choice = warm.preview(snapshot, value, target, seed)
+            choice = warm.preview(snapshot, value, target, seed["reference"], evidence=seed)
             if choice["mode"] != "accepted_warm" or choice["kind"] != "warm":
                 return choice
             if capacity_result:
@@ -206,14 +206,16 @@ def _preview(snapshot, context, target, *, value=None):
         return _capacity_status(capacity_result, target, snapshot=snapshot, value=value)
     if not saved:
         if shortfall:
-            return capacity_choice(value, target)
+            return capacity_choice(value, target, reference=seed["reference"] if seed else None)
         from diffeoforge.pilot_common_basis import preview as basis_preview
 
         transfer = basis_preview(snapshot, target, value["protocol"])
         if transfer:
             return transfer
         return dict(mode="fresh", available=True, target=target,
-                    label="Prepare first common-model check · " + target)
+                    label="Check shared settings from the original template · " + target,
+                    reason="This check starts from the original template with zero momenta. "
+                           "A verified compatible individual field is unavailable on this basis.")
     parent, candidate, ref, inspected = saved[-1]
     label = f"Test {guided.record(parent)['screen_trials_spent']}"
     if not inspected:

@@ -16,13 +16,19 @@ def prepare(snapshot, value):
     from diffeoforge.pilot_form_progress import _protocol, configure
 
     result = deepcopy(value)
-    protocol = value["protocol"]
+    row = value["origin_review"]
+    approved = dict(row)
+    approved["target"] = approved.pop("filename")
+    # Re-evaluate only at the forms-to-model boundary. A ledger created by an
+    # older build may still name the coarse ancestor of an approved direct field.
+    result["protocol"] = _protocol(verify_reference(approved), approved["candidate_id"])
+    protocol = result["protocol"]
     reference = protocol["reference"]
     base = verify_reference(reference)
     base_candidate = next(c for c in base.candidates
                           if c.candidate_id == reference["candidate_id"])
     config = load_config(base_candidate.config_path)
-    configure(config, value, config["optimization"]["method"])
+    configure(config, result, config["optimization"]["method"])
     physics = _physics(config)
     controls = controls_for(base.attachment_comparison, reference["candidate_id"])
     profiles = []
@@ -56,7 +62,7 @@ def prepare(snapshot, value):
     selected_count = chosen["controls"] if chosen else controls["count"]
     from diffeoforge.pilot_common_capacity import demand
 
-    counts = demand(value)
+    counts = demand(result)
     return result, dict(controls=selected_count, required_controls=max(counts.values()),
         reference=result["protocol"]["reference"],
         demand=counts,

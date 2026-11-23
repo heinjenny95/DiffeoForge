@@ -59,12 +59,14 @@ def retain_review_for_trial(snapshot, identifier, strategy):
     return result
 
 
-def _protocol(snapshot, identifier):
+def _protocol(snapshot, identifier, *, use_direct=True):
+    from diffeoforge.guided_density import controls_for
     from diffeoforge.guided_feedback import reference, verify_reference
 
     current = next(c for c in snapshot.candidates if c.candidate_id == identifier)
     config = load_config(current.config_path)
-    parent, ref, seen = snapshot, reference(snapshot, identifier), set()
+    approved = reference(snapshot, identifier)
+    parent, ref, seen = snapshot, approved, set()
     while parent.attachment_comparison.get("regional_objective"):
         key = ref["directory"], ref["candidate_id"]
         if key in seen:
@@ -83,10 +85,24 @@ def _protocol(snapshot, identifier):
     if not all(basis_config["optimization"][k]
                for k in ("freeze_template", "freeze_control_points")):
         raise ValueError("The original-basis protocol must keep template and controls fixed")
-    return dict(reference=ref,
+    result = dict(reference=ref,
         integration={k: config["model"]["deformation"][k] for k in ("timepoints", "use_rk2")},
         precision=config["runtime"]["precision"],
         tolerance=config["optimization"]["convergence_tolerance"])
+    if use_direct and snapshot.attachment_comparison.get("regional_objective"):
+        from diffeoforge.pilot_common_basis import transferable_direct_field
+        from diffeoforge.pilot_common_warm_start import reviewed_warnings
+        from diffeoforge.regional_fit import declaration
+
+        # Most corrections keep the original settings. If a reviewed direct field
+        # actually changed them, use its verified basis and values for the new protocol.
+        if ((approved["values"] != ref["values"] or approved["method"] != ref["method"]
+             or controls_for(snapshot.attachment_comparison, identifier)["sha256"] !=
+                 controls_for(parent.attachment_comparison, ref["candidate_id"])["sha256"])
+                and declaration(config) and transferable_direct_field(config)
+                and reviewed_warnings(current, approved["target"], regional=True) is not None):
+            result.update(reference=approved, settings_source="approved_direct_field")
+    return result
 
 
 def compatible(row, protocol):
@@ -127,10 +143,11 @@ def verify_marker(value, origin, pilot_order):
     guided.verify_approvals([origin_review])
     origin_snapshot = study.load_reference_calibration_study(Path(origin_review["directory"]))
     protocol = value["protocol"]
-    if protocol != _protocol(origin_snapshot, origin_review["candidate_id"]):
+    direct = protocol.get("settings_source") == "approved_direct_field"
+    if protocol != _protocol(origin_snapshot, origin_review["candidate_id"], use_direct=direct):
         raise ValueError("The retained starting protocol or its original review changed")
     parent = verify_reference(protocol["reference"])
-    if (parent.attachment_comparison.get("regional_objective")
+    if ((parent.attachment_comparison.get("regional_objective") and not direct)
             or parent.plan.pilot_subject_count != 1
             or guided.record(parent)["origin"] != origin):
         raise ValueError("Common starting protocol requires the verified original basis")
@@ -289,6 +306,8 @@ def proposal(snapshot, identifier, context, *, model=False, starting_fit=False, 
 
         choice = preview(snapshot, context, target, value=value)
         result["common_reuse"] = choice
+        if choice["mode"] in {"fresh", "fresh_capacity", "capacity", "accepted_warm"}:
+            result["transfer_note"] = choice.get("start_description") or choice["reason"]
         # Inspection, adoption and specialized experiments must keep their actual action.
         if choice["mode"] == "project_approved":
             result["label"] = f"Open approved-shape transfer · {target} · 1 specimen"

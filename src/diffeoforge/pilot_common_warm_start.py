@@ -10,12 +10,46 @@ from diffeoforge.guided_density import controls_for
 from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_attachment_comparison import ITERATIONS
 
-VERSION = "accepted-direct-common-start-v1"
+LEGACY_VERSION = "accepted-direct-common-start-v1"
+VERSION = "accepted-direct-common-start-v2"
+ACCEPTED_WARM_VERSIONS = {LEGACY_VERSION, VERSION}
+
+_REVIEWABLE = {
+    "no_new_intersection_flags": "surface intersections",
+    "spatial_resolution_sufficient": "source-surface resolution",
+}
 
 
-def seed_for(value, target):
+def reviewed_warnings(candidate, target, *, regional):
+    """A reviewed regional warning can qualify a starting field, never the result."""
+    subject = (candidate.metrics or {}).get("attachment_comparison", {}).get(
+        "subjects", {}).get(target, {})
+    if (not subject or subject.get("warnings")
+            or subject.get("refinement_guard", {}).get("severe")):
+        return None
+    if any(subject.get(key) and subject[key].get("numerical_selection_suitable") is not True
+           for key in ("ordinary_quality", "cohort_quality")):
+        return None
+    if not regional:
+        return []
+    quality = subject.get("regional_quality") or {}
+    protected = ("temporal_grid_stable", "explicit_fixed_preserved", "shape_preserved",
+                 "transition_preserved", "outside_preserved")
+    if quality.get("numerical_selection_suitable") is True:
+        return None if any(quality.get(key) is False for key in (*protected, *_REVIEWABLE)) else []
+    if (quality.get("version") != "regional-quality-v1"
+            or quality.get("numerical_selection_suitable") is not False
+            or any(quality.get(key) is not True for key in (*protected, "local_improved"))
+            or any(type(quality.get(key)) is not bool for key in _REVIEWABLE)):
+        return None
+    warnings = [key for key in _REVIEWABLE if not quality[key]]
+    return warnings or None
+
+
+def seed_evidence(value, target, *, legacy=False):
     from diffeoforge.guided_feedback import verify_reference
     from diffeoforge.pilot_common_basis import transferable_direct_field
+    from diffeoforge.regional_fit import declaration
 
     row = next((r for r in value["reviews"] if r["filename"] == target), None)
     if not row:
@@ -26,7 +60,9 @@ def seed_for(value, target):
     basis_ref = value["protocol"]["reference"]
     basis = verify_reference(basis_ref)
     seed_record, basis_record = seed.attachment_comparison, basis.attachment_comparison
-    if (not seed_record.get("regional_objective")
+    regional = bool(seed_record.get("regional_objective"))
+    if ((legacy and not regional)
+            or seed.plan.pilot_subject_count != 1
             or controls_for(seed_record, ref["candidate_id"])["sha256"]
             != controls_for(basis_record, basis_ref["candidate_id"])["sha256"]
             or ref["method"] != basis_ref["method"]
@@ -36,10 +72,15 @@ def seed_for(value, target):
     candidate = next(c for c in seed.candidates if c.candidate_id == ref["candidate_id"])
     config = load_config(candidate.config_path)
     deformation = config["model"]["deformation"]
-    quality = (candidate.metrics.get("attachment_comparison", {}).get("subjects", {})
-               .get(target, {}).get("regional_quality", {}))
-    if (not transferable_direct_field(config)
-            or quality.get("numerical_selection_suitable") is not True
+    if legacy:
+        quality = (candidate.metrics.get("attachment_comparison", {}).get("subjects", {})
+                   .get(target, {}).get("regional_quality", {}))
+        warnings = [] if quality.get("numerical_selection_suitable") is True else None
+    else:
+        warnings = reviewed_warnings(candidate, target, regional=regional)
+        if bool(declaration(config)) != regional:
+            return None
+    if (warnings is None or not transferable_direct_field(config)
             or config["runtime"]["precision"] != value["protocol"]["precision"]
             or any(deformation[k] != v for k, v in value["protocol"]["integration"].items())
             or any(ref["values"][k] != value["protocol"]["reference"]["values"][k]
@@ -47,7 +88,8 @@ def seed_for(value, target):
             or study._verify_manifest(seed.study_directory)["inputs"]["template"]["sha256"]
             != study._verify_manifest(basis.study_directory)["inputs"]["template"]["sha256"]):
         return None
-    return ref
+    return dict(reference=ref, reviewed_warnings=warnings,
+                test_number=guided.record(seed)["screen_trials_spent"])
 
 
 def trials(snapshot, protocol, seed):
@@ -63,7 +105,7 @@ def trials(snapshot, protocol, seed):
             continue
         seen.add(parent.study_directory)
         marker = (guided.record(parent).get("strategy") or {}).get("common_basis_step") or {}
-        if (marker.get("version") == VERSION and marker["protocol"] == protocol
+        if (marker.get("version") in ACCEPTED_WARM_VERSIONS and marker["protocol"] == protocol
                 and marker["reference"] == seed):
             result.append((parent, marker["kind"]))
     return result
@@ -89,7 +131,7 @@ def review_event(snapshot, candidate_id, event_hash=None):
                  and (event_hash is None or e["event_hash"] == event_hash)), None)
 
 
-def preview(snapshot, value, target, seed):
+def preview(snapshot, value, target, seed, *, evidence=None):
     from diffeoforge.guided_feedback import reference
     from diffeoforge.pilot_common_diagnosis import diagnose
 
@@ -99,6 +141,16 @@ def preview(snapshot, value, target, seed):
                 label="Test common settings from the accepted individual fit · " + target,
                 reason="Start from this form's verified field on the same controls. "
                        "Test the shared surface objective for one bounded 120-step block.")
+    if evidence:
+        warnings = evidence["reviewed_warnings"]
+        base.update(reviewed_warnings=warnings, test_number=evidence["test_number"],
+                    reason=f"Start {target} from its approved Test {evidence['test_number']} "
+                           "with its learned momenta on the same controls. Check the shared "
+                           "whole-surface objective for up to 120 iterations.")
+        if warnings:
+            names = " and ".join(_REVIEWABLE[key] for key in warnings)
+            base["reason"] += (f" The starting fit has warnings about {names}. "
+                               "Review the new result and its independent checks.")
     if not history:
         return base
     last, kind = history[-1]
@@ -143,6 +195,7 @@ def apply(plan, choice, protocol):
     plan["strategy"].update(baseline=seed, anchor=seed, control_basis=protocol["reference"],
         common_basis_step=dict(version=VERSION, reference=seed, protocol=deepcopy(protocol),
             kind=kind, additional_iterations=ITERATIONS, approval_transferred=False,
+            reviewed_warnings=list(choice.get("reviewed_warnings", [])),
             review_hash=choice.get("review_hash")))
     plan.update(phase="refine", goal="form_model_check", values=values_for(protocol, kind))
     return plan
@@ -156,6 +209,8 @@ def verify(info, record, manifest, root):
     strategy = info["strategy"]
     step, value = strategy["common_basis_step"], strategy["form_progress"]
     protocol, seed, kind = step["protocol"], step["reference"], step["kind"]
+    legacy = step["version"] == LEGACY_VERSION
+    evidence = seed_evidence(value, info["target"], legacy=legacy)
     if (value["stage"] != "model" or protocol != value["protocol"]
             or step["approval_transferred"] is not False
             or step["additional_iterations"] != ITERATIONS or record["iterations"] != ITERATIONS
@@ -163,7 +218,8 @@ def verify(info, record, manifest, root):
             or record.get("regional_objective")
             or strategy.get("baseline") != seed or strategy.get("anchor") != seed
             or strategy.get("control_basis") != protocol["reference"]
-            or seed_for(value, info["target"]) != seed
+            or not evidence or evidence["reference"] != seed
+            or (not legacy and step.get("reviewed_warnings") != evidence["reviewed_warnings"])
             or manifest["plan"]["baseline_effective_values"] != values_for(protocol, kind)
             or any(not compatible(r, protocol) for r in info["approved"])):
         raise ValueError("Common warm start must retain the accepted field and shared basis")

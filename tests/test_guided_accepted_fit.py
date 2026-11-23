@@ -123,6 +123,56 @@ def test_joint_conditions_explain_moving_basis_and_fresh_initialization(panel, m
     assert not panel.invoked
 
 
+def test_prepared_singleton_names_its_approved_start_and_retains_warnings(panel, monkeypatch):
+    from PySide6.QtWidgets import QLabel
+
+    from diffeoforge.desktop.pilot_view_preparation import _prepared_start_note
+
+    source = deepcopy(panel.snapshot)
+    name = "specimen.vtk"
+    identifier = panel.candidate.candidate_id
+    seed = dict(target=name, candidate_id=identifier)
+    source.visual_reviews[identifier] = True
+    source.attachment_comparison["guided"] = dict(screen_trials_spent=4)
+    approved = dict(filename=name, candidate_id=identifier)
+    info = dict(phase="refine", goal="form_model_check", target=name,
+                strategy=dict(form_progress=dict(reviews=[approved])))
+    monkeypatch.setattr(feedback, "verify_reference", lambda ref: source if ref == seed else None)
+    panel.snapshot.attachment_comparison["refinement"] = dict(
+        reference=seed, initialization="learned")
+    note = _prepared_start_note(panel.snapshot, info)
+    panel.guidance["prepared_start_note"] = note
+    panel.render()
+    visible = panel.window.findChild(QLabel, "preparedSpecimenStart")
+    assert visible.isVisible() and visible.text() == note
+    for text in (name, "approved individual fit, Test 4", "saved momenta",
+                 "surface intersections", "original-source spatial resolution"):
+        assert text in note
+    assert not panel.invoked
+    panel.snapshot.attachment_comparison["refinement"]["initialization"] = "fresh"
+    assert not _prepared_start_note(panel.snapshot, info)
+    panel.snapshot.attachment_comparison["refinement"] = dict(
+        reference=dict(seed, target="other.vtk"), initialization="learned")
+    assert not _prepared_start_note(panel.snapshot, info)
+
+
+def test_new_specimen_sees_settings_only_before_run(panel):
+    from PySide6.QtWidgets import QLabel
+
+    from diffeoforge.desktop.pilot_view_preparation import _prepared_start_note
+
+    protocol = dict(reference=dict(target="approved.vtk"))
+    info = dict(goal="next_form", phase="validate", target="unseen.vtk",
+                strategy=dict(form_progress=dict(protocol=protocol, reviews=[])))
+    panel.guidance["prepared_start_note"] = _prepared_start_note(panel.snapshot, info)
+    panel.render()
+    note = panel.window.findChild(QLabel, "preparedSpecimenStart")
+    assert note.isVisible()
+    assert "unseen.vtk starts from the template with zero initial momenta" in note.text()
+    assert "shared settings and control grid from approved.vtk" in note.text()
+    assert not panel.invoked
+
+
 def test_prepared_joint_explains_accepted_start_before_run(panel, monkeypatch):
     import os
 

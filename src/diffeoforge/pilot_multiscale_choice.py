@@ -63,7 +63,7 @@ def choice(snapshot, value, target, previous):
         parent = found[-1]
         declaration = marker(parent.attachment_comparison)
         candidate = parent.candidates[0]
-        if candidate.status == "pending":
+        if candidate.status in {"pending", "running"}:
             return dict(
                 mode="prepared",
                 available=False,
@@ -72,6 +72,9 @@ def choice(snapshot, value, target, previous):
                 reason="Use its Run/check controls. No duplicate test is prepared; "
                 "your accepted individual shapes remain saved.",
             )
+        if (candidate.status in {"failed", "interrupted"} and previous
+                and previous["mode"] == "accepted_warm" and not model):
+            return previous
         if candidate.status != "completed":
             return dict(
                 mode="stalled",
@@ -142,6 +145,8 @@ def choice(snapshot, value, target, previous):
                 reason="Your review is saved. Continue to the next missing common check "
                 "using the approved model; no identical repeat is needed.",
             )
+        if previous and previous["mode"] == "accepted_warm" and not model:
+            return previous
         from diffeoforge.pilot_common_diagnosis import alignment_advice
 
         feedback = [event for event in study._load_events(parent.study_directory)

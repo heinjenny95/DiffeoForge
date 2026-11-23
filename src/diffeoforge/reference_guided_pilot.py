@@ -261,9 +261,9 @@ def _batch(
         retained = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
         config = copy.deepcopy(load_config(retained.config_path))
         iterations = ITERATIONS
-    from diffeoforge.pilot_common_warm_start import VERSION as ACCEPTED_WARM_VERSION
+    from diffeoforge.pilot_common_warm_start import ACCEPTED_WARM_VERSIONS
 
-    if transfer and transfer["version"] != ACCEPTED_WARM_VERSION:
+    if transfer and transfer["version"] not in ACCEPTED_WARM_VERSIONS:
         from diffeoforge.guided_feedback import verify_reference
 
         parent = verify_reference(transfer["reference"])
@@ -294,12 +294,11 @@ def _batch(
         configure(config, strategy["form_progress"], cohort_method)
     if (strategy or {}).get("approved_projection"):
         from diffeoforge.guided_feedback import verify_reference
-        from diffeoforge.pilot_common_projection import BUDGET
+        from diffeoforge.pilot_common_projection import BUDGET, basis_configuration
 
         ref = strategy["control_basis"]
         basis = verify_reference(ref)
-        candidate = next(c for c in basis.candidates if c.candidate_id == ref["candidate_id"])
-        config = copy.deepcopy(load_config(candidate.config_path))
+        config = basis_configuration(basis, ref)
         iterations = BUDGET
     if multiscale:
         from diffeoforge.pilot_multiscale_study import configure_source

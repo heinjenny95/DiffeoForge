@@ -176,7 +176,7 @@ def verify(info, record, manifest, root):
     from diffeoforge.guided_feedback import verify_reference
 
     marker = info["strategy"]["common_basis_step"]
-    if marker["version"] == pilot_common_warm_start.VERSION:
+    if marker["version"] in pilot_common_warm_start.ACCEPTED_WARM_VERSIONS:
         return pilot_common_warm_start.verify(info, record, manifest, root)
     ref, protocol = marker["reference"], marker["protocol"]
     seed = verify_reference(ref)

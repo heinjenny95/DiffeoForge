@@ -245,11 +245,7 @@ def test_original_source_grid_is_bound_and_staged_with_residual(tmp_path):
         read_plan(config)
 
 
-@pytest.mark.parametrize("symptom", ["detail", "curvature", "unsupported_detail",
-                                     "expensive_detail"])
-def test_real_pilot_transition_stages_regional_assets_without_launching(
-    tmp_path, monkeypatch, symptom
-):
+def prepare_marked_individual(tmp_path, monkeypatch, symptom, pilot_factory):
     import shutil
 
     unsupported = symptom == 'unsupported_detail'
@@ -257,13 +253,11 @@ def test_real_pilot_transition_stages_regional_assets_without_launching(
     symptom = 'detail' if unsupported or checkpoint else symptom
 
     from test_guided_pilot import run_batch
-    from test_interactive_pilot import initial
     from test_pilot_region_feedback import patch
 
     from diffeoforge import reference_calibration_study as study
     from diffeoforge import reference_guided_pilot as guided
     from diffeoforge import result_report
-    from diffeoforge.runs import prepare_run, verify_prepared_run
     from diffeoforge.surface_io import load_surface_mesh
 
     if checkpoint:
@@ -279,7 +273,7 @@ def test_real_pilot_transition_stages_regional_assets_without_launching(
         monkeypatch.setattr(regional_search, "capture", lambda *a, **k: {
             "original_to_fit_p95": .7, "symmetric_tail": .7,
         })
-    base = run_batch(initial(tmp_path), monkeypatch)
+    base = run_batch(pilot_factory(tmp_path), monkeypatch)
     target_subject = base.plan.selected_pilot_subjects[0]
     original = load_surface_mesh(
         base.study_directory / "inputs/subjects" / target_subject.filename
@@ -342,9 +336,23 @@ def test_real_pilot_transition_stages_regional_assets_without_launching(
     child = guided.next_action(
         base.study_directory, "adaptive_recover", "guided-varifold", goal="regional:" + symptom
     )
+    return base, child, protected
+
+
+@pytest.mark.parametrize("symptom", ["detail", "curvature", "unsupported_detail",
+                                     "expensive_detail"])
+def test_real_pilot_transition_stages_regional_assets_without_launching(
+    tmp_path, monkeypatch, symptom
+):
+    from test_interactive_pilot import initial
+
+    from diffeoforge import reference_calibration_study as study
+    from diffeoforge.runs import prepare_run, verify_prepared_run
+
+    base, child, protected = prepare_marked_individual(tmp_path, monkeypatch, symptom, initial)
     config = load_config(child.candidates[0].config_path)
     plan = read_plan(config)
-    expected = "residual" if unsupported else "learned"
+    expected = "residual" if symptom == "unsupported_detail" else "learned"
     assert child.attachment_comparison["refinement"]["initialization"] == expected
     assert plan["retained_reference"] and len(plan["objects"]) == 2
     assert config["optimization"]["method"] == "lbfgs"
@@ -362,7 +370,7 @@ def test_real_pilot_transition_stages_regional_assets_without_launching(
     prepared = prepare_run(child.candidates[0].config_path, run_id="regional-stage-test")
     verify_prepared_run(prepared)
     assert (prepared / "input/regional/plan.json").is_file()
-    if checkpoint:
+    if symptom == "expensive_detail":
         recipe = child.attachment_comparison["guided"]["strategy"]["regional_recipe"]
         assert recipe["review_checkpoint"]["first_iterations"] == 120
         assert recipe["review_checkpoint"]["total_iterations"] == 600

@@ -211,6 +211,13 @@ def render(window, prepared):
     explanation.setObjectName("pilotScope")
     explanation.setWordWrap(True)
     window.content_layout.addWidget(explanation)
+    start_note = guidance.get("prepared_start_note")
+    if start_note:
+        note = QLabel(start_note)
+        note.setTextFormat(Qt.TextFormat.PlainText)
+        note.setWordWrap(True)
+        note.setObjectName("preparedSpecimenStart")
+        window.content_layout.addWidget(note)
     if strategy.get("correction_policy") == ATLAS_FIRST and info["phase"] == "screen":
         from diffeoforge.regional_pilot import MINIMUM_NEW_NATIVE_TIMEPOINTS
 
@@ -318,11 +325,9 @@ def render(window, prepared):
                           "fits and previous decisions remain saved.")
             note.setWordWrap(True)
             window.content_layout.addWidget(InfoDisclosure("Common control-point basis", note))
-    if info.get("goal") == "shared_check":
-        note = QLabel("Your suitable local fit remains saved. This separate check starts "
-                      "from its saved field, template, control points and time grid and uses "
-                      "the standard atlas surface objective. Its result needs a new review "
-                      "before checking the remaining forms. Run starts only when you choose it.")
+    if info.get("goal") == "shared_check" and not start_note:
+        note = QLabel("This check uses the standard atlas surface objective. Review the "
+                      "result against your approved individual fit before checking other forms.")
         note.setWordWrap(True)
         window.content_layout.addWidget(InfoDisclosure("How this atlas-model check starts", note))
     if info["phase"] == "joint":
@@ -848,7 +853,7 @@ def render(window, prepared):
             starting = QLabel(guidance["common_capacity_start"])
             starting.setWordWrap(True)
             layout.addWidget(starting)
-        elif initialization:
+        elif initialization and not start_note:
             starting = QLabel(
                 "Starting from your saved fitted shape; optimizer history starts anew."
                 if initialization.get("initialization") == "learned"
