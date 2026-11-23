@@ -27,6 +27,8 @@ def pin_action(window, snapshot, label, action, identifier, tooltip, *, goal=Non
 
 def _explanation(choice):
     reason = choice.get("reason", "One separate common-model check is needed.")
+    if choice.get("start_description"):
+        return choice["start_description"] + " " + reason
     return reason + " " + choice["expected"] if choice.get("expected") else reason
 
 

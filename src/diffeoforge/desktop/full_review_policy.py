@@ -61,6 +61,10 @@ class FullGeometryReviewMixin:
         if not self.canvas.comparison_ready:
             return False
         saved = getattr(self, "saved_comparison", None)
+        if self._common_review and not (
+                saved and saved.toggle.isChecked() and saved.choice.currentData()
+                and saved.choice.currentData().rating_reference):
+            return False
         if saved and saved.toggle.isChecked() and not saved.full_comparison_ready:
             return False
         if self.fit_preferences and not self.fit_preferences.full_comparison_ready:
@@ -71,13 +75,23 @@ class FullGeometryReviewMixin:
         signature = self._relative_signature()
         previous = self._relative_display_signature
         self._relative_display_signature = signature
-        if previous is not None and previous != signature and self.guided_feedback:
+        if previous == signature or not self.guided_feedback:
+            return
+        if previous is not None:
             group = self.guided_feedback.buttons
             group.setExclusive(False)
             for button in group.buttons():
                 button.setChecked(False)
             group.setExclusive(True)
             self.guided_feedback._update()
+        if self._common_review:
+            saved = getattr(self, "saved_comparison", None)
+            pair = saved.choice.currentData() if saved and saved.toggle.isChecked() else None
+            if previous is not None:
+                self.guided_feedback.note.clear()
+                self.guided_feedback.symptom.setCurrentIndex(self.guided_feedback.symptom.findData("unsure"))
+            self.guided_feedback.bind_displayed_reference(
+                pair.rating_reference if pair else None, saved.choice.currentText() if pair else "")
 
     def _load_selected(self, index):
         self.display_started_at = time.monotonic()
@@ -184,8 +198,8 @@ class FullGeometryReviewMixin:
             )
 
     def _update_review_progress(self):
-        super()._update_review_progress()
         self._invalidate_changed_relative_display()
+        super()._update_review_progress()
         ready = self.canvas.comparison_ready
         geometry = (id(self.canvas.original_model), id(self.canvas.reconstruction_model))
         if ready:
@@ -300,6 +314,10 @@ class FullSavedComparisonMixin:
         if hasattr(self, "retry_button"):
             self.retry_button.hide()
         if not self.toggle.isChecked() or self.choice.currentData() is None:
+            return
+        self.waiting_for_current = self.current.original_model is None
+        if self.waiting_for_current:
+            self.status.setText("Waiting for the current specimen to load…")
             return
         pair = self.choice.currentData()
         self.status.setText(

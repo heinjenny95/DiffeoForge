@@ -6,6 +6,7 @@ from time import time_ns
 from diffeoforge import reference_calibration_study as study
 from diffeoforge import reference_guided_pilot as guided
 from diffeoforge.mesh import sha256_file
+from diffeoforge.pilot_common_review import common_review
 
 OUTCOMES = {"better": "Better", "same": "About the same", "worse": "Worse", "unsure": "Unsure"}
 
@@ -185,7 +186,8 @@ def starting_fit_choice(snapshot, identifier):
     inspected starting-fit choice resolves the conflict; a Better rating itself
     never changes numerical eligibility or creates anatomical approval.
     """
-    feedback = list(_local_events(snapshot, identifier))
+    feedback = [event for event in _local_events(snapshot, identifier)
+                if "common_review" not in event]
     if (not feedback or feedback[-1]["outcome"] != "better"
             or not severe_regression(snapshot, identifier)):
         return None
@@ -257,7 +259,8 @@ def selection(snapshot, identifier):
             verify_choice_event(snapshot, identifier, event)
             return event["reference"]
         if (event["event"] == "guided_fit_feedback"
-                and event["current"]["candidate_id"] == identifier):
+                and event["current"]["candidate_id"] == identifier
+                and "common_review" not in event):
             # Validate the current binding before allowing feedback to change a proposal.
             list(_local_events(snapshot, identifier))
             _same_source(snapshot, event["comparison"])
@@ -331,6 +334,7 @@ def presentation(snapshot, identifier):
         joint_blocked = rejected_joint(snapshot, selected) if selected and any(
             row["reference"] == selected and row["approved"] for row in rows) else None
         return dict(choices=rows, comparison=comparison, selected=selected,
+                    common_review=common_review(snapshot, identifier) if current else None,
                     starting_fit_choice=pending_choice,
                     retention_context=retained_context(snapshot, identifier),
                     joint_blocked=joint_blocked,
@@ -351,6 +355,11 @@ def save_feedback(directory, identifier, decision):
     outcome = decision["outcome"]
     comparison = decision["comparison"]
     _same_source(snapshot, comparison)
+    evidence = {}
+    if "common_comparison_displayed" in decision:
+        from diffeoforge.pilot_common_review import review_evidence
+
+        evidence["common_review"] = review_evidence(snapshot, identifier, decision)
     if (outcome not in OUTCOMES or comparison == current
             or decision["inspected_subjects"] != [current["target"]]
             or not decision.get("display_scopes", {}).get(current["target"])):
@@ -390,7 +399,7 @@ def save_feedback(directory, identifier, decision):
         comparison_displayed=bool(decision.get("comparison_displayed")),
         problem_regions=regions,
         region_edit=dict(version=2, recorded_at=time_ns(), cleared=list(cleared)),
-        anatomical_approval_created=False, optimizer_started=False))
+        anatomical_approval_created=False, optimizer_started=False, **evidence))
     return study.load_reference_calibration_study(directory)
 
 

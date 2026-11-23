@@ -1,6 +1,7 @@
 """Private actual-Qt switching/full-frame policy tests; no owner data or fits."""
 
 import time
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -45,7 +46,7 @@ def model(path, sha, proxy=False):
 
 
 @pytest.fixture
-def case(tmp_path, monkeypatch):
+def case(tmp_path, monkeypatch, request):
     app = QApplication.instance() or QApplication([])
     original = tmp_path / "original.vtk"
     current = tmp_path / "current.vtk"
@@ -74,6 +75,13 @@ def case(tmp_path, monkeypatch):
         comparison_reconstruction_path=str(choices[0].reconstruction_path),
         comparison_reconstruction_sha256=choices[0].reconstruction_sha256,
     )
+    if getattr(request, "param", None) == "common":
+        seed = dict(reference, candidate_id="seed")
+        choices = [replace(choices[0], rating_reference=reference),
+                   replace(choices[1], rating_reference=seed)]
+        context.update(require_fit_decision=True, common_review=dict(
+            current_label="Test 3", seed_label="Test 1", current_distances="",
+            approved_individual=reference, numerical_seed=seed, context_directory=str(tmp_path)))
     candidate = SimpleNamespace(
         candidate_id="current",
         status="completed",
@@ -195,6 +203,35 @@ def test_comparison_navigation_blocks_relative_feedback_but_preserves_its_bound_
     )
     assert relative_enabled(case) and case.v.guided_feedback.outcomes["same"].isChecked()
     assert not case.v.review_recorded
+
+
+@pytest.mark.parametrize("case", ["common"], indirect=True)
+def test_common_review_switch_binds_the_displayed_reference_and_hidden_view_allows_absolute_qc(
+    case,
+):
+    saved, viewer = case.saved, case.v
+    assert saved.toggle.isChecked() and not relative_enabled(case)
+    deliver(case, 0)
+    wait(case.app, lambda: relative_enabled(case))
+    viewer.guided_feedback.outcomes["worse"].click()
+    assert (viewer.guided_feedback_decision["comparison"]
+            == viewer._common_review["approved_individual"])
+    assert viewer.guided_feedback_decision["common_comparison_displayed"]
+    viewer.guided_feedback.note.setText("The approved projection is missing.")
+    saved.choice.setCurrentIndex(1)
+    deliver(case, 0)
+    assert not relative_enabled(case) and viewer.guided_feedback_decision is None
+    deliver(case, 1)
+    wait(case.app, lambda: relative_enabled(case))
+    assert not viewer.guided_feedback.note.text()
+    assert viewer.guided_feedback_decision is None
+    viewer.guided_feedback.outcomes["better"].click()
+    assert viewer.guided_feedback_decision["comparison"] == viewer._common_review["numerical_seed"]
+    saved.toggle.setChecked(False)
+    wait(case.app, lambda: viewer.canvas.comparison_ready and viewer.fail_button.isEnabled())
+    assert not relative_enabled(case) and viewer.guided_feedback_decision is None
+    viewer.fail_button.click()
+    assert viewer.review_recorded and not viewer.review_passed
 
 
 def test_legacy_relative_panel_accepts_matching_preview_and_optional_full_detail(

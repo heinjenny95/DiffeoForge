@@ -120,6 +120,7 @@ def _context(snapshot):
 
 def _read_context(snapshot):
     from diffeoforge.guided_density import controls_for
+    from diffeoforge.pilot_common_review import seed_outcome
     from diffeoforge.pilot_form_progress import is_common_check
 
     cases, goals = [], []
@@ -142,6 +143,7 @@ def _read_context(snapshot):
             if candidate.status == "completed":
                 feedback = [e for e in study._load_events(other.study_directory)
                             if e["event"] == "guided_fit_feedback"
+                            and not (individual and "common_review" in e)
                             and e["current"]["candidate_id"] == candidate.candidate_id]
                 cases.append(dict(method=other.attachment_comparison["methods"][candidate.candidate_id],
                     values=next(c.values for c in other.current_stage.candidates
@@ -168,7 +170,7 @@ def _read_context(snapshot):
                     region_outcomes=[r["marked_regions"]["outcome"] for r in
                         (candidate.metrics or {}).get("attachment_comparison", {}).get(
                             "subjects", {}).values() if r.get("marked_regions")],
-                    outcome=feedback[-1]["outcome"] if feedback else
+                    outcome=seed_outcome(feedback[-1]) if feedback else
                     "rejected" if other.visual_reviews.get(candidate.candidate_id) is False
                     else None,
                     approval=guided._approved_record(other, candidate.candidate_id)
@@ -208,10 +210,25 @@ def _read_state(snapshot):
                           for c in snapshot.candidates if c.status == "completed"},
                 allowed={c.candidate_id: starting_allowed(snapshot, c.candidate_id)
                          for c in snapshot.candidates if c.status == "completed"})
+    from diffeoforge.pilot_common_review import seed_outcome
+
+    for data in result["feedback"].values():
+        event = (data or {}).get("feedback")
+        if event and "common_review" in event and seed_outcome(event) is None:
+            # Generic parameter and starting-fit advice consumes direction from the
+            # computational start. The dedicated common review retains the actual rating.
+            data["feedback"] = None
     pending_starts = [data["starting_fit_choice"] for data in result["feedback"].values()
                       if data and data.get("starting_fit_choice")]
     result["starting_fit_choice"] = max(
         pending_starts, key=lambda row: row["feedback_sequence"], default=None)
+    capacity = (info.get("strategy") or {}).get("common_capacity_request")
+    if capacity:
+        from diffeoforge.pilot_common_capacity import start_description
+
+        refinement = snapshot.attachment_comparison.get("refinement") or {}
+        seed = refinement.get("reference") if refinement.get("initialization") == "nested" else None
+        result["common_capacity_start"] = start_description(capacity, info["target"], seed)
     result["provisional_comparison"] = provisional_comparison(snapshot, context=result)
     from diffeoforge.guided_early_density import preview as density_comparison
 
@@ -389,7 +406,7 @@ def _explicit_start(snapshot, context):
 
     for event in reversed(study._load_events(snapshot.study_directory)):
         kind = event["event"]
-        if kind == "guided_fit_feedback" and individual:
+        if kind == "guided_fit_feedback" and individual and "common_review" not in event:
             if event["outcome"] != "better":
                 # A newer review is a decision boundary, even on another arm.
                 # Do not resurrect an older Better or method-button choice.
@@ -455,7 +472,8 @@ def _selected_start_direction(snapshot, context, chosen):
                     reason=f"You selected {reference['method'].title()}, but the green areas "
                     "still refer to another saved field. Inspect and confirm those areas "
                     "on this selected fit before preparing a correction.")
-    events = list(_local_events(parent, reference["candidate_id"]))
+    events = [event for event in _local_events(parent, reference["candidate_id"])
+              if "common_review" not in event]
     selected_data = dict(data, feedback=events[-1] if events else None, needs_direction=False)
     selected_context = dict(context, feedback={identifier: selected_data},
                             preferred=reference["method"], preference=reference)

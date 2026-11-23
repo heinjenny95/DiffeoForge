@@ -58,6 +58,7 @@ def preview(snapshot, tested, target, value, *, ordinary_basis=False):
     from diffeoforge.guided_feedback import inspected, reference, verify_reference
     from diffeoforge.guided_progress import iteration_limited
     from diffeoforge.pilot_common_diagnosis import alignment_advice, diagnose, experiment
+    from diffeoforge.pilot_common_review import seed_outcome
     from diffeoforge.pilot_iteration_accounting import branch_total
 
     def pending():
@@ -117,19 +118,22 @@ def preview(snapshot, tested, target, value, *, ordinary_basis=False):
     if alignment:
         return dict(base, **alignment)
     measured = diagnose(snapshot, value, ref, previous)
-    outcome = feedback[-1]["outcome"] if feedback else None
     if not feedback or not feedback[-1].get("event_hash"):
         return dict(base, mode="feedback", available=True, diagnosis=measured,
             label="Compare this common fit · tell us what changed · " + target,
-            reason="Needs improvement does not say whether this attempt helped. Compare "
-                   "it with its saved starting fit and choose Better, About the same or "
-                   "Worse before another test is prepared. No extra iterations are proposed.")
+            reason="Compare the common fit with the fit shown on the right. Choose Better, "
+                   "About the same, Worse or Unsure for this pair.")
+    event = feedback[-1]
+    progress = seed_outcome(event)
     counts = {kind: sum(m["kind"] == kind for _, m in trials) for kind in KINDS}
     kind = ("detail" if ordinary_basis and not trials else decide(
-        measured, capped=iteration_limited(candidate), counts=counts, outcome=outcome))
-    # Only a useful contrast becomes the next seed. A tied or worse contrast
-    # leaves its exact earlier starting field available for inspection or reuse.
-    seed = (step["reference"] if step and (outcome != "better" or not measured
+        measured, capped=iteration_limited(candidate), counts=counts, outcome=progress))
+    # A rating against an individual fit does not rank two common fields. For
+    # such ratings retain a newer common field only with a measured positive trend.
+    useful = progress == "better" or (progress is None and measured
+                                      and measured["trend"] == "improving"
+                                      and measured.get("marked_progress") is not False)
+    seed = (step["reference"] if step and (not useful or not measured
             or measured["trend"] == "worse" or measured.get("warnings")) else ref)
     parent = verify_reference(seed)
     retained_number = guided.record(parent)["screen_trials_spent"]
@@ -153,7 +157,9 @@ def preview(snapshot, tested, target, value, *, ordinary_basis=False):
     return dict(base, mode="candidate_refine", available=True, diagnosis=measured, kind=kind,
         reference=seed, values=values, candidate_controls=count, additional_iterations=120,
         previous_iterations=branch_total(parent, retained), counts=counts,
-        human_feedback=dict(reference=ref, event_hash=feedback[-1]["event_hash"], outcome=outcome),
+        human_feedback=dict(reference=ref, event_hash=event["event_hash"],
+                            outcome=event["outcome"]),
+        seed_outcome=progress,
         label=f"{title} · {count} CP · " + (
             "up to +120 · " if kind == "iterations" else "1 setting test · ") + target,
         **explanation)
@@ -182,6 +188,7 @@ def verify(info, record, manifest, root):
     from diffeoforge.guided_refinement import load_field
     from diffeoforge.mesh import sha256_file
     from diffeoforge.pilot_common_model import physics
+    from diffeoforge.pilot_common_review import seed_outcome
     from diffeoforge.pilot_iteration_accounting import branch_total
 
     marker = info["strategy"]["common_candidate_step"]
@@ -229,7 +236,7 @@ def verify(info, record, manifest, root):
             and e["event"] == "guided_fit_feedback"), None)
         if (not event or event["current"] != human["reference"]
                 or human["reference"] not in refs or event["outcome"] != human.get("outcome")
-                or kind == "iterations" and human["outcome"] != "better"):
+                or kind == "iterations" and seed_outcome(event) != "better"):
             raise ValueError("A common-candidate step needs its bound human comparison; "
                              "unchanged iterations require explicit Better feedback")
     if (marker["version"] not in {LEGACY_VERSION, VERSION, ORDINARY_BASIS_VERSION}

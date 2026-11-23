@@ -19,8 +19,8 @@ from diffeoforge.desktop.reference_calibration_dialog import (
 
 
 @pytest.fixture
-def compared(tmp_path, monkeypatch):
-    yield from full_comparison_case.__wrapped__(tmp_path, monkeypatch)
+def compared(tmp_path, monkeypatch, request):
+    yield from full_comparison_case.__wrapped__(tmp_path, monkeypatch, request)
 
 
 def test_recorded_feedback_remains_readable_after_done_before_caller_disposal(compared):

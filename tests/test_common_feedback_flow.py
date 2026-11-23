@@ -15,7 +15,6 @@ def test_common_viewer_feedback_roundtrip_and_fixed_next_action(tmp_path, monkey
     from diffeoforge import reference_calibration_study as study
     from diffeoforge import reference_guided_pilot as guided
     from diffeoforge.desktop import reference_calibration_dialog as ui
-    from diffeoforge.desktop import saved_fit_comparison
     from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 
     app = QApplication.instance() or QApplication([])
@@ -39,7 +38,6 @@ def test_common_viewer_feedback_roundtrip_and_fixed_next_action(tmp_path, monkey
 
     monkeypatch.setattr(ui, 'collect_calibration_qc_pairs', pairs)
     monkeypatch.setattr(ui, 'normalized_candidate_subject_fit', lambda *args: {})
-    monkeypatch.setattr(saved_fit_comparison, 'alternatives', lambda *args: ())
     monkeypatch.setattr(PreviewMeshLoader, 'request_paths', lambda *args, **kwargs: None)
     parent = ui.ReferenceCalibrationDialog(current.study_directory)
     parent.show()
@@ -57,6 +55,17 @@ def test_common_viewer_feedback_roundtrip_and_fixed_next_action(tmp_path, monkey
                 assert set(viewer.guided_feedback.outcomes) >= {'better', 'same', 'worse'}
                 assert not viewer.guided_feedback.outcomes[outcome].isEnabled()
                 viewer._pair_loaded(0, (_model(original), _model(fitted)))
+                comparison = viewer.saved_comparison
+                assert comparison.toggle.isChecked()
+                approved = comparison.choice.currentData()
+                assert approved.rating_reference == viewer._common_review["approved_individual"]
+                assert comparison.choice.currentText().startswith("Approved individual fit")
+                seed = viewer._common_review["numerical_seed"]
+                seed_index = next(i for i in range(comparison.choice.count())
+                                  if comparison.choice.itemData(i).rating_reference == seed)
+                comparison.choice.setCurrentIndex(seed_index)
+                pair = comparison.choice.currentData()
+                comparison._loaded(pair.pair_id, (_model(original), _model(earlier)))
                 wait(app, lambda: viewer.canvas.comparison_ready
                      and viewer.guided_feedback.outcomes[outcome].isEnabled())
                 assert all(viewer.guided_feedback.outcomes[k].isVisible()
@@ -73,19 +82,22 @@ def test_common_viewer_feedback_roundtrip_and_fixed_next_action(tmp_path, monkey
             key, prepare = queue.pop()
             prepared = prepare()
             assert len(prepared) == 5 and prepared[4]['comparison']
-            assert prepared[4]['comparison_reconstruction_path'] == str(earlier)
+            assert prepared[4]['common_review']['numerical_seed']
             parent._candidate_prepared(key, prepared)
             wait(app, lambda: not parent._review_saving)
             wait_pilot_view(parent)
             current = study.load_reference_calibration_study(current.study_directory)
             saved = guided_feedback.presentation(current, 'guided-varifold')['feedback']
             assert saved['outcome'] == outcome
+            assert saved['comparison'] == saved['common_review']['numerical_seed']
+            assert saved['comparison_displayed']
             choice = guided_strategy.state(current)['common_recovery']
             if outcome == 'better':
                 assert choice['kind'] == 'iterations'
             else:
-                assert choice['mode'] == 'broad_detail'
-                assert 'CP' in choice['label'] and '2,000 CP' not in choice['label']
+                assert (choice['mode'], choice['kind']) == ('candidate_refine', 'detail')
+                assert choice['reference'] == ref
+                assert choice['additional_iterations'] == 120
             assert parent.next_step_button.isVisible() and parent.next_step_button.isEnabled()
             assert parent.next_step_button.text() == choice['label']
             assert parent._guided_footer_action == (
@@ -109,7 +121,6 @@ def test_first_common_review_saves_comparison_and_rejection_in_one_visit(tmp_pat
     from diffeoforge import reference_calibration_study as study
     from diffeoforge import reference_guided_pilot as guided
     from diffeoforge.desktop import reference_calibration_dialog as ui
-    from diffeoforge.desktop import saved_fit_comparison
     from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 
     app = QApplication.instance() or QApplication([])
@@ -127,7 +138,6 @@ def test_first_common_review_saves_comparison_and_rejection_in_one_visit(tmp_pat
             reconstruction_path=fitted if directory == current.study_directory else earlier,
             required=True, original_sha256='0'*64, reconstruction_sha256='0'*64),))
     monkeypatch.setattr(ui, 'normalized_candidate_subject_fit', lambda *args: {})
-    monkeypatch.setattr(saved_fit_comparison, 'alternatives', lambda *args: ())
     monkeypatch.setattr(PreviewMeshLoader, 'request_paths', lambda *args, **kwargs: None)
     parent = ui.ReferenceCalibrationDialog(current.study_directory)
     parent.show()
@@ -143,7 +153,15 @@ def test_first_common_review_saves_comparison_and_rejection_in_one_visit(tmp_pat
             viewer._pair_loaded(0, (_model(original), _model(fitted)))
             wait(app, lambda: viewer.canvas.comparison_ready)
             assert not viewer.fail_button.isEnabled()
-            viewer.guided_feedback.outcomes['same'].click()
+            saved_pane = viewer.saved_comparison
+            approved = saved_pane.choice.currentData()
+            assert approved.rating_reference == viewer._common_review["approved_individual"]
+            assert approved.rating_reference != viewer._common_review["numerical_seed"]
+            assert viewer._common_review["current_label"] in saved_pane.current_label.text()
+            saved_pane._loaded(approved.pair_id, (_model(original), _model(earlier)))
+            wait(app, lambda: viewer.guided_feedback.outcomes["worse"].isEnabled())
+            assert saved_pane.choice.currentText() in viewer.guided_feedback.title.text()
+            viewer.guided_feedback.outcomes['worse'].click()
             assert viewer.fail_button.isEnabled()
             viewer.fail_button.click()
             assert viewer.review_recorded and not viewer.review_passed
@@ -161,10 +179,12 @@ def test_first_common_review_saves_comparison_and_rejection_in_one_visit(tmp_pat
         saved = study.load_reference_calibration_study(current.study_directory)
         assert saved.visual_reviews['guided-varifold'] is False
         opinion = guided_feedback.presentation(saved, 'guided-varifold')['feedback']
-        assert opinion['outcome'] == 'same'
+        assert opinion['outcome'] == 'worse'
+        assert opinion['comparison'] == opinion['common_review']['approved_individual']
+        assert opinion['comparison_displayed']
         choice = guided_strategy.state(saved)['common_recovery']
-        assert choice['mode'] == 'broad_detail'
-        assert 'CP' in choice['label'] and '2,000 CP' not in choice['label']
+        assert (choice['mode'], choice['kind']) == ('candidate_refine', 'detail')
+        assert choice['reference'] == opinion['current'] and choice['additional_iterations'] == 120
         assert parent.next_step_button.isEnabled()
         assert parent.next_step_button.text() == choice['label']
         assert pilot_form_progress.marker(saved) == ledger

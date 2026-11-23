@@ -121,6 +121,8 @@ class CalibrationQcPair:
     original_sha256: str | None = None
     reconstruction_sha256: str | None = None
     inspection_markers: tuple[tuple[str, tuple[float, float, float]], ...] = ()
+    rating_reference: dict | None = None
+    fit_distance_label: str = ""
 
 
 def collect_calibration_qc_pairs(
@@ -620,6 +622,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         self._allow_plan_b = allow_plan_b
         self._read_only = read_only
         self._compact_review = compact_review
+        self._common_review = (guided_feedback_context or {}).get("common_review")
         self.fit_preferences = None
         self.guided_feedback = None
         self._guided_feedback_only = False
@@ -680,6 +683,18 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
                 "Compare the saved shapes. Close this view to return to your current fit."
             )
         layout.addWidget(intro)
+        if self._common_review:
+            seed = self._common_review["seed_label"]
+            text = ("Numerical starting fit · " + seed if seed else
+                    "No saved numerical starting fit is identified for this check.")
+            approved = self._common_review["approved_individual"]
+            if seed and approved and approved != self._common_review["numerical_seed"]:
+                text += (". The common model used this compatible field. "
+                         "Your approved individual fit is the anatomical reference.")
+            seed_info = QLabel(text)
+            seed_info.setObjectName("commonNumericalSeed")
+            seed_info.setWordWrap(True)
+            layout.addWidget(seed_info)
         instructions = QLabel(
             "What to check\n"
             "1. Open every pilot specimen in the list.\n"
@@ -768,7 +783,8 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
 
             layout.removeWidget(self.canvas)
             self.saved_comparison = SavedFitComparison(
-                self.canvas, alternative_pairs, self, cache_directory=self._preview_cache)
+                self.canvas, alternative_pairs, self, cache_directory=self._preview_cache,
+                common_review=self._common_review)
             layout.addWidget(self.saved_comparison, 1)
             self.finished.connect(self.saved_comparison.loader.cancel)
         canvas_help = QLabel(
@@ -980,14 +996,27 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             quality = QLabel(
                 "Check the overall shape and relevant local details. Missing or distorted "
                 "features mean Needs improvement; the method can still be a starting point.")
+            if self._common_review:
+                label = self._common_review["current_label"]
+                self.setWindowTitle("Review common-model fit")
+                title.setText("Review common-model fit")
+                if not alternative_pairs:
+                    title.setText("Review common-model fit · " + label)
+                quality.setText(f"Is the anatomy in the common-model fit ({label}) suitable? "
+                                "Check its important features against the orange original.")
             quality.setWordWrap(True)
             decision_layout.insertWidget(0, quality)
             if self.fit_preferences is None:
                 decision_layout.removeWidget(self.anatomical_notes)
-                if guided_feedback_context and guided_feedback_context.get("comparison"):
+                has_comparison = (
+                    alternative_pairs if self._common_review else
+                    guided_feedback_context and guided_feedback_context.get("comparison")
+                )
+                if has_comparison:
                     from diffeoforge.desktop.guided_feedback import GuidedFeedbackControls
 
-                    self.guided_feedback = GuidedFeedbackControls(guided_feedback_context)
+                    self.guided_feedback = GuidedFeedbackControls(
+                        guided_feedback_context, visible_reference=bool(self._common_review))
                     self.guided_feedback.saveRequested.connect(self._record_guided_feedback)
                     self.guided_feedback.buttons.buttonClicked.connect(self._update_review_progress)
                     decision_layout.insertWidget(1, self.guided_feedback)
@@ -1004,6 +1033,8 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
                 self.mesh_combo.setCurrentIndex(combo_index)
         elif self.mesh_combo.count():
             self._load_selected(self.mesh_combo.currentIndex())
+        if self._common_review and alternative_pairs:
+            self.saved_comparison.toggle.setChecked(True)
         self._update_review_progress()
 
     def _full_screen_layout(self, enabled: bool) -> None:
@@ -1077,6 +1108,18 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
                              for n in names if self.problem_regions.get(n)},
             cleared_region_subjects=sorted(self.cleared_region_subjects.intersection(names)))
         saved = getattr(self, "saved_comparison", None)
+        if self._common_review:
+            pair = saved.choice.currentData() if saved and saved.toggle.isChecked() else None
+            if not (pair and saved.full_comparison_ready
+                    and pair.rating_reference == decision["comparison"]):
+                return None
+            decision.update(
+                common_comparison_displayed=True, comparison_displayed=True,
+                common_review_directory=self._common_review["context_directory"],
+                common_review_references={key: self._common_review[key]
+                                          for key in ("approved_individual", "numerical_seed")},
+            )
+            return decision
         if saved and saved.toggle.isChecked() and saved.canvas.comparison_ready:
             model = saved.canvas.reconstruction_model
             data = self.guided_feedback.data
@@ -1095,6 +1138,13 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             self.accept()
 
     def _ranking_ready(self):
+        if self._common_review:
+            saved = getattr(self, "saved_comparison", None)
+            if (not saved or not saved.toggle.isChecked() or saved.retry_button.isVisible()
+                    or not saved.choice.currentData().rating_reference):
+                return True  # The anatomical decision can be made on the original and current fit.
+            if self.guided_feedback and self.guided_feedback.data.get("require_fit_decision"):
+                return self.guided_feedback_decision is not None
         return ((self.fit_preferences is None or self.fit_preferences.selection_ready)
             and (not self.guided_feedback
                  or not self.guided_feedback.data.get('require_fit_decision')
@@ -1344,6 +1394,9 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             )
         if self.fit_preferences:
             self.fit_preferences.set_current_models(pair, (original, reconstruction))
+        saved = getattr(self, "saved_comparison", None)
+        if saved and saved.waiting_for_current and saved.toggle.isChecked():
+            saved._request()
         reconstruction_role = ("Original template" if getattr(self, "_input_alignment", False)
                                else "Reconstruction")
         self.status.setText(
@@ -4935,11 +4988,12 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                                 if c.candidate_id == candidate.candidate_id), None)
                 if current != candidate:
                     raise ValueError("Saved comparison identity changed; reopen the option")
+                context = prepare_context(snapshot, current.candidate_id)
                 return (
                     snapshot, collect_calibration_qc_pairs(root, current),
                     normalized_candidate_subject_fit(snapshot, current),
-                    alternatives(snapshot, current.candidate_id),
-                    prepare_context(snapshot, current.candidate_id),
+                    alternatives(snapshot, current.candidate_id, context),
+                    context,
                 )
 
         self._viewer_preparation.request_operation(
@@ -4977,13 +5031,15 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                     raise ValueError("Saved common-model result changed")
                 candidate = next(c for c in parent.candidates
                                  if c.candidate_id == reference["candidate_id"])
-                context = prepare_context(parent, candidate.candidate_id)
-                if context:
-                    context['require_fit_decision'] = (
-                        candidate.candidate_id not in parent.visual_reviews)
+                context = prepare_context(parent, candidate.candidate_id, common_origin=current)
+                requested = choice.get("requested_comparison")
+                if requested and context and context.get("common_review"):
+                    if requested != context["common_review"]["numerical_seed"]:
+                        raise ValueError("The requested starting fit changed; reopen this check")
+                    context["common_review"]["requested_comparison"] = requested
                 return (parent, collect_calibration_qc_pairs(parent.study_directory, candidate),
                         normalized_candidate_subject_fit(parent, candidate),
-                        alternatives(parent, candidate.candidate_id),
+                        alternatives(parent, candidate.candidate_id, context),
                         context)
 
         self._viewer_preparation.request_operation(("guided-common", origin, reference), prepare)
@@ -5182,7 +5238,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                     "Orange: original · Blue: saved reconstruction. Close this comparison "
                     "and choose Work from this starting fit to edit its areas or prepare "
                     "another test. This view does not change the saved fit or its review.")
-            elif key[0] == "guided-common":
+            elif key[0] == "guided-common" and not dialog._common_review:
                 dialog.setWindowTitle("Saved common-model fit — review without refitting")
                 dialog.findChild(QLabel, "title").setText("Review saved common-model fit")
                 dialog._comparison_intro.setText(

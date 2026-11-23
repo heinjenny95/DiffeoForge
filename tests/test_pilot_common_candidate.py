@@ -197,7 +197,8 @@ def check_review_route(snapshot, choice, monkeypatch):
     from diffeoforge.desktop import guided_feedback as feedback_ui
     from diffeoforge.desktop import saved_fit_comparison
 
-    monkeypatch.setattr(feedback_ui, 'prepare_context', guided_feedback.presentation)
+    monkeypatch.setattr(feedback_ui, 'prepare_context',
+                        lambda *args, **kwargs: guided_feedback.presentation(*args))
     monkeypatch.setattr(saved_fit_comparison, 'alternatives', lambda *args: ())
     open_result = dialog_module.ReferenceCalibrationDialog._open_common_saved_fit
     open_result(window, target['reference'])

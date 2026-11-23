@@ -24,7 +24,7 @@ def marked(base, trial):
     return payload
 
 
-def test_better_retain_uses_displayed_fit_despite_outside_regression(tmp_path, monkeypatch):
+def test_better_keeps_mark_source_and_requests_seed_after_regression(tmp_path, monkeypatch):
     base, trial = attempted(tmp_path, monkeypatch)
     monkeypatch.setattr(feedback, "severe_regression", lambda *_: True)
     saved = feedback.save_feedback(trial.study_directory, "guided-varifold", marked(base, trial))
@@ -32,9 +32,13 @@ def test_better_retain_uses_displayed_fit_despite_outside_regression(tmp_path, m
     reference = feedback.reference(saved, "guided-varifold")
     result = context(saved, "guided-varifold")
     assert result["reference"] == reference and result["automatic_start_allowed"]
-    assert feedback.selection(saved, "guided-varifold") == reference
+    assert feedback.starting_fit_choice(saved, "guided-varifold")["latest"] == reference
+    assert feedback.selection(saved, "guided-varifold") is None
     assert (saved.study_directory / study.STUDY_EVENTS).read_bytes() == before
     assert not saved.visual_reviews and result["anatomical_approval"] is False
+    chosen = feedback.select(saved.study_directory, "guided-varifold", reference)
+    assert feedback.selection(chosen, "guided-varifold") == reference
+    assert not chosen.visual_reviews
 
 
 def test_newer_explicit_saved_fit_choice_overrides_mark_origin(tmp_path, monkeypatch):

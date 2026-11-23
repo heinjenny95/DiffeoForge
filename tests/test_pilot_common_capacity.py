@@ -85,12 +85,15 @@ def test_fresh_capacity_is_shared_after_explicit_adoption_and_keeps_each_saved_f
     protected = {p: sha256_file(p) for p in local.study_directory.rglob('*') if p.is_file()}
     choice = guided_strategy.state(current)['common_recovery']
     assert choice['mode'] == 'fresh_capacity' and choice['target'] == hardest
+    assert "original template" in choice["start_description"]
+    assert "approved individual fit" in choice["start_description"]
     assert choice['proposed_controls'] == 480
     child = guided.next_action(current.study_directory, 'adaptive_common_continue',
                                'guided-varifold')
     assert child.candidates[0].attempts == 0 and not child.visual_reviews
     assert child.attachment_comparison['controls']['count'] == 480
     assert child.attachment_comparison['iterations'] == 120
+    assert guided_strategy.state(child)["common_capacity_start"] == choice["start_description"]
     assert not child.attachment_comparison.get('refinement')
     assert pilot_form_progress.marker(child) == value
     config = load_config(child.candidates[0].config_path)
@@ -164,5 +167,5 @@ def test_fresh_capacity_is_shared_after_explicit_adoption_and_keeps_each_saved_f
     monkeypatch.setattr(capacity, 'demand', lambda v: {hardest: 2100})
     blocked = capacity.choice(value, hardest)
     assert blocked['proposed_controls'] == 2100 and not blocked['available']
-    with pytest.raises(ValueError, match='not silently reduced'):
+    with pytest.raises(ValueError, match='exceeds the 2,000-control pilot guard'):
         capacity.apply(dict(strategy={}), blocked)

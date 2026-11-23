@@ -121,12 +121,31 @@ def render_starting_choice(window, identifier, layout, data):
     layout.addWidget(hint)
 
 
-def prepare_context(snapshot, identifier):
+def prepare_context(snapshot, identifier, *, common_origin=None):
     """Called in the existing background viewer preparation scope."""
     from diffeoforge.desktop.reference_calibration_dialog import collect_calibration_qc_pairs
-    from diffeoforge.guided_feedback import presentation, verify_reference
+    from diffeoforge.desktop.saved_fit_comparison import common_seed_source, trial_label
+    from diffeoforge.guided_feedback import common_review, presentation, verify_reference
 
     data = presentation(snapshot, identifier)
+    if data and common_origin is not None:
+        data["common_review"] = common_review(snapshot, identifier, origin=common_origin)
+    common = (data or {}).get("common_review")
+    if common:
+        from diffeoforge.desktop.common_review_metrics import sampled_fit_label
+
+        current = next(c for c in snapshot.candidates if c.candidate_id == identifier)
+        seed = common["numerical_seed"]
+        seed_label = None
+        if seed:
+            parent = common_seed_source(seed)
+            candidate = next(c for c in parent.candidates if c.candidate_id == seed["candidate_id"])
+            seed_label = trial_label(parent, candidate)
+        data["common_review"] = dict(
+            common, current_label=trial_label(snapshot, current), seed_label=seed_label,
+            current_distances=sampled_fit_label(current, common["current"]["target"]))
+        data["require_fit_decision"] = identifier not in snapshot.visual_reviews
+        return data
     if data and data["comparison"]:
         ref = data["comparison"]
         parent = verify_reference(ref)
@@ -142,17 +161,20 @@ def prepare_context(snapshot, identifier):
 class GuidedFeedbackControls(QWidget):
     saveRequested = Signal(object)
 
-    def __init__(self, data, parent=None):
+    def __init__(self, data, parent=None, *, visible_reference=False):
         super().__init__(parent)
         self.data = data
+        self.rating_reference = None if visible_reference else data["comparison"]
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        baseline = data["comparison"]
-        label = next((r["label"] for r in data["choices"] if r["reference"] == baseline),
-                     baseline["method"].title())
-        title = QLabel("Change compared with the starting fit: " + label)
-        title.setWordWrap(True)
-        layout.addWidget(title)
+        self.title = QLabel()
+        if self.rating_reference:
+            label = next((r["label"] for r in data["choices"]
+                          if r["reference"] == self.rating_reference),
+                         self.rating_reference["method"].title())
+            self.title.setText("Change compared with the starting fit: " + label)
+        self.title.setWordWrap(True)
+        layout.addWidget(self.title)
         self.buttons = QButtonGroup(self)
         self.outcomes = {}
         grid = QGridLayout()
@@ -190,7 +212,11 @@ class GuidedFeedbackControls(QWidget):
         layout.addWidget(mark_hint)
         if data.get('require_fit_decision'):
             self.save.hide()
-            hint = QLabel("Choose how this changed, then Suitable fit or Needs improvement "
+            hint = QLabel("Rate the two visible fits, then decide whether the common fit "
+                          "is suitable. "
+                          "Hide the comparison to assess the common fit on its own."
+                          if visible_reference else
+                          "Choose how this changed, then Suitable fit or Needs improvement "
                           "below. Both decisions are saved together.")
             hint.setWordWrap(True)
             hint.setObjectName('commonFitDecisionHint')
@@ -199,7 +225,7 @@ class GuidedFeedbackControls(QWidget):
         self.buttons.buttonClicked.connect(self._update)
         self.save.clicked.connect(lambda: self.saveRequested.emit(self.decision))
         previous = data.get("feedback")
-        if previous:
+        if previous and not visible_reference:
             self.outcomes[previous["outcome"]].setChecked(True)
             self.note.setText(previous["note"])
             self.symptom.setCurrentIndex(self.symptom.findData(previous.get("symptom", "unsure")))
@@ -208,9 +234,16 @@ class GuidedFeedbackControls(QWidget):
     @property
     def decision(self):
         outcome = next((k for k, b in self.outcomes.items() if b.isChecked()), None)
-        return (dict(outcome=outcome, comparison=self.data["comparison"], note=self.note.text(),
+        return (dict(outcome=outcome, comparison=self.rating_reference, note=self.note.text(),
                      symptom=self.symptom.currentData())
-                if self._ready and outcome else None)
+                if self._ready and outcome and self.rating_reference is not None else None)
+
+    def bind_displayed_reference(self, reference, label):
+        self.rating_reference = reference
+        self.title.setText("How does the common-model fit on the left compare with " + label + "?"
+                           if reference else "Choose a reviewed fit to rate the difference."
+                           if label else
+                           "Show a saved comparison to rate the difference between fits.")
 
     def set_ready(self, ready):
         self._ready = ready
@@ -242,7 +275,8 @@ def render_starting_fits(window, snapshot, identifier, layout, data, *, edit_cur
         layout.addWidget(note)
     selection = next((r for r in data["choices"] if r["reference"] == selected), None)
     feedback = data.get("feedback")
-    if feedback and feedback["outcome"] in {"worse", "same", "unsure"}:
+    if (feedback and not feedback.get("common_review")
+            and feedback["outcome"] in {"worse", "same", "unsure"}):
         label = QLabel(
             "This attempt did not improve the starting fit. Further suggestions use "
             "that earlier starting point; this result remains saved.")
@@ -335,6 +369,12 @@ def render_starting_fits(window, snapshot, identifier, layout, data, *, edit_cur
 
 
 def render_feedback(window, snapshot, identifier, layout, data):
+    if data and data.get("common_review"):
+        inspect = QPushButton("Compare saved fits and review the common-model result…")
+        inspect.clicked.connect(lambda: window._open_candidate(
+            next(c for c in snapshot.candidates if c.candidate_id == identifier)))
+        layout.addWidget(inspect)
+        return
     if not data or not data["comparison"]:
         return
     if not data["current_inspected"]:

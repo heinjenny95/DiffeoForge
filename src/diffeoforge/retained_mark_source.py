@@ -59,8 +59,9 @@ def context(snapshot, identifier, *, rows=None):
             current = {_key(r) for r in marked or [] if r.get("purpose") == "fixed"}
             for key in current:
                 if key not in previous or kind == "guided_starting_fit_selected":
-                    origins[key] = (position, reference, kind == "guided_starting_fit_selected"
-                                    or event.get("outcome") == "better")
+                    preferred = (kind == "guided_starting_fit_selected" or
+                                 event.get("outcome") == "better" and "common_review" not in event)
+                    origins[key] = (position, reference, preferred)
             previous = current
     choices = []
     for key in fixed:

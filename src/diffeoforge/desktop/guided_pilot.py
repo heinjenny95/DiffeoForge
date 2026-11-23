@@ -288,7 +288,12 @@ def render(window, prepared):
             f"{progress_summary['total']}.")
         progress_note.setWordWrap(True)
         window.content_layout.addWidget(progress_note)
-        if progress_summary.get("common_start"):
+        proposed_start = (progress_summary.get("common_reuse") or {}).get("start_description")
+        if proposed_start:
+            note = QLabel(proposed_start)
+            note.setWordWrap(True)
+            window.content_layout.addWidget(note)
+        elif progress_summary.get("common_start"):
             start = progress_summary["common_start"]
             note = QLabel(f"Common-model starting basis: {start['controls']} controls. "
                           f"Accepted complete-field demand: {start['required_controls']}. "
@@ -807,7 +812,11 @@ def render(window, prepared):
         from diffeoforge.guided_density import refinement_for
 
         initialization = refinement_for(snapshot.attachment_comparison, candidate.candidate_id)
-        if initialization:
+        if guidance.get("common_capacity_start"):
+            starting = QLabel(guidance["common_capacity_start"])
+            starting.setWordWrap(True)
+            layout.addWidget(starting)
+        elif initialization:
             starting = QLabel(
                 "Starting from your saved fitted shape; optimizer history starts anew."
                 if initialization.get("initialization") == "learned"

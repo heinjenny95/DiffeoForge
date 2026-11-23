@@ -41,7 +41,8 @@ def choice(snapshot, value, target, previous):
         and previous["mode"] == "candidate_refine"
         and previous.get("kind") in {"detail", "weight"}
         and not previous.get("expected")
-        and (previous.get("human_feedback") or {}).get("outcome") in {"same", "worse"}
+        and previous.get("seed_outcome", (previous.get("human_feedback") or {}).get("outcome"))
+        in {"same", "worse"}
     )
     eligible = (
         previous

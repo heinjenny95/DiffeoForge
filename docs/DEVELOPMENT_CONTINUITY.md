@@ -1,5 +1,19 @@
 # Development continuity
 
+## dev236 — compare the common fit with the approved individual fit
+
+The common-model reviewer opens the approved individual fit for the same
+specimen alongside the common result. Each pane identifies the test and shows
+the saved P95 and P99 surface distances when available. The numerical starting
+fit has its own label. Before a shared-control trial runs, the pilot explains
+which field supplies the start and which approved shape the user will compare.
+
+New relative ratings record the visible comparison and its relationship to the
+numerical start. Switching the comparison clears the previous rating. A rating
+against the approved anatomy can guide a bounded setting test. An unchanged
+continuation requires the existing progress checks and a qualifying comparison
+with the actual numerical start. See [common-model review](PILOT_ACCEPTED_COMMON_DIAGNOSIS.md).
+
 ## dev235 — reopen the saved pilot after closing it
 
 Closing an unfinished pilot refreshes the saved-pilot action even when a resumed

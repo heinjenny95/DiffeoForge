@@ -85,21 +85,53 @@ def validate(request, value):
         raise ValueError("Common capacity must include the bound accepted single-form demand")
 
 
+@_scoped
+def start_description(request, target, seed):
+    """Identify the bound anatomical reference and the actual nested or fresh start."""
+    from diffeoforge.guided_feedback import verify_reference
+    from diffeoforge.pilot_common_diagnosis import accepted_reference
+    from diffeoforge.reference_guided_pilot import record
+
+    ref = accepted_reference(request, target)
+    if ref is None:
+        raise ValueError("The shared-control test needs the approved fit for this specimen")
+    individual = verify_reference(ref)
+    approved_number = record(individual)["screen_trials_spent"]
+    if seed:
+        start_number = record(verify_reference(seed))["screen_trials_spent"]
+        start = f"Start from Test {start_number} with zero initial momentum on added controls."
+    else:
+        start = "Start from the original template with zero initial momentum on all controls."
+    if seed == ref:
+        return f"{start} This is the approved individual fit for this form."
+    composed = False
+    if individual.attachment_comparison.get("regional_objective"):
+        from diffeoforge.config import load_config
+        from diffeoforge.regional_fit import read_plan
+
+        candidate = next(c for c in individual.candidates if c.candidate_id == ref["candidate_id"])
+        composed = bool((read_plan(load_config(candidate.config_path)) or {}).get("residual"))
+    explanation = (f"Test {approved_number} includes a separate local deformation that this "
+                   "shared field cannot copy directly. " if composed else "")
+    return (f"{start} {explanation}Compare the result with your approved individual fit "
+            f"(Test {approved_number}).")
+
+
 def choice(value, target, *, grow=False, reference=None, diagnosis=None):
     request = describe(value, grow=grow)
     old, new = request["current_controls"], request["target_count"]
     return dict(mode="capacity" if reference else "fresh_capacity", target=target,
         available=request["available"], reference=reference, diagnosis=diagnosis,
         capacity_request=request, current_controls=old, proposed_controls=new,
+        start_description=(start_description(request, target, reference)
+                           if request["available"] else ""),
         additional_iterations=120,
         label=f"Test shared controls for accepted shapes · {old} → {new} · {target}",
         expected=("Look for better agreement while fitted areas stay stable."
                   if request["available"] else None),
-        reason=(f"Accepted individual fields used up to {request['required_controls']} controls, "
-            "including preserved prefixes and local additions. Test at least that many on "
-            "one shared basis before spending more steps on an undersized basis. "
-            "Existing fields and approvals stay saved. This separate 120-step candidate "
-            "needs review and explicit adoption as the common model."
+        reason=(f"Individual fits used up to {request['required_controls']:,} control points. "
+            f"Test {new:,} shared controls for up to 120 iterations and review the result "
+            "before adopting these settings."
             if request["available"] else
             f"The proposed {new:,}-control trial exceeds the 2,000-control pilot guard. "
             "Review the saved common fit and accepted shapes."))

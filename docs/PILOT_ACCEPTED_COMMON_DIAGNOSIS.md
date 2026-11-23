@@ -1,5 +1,23 @@
 # Common-model experiments against accepted individual shapes
 
+### Reviewing a saved common fit
+
+The left pane shows the common-model result under review. The right pane
+initially shows the approved individual fit recorded for that specimen.
+The numerical starting fit is named separately and can also be inspected.
+For a shared-control trial, the pilot explains the initialization before Run.
+A local correction composed with an earlier deformation can serve as the
+anatomical reference even when the shared model needs a different starting field.
+
+Use the relative rating to compare the common result with the fit displayed on
+the right. The rating becomes available when both previews have settled.
+Selecting another fit clears the rating. The suitability decision applies to
+the common result. A newly recorded rating stores the displayed fit identity,
+the approved individual reference and the numerical seed when one exists.
+The next-step logic uses each rating in that context. A shared fit can improve
+over its start and still miss a feature preserved in the individual fit.
+Previously saved decisions retain their original comparison references.
+
 Reopening an older common field does not discard later working annotations.
 The diagnosis checks the sealed descendant history for explicit edits on the
 same original form and attachment method, validates its manifest and cohort,
