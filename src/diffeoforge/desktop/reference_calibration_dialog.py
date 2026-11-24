@@ -3378,6 +3378,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                     from diffeoforge.desktop.guided_feedback import choose_starting_fit
 
                     choose_starting_fit(self, identifier)
+                elif action == "show_adjustments":
+                    from diffeoforge.desktop.guided_pilot import show_adjustments
+
+                    show_adjustments(self, identifier)
                 else:
                     self._start_pilot(adaptive=False, guided_action=(
                         action, identifier, getattr(self, "_guided_footer_goal", None)))
@@ -4102,7 +4106,18 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         if target:
             if target["root"] != self.study_directory:
                 return
-            if target["kind"] == "bounded_retained":
+            if target["kind"] == "guard_stop":
+                if self._worker is not None or self._restoring_search or self._review_saving:
+                    return
+                identifier = target["candidate_id"]
+                if target["reference"]:
+                    self._open_guided_saved_fit(target["reference"], failed_for=identifier)
+                else:
+                    details = self.content.findChild(InfoDisclosure, "attemptDetails-" + identifier)
+                    if details is not None:
+                        details.toggle_button.setChecked(True)
+                        self.scroll.ensureWidgetVisible(details)
+            elif target["kind"] == "bounded_retained":
                 if self._worker is None and not self._restoring_search and not self._review_saving:
                     self._open_guided_working_fit(target["candidate_id"], target["reference"])
             elif target["kind"] == "common":
@@ -5369,6 +5384,14 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                 dialog.exec()
             finally:
                 dialog.deleteLater()
+            view = self._prepared_view
+            if (key[1] == self.study_directory and view and not self._view_closed
+                    and not self._view_loading and self._worker is None):
+                direction = (view.guidance or {}).get("fit_direction") or {}
+                if direction.get("mode") == "inputs" and direction["current"] == key[2]:
+                    from diffeoforge.desktop.guided_pilot import show_adjustments
+
+                    show_adjustments(self, direction["identifier"])
             return
         if key[0] == "compare-plan-b":
             root, candidate, pairs = prepared
@@ -5474,7 +5497,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                     {inspected["target"]} if inspected["cleared"] else set())
                 dialog._comparison_intro.setText(
                     "Orange: original · Blue: retained reconstruction. "
-                    "Close to choose another test.")
+                    "Close to return to the stopped attempt.")
             # Re-review is a new human decision. Previous decisions remain in the
             # journal but must not silently pre-pass specimens or lock bulk approval.
             dialog.subject_decisions = {}
@@ -5509,6 +5532,14 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                 dialog._show_feature_check(dialog._pairs[int(index)])
             dialog._update_review_progress()
             dialog.exec()
+            if key[0] == "guided-saved" and len(prepared) >= 6 and prepared[5]:
+                if key[1] == self.study_directory and not self._view_closed:
+                    selector = self.content.findChild(
+                        QComboBox, "retainedAdjustment-" + prepared[5]["failed_for"])
+                    if selector is not None and selector.isEnabled():
+                        self.scroll.ensureWidgetVisible(selector)
+                        selector.setFocus()
+                return
             preference = None
             if dialog.review_recorded and dialog.fit_preferences:
                 if not dialog.preference_decision:

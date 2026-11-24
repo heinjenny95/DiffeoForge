@@ -6,6 +6,21 @@ A usable next step must open the right saved fit, prepare a successor that can
 actually be constructed, or explain which evidence is needed to continue.
 Rendering an enabled button exercises only the first part of this path.
 
+When replaying a decision, ask “What next?” in Pilot chat and compare its answer
+with the highlighted action. Follow the action and check the specimen, method,
+starting field, marks and recorded effort in the destination.
+
+- After reviewing both methods, reopen the method used by the proposed repair.
+  If a required review is outstanding, complete that review first.
+- When the marked correction is unavailable, open the other adjustments and
+  input checks for the selected fit. After inspecting the original alignment,
+  the same controls are available on return.
+- After a numerical stop, inspect the retained fit from the footer. Closing its
+  mesh view returns to the adjustment selector when a different test is
+  available. Select a change, clear it, select again and prepare it. Reopen the
+  prepared test and verify its initialization and iteration limit before Run.
+  If the parent cannot be verified, inspect the recorded attempt details.
+
 | Starting situation | What to verify |
 | --- | --- |
 | New pilot or new specimen | Compare the prepared candidates. Verify the specimen, shared settings, start field, and separate Run action. |

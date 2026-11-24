@@ -29,6 +29,21 @@ def choose(snapshot, guidance, info):
     candidate = next((c for c in completed if c.candidate_id not in snapshot.visual_reviews),
                      completed[0] if completed else None)
     if candidate is None:
+        for stopped in snapshot.candidates:
+            identifier = stopped.candidate_id
+            failure = guidance.get("guard_failures", {}).get(identifier)
+            if failure:
+                parent = guidance.get("failed_parents", {}).get(identifier) or {}
+                reference = parent.get("reference")
+                areas = ", ".join(parent.get("area_labels", ()))
+                return dict(root=snapshot.study_directory, kind="guard_stop",
+                            candidate_id=identifier, reference=reference, pending=True,
+                            label=("Inspect retained fit · " + parent["parent_label"]
+                                   + (f" · marked areas {areas}" if areas else "")
+                                   if reference else "Inspect stopped attempt"),
+                            explanation=failure["message"] + (
+                                " Inspect the saved starting fit before choosing another test."
+                                if reference else " Open the attempt details to inspect the stop."))
         return None
     strategy = info.get("strategy") or {}
     optimization = strategy.get("optimization") or {}
@@ -54,9 +69,10 @@ def choose(snapshot, guidance, info):
         and (guidance.get("feedback", {}).get(repair.candidate_id) or {}).get(
             "current_inspected") is True
     )
-    if feedback_only:
-        # A verified inspected field can seed a separate repair. It still needs
-        # Suitable fit before it can contribute anatomical coverage or advance.
+    # Once both methods have decisions, reopen the method the researcher is
+    # working on. A required review of the other method still takes priority.
+    if feedback_only or (scope == "individual" and repair is not None
+                         and all(c.candidate_id in snapshot.visual_reviews for c in completed)):
         candidate = repair
     pending = candidate.candidate_id not in snapshot.visual_reviews and not feedback_only
     name = info["target"] or f"{snapshot.plan.pilot_subject_count} forms"

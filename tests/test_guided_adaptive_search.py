@@ -76,6 +76,16 @@ def test_marked_scale_changes_explanation_without_local_objective_claim(monkeypa
     assert row["anchor"] == reference
 
 
+def test_ordinary_repair_discloses_fresh_start_on_a_composed_field(monkeypatch):
+    snapshot, data, ref = model(monkeypatch)
+    data["references"][ref["directory"]].attachment_comparison["refinement"] = {
+        "initialization": "residual"}
+    detail = guided_search.propose(snapshot, "fit", "goal:detail", data)
+    assert detail["available"] and detail["initialization"] == "fresh" and detail["anchor"] == ref
+    density = guided_search.propose(snapshot, "fit", "goal:density", data)
+    assert not density["available"] and "residual alone" in density["blocked_reason"]
+
+
 def test_approved_starting_fit_can_have_previews_without_granting_new_approval(monkeypatch):
     snapshot, data, reference = model(monkeypatch)
     snapshot.visual_reviews = {"fit": True}

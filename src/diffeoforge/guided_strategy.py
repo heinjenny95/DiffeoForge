@@ -510,8 +510,9 @@ def _selected_start_direction(snapshot, context, chosen):
     if direction is not None:
         if direction["mode"] == "blocked":
             return dict(direction, explicit_start=True)
-        return dict(direction, explicit_start=True, reason=f"Continue from your selected "
-                    f"{reference['method'].title()} fit. " + direction["reason"])
+        return dict(direction, explicit_start=True,
+                    reason=f"Using your selected {reference['method'].title()} fit as the "
+                    "reference. " + direction["reason"])
     quality = local_quality_note(parent, reference)
     working = context["working_proposals"].get(identifier, {})
     request = default_recovery_symptom(selected_data)

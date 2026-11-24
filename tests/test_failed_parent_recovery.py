@@ -329,6 +329,98 @@ def test_preview_does_not_authorize_changed_failure_at_actual_transition(route, 
         )
 
 
+def test_guard_stop_footer_and_chat_lead_to_same_fit_then_prepared_trial(route, monkeypatch):
+    from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtWidgets import QApplication, QComboBox
+
+    from diffeoforge import pilot_assistant, reference_guard_failure
+    from diffeoforge.desktop.pilot_assistant_context import context_for_view
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setattr(reference_guard_failure, "for_candidate", lambda c:
+        dict(message="Stopped at iteration 18.", verified=True) if c.status == "failed" else None)
+    monkeypatch.setattr(study.ReferenceCalibrationStudyRunner, "run_current_stage",
+                        lambda *_a, **_k: pytest.fail("Navigation started an optimizer"))
+    app = QApplication.instance() or QApplication([])
+    window = ReferenceCalibrationDialog(route.failed.study_directory)
+    window.show()
+    opened = []
+    monkeypatch.setattr(window, "_open_guided_saved_fit",
+                        lambda ref, *, failed_for: opened.append((ref, failed_for)))
+    try:
+        wait_pilot_view(window)
+        context, callbacks = context_for_view(window, window._prepared_view)
+        answer = pilot_assistant.reply(context, "Was mache ich nach dem Abbruch?")
+        assert "iteration 18" in answer["message"] and "marked areas A" in answer["message"]
+        assert answer["actions"] == ("review",)
+        assert window.start_button.isHidden()
+        assert window.review_next_button.objectName() == "primary"
+        callbacks["review"]()
+        ref, identifier = opened.pop()
+        assert ref["directory"] == str(route.parent.study_directory)
+        assert identifier == route.identifier
+        selector = window.content.findChild(QComboBox, "retainedAdjustment-" + identifier)
+        selector.setCurrentIndex(selector.findData("goal:weight"))
+        assert window.next_step_button.objectName() == "primary"
+        context, _ = context_for_view(window, window._prepared_view)
+        assert context["facts"]["next_label"] == window.next_step_button.text()
+        assert not context["facts"].get("next_action")
+        next_answer = pilot_assistant.reply(context, "Was jetzt?")
+        assert window.next_step_button.text() in next_answer["message"]
+        assert not next_answer["actions"]
+        assert not pilot_assistant.reply(context, "Open Test 999")["actions"]
+        selector.setCurrentIndex(0)
+        assert window.next_step_button.isHidden()
+        assert window.review_next_button.objectName() == "primary"
+        selector.setCurrentIndex(selector.findData("goal:weight"))
+        window.next_step_button.click()
+        from time import monotonic, sleep
+
+        end = monotonic() + 40
+        while window._worker and monotonic() < end:
+            app.processEvents()
+            sleep(.005)
+        wait_pilot_view(window)
+        prepared = window.snapshot
+        assert prepared.study_directory != route.failed.study_directory
+        assert prepared.attachment_comparison["refinement"]["reference"] == ref
+        assert all(c.status == "pending" and c.attempts == 0 for c in prepared.candidates)
+        assert window.start_button.isVisible() and window.start_button.isEnabled()
+        assert not prepared.visual_reviews
+    finally:
+        window.close()
+        app.processEvents()
+
+
+def test_guard_stop_without_a_bound_parent_opens_its_own_details(route, monkeypatch):
+    from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge import reference_guard_failure
+    from diffeoforge.desktop.info_disclosure import InfoDisclosure
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setattr(reference_guard_failure, "for_candidate", lambda c:
+        dict(message="Stop evidence changed.", verified=False) if c.status == "failed" else None)
+    monkeypatch.setattr(recovery, "preview", lambda *_:
+                        dict(reference=None, available=False, reason="Parent unavailable."))
+    app = QApplication.instance() or QApplication([])
+    window = ReferenceCalibrationDialog(route.failed.study_directory)
+    window.show()
+    try:
+        wait_pilot_view(window)
+        assert not window.start_button.isEnabled()
+        assert window.review_next_button.text() == "Inspect stopped attempt"
+        window.review_next_button.click()
+        details = window.content.findChild(InfoDisclosure, "attemptDetails-" + route.identifier)
+        assert details.panel.isVisible() and window._worker is None
+    finally:
+        window.close()
+        app.processEvents()
+
+
 def test_identical_failed_settings_and_longer_optimizer_request_blocked(route):
     verified = recovery.inputs(route.failed, route.identifier, strategy.state(route.failed))
     proposal = recovery.propose(route.failed, route.identifier, "goal:detail", verified)

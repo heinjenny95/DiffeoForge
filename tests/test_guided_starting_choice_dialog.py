@@ -52,6 +52,14 @@ def test_pending_choice_is_only_primary_and_explains_specific_checks(panel, boun
               if b.isVisible() and b.isEnabled() and b.objectName() == "primary"]
     assert active == [panel.window.next_step_button]
     assert active[0].text() == "Choose starting fit…"
+    from types import SimpleNamespace
+
+    from diffeoforge.desktop.pilot_assistant_context import context_for_view
+
+    chat, _ = context_for_view(panel.window, SimpleNamespace(
+        snapshot=panel.snapshot, guidance=panel.guidance))
+    assert chat["facts"]["next_label"] == active[0].text()
+    assert chat["facts"]["next_action"] == "choose_start"
     assert panel.window._guided_footer_action[1] == "fit_direction_choose_start"
     assert panel.window._guided_footer_goal is None
     assert "not selected" in panel.window.status.text()

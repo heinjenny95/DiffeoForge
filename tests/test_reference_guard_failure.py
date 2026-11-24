@@ -18,7 +18,7 @@ def test_bound_guard_stop_blocks_same_attempt_before_any_launch(terminal, reason
     diagnostic = failure.read_failure(terminal.run)
     assert diagnostic["reason"] == reason and diagnostic["verified"]
     candidate = terminal.snapshot.candidates[0]
-    with pytest.raises(study.ReferenceCalibrationStudyError, match="retained earlier fit"):
+    with pytest.raises(study.ReferenceCalibrationStudyError, match="numerical safety check"):
         study._launch_request(terminal.run.parent, {}, candidate)
     assert before == {p: sha256_file(p) for p in terminal.run.rglob("*") if p.is_file()}
 

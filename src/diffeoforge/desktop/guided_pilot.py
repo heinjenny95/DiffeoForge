@@ -154,6 +154,18 @@ def _locked_view(window, snapshot, guidance, running):
         window.content_layout.addWidget(button)
 
 
+def show_adjustments(window, identifier):
+    panel = window.content.findChild(InfoDisclosure, "adjustments-" + identifier)
+    if panel is not None:
+        panel.toggle_button.setChecked(True)
+        choices = panel.findChild(InfoDisclosure, "adjustmentChoices")
+        if choices is not None:
+            choices.toggle_button.setChecked(True)
+            selector = choices.findChild(QComboBox)
+            window.scroll.ensureWidgetVisible(selector)
+            selector.setFocus()
+
+
 def render(window, prepared):
     from diffeoforge.desktop.pilot_common_model import pin_action, pin_recovery, pin_revision
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
@@ -203,6 +215,9 @@ def render(window, prepared):
     guard_failures = guidance.get("guard_failures", {})
     checks_pending = guidance.get('qualification_pending', {})
     common_failures = guidance.get("common_stage_failures", {})
+    window.status.setObjectName("statusWarning" if guard_failures or common_failures else "status")
+    window.status.style().unpolish(window.status)
+    window.status.style().polish(window.status)
     common_failure = next(iter(common_failures.values()), None)
     failure_inspection = bool(common_failure and common_failure["action"] in {
         "inspect", "inspect_template",
@@ -238,14 +253,17 @@ def render(window, prepared):
         and guidance.get("common_revision", {}).get(snapshot.candidates[0].candidate_id)
     )
     title = QLabel(
-        "Compare control-point density"
+        "Choose a starting fit" if starting_choice and not running
+        else "Review the stopped test" if guard_failures
+        else "Finish checks on the saved fit" if checks_pending
+        else "Compare control-point density"
         if density_pair
         else "Use the approved common settings"
         if approved_common_revision
         else "Shared model · capture then detail"
         if info.get("goal") == "common_multiscale"
         else "Check the next pilot form"
-        if info.get("goal") == "next_form"
+        if info.get("goal") == "next_form" and not guidance.get("fit_direction")
         else "Check the common model"
         if info.get("goal") in {"form_model_check", "common_continue"}
         else "Check the suitable fit with the atlas model"
@@ -268,6 +286,8 @@ def render(window, prepared):
         if info["phase"] == "joint"
         else f"{info['target']} · 1 specimen from the {guidance['total']} selected"
         if common_flow
+        else f"{info['target']}\nTest {info['screen_trials_spent']}"
+        if guidance.get("form_progress_summary")
         else f"{info['target']}\n{guidance['total']} selected pilot forms · "
         f"{guidance['checked']} checked with these settings · "
         f"{info['screen_trials_spent']} tests prepared so far."
@@ -314,7 +334,7 @@ def render(window, prepared):
             note.setObjectName("adaptiveResult")
             note.setWordWrap(True)
             window.content_layout.addWidget(note)
-    elif regional_trial and type(iterations) is int and iterations > 0:
+    elif regional_trial and not guard_failures and type(iterations) is int and iterations > 0:
         if checkpoint:
             total = checkpoint["total_iterations"]
             text = (
@@ -342,7 +362,7 @@ def render(window, prepared):
         render_starting_choice(window, starting_choice["starting_fit_choice"]["identifier"],
                                QVBoxLayout(choice_card), starting_choice)
         window.content_layout.addWidget(choice_card)
-    if review and review["pending"]:
+    if review and review["pending"] and review["kind"] != "guard_stop" and not starting_choice:
         target_note = QLabel(review["label"] if common_flow else review["explanation"])
         target_note.setObjectName("pilotReviewTarget")
         target_note.setWordWrap(True)
@@ -441,11 +461,11 @@ def render(window, prepared):
                 InfoDisclosure("Why this test was prepared", description)
                 if common_flow else description
             )
-    if info["phase"] == "screen":
+    if info["phase"] == "screen" and not guidance.get("fit_direction"):
         why = QLabel(
             "Current uses oriented surfaces; Varifold ignores normal direction. "
-            "Choose a useful starting method even if details still need improvement. "
-            "A method preference does not approve a poor fit."
+            "Inspect each result when ready. You can choose a starting method even if "
+            "a feature still needs work."
         )
         why.setWordWrap(True)
         window.content_layout.addWidget(why)
@@ -507,7 +527,16 @@ def render(window, prepared):
             f"Run first local check · up to {iterations} iterations" if checkpoint else
             "Run single protected local fit"
         )
-    window.start_button.setVisible(can_run)
+    if (can_run and not running and not resume_checks and not retry_blocked and not common_failure
+            and not density_pair and info.get("goal") != "common_multiscale"
+            and not bounded_action and not regional_trial and type(iterations) is int
+            and iterations > 0):
+        effort = QLabel(f"Up to {iterations:,} optimizer iterations per trial. "
+                        "Inspect the result and its surface checks after fitting.")
+        effort.setObjectName("preparedTrialEffort")
+        effort.setWordWrap(True)
+        window.content_layout.addWidget(effort)
+    window.start_button.setVisible(can_run and not retry_blocked)
     window.start_button.setEnabled(can_run and not running and not retry_blocked)
     window.start_button.setToolTip(
         common_failure["message"]
@@ -529,7 +558,8 @@ def render(window, prepared):
         if running
         else common_failure["message"]
         if common_failure
-        else "Numerical check stopped a trial. Inspect the retained fit and failure details."
+        else review["explanation"] if review and review["kind"] == "guard_stop" and retry_blocked
+        else next(iter(guard_failures.values()))["message"]
         if retry_blocked
         else "Fit saved; checks incomplete. Resume checks without fitting again."
         if resume_checks
@@ -632,6 +662,11 @@ def render(window, prepared):
                     goal=direction.get("partial", False),
                 )
             elif mode == "blocked":
+                direction_pinned = pin_action(
+                    window, snapshot, "Review other adjustments and input checks",
+                    "show_adjustments", direction["identifier"],
+                    "See other options for this starting fit and its existing marks.",
+                )
                 window.status.setText(direction["reason"])
             elif mode == "trial":
                 from diffeoforge.pilot_adaptive_run import eligible as adaptive_eligible
@@ -692,7 +727,9 @@ def render(window, prepared):
                           and direction["identifier"] == candidate.candidate_id else None)
         _recovery(window, snapshot, candidate, QVBoxLayout(panel), guidance,
                   optional=True, pinned_request=pinned_request)
-        layout.addWidget(InfoDisclosure("Other adjustments and input checks", panel))
+        adjustments = InfoDisclosure("Other adjustments and input checks", panel)
+        adjustments.setObjectName("adjustments-" + candidate.candidate_id)
+        layout.addWidget(adjustments)
 
     def action(layout, label, kind, identifier, *, goal=None, available=True, fixed=False):
         enabled = not running and not unresolved and available and not starting_choice
@@ -744,7 +781,8 @@ def render(window, prepared):
     reviewed_next = valid_next or regional_accepted or (
         direction_pinned and direction.get("explicit_start") and not extension)
     if (bounded_action and bounded_action.get("recommendation") and not running
-            and not starting_choice and not reviewed_next and not common_failure):
+            and not starting_choice and not reviewed_next
+            and not common_failure and not retry_blocked):
         retained = bounded_action["recommendation"]
         identifier = snapshot.candidates[0].candidate_id
         # A numerical recommendation is viewable; it is not a saved human choice.
@@ -931,7 +969,7 @@ def render(window, prepared):
             starting = QLabel(guidance["common_capacity_start"])
             starting.setWordWrap(True)
             layout.addWidget(starting)
-        elif initialization and not start_note:
+        elif initialization and not start_note and candidate.candidate_id not in guard_failures:
             starting = QLabel(
                 "Starting from your saved fitted shape; optimizer history starts anew."
                 if initialization.get("initialization") == "learned"
@@ -966,7 +1004,8 @@ def render(window, prepared):
             layout.addWidget(InfoDisclosure(report["title"], detail))
         elif candidate.status in {"failed", "interrupted", "orphaned"}:
             failure = guard_failures.get(candidate.candidate_id)
-            if failure:
+            if failure and not (review and review["kind"] == "guard_stop"
+                                and review["candidate_id"] == candidate.candidate_id):
                 note = QLabel(failure["message"])
                 note.setWordWrap(True)
                 note.setObjectName("statusWarning")
@@ -978,8 +1017,10 @@ def render(window, prepared):
                 layout.addWidget(note)
             else:
                 title = "Technical failure" if candidate.status == "failed" else "Attempt details"
-                layout.addWidget(InfoDisclosure(title, failure['reason'] if failure
-                                 else candidate.error or 'No usable result'))
+                details = InfoDisclosure(title, candidate.error or (failure or {}).get("reason")
+                                         or "No usable result")
+                details.setObjectName("attemptDetails-" + candidate.candidate_id)
+                layout.addWidget(details)
             if (not running and candidate.status == "failed"
                     and candidate.candidate_id not in checks_pending):
                 from diffeoforge.desktop.guided_failed_parent import render as failed_actions
@@ -1183,8 +1224,8 @@ def render(window, prepared):
             window.content_layout.addWidget(tie)
     unsure = QLabel(
         "Mark a fit suitable when the shape features relevant to your study are represented. "
-        "Missing shape or local detail means Needs improvement, even if the main outline fits. "
-        "You can still choose that method as a starting point and improve it first. "
+        "Choose Needs improvement if a missing projection or detail matters to your study. "
+        "Small surface differences can be acceptable. "
         "Close without recording if unsure."
     )
     unsure.setWordWrap(True)
@@ -1246,12 +1287,20 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False,
     alternatives = QComboBox()
     alternatives.setAccessibleName("Alternative adjustment for " + candidate.label)
     alternatives.addItem("Use the suggested next step", None)
+    proposals = working or guidance["proposals"][identifier]
     for key, (title, _reason) in DESCRIPTIONS.items():
         alternatives.addItem(title, key)
+        option = proposals.get("goal:" + key)
+        if option and not option["available"]:
+            item = alternatives.model().item(alternatives.count() - 1)
+            item.setEnabled(False)
+            item.setToolTip(option.get("blocked_reason") or "Unavailable for this saved fit.")
     options = QFrame()
     options_layout = QVBoxLayout(options)
     options_layout.addWidget(alternatives)
-    layout.addWidget(InfoDisclosure("Other adjustments", options))
+    adjustment_choices = InfoDisclosure("Other adjustments", options)
+    adjustment_choices.setObjectName("adjustmentChoices")
+    layout.addWidget(adjustment_choices)
     from diffeoforge.desktop.guided_diagnosis import render as render_diagnosis
 
     diagnostics = render_diagnosis(window, snapshot, identifier, layout, guidance)
@@ -1262,7 +1311,7 @@ def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False,
             "alignment", "topology", "view"}
         request = ("goal:" + selected if selected else
                    "regional:" + symptoms.currentData() if local else symptoms.currentData())
-        proposed = (working or guidance["proposals"][identifier])[request]
+        proposed = proposals[request]
         state.clear()
         state.update(proposed)
         state["request"] = request

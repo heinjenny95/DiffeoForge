@@ -341,13 +341,29 @@ def propose(snapshot, identifier, request, data, *, follow_density_successors=Tr
                   common_optimization=bool(common_effort) if goal == "optimize" else False)
     if capacity:
         result["control_capacity_request"] = capacity
-    if not available and not explicit:
+    if (result["initialization"] in {"learned", "nested"}
+            and seed_parent.attachment_comparison.get("refinement", {}).get("initialization")
+            == "residual"):
+        # guided_refinement.bind cannot seed an ordinary field with a residual alone.
+        result["initialization"] = "fresh"
+        if goal == "density":
+            # A fresh field does not contain the requested nested control-point expansion.
+            result.update(available=False, blocked_reason=(
+                "This fit combines a saved field and a local correction. Its residual alone "
+                "cannot initialize the denser control-point comparison."))
+        elif goal == "optimize":
+            result.update(available=False, blocked_reason=(
+                "This fit combines a saved field and a local correction. Continuing the "
+                "same field requires a protected local test."))
+    if result["available"] and result["initialization"] == "fresh":
+        result["reason"] += " This trial starts from the template. Compare it with the saved fit."
+    if not result["available"] and not explicit:
         for alternative in ("detail", "weight", "local_motion", "density", "motion", "smooth"):
             if alternative == goal:
                 continue
             follow = propose(snapshot, identifier, "goal:" + alternative, data,
                              follow_density_successors=follow_density_successors)
             if follow["available"]:
-                follow["reason"] = blocked + " " + follow["reason"]
+                follow["reason"] = result["blocked_reason"] + " " + follow["reason"]
                 return follow
     return result

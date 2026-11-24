@@ -45,21 +45,32 @@ def context_for_view(window, view):
 
     if enabled(window.review_next_button):
         offer("review", window.review_next_button.text(), window.review_next_button.click)
-        if review.get("pending"):
+        if window.review_next_button.objectName() == "primary":
             facts["next_label"], facts["next_action"] = labels["review"], "review"
     footer = window._guided_footer_action
     footer_action = footer[1] if footer else None
-    if enabled(window.next_step_button) and not facts.get("next_label"):
+    if enabled(window.next_step_button) and window.next_step_button.objectName() == "primary":
         facts["next_label"] = window.next_step_button.text()
         # A chat action may open a view. Trial preparation stays in the regular pilot.
         mode = {"fit_direction_compare": "compare", "fit_direction_inputs": "inputs",
                 "inspect_failed_template": "inputs", "common_retained": "retained",
-                "common_review": "review"}.get(footer_action)
+                "common_review": "review", "fit_direction_choose_start": "choose_start",
+                "fit_direction_working": "retained", "bounded_retained": "retained",
+                "review_failed_marks": "retained", "show_adjustments": "adjustments"}.get(
+                    footer_action)
         if mode:
             offer(mode, facts["next_label"], window.next_step_button.click)
             facts["next_action"] = mode
-    if not facts.get("next_label") and enabled(window.start_button):
+    if (not facts.get("next_label") and enabled(window.start_button)
+            and window.start_button.objectName() == "primary"):
         facts["next_label"] = window.start_button.text()
+    if facts.get("next_label") and not window.status.isHidden():
+        facts["next_status"] = window.status.text()
+    if review.get("kind") == "guard_stop" and "review" in labels:
+        facts.update(guard_stop=guidance["guard_failures"][review["candidate_id"]]["message"],
+                     next_reason=(review["explanation"] if facts.get("next_action") == "review"
+                                  else facts.get("next_status")))
+        return dict(assistant_actions=labels, facts=facts), callbacks
     failure = next(iter(guidance.get("common_stage_failures", {}).values()), None)
     common = guidance.get("common_recovery") or {}
     inspecting_common = (footer_action == "fit_direction_inputs"
@@ -114,8 +125,6 @@ def context_for_view(window, view):
 
             offer("inputs", "Inspect template and alignment",
                   lambda: inspect_inputs(window, working))
-        if direction.get("mode") == "return" and facts.get("working_action"):
-            facts["next_action"] = facts["working_action"]
     if pair:
         ids = pair["reference_candidate_id"], pair["denser_candidate_id"]
         facts["density_counts"] = tuple(controls_for(record, key)["count"] for key in ids)

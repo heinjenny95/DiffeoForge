@@ -66,6 +66,19 @@ def _pilot_reply(context, question, topic):
 
     next_label = facts.get("next_label")
     next_text = f"Choose “{next_label}” next." if next_label else ""
+    if facts.get("guard_stop") and topic == "keep":
+        label = context["assistant_actions"]["review"]
+        named = re.search(r"\b(?:test|trial)\s*#?\s*(\d+)\b", question)
+        if named and not re.search(rf"\btest\s+{int(named[1])}\b", label.casefold()):
+            return dict(answer(f"The available inspection here is “{label}”."), verified=True)
+        return dict(answer(f"Choose “{label}” to inspect the saved evidence.", "review"),
+                    verified=True)
+    if facts.get("guard_stop") and topic in {None, "failure", "next", "iterations",
+                                             "review", "compare"}:
+        reason = facts["next_reason"]
+        if facts.get("next_action") != "review":
+            reason = " ".join(filter(None, (facts["guard_stop"], reason)))
+        return dict(answer(reason + " " + next_text, "next"), verified=True)
     if reason := facts.get("next_reason"):
         if topic in {None, "failure", "next", "iterations", "controls", "atlas", "alignment"}:
             body = " ".join(filter(None, (reason, facts.get("expected_result"), next_text)))
@@ -136,6 +149,7 @@ def _pilot_reply(context, question, topic):
     if facts.get("running"):
         return answer("The pilot is computing. You can review the marked areas once it is ready.")
     if next_text and topic == "next":
-        return answer(next_text, "next", "review")
+        return dict(answer(" ".join(filter(None, (facts.get("next_status"), next_text))),
+                           "next"), verified=True)
     return answer("Which area or decision do you mean? Describe what you see on the original "
                   "and what looks different in the reconstruction.")

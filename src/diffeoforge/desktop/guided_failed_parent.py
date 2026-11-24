@@ -12,17 +12,22 @@ def render(window, snapshot, candidate, layout, guidance, action):
     reference = evidence.get("reference")
     if not reference:
         return
-    if identifier not in guidance.get("guard_failures", {}):
+    if identifier not in guidance.get("guard_failures", {}) or not evidence.get("available"):
         note = QLabel(evidence["reason"])
         note.setWordWrap(True)
         layout.addWidget(note)
     label = evidence["parent_label"]
     areas = ", ".join(evidence["area_labels"])
-    inspect = QPushButton(
-        f"Inspect retained fit · {label}" + (f" · marked areas {areas}" if areas else ""))
-    _set_action_emphasis(inspect, False)
-    inspect.clicked.connect(lambda: window._open_guided_saved_fit(reference, failed_for=identifier))
-    layout.addWidget(inspect)
+    target = getattr(window, "_guided_review_target", None) or {}
+    pinned = (target.get("kind") == "guard_stop" and target["candidate_id"] == identifier
+              and not window._guided_footer_action)
+    if not pinned:
+        inspect = QPushButton(
+            f"Inspect retained fit · {label}" + (f" · marked areas {areas}" if areas else ""))
+        _set_action_emphasis(inspect, False)
+        inspect.clicked.connect(lambda: window._open_guided_saved_fit(
+            reference, failed_for=identifier))
+        layout.addWidget(inspect)
     if not evidence.get("available"):
         return
     proposals = guidance.get("failed_proposals", {}).get(identifier) or {}
@@ -33,18 +38,36 @@ def render(window, snapshot, candidate, layout, guidance, action):
         note.setWordWrap(True)
         layout.addWidget(note)
         return
+    protected = proposals.get("goal:regional") or {}
+    if (areas and protected.get("blocked_reason") and not protected.get("available")
+            and not any(p.get("available") for key, p in proposals.items()
+                        if key.startswith("regional:"))):
+        note = QLabel(f"A different protected correction for {areas} is unavailable from "
+                      f"{label}. Other adjustments keep these marks for comparison.")
+        note.setToolTip(protected["blocked_reason"])
+        note.setWordWrap(True)
+        layout.addWidget(note)
     selector = QComboBox()
+    selector.setObjectName("retainedAdjustment-" + identifier)
+    selector.setAccessibleName("Different test for " + evidence["parent_label"])
     selector.addItem("Choose a different test from the retained fit…", None)
     for request, proposal in proposals.items():
         if proposal.get("available"):
+            if (request == "other_method"
+                    and proposals.get("goal:other_method", {}).get("available")):
+                continue
             label = proposal["title"]
             if request.startswith("regional:"):
                 label += " · " + SYMPTOMS[request.split(":", 1)[1]]
+            if proposal.get("initialization") == "fresh":
+                label += " · fresh fit"
+            elif proposal.get("initialization") in {"learned", "nested", "residual"}:
+                label += " · reuse saved fit"
             selector.addItem(label, request)
     layout.addWidget(selector)
-    reason = QLabel(
-        "Preparing creates a new test only. Run it separately after reviewing the plan."
-    )
+    prompt = ("Choose one change to test. A fresh fit starts from the template. "
+              "Check the starting field and iteration limit in the prepared test before Run.")
+    reason = QLabel(prompt)
     reason.setWordWrap(True)
     layout.addWidget(reason)
     prepare = action(
@@ -54,8 +77,7 @@ def render(window, snapshot, candidate, layout, guidance, action):
         identifier,
         available=False,
     )
-    # Keep the disabled control visible: the explicit choice, not a hidden action, is missing.
-    prepare.show()
+    prepare.setVisible(not pinned)
     prepare.setEnabled(False)
     _set_action_emphasis(prepare, False)
 
@@ -73,12 +95,31 @@ def render(window, snapshot, candidate, layout, guidance, action):
     def changed():
         request = selector.currentData()
         proposal = proposals.get(request)
-        prepare.setEnabled(ready())
-        reason.setText(
-            proposal["reason"]
-            if proposal
-            else "Choose a different adjustment. The failed field is never restored."
-        )
+        available = ready()
+        prepare.setEnabled(available)
+        reason.setText(proposal["reason"] if proposal else prompt)
+        if not pinned:
+            return
+        from diffeoforge.desktop.pilot_common_model import pin_action
+        from diffeoforge.guided_failed_parent import selection
+
+        footer = window._guided_footer_action
+        if footer and footer != (snapshot.study_directory, "adaptive_recover_from_retained",
+                                 identifier):
+            return
+        window._guided_footer_action = None
+        window._guided_footer_goal = None
+        window.next_step_button.hide()
+        if available:
+            pin_action(window, snapshot, "Prepare · " + selector.currentText(),
+                       "adaptive_recover_from_retained", identifier,
+                       "Prepare this choice. Its plan opens before Run.",
+                       goal=selection(request, proposal))
+            window.status.setText("Selected for a new test: " + selector.currentText()
+                                  + ". Prepare it to review the plan.")
+        else:
+            window.status.setText(target["explanation"])
+        _set_action_emphasis(window.review_next_button, not available)
 
     def selected_prepare():
         from diffeoforge.guided_failed_parent import selection
@@ -148,4 +189,5 @@ def inspection(snapshot, identifier, reference, pairs):
     if missing:
         title += " · location unverified for " + ", ".join(missing)
     return (replace(pair, inspection_markers=tuple(positions)),), dict(
-        title=title, target=target, marks=marks, cleared=evidence["regions_cleared"])
+        title=title, target=target, marks=marks, cleared=evidence["regions_cleared"],
+        failed_for=identifier)

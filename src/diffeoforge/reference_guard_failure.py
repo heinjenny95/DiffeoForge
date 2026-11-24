@@ -79,8 +79,7 @@ def read_failure(directory):
     message = f"The numerical safety check stopped this fit{when}. "
     if reason in explanations:
         message += explanations[reason] + " "
-    message += "Inspect the retained earlier fit before choosing a different test."
-    return dict(reason=reason, message=message, native_iteration=iteration,
+    return dict(reason=reason, message=message.strip(), native_iteration=iteration,
                 verified=True, block_retry=True)
 
 
@@ -94,5 +93,4 @@ def for_candidate(candidate):
         return read_failure(calibration_candidate_run_directory(candidate))
     except (OSError, ValueError, RuntimeError, KeyError, IndexError, TypeError):
         return dict(reason="unverified_guard_failure", verified=False, block_retry=True,
-                    message="Failed-run evidence could not be verified. Inspect the retained "
-                    "earlier fit and failure details before starting another test.")
+                    message="Failed-run evidence could not be verified.")

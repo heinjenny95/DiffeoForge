@@ -104,6 +104,22 @@ def test_feedback_does_not_clear_joint_common_or_cohort_review_boundary(phase, g
     assert choose(snapshot, guidance, info)["pending"] is True
 
 
+def test_reopen_follows_reviewed_method_but_preserves_outstanding_review():
+    candidates = [SimpleNamespace(candidate_id=m, label=m, status="completed")
+                  for m in ("Current", "Varifold")]
+    snapshot = SimpleNamespace(study_directory=Path("pilot"), candidates=candidates,
+                               visual_reviews={"Current": False, "Varifold": False},
+                               plan=SimpleNamespace(pilot_subject_count=1),
+                               attachment_comparison={})
+    guidance = dict(fit_direction=dict(mode="trial", identifier="Varifold"))
+    info = dict(phase="screen", target="form.vtk", screen_trials_spent=2)
+    review = choose(snapshot, guidance, info)
+    assert review["candidate_id"] == "Varifold" and not review["pending"]
+    del snapshot.visual_reviews["Current"]
+    review = choose(snapshot, guidance, info)
+    assert review["candidate_id"] == "Current" and review["pending"]
+
+
 @pytest.mark.parametrize("mode,inspected,allowed", [
     ("compare", True, True), ("trial", False, True), ("trial", True, False),
 ])

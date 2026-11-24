@@ -1,5 +1,15 @@
 # Development continuity
 
+## dev242 — keep pilot guidance tied to the action the researcher can take
+
+The review footer and Pilot chat use the same highlighted action. Once both
+methods have been reviewed, reopening the result follows the method selected
+for repair. A blocked adjustment opens alternatives on the selected fit.
+Stopped single-form trials open their retained marked fit or the attempt details.
+Choosing a different test leads to a separate preparation and an explicit Run.
+The prepared trial displays its recorded iteration limit. See the
+[pilot workflow checks](PILOT_DEAD_END_CHECKS.md) for the complete journey.
+
 ## dev241 — reopen a stopped local fit and keep meshes visible during review
 
 After a numerical stop, the pilot identifies the retained starting fit and its

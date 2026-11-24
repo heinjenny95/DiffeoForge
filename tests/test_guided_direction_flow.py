@@ -199,6 +199,16 @@ def test_saved_marks_with_blocked_adjustment_do_not_reopen_the_working_fit(
         assert not view._worker
         assert not view._guided_footer_action or view._guided_footer_action[1] != (
             "fit_direction_working")
+        from PySide6.QtWidgets import QComboBox
+
+        assert view.next_step_button.text() == "Review other adjustments and input checks"
+        view.next_step_button.click()
+        selector = next(box for box in view.content.findChildren(QComboBox)
+                        if box.isVisible() and box.findData("weight") >= 0)
+        item = selector.model().item(selector.findData("regional"))
+        if not item.isEnabled():
+            assert item.toolTip()
+        assert not opened and view._worker is None
         choices = [button for button in view.content.findChildren(QPushButton)
                    if button.isVisible() and button.isEnabled()]
         assert any("earlier fit" in button.text().lower() for button in choices)
