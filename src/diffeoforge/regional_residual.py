@@ -150,9 +150,27 @@ def bind(root, manifest, record, recipe, *, source_grid=None):
 
         target = next(r for r in manifest['inputs']['subjects'] if r['filename'] == ref['target'])
         original = load_surface_mesh(root / target['copy'])
+        material = None
+        if (bounded["plan"]["purpose"] == "cp_probe" and recipe.get("joint_surface")
+                and bounded["seed_reference"] != ref):
+            anchor = bounded["seed_reference"]
+            human = verify_reference(anchor)
+            row = next(c for c in human.candidates if c.candidate_id == anchor["candidate_id"])
+            anchor_run = study.calibration_candidate_run_directory(row)
+            frame = retained_evaluation(record, anchor_run, ref["target"])
+            grid = evaluation["reference_source"]
+            if not compatible(frame) or frame["reference_source"]["sha256"] != grid["sha256"]:
+                frame = qualify(anchor_run, root / "control-material-frame", source=grid["path"])
+            verify_source(frame)
+            geometry = load_surface_mesh(frame["endpoint"]["path"]).geometry
+            material = np.asarray(geometry.vertices)
+            if (material.shape != np.asarray(source.geometry.vertices).shape
+                    or not np.array_equal(geometry.triangles, source.geometry.triangles)):
+                raise ValueError("Local control placement requires matching material connectivity")
         controls, spacing, coverage = residual_basis(
             root, manifest, record, source.geometry.vertices, original.geometry.vertices,
-            source_faces=source.geometry.triangles, target_faces=original.geometry.triangles)
+            source_faces=source.geometry.triangles, target_faces=original.geometry.triangles,
+            material=material)
     control_path = root / "residual-controls.txt"
     np.savetxt(control_path, controls, fmt="%.17g")
     residual = dict(

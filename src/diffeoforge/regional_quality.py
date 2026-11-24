@@ -202,14 +202,14 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None,
     local_improved = _local_improved(current, before)
     joint = {}
     if plan.get("joint_surface"):
-        from diffeoforge.regional_joint_surface import measure as measure_patches
+        from diffeoforge.regional_joint_surface import measure_fields
 
         marks = instruction_regions(plan)
-        measured = measure_patches(target, fitted, marks)
         seed_mesh = (load_surface_mesh(automatic_baseline_path or
                      root / plan['automatic_reference']['copy']).geometry
                      if plan.get('automatic_reference') else original if retained else source)
-        baseline = measure_patches(target, seed_mesh, marks)
+        measured, baseline = measure_fields(target, original if retained else seed_mesh, marks,
+                                            fitted, seed_mesh)
         def tails(rows):
             return [max(v for repeat in row["repeats"] for v in repeat.values()) for row in rows]
 

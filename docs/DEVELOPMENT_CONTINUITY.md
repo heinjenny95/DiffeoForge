@@ -6,6 +6,9 @@ New regional corrections with two or more red original-surface marks and optiona
 fixed marks assign a separate surface term to each red area. The terms share a
 deformation, with capture widths measured on local material and weights normalized
 by target area. Green material and surrounding-shape checks remain active.
+Selection follows the reviewed material on each verified evaluation grid. The
+same faces supply before/after errors even if their area changes; additional
+control sites use the positions of that material on the current field.
 The bounded pilot measures each geometric patch in both directions even when the
 initial brush contains no fitted faces. A stalled outstanding area triggers the
 existing baseline, added-control and movement-width contrasts within the cumulative
@@ -13,6 +16,13 @@ existing baseline, added-control and movement-width contrasts within the cumulat
 the first guarded stage. A refined starting surface uses a zero residual on the
 complete saved field. A qualified field can still have unresolved red areas.
 Anatomical approval requires review.
+
+In an isolated native three-projection fixture, three controls reduced only the
+middle P95 appreciably. Twenty controls reduced all three errors but exceeded
+the outside-motion bound. With those same controls and a movement width of
+0.945 instead of 1.35, the three P95 values fell from 1.30 to 0.409, 0.095
+and 0.198 mesh units with fixed and outside checks passing. Each contrast used
+the same 40-iteration cap. This exercise covers synthetic geometry.
 
 ## dev244 — follow every improvement mark in protected local corrections
 

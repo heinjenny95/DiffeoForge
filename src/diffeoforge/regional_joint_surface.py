@@ -39,12 +39,13 @@ def patches(v, f, tv, tf, regions, fixed_ids):
     return result
 
 
-def control_additions(v, f, tv, tf, marks, unresolved, points, width, limit):
+def control_additions(v, f, tv, tf, marks, unresolved, points, width, limit, *, material=None):
     from diffeoforge.regional_preservation import vertex_ids
 
     fixed = [r for r in marks if r.get("purpose") == "fixed"]
     red = [r for r in marks if r.get("purpose", "problem") == "problem"]
-    parts = patches(v, f, tv, tf, red, vertex_ids(v, f, fixed) if fixed else [])
+    material = v if material is None else material
+    parts = patches(material, f, tv, tf, red, vertex_ids(material, f, fixed) if fixed else [])
     sites = np.concatenate([np.concatenate((v[np.unique(f[src])], tv[np.unique(tf[dst])]))
                             for region, (src, dst, _) in zip(red, parts, strict=True)
                             if region in unresolved])
@@ -79,23 +80,32 @@ def distances(v, f, tv, tf):
 
 
 def measure(original, fitted, marks):
+    return measure_fields(original, fitted, marks, fitted)[0]
+
+
+def measure_fields(original, material_frame, marks, *fields):
+    """Compare the same moving faces at every endpoint on this evaluation grid."""
     from diffeoforge.regional_preservation import vertex_ids
 
     if not supported(marks):
         raise ValueError("Independent patch comparison needs multiple original-surface marks")
-    v, f = np.asarray(fitted.vertices), np.asarray(fitted.triangles)
+    v, f = np.asarray(material_frame.vertices), np.asarray(material_frame.triangles)
     tv, tf = np.asarray(original.vertices), np.asarray(original.triangles)
     fixed = [r for r in marks if r.get("purpose") == "fixed"]
     regions = [r for r in marks if r.get("purpose", "problem") == "problem"]
-    result = []
-    for region, (src, dst, _) in zip(
-        regions, patches(v, f, tv, tf, regions, vertex_ids(v, f, fixed) if fixed else []),
-        strict=True,
-    ):
-        result.append(dict(region=region, measurement_version=VERSION,
-                           selected_faces=int(dst.sum()), reverse_selected_faces=int(src.sum()),
-                           repeats=distances(v, f[src], tv, tf[dst])))
-    return result
+    parts = patches(v, f, tv, tf, regions, vertex_ids(v, f, fixed) if fixed else [])
+    results = []
+    for field in fields:
+        endpoint = np.asarray(field.vertices)
+        if endpoint.shape != v.shape or not np.array_equal(field.triangles, f):
+            raise ValueError("Joint surface comparison requires the same material connectivity")
+        results.append([
+            dict(region=region, measurement_version=VERSION,
+                 selected_faces=int(dst.sum()), reverse_selected_faces=int(src.sum()),
+                 repeats=distances(endpoint, f[src], tv, tf[dst]))
+            for region, (src, dst, _) in zip(regions, parts, strict=True)
+        ])
+    return results
 
 
 def widths(measurements, nominal):

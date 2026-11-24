@@ -493,7 +493,8 @@ def stage_receipt(snapshot, identifier, contract):
     )
 
 
-def residual_basis(root, manifest, record, source, target, *, source_faces=None, target_faces=None):
+def residual_basis(root, manifest, record, source, target, *, source_faces=None, target_faces=None,
+                   material=None):
     """Construct a declared zero residual probe; never truncate a scientific basis."""
     info = record.get("guided") or {}
     marker = _marker(info)
@@ -569,7 +570,7 @@ def residual_basis(root, manifest, record, source, target, *, source_faces=None,
         additions, fine_spacing, coverage = control_additions(
             np.asarray(source), np.asarray(source_faces),
             np.asarray(target), np.asarray(target_faces),
-            marks, unresolved, points, width, 2000)
+            marks, unresolved, points, width, 2000, material=material)
     else:
         additions, fine_spacing, coverage = controls(
             np.asarray(source, float), np.asarray(target, float), list(red.values()), width,

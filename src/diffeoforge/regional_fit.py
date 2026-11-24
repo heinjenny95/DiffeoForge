@@ -408,9 +408,10 @@ def prepare(
 
         if fixed_regions:
             fixed_noise_divisor = 16
+        material = fixed_selection if retained_path else selection
         objects, source_selected, proposals = prepare_objects(
-            root, sv, sf, selection, tv, tf, focus_regions, fixed_ids, focus_width, focus_noise,
-            joint_widths)
+            root, sv, sf, material, tv, tf, focus_regions, fixed_ids, focus_width,
+            focus_noise, joint_widths)
     else:
         source_selected, proposals = select(
             selection, sf, tv, tf, focus_regions, fixed_ids, infer=guide_noise is None,

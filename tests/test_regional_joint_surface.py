@@ -87,3 +87,18 @@ def test_nested_control_contrast_covers_only_the_two_unresolved_patches(tmp_path
     assert spacing == .25 and report["marked_patches"] == 2
     assert (additions[:, 0] < -3).any() and (additions[:, 0] > 3).any()
     assert (abs(additions[:, 0]) > 3).all() and np.array_equal(initial[:, 2], [-4, 4])
+
+
+def test_marked_material_can_change_area_without_losing_its_measurement(tmp_path):
+    cfg, red, fixed, source, target, faces = surfaces(tmp_path)
+    changed = target.copy()
+    # The middle component now fits at the right position with a smaller area.
+    changed[8:16] = target[8:16].mean(0) + .85 * (target[8:16] - target[8:16].mean(0))
+    _save(tmp_path / "changed.vtk", changed, faces)
+    quality = measure(cfg, tmp_path / "changed.vtk")
+    assert quality["joint_marks_improved_or_within_tolerance"] == [True, True, True]
+    for start, end in zip(quality["joint_baseline"], quality["joint_measurements"], strict=True):
+        assert start["reverse_selected_faces"] == end["reverse_selected_faces"] == 12
+    extra, _, _ = joint.control_additions(changed, faces, target, faces, [*red, fixed], [red[1]],
+                                          np.array([[0., 0., -4.]]), .5, 2000, material=source)
+    assert (np.abs(extra[:, 0]) < 1).all()
