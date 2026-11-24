@@ -49,7 +49,12 @@ def test_shared_template_failures_diagnose_input_and_block_rerun(
     monkeypatch.setattr(study, "_read_json", lambda *_: manifest)
     monkeypatch.setattr(study, "_verify_manifest", lambda *_: manifest)
     monkeypatch.setattr(study, "load_config", lambda _: {})
-    monkeypatch.setattr(study, "_load_events", lambda _: ())
+    snapshot.current_stage.stage_id = "01-attachment"
+    study._append_event(tmp_path, "study_created", {})
+    study._append_event(tmp_path, "candidate_failed", dict(
+        stage_id=snapshot.current_stage.stage_id, candidate_id=candidate.candidate_id,
+        attempt=1, run_directory=None, phase="template_preflight", error=error,
+    ))
     monkeypatch.setattr(study, "_launch_request", lambda *_: pytest.fail("Native launch attempted"))
     monkeypatch.setattr(study, "_append_event", lambda *_: pytest.fail("Attempt was recorded"))
 

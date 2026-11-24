@@ -123,31 +123,56 @@ def test_directional_distances_reveal_tradeoffs_per_exact_mark(panel):
     assert "B ·" not in changes.text()
 
 
-@pytest.mark.parametrize('phase', [None, 'fixed_shooting'])
-def test_check_clock_uses_whole_qualification_not_the_restarted_internal_batch(panel, phase):
+@pytest.fixture
+def qualification_receiver(panel):
+    from PySide6.QtCore import QObject
     from PySide6.QtWidgets import QLabel
 
-    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+    from diffeoforge.desktop.reference_calibration_dialog import (
+        ReferenceCalibrationDialog,
+        _CalibrationSignals,
+    )
 
-    window = SimpleNamespace(_worker=None, status=QLabel(),
-        _thread_pool=SimpleNamespace(indicator=SimpleNamespace(label=QLabel())))
+    class Receiver(QObject):
+        _event = ReferenceCalibrationDialog._event
+        _current_worker_signal = ReferenceCalibrationDialog._current_worker_signal
+
+    window = Receiver(panel.window)
+    window.status = QLabel(panel.window)
+    window._view_closed = False
+    window._thread_pool = SimpleNamespace(indicator=SimpleNamespace(label=QLabel(panel.window)))
+    window._worker = SimpleNamespace(
+        signals=_CalibrationSignals(window),
+        runner=SimpleNamespace(_cancel_requested=False),
+    )
+    window._worker.signals.event.connect(window._event)
+    return window
+
+
+@pytest.mark.parametrize('phase', [None, 'fixed_shooting'])
+def test_check_clock_uses_whole_qualification_not_the_restarted_internal_batch(
+    qualification_receiver, phase
+):
+    from diffeoforge.desktop.reference_calibration_dialog import _CalibrationSignals
+
+    window = qualification_receiver
     event = dict(event='qualification_progress', timepoints=577, elapsed_seconds=2.,
                  completed_subjects=0, total_subjects=1, qualification_elapsed_seconds=720.)
     if phase is not None:
         event['phase'] = phase
-    ReferenceCalibrationDialog._event(window, event)
+    retired = _CalibrationSignals(window)
+    retired.event.connect(window._event)
+    retired.event.emit(event)
+    assert not window.status.text()
+
+    window._worker.signals.event.emit(event)
     assert '12.0 min checking' in window.status.text()
     assert '0.0 min' not in window.status.text()
 
 
 @pytest.mark.parametrize('event', ['qualification_phase', 'qualification_progress'])
-def test_late_qualification_events_cannot_hide_a_cancel_request(panel, event):
-    from PySide6.QtWidgets import QLabel
-
-    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
-
-    window = SimpleNamespace(
-        _worker=SimpleNamespace(runner=SimpleNamespace(_cancel_requested=True)),
-        status=QLabel())
-    ReferenceCalibrationDialog._event(window, dict(event=event, message='Refining pass 8'))
+def test_late_qualification_events_cannot_hide_a_cancel_request(qualification_receiver, event):
+    window = qualification_receiver
+    window._worker.runner._cancel_requested = True
+    window._worker.signals.event.emit(dict(event=event, message='Refining pass 8'))
     assert 'Stopping the current surface check' in window.status.text()

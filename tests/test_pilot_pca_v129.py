@@ -133,6 +133,7 @@ def test_automatic_axis_media_wait_for_release_and_dispatch_once(
 
     review = SimpleNamespace(
         engine_route="deformetrica_reference",
+        pca_pending=False,
         run_directory=tmp_path,
         bundle_manifest_sha256="a" * 64,
         artifact=missing,

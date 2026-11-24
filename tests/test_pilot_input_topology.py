@@ -124,11 +124,13 @@ def test_selected_input_cannot_escape_study(tmp_path):
         policy.prepare_for_snapshot(snapshot, manifest, cache_roots=[])
 
 
-def test_background_guidance_prepares_hint_once_before_many_options(monkeypatch):
+def test_background_guidance_prepares_hint_once_before_many_options(tmp_path, monkeypatch):
+    from test_pilot_shared_first import new_pilot
+
     from diffeoforge import guided_strategy, reference_guided_pilot
     from diffeoforge.desktop import pilot_view_preparation as view
 
-    snapshot = SimpleNamespace(current_stage=SimpleNamespace(order=1))
+    snapshot = new_pilot(tmp_path)
     manifest = object()
     hint = dict(status="unknown")
     calls = []
