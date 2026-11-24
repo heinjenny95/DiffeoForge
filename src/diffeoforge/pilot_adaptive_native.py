@@ -21,6 +21,11 @@ from diffeoforge.pilot_adaptive_fit import HARD_QUALITY_FLAGS, VERSION, _contrac
 PROBES = {"baseline_probe", "cp_probe", "motion_probe"}
 
 
+def zero_residual(marker):
+    return (marker["plan"]["purpose"] in PROBES or
+            marker["plan"]["purpose"] == "warm" and marker["contract"].get("residual_start"))
+
+
 def eligible_seed(snapshot, identifier):
     """Cheap metadata eligibility, not numerical qualification or inspection.
 
@@ -59,6 +64,72 @@ def basis_sha256(points):
     if values.ndim != 2 or values.shape[1] != 3 or not len(values) or not np.isfinite(values).all():
         raise ValueError("An adaptive control basis needs finite ordered three-dimensional points")
     return hashlib.sha256(values.tobytes()).hexdigest()
+
+
+def ordinary_start(snapshot, identifier):
+    """An inspected ordinary pilot field can initialize a new guarded joint action."""
+    from diffeoforge.config import load_config
+
+    try:
+        if snapshot.plan.pilot_subject_count != 1 or snapshot.attachment_comparison.get(
+                "regional_objective"):
+            return False
+        candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
+        config = load_config(candidate.config_path)
+        opt = config["optimization"]
+        return (candidate.status == "completed" and opt["method"] == "gradient_ascent"
+                and opt["freeze_template"] and opt["freeze_control_points"]
+                and not config["project"].get("parameter_provenance", {}).get(
+                    "finite_accepted_guard"))
+    except (OSError, ValueError, KeyError, TypeError, StopIteration, AttributeError):
+        return False
+
+
+def inspect_start(snapshot, identifier, recipe):
+    if not recipe.get("joint_surface") or not ordinary_start(snapshot, identifier):
+        return inspect_field(snapshot, identifier)
+    from diffeoforge import reference_calibration_study as study
+    from diffeoforge.guided_density import controls_for
+    from diffeoforge.guided_feedback import reference
+    from diffeoforge.regional_evaluation import field_inputs
+
+    ref = reference(snapshot, identifier)
+    candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
+    run = study.calibration_candidate_run_directory(candidate)
+    data = field_inputs(run, None)
+    config = data.run_report.manifest["effective_config"]
+    opt = config["optimization"]
+    result = json.loads((run / "result.json").read_bytes())
+    log = (run / "logs/deformetrica.log").read_text(errors="replace")
+    iterations = [int(x) for x in re.findall(r"Iteration:\s*(\d+)", log)]
+    if (not iterations or not ("tolerance threshold met" in log.lower()
+                               or iterations[-1] == opt["max_iterations"])
+            or "line search loops exceeded" in log.lower() or result["status"] != "completed"
+            or result["return_code"] != 0 or opt["method"] != "gradient_ascent"
+            or not opt["freeze_template"] or not opt["freeze_control_points"]
+            or data.subject_labels != (ref["target"],)
+            or config["model"]["attachment"]["type"] != ref["method"]
+            or config["model"]["deformation"]["kernel_width"]
+            != ref["values"]["deformation_kernel_width"]):
+        raise ValueError("The saved ordinary starting field has no compatible normal completion")
+    controls = controls_for(snapshot.attachment_comparison, identifier)
+    path = study._safe_study_path(snapshot.study_directory, controls["copy"])
+    points = np.loadtxt(path, ndmin=2)
+    if (sha256_file(path) != controls["sha256"] or points.shape != data.control_points.shape
+            or not 1 <= len(points) <= 2000
+            or not np.allclose(points, data.control_points, rtol=0, atol=5.000001e-7)):
+        raise ValueError("The saved ordinary field differs from its declared frozen control grid")
+    full = _field_identity(run, inputs=data)
+    seals = {name: sha256_file(run / name) for name in
+             ("manifest.json", "result.json", "output-inventory.json", "logs/deformetrica.log")}
+    return dict(reference=ref, field_sha256=full["field_sha256"], prefix_sha256=None,
+                basis_sha256=basis_sha256(points), control_count=len(points),
+                control_points_path=str(path),
+                movement_width=ref["values"]["deformation_kernel_width"],
+                native_receipt_sha256=digest(seals), finite=True, accepted=True,
+                normal_terminal=True, stop="seed", iterations=0, evaluations=0, config=config,
+                reviewed_ordinary_export=True,
+                child_manifest_sha256=ref["manifest_sha256"])
 
 
 def _number(value, name, *, positive=False):
@@ -190,12 +261,12 @@ def inspect_field(snapshot, identifier):
         seed = marker["plan"]["seed"]
         expected = (
             seed["field_sha256"]
-            if marker["plan"]["purpose"] in PROBES
+            if zero_residual(marker)
             else seed.get("prefix_sha256")
         )
         if full["prefix_sha256"] != expected:
             raise ValueError("Adaptive child does not preserve its declared complete prefix")
-        if marker["plan"]["purpose"] in PROBES:
+        if zero_residual(marker):
             residual = frozen["plan"].get("residual")
             source = seed["reference"]
             parent = study.load_reference_calibration_study(source["directory"])
@@ -292,13 +363,13 @@ def _quality_warnings(quality):
     return [key for key in HARD_QUALITY_FLAGS if quality.get(key) is False]
 
 
-def baseline_receipt(snapshot, identifier, contract, *, red_errors=None, regions=None):
+def baseline_receipt(snapshot, identifier, contract, *, red_errors=None, regions=None, recipe=None):
     """Numerical baseline relative to the explicitly selected field, not approval."""
     from diffeoforge import reference_guided_pilot as guided
     from diffeoforge.pilot_recovery import capture
 
     contract = _contract(contract)
-    field = inspect_field(snapshot, identifier)
+    field = inspect_start(snapshot, identifier, recipe or {})
     info = guided.record(snapshot)
     if regions is not None:
         info = dict(info, feedback=dict(info.get("feedback") or {}, regions=regions))
@@ -333,7 +404,9 @@ def baseline_receipt(snapshot, identifier, contract, *, red_errors=None, regions
         anatomical_approval=False,
         automatic_user_preference=False,
         baseline_relative_to_selected_field=True,
-        native_accepted=True,
+        native_accepted=not field.get("reviewed_ordinary_export", False),
+        **({"seed_source": "reviewed-ordinary-export"}
+           if field.get("reviewed_ordinary_export") else {}),
         quality_warnings=warnings,
         stop_reason=(
             "Explicitly selected provisional repair seed; anatomical review remains separate."
@@ -363,7 +436,10 @@ def stage_receipt(snapshot, identifier, contract):
         raise ValueError("Full scientific checks do not match every declared instruction")
     if any(type(quality.get(key)) is not bool for key in HARD_QUALITY_FLAGS):
         raise ValueError("Every full numerical qualification guard must have a known outcome")
-    red_errors = _red_errors((subject.get("marked_regions") or {}).get("measurements", []), red)
+    measurements = (subject.get("marked_regions") or {}).get("measurements", [])
+    if field["bundle"]["plan"].get("joint_surface"):
+        measurements = quality["joint_measurements"]
+    red_errors = _red_errors(measurements, red)
     green_errors = {}
     fixed = quality.get("fixed_protection") or {}
     if green and fixed.get("active") is not True:
@@ -417,11 +493,11 @@ def stage_receipt(snapshot, identifier, contract):
     )
 
 
-def residual_basis(root, manifest, record, source, target):
+def residual_basis(root, manifest, record, source, target, *, source_faces=None, target_faces=None):
     """Construct a declared zero residual probe; never truncate a scientific basis."""
     info = record.get("guided") or {}
     marker = _marker(info)
-    if marker is None or marker["plan"]["purpose"] not in PROBES:
+    if marker is None or not zero_residual(marker):
         return None
     from diffeoforge.regional_search import controls
 
@@ -478,16 +554,26 @@ def residual_basis(root, manifest, record, source, target):
         or width != seed["movement_width"]
     ):
         raise ValueError("The controlled probe changed its incoming basis or movement width")
-    if purpose == "baseline_probe":
+    if purpose in {"warm", "baseline_probe"}:
         if marker.get("basis_relation") != "unchanged":
             raise ValueError("The baseline probe must preserve the incoming ordered basis")
         return points, spacing, None
     if marker.get("basis_relation") != "nested":
         raise ValueError("The control-point probe must declare a nested basis")
-    _, red, _ = _regions(info, marker["contract"])
-    additions, fine_spacing, coverage = controls(
-        np.asarray(source, float), np.asarray(target, float), list(red.values()), width, limit=2000
-    )
+    marks, red, _ = _regions(info, marker["contract"])
+    if info["strategy"].get("regional_recipe", {}).get("joint_surface"):
+        from diffeoforge.regional_joint_surface import control_additions
+
+        unresolved = [r for key, r in red.items()
+                      if seed["red_errors"][key] > marker["contract"]["red_tolerances"][key]]
+        additions, fine_spacing, coverage = control_additions(
+            np.asarray(source), np.asarray(source_faces),
+            np.asarray(target), np.asarray(target_faces),
+            marks, unresolved, points, width, 2000)
+    else:
+        additions, fine_spacing, coverage = controls(
+            np.asarray(source, float), np.asarray(target, float), list(red.values()), width,
+            limit=2000)
     seen = {tuple(value) for value in points}
     extra = []
     for value in additions:

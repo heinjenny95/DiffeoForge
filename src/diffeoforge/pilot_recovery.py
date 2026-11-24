@@ -111,7 +111,7 @@ def proposal(snapshot, identifier, symptom, *, adaptive=False, starting_from_sav
     )
 
 
-def capture(snapshot, identifier, target, *, regions=None):
+def capture(snapshot, identifier, target, *, regions=None, joint_surface=False):
     """Called in transition preparation, away from the GUI thread."""
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.pilot_regions import measure
@@ -174,7 +174,13 @@ def capture(snapshot, identifier, target, *, regions=None):
             or fitted_source.metadata.sha256 != fitted_hash):
         raise ValueError("Regional feedback geometry changed while loading")
     original, fitted = original_source.geometry, fitted_source.geometry
+    extra = {}
+    if joint_surface:
+        from diffeoforge.regional_joint_surface import measure as joint_measure
+
+        extra["joint_measurements"] = joint_measure(original, fitted, regions)
     return dict(
+        **extra,
         directory=str(snapshot.study_directory),
         candidate_id=identifier,
         manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST),

@@ -9,17 +9,20 @@ physical attachment/protection objective and evaluation protocol. It does not
 rewrite a prepared legacy trial. Landmark guides and unsupported native scopes
 keep their existing explicit workflow.
 
-Before offering adaptation, the pilot checks both measurement directions for
-each red area on the selected saved fit. When the marked volume has no surface
-on one side, the pilot offers the protected single-trial workflow if eligible.
-The same marks and selected field are used, with ordinary spatial, temporal,
-intersection and preservation checks.
+For two or more red original-surface marks, each target patch has an independent
+varifold attachment in one deformation. Source patches use the fit surface
+inside the brush or nearby free material when the brush misses the fit.
+Disjoint targets use distinct source faces. The adaptive pilot measures each
+pair in both directions on the evaluated surface. Its largest repeated P95
+distance determines that mark's error. This geometric assignment needs visual
+review. Older contracts and other marking modes retain their recorded protocol.
 
 The pilot also compares the bound warm-start mesh to the verified saved material
-frame. A finer nested frame that needs a new residual basis uses the protected
-single-trial workflow. This keeps the complete selected deformation as a prefix
-and carries over the marks. Adaptive preparation rechecks this compatibility
-before sealing a new action.
+frame. On a finer nested frame the multi-mark action keeps the complete
+selected deformation as a prefix and fits a zero-initialized residual. Its
+first stage preserves the starting control basis and movement width. Compatible
+reviewed frozen-template gradient-ascent exports can seed a newly guarded
+action. New stages use the guarded native optimizer.
 
 The first stage continues the selected field for at most 100 updates. If a red
 region stalls, three short, controlled residual tests compare the original

@@ -200,7 +200,26 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None,
     after_flags = run_mesh_filter("intersections", vertices=fv, faces=ff)["faces"]
     new_flags = np.setdiff1d(after_flags, before_flags)
     local_improved = _local_improved(current, before)
+    joint = {}
+    if plan.get("joint_surface"):
+        from diffeoforge.regional_joint_surface import measure as measure_patches
+
+        marks = instruction_regions(plan)
+        measured = measure_patches(target, fitted, marks)
+        seed_mesh = (load_surface_mesh(automatic_baseline_path or
+                     root / plan['automatic_reference']['copy']).geometry
+                     if plan.get('automatic_reference') else original if retained else source)
+        baseline = measure_patches(target, seed_mesh, marks)
+        def tails(rows):
+            return [max(v for repeat in row["repeats"] for v in repeat.values()) for row in rows]
+
+        improvements = [after <= position_limit or after < old * .98
+                        for after, old in zip(tails(measured), tails(baseline), strict=True)]
+        local_improved = all(improvements)
+        joint = dict(joint_measurements=measured, joint_baseline=baseline,
+                     joint_marks_improved_or_within_tolerance=improvements)
     return dict(
+        **joint,
         version="regional-quality-v1",
         active_surface=current,
         baseline_surface=before,
@@ -224,7 +243,8 @@ def measure(config, fitted_path, *, source_path=None, baseline_path=None,
         preexisting_intersection_flags=before_flags.tolist(),
         new_intersection_flags=new_flags.tolist(),
         local_improved=bool(local_improved),
-        local_improvement_basis='worst_direction_mean_across_seeds',
+        local_improvement_basis=('per_mark_symmetric_patch_p95' if joint
+                                 else 'worst_direction_mean_across_seeds'),
         requires_visual_review=True,
         anatomical_approval=False,
         numerical_selection_suitable=bool(

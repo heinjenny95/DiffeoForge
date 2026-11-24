@@ -74,7 +74,8 @@ def binding(state, decision):
         optimizer_history="new",
         basis_relation="unchanged",
         prefix_sha256=(
-            seed["field_sha256"] if purpose in adaptive._PROBES else seed["prefix_sha256"]
+            seed["field_sha256"] if decision["initialization"] == "zero_residual"
+            else seed["prefix_sha256"]
         ),
     )
     if purpose == "cp_probe":
@@ -163,9 +164,13 @@ def test_opt_in_contract_rejects_more_than_600_and_requires_wall_allowance():
     assert c["deadline"] == 1100
 
 
-def test_all_completed_and_discarded_arms_share_one_budget_and_one_probe_seed(tmp_path):
-    root, state = create(tmp_path)
+@pytest.mark.parametrize("residual_start", [False, True])
+def test_all_completed_and_discarded_arms_share_one_budget_and_one_probe_seed(
+    tmp_path, residual_start,
+):
+    root, state = create(tmp_path, residual_start=residual_start)
     warm, state = reserve(root, state)
+    assert warm["plan"]["initialization"] == ("zero_residual" if residual_start else "learned")
     assert warm["plan"]["iterations"] == 100 and state.held == 100 and state.remaining == 500
     state = finish(root, state, warm, dict(A=10.0, B=6.0, C=6.0))
     shared_seed = state.best_feasible["field_sha256"]

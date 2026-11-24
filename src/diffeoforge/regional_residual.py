@@ -145,14 +145,14 @@ def bind(root, manifest, record, recipe, *, source_grid=None):
     from diffeoforge.pilot_adaptive_run import marker as adaptive_marker
 
     bounded = adaptive_marker(record)
-    if bounded and bounded["plan"]["purpose"] in {
-            "baseline_probe", "cp_probe", "motion_probe"}:
+    if bounded and bounded["plan"]["initialization"] == "zero_residual":
         from diffeoforge.pilot_adaptive_native import residual_basis
 
         target = next(r for r in manifest['inputs']['subjects'] if r['filename'] == ref['target'])
         original = load_surface_mesh(root / target['copy'])
         controls, spacing, coverage = residual_basis(
-            root, manifest, record, source.geometry.vertices, original.geometry.vertices)
+            root, manifest, record, source.geometry.vertices, original.geometry.vertices,
+            source_faces=source.geometry.triangles, target_faces=original.geometry.triangles)
     control_path = root / "residual-controls.txt"
     np.savetxt(control_path, controls, fmt="%.17g")
     residual = dict(

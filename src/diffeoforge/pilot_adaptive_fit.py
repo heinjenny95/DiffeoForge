@@ -109,6 +109,7 @@ def create_contract(
     probe_iterations=40,
     minimum_improvement=0.02,
     extension_of=None,
+    residual_start=False,
 ):
     """Declare a NEW action, not a replacement contract for a prepared/running fit.
 
@@ -147,6 +148,10 @@ def create_contract(
         anatomical_approval=False,
         automatic_user_preference=False,
     )
+    if residual_start:
+        if residual_start is not True or extension_of is not None:
+            raise ValueError("Only a new adaptive action can start with a fixed prefix")
+        contract["residual_start"] = True
     if extension_of is not None:
         if total_iterations != EXTENSION_ITERATIONS or warm_iterations != EXTENSION_ITERATIONS:
             raise ValueError("An adaptive continuation has one allowance of exactly 300 iterations")
@@ -174,6 +179,7 @@ def _contract(value):
         )
     }
     rebuilt = create_contract(**fields, now=value["created_at"],
+                              residual_start=value.get("residual_start", False),
                               extension_of=value.get("extension_of"))
     if value != rebuilt or value["minimum_improvement"] >= 1:
         raise ValueError("The adaptive-fit contract changed or is unsupported")
@@ -488,7 +494,8 @@ def next_decision(state):
         objective_sha256=contract["objective_sha256"],
         marks_sha256=contract["marks_sha256"],
         evaluation_sha256=contract["evaluation_sha256"],
-        initialization="zero_residual" if purpose in _PROBES else "learned",
+        initialization="zero_residual" if (purpose in _PROBES or
+            purpose == "warm" and contract.get("residual_start")) else "learned",
         optimizer_history="new",
         wall_deadline=state.deadline,
         state_head=state.head,
@@ -523,7 +530,8 @@ def _binding(binding, decision, state):
         )
     _integer(row.get("control_count"), "control_count", 1, 2_000)
     _number(row.get("movement_width"), "movement_width", positive=True)
-    expected_prefix = seed["field_sha256"] if purpose in _PROBES else seed.get("prefix_sha256")
+    expected_prefix = (seed["field_sha256"] if decision["initialization"] == "zero_residual"
+                       else seed.get("prefix_sha256"))
     if row.get("prefix_sha256") != expected_prefix:
         raise ValueError("The complete accepted field/prefix must remain unchanged")
     if purpose == "cp_probe":

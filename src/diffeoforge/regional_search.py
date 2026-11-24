@@ -112,7 +112,8 @@ def controls(source, target, regions, width, *, limit=2000, full_surface=False,
 def distinct(recipe, values, method, seed, cases, quality):
     """Do not repeat an identical objective/basis on a discarded same starting field."""
     keys = ('focus_width', 'focus_noise', 'protection_noise', 'guide_noise',
-            'protection_halo', 'residual', 'control_support', 'control_scope', 'active_regions')
+            'protection_halo', 'residual', 'control_support', 'control_scope', 'active_regions',
+            'joint_surface')
     def repeated():
         return any(r.get('reference') == seed and r.get('method') == method
                    and r.get('values') == values and r.get('regional_recipe')

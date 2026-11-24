@@ -40,8 +40,9 @@ def bind(root, manifest, record, plan, plan_root):
     original = load_surface_mesh(root / target['copy'])
     origin = np.minimum(np.asarray(source.geometry.vertices).min(0),
                         np.asarray(original.geometry.vertices).min(0))
-    focus = next(o for o in plan['objects'] if o['id'] == 'focus')
-    material = read_vtk_points(plan_root / focus['source']['copy'])
+    material = np.vstack([read_vtk_points(plan_root / obj['source']['copy'])
+                          for obj in plan['objects']
+                          if obj['id'] == 'focus' or 'region_index' in obj])
     controls, receipt = augment(np.loadtxt(control_path), material, row['spacing'], origin)
     np.savetxt(control_path, controls, fmt='%.17g')
     coverage = plan['residual'].get('control_coverage') or {}

@@ -249,7 +249,7 @@ def prepare(arguments):
     ):
         raise ValueError("Bounded adaptation requires a same-method red/fixed regional fit")
     seed_snapshot = verify_reference(ref)
-    field = native.inspect_field(seed_snapshot, ref["candidate_id"])
+    field = native.inspect_start(seed_snapshot, ref["candidate_id"], strategy["regional_recipe"])
     if field["reference"] != ref:
         raise ValueError("Adaptive initial field changed; choose an unchanged-field test")
     from diffeoforge.regional_material_frame import (
@@ -257,11 +257,16 @@ def prepare(arguments):
         warm_start_requires_residual,
     )
 
-    if warm_start_requires_residual(seed_snapshot, ref["candidate_id"], args["previous"]):
+    residual_start = warm_start_requires_residual(
+        seed_snapshot, ref["candidate_id"], args["previous"])
+    if residual_start and not strategy["regional_recipe"].get("joint_surface"):
         raise ValueError("Reopen pilot guidance. " + PROTECTED_RESIDUAL_NOTE)
     incoming = args["feedback"]
+    from diffeoforge import regional_joint_surface as joint_surface
+
+    joint = strategy["regional_recipe"].get("joint_surface") == joint_surface.VERSION
     identity_keys = ("directory", "candidate_id", "manifest_sha256", "binding", "target")
-    if any(incoming.get(key) != ref[key] for key in identity_keys):
+    if joint or any(incoming.get(key) != ref[key] for key in identity_keys):
         from diffeoforge.pilot_recovery import capture
 
         refreshed = capture(
@@ -269,6 +274,7 @@ def prepare(arguments):
             ref["candidate_id"],
             ref["target"],
             regions=copy.deepcopy(incoming["regions"]),
+            **({"joint_surface": True} if joint else {}),
         )
         if any(refreshed.get(key) != ref[key] for key in identity_keys):
             raise ValueError("The adaptive baseline was not measured on its exact chosen field")
@@ -276,10 +282,14 @@ def prepare(arguments):
             refreshed["regions_cleared"] = incoming["regions_cleared"]
         args["feedback"] = refreshed
     recipe = copy.deepcopy(strategy["regional_recipe"])
+    if joint:
+        measurements = args["feedback"]["joint_measurements"]
+        recipe["joint_widths"] = joint_surface.widths(measurements, recipe["focus_width"])
     tolerance = recipe.get("protection_tolerance")
     if type(tolerance) not in (int, float) or not math.isfinite(tolerance) or tolerance <= 0:
         raise ValueError("Bounded adaptation needs the existing positive protection tolerance")
-    recipe.update(residual=False, phase="initial_warm", protection_reference=copy.deepcopy(ref))
+    recipe.update(residual=residual_start, phase="initial_warm",
+                  protection_reference=copy.deepcopy(ref))
     args["values"] = copy.deepcopy(ref["values"])
     strategy = copy.deepcopy(strategy)
     for key in ("optimization", "regional_continuation", "adaptive_fit"):
@@ -292,7 +302,8 @@ def prepare(arguments):
         preference=None,
     )
     args["strategy"] = strategy
-    red_errors = _red_baseline(args["feedback"])
+    red_errors = _red_baseline(dict(args["feedback"], baseline=measurements)
+                               if joint else args["feedback"])
     if time.time() >= action_started + WALL_SECONDS:
         raise ValueError("The adaptive preparation used its wall allowance; no child was prepared")
     parent = Path(args.get("destination_parent") or args["source"].study_directory.parent).resolve()
@@ -317,7 +328,7 @@ def prepare(arguments):
         marks_sha256=policy.digest(marks),
         evaluation_sha256=policy.digest(
             dict(
-                version="adaptive-original-roi-p95-v1",
+                version=joint_surface.VERSION if joint else "adaptive-original-roi-p95-v1",
                 directions="maximum",
                 repeats="maximum",
                 units="native_coordinates",
@@ -333,6 +344,7 @@ def prepare(arguments):
         },
         outside_limit=tolerance,
         wall_seconds=WALL_SECONDS,
+        residual_start=residual_start,
         now=action_started,
     )
     baseline = native.baseline_receipt(
@@ -341,6 +353,7 @@ def prepare(arguments):
         contract,
         red_errors=red_errors,
         regions=marks,
+        **({"recipe": recipe} if joint else {}),
     )
     baseline.update(reference=copy.deepcopy(ref), preparation_sha256=policy.digest(template))
     _write(action / "action.json", template)
@@ -454,7 +467,8 @@ def _child_binding(snapshot, mark):
         initialization=decision["initialization"],
         optimizer_history="new",
         prefix_sha256=(
-            seed["field_sha256"] if decision["purpose"] in _PROBES else seed.get("prefix_sha256")
+            seed["field_sha256"] if decision["initialization"] == "zero_residual"
+            else seed.get("prefix_sha256")
         ),
         study_directory=str(snapshot.study_directory),
         candidate_id=snapshot.candidates[0].candidate_id,
@@ -540,7 +554,7 @@ def finished_reference(snapshot):
     mark = marker(_record(snapshot))
     if not mark:
         return None
-    ledger, state, _ = _context(mark)
+    ledger, state, context = _context(mark)
     rows = [
         row
         for row in study._load_events(snapshot.study_directory)
@@ -557,16 +571,17 @@ def finished_reference(snapshot):
         or event.get("held_iterations") != state.held
     ):
         raise ValueError("Adaptive final recommendation no longer matches its ledger")
-    return _verified_best_reference(state)
+    return _verified_best_reference(state, context)
 
 
-def _verified_best_reference(state):
+def _verified_best_reference(state, context):
     from diffeoforge import pilot_adaptive_native as native
 
     ref = state.best_feasible["reference"]
     source = _snapshot(ref)
     if ref == state.baseline.get("reference"):
-        field = native.inspect_field(source, ref["candidate_id"])
+        field = native.inspect_start(source, ref["candidate_id"],
+                                     context["strategy"]["regional_recipe"])
         if field["field_sha256"] != state.baseline["field_sha256"]:
             raise ValueError("Adaptive original retained field changed")
     elif not trusted_reference(source, ref):
@@ -766,7 +781,7 @@ def presentation(snapshot):
     historical = bool(state.stages and mark["plan"]["stage_id"]
                       != state.stages[-1]["stage_id"])
     if not endings and (expired or historical):
-        recommendation = _verified_best_reference(state)
+        recommendation = _verified_best_reference(state, context)
     extension = None
     extension_incomplete = False
     if endings and not historical:
@@ -789,7 +804,25 @@ def presentation(snapshot):
               else "")
     if extension_incomplete:
         reason += " The earlier +300 preparation cannot be safely reopened."
+    joint_status = ""
+    if context["strategy"]["regional_recipe"].get("joint_surface"):
+        from diffeoforge.pilot_region_scope import label
+
+        errors = state.best_feasible["red_errors"]
+        marks = [f"{label(int(key[1:]))} {errors[key]:.3g} (goal ≤{limit:.3g})"
+                 for key, limit in state.contract["red_tolerances"].items()]
+        phase = {
+            "warm": "Initial joint fit", "continue": "Continue the retained fit",
+            "baseline_probe": "Compare the starting control points",
+            "cp_probe": "Test additional local control points",
+            "motion_probe": "Test a narrower movement kernel",
+        }[mark["plan"]["purpose"]]
+        count = _record(snapshot)["controls"]["count"]
+        width = snapshot.plan.effective_values["deformation_kernel_width"]
+        joint_status = (f"{phase} · {count} control points · movement kernel width {width:.3g}\n"
+                        "Retained surface error by mark · " + " · ".join(marks))
     return dict(
+        joint_status=joint_status,
         spent=state.spent, held=state.held, total=state.contract["total_iterations"],
         stage_iterations=mark["plan"]["iterations"], purpose=mark["plan"]["purpose"],
         wall_seconds=state.contract["wall_seconds"], closed=bool(endings) or expired or historical,
@@ -807,7 +840,8 @@ def _next_child(current, ledger, state, context, decision):
 
     seed = decision["seed"]["reference"]
     seed_snapshot = _snapshot(seed)
-    field = native.inspect_field(seed_snapshot, seed["candidate_id"])
+    field = native.inspect_start(seed_snapshot, seed["candidate_id"],
+                                 context["strategy"]["regional_recipe"])
     if field["field_sha256"] != decision["seed"]["field_sha256"]:
         raise ValueError("Adaptive retained field changed before preparing its successor")
     args = {

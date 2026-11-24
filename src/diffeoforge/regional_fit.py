@@ -320,6 +320,8 @@ def prepare(
     protection_close_distance=None,
     protection_tolerance=None,
     capture_profile=False,
+    joint_surface=False,
+    joint_widths=None,
     fixed_noise_divisor=4,
     material_evaluation=None,
 ):
@@ -390,52 +392,59 @@ def prepare(
         frame = material_evaluation["material_lineage"]["current"]
         if topology_sha256(sv, sf) != frame["topology_sha256"]:
             raise ValueError("Saved reconstruction ancestry does not match the fitting grid")
-    source_selected, proposals = select(selection, sf, tv, tf, focus_regions, fixed_ids,
-                                        infer=guide_noise is None, extend_partial=capture_profile,
-                                        material_lineage=lineage)
-    capture_measurement = None
-    if capture_profile:
-        from diffeoforge.regional_protected_capture import patch_capture_width
-
-        focus_width, capture_measurement = patch_capture_width(
-            selection, sf, tv, tf, source_selected, focus_regions)
     if fixed_noise_divisor not in {4, 16}:
         raise ValueError('Unknown fixed-area weight policy')
     root.mkdir(parents=True)
-    objects = []
+    objects, inferred, target_support = [], [], []
+    capture_measurement = None
 
     def asset(name, v, f=None):
         path = root / name
         _save(path, v, f)
         return dict(copy=path.name, sha256=sha256_file(path), bytes=path.stat().st_size)
 
-    target_centres = tv[tf].mean(1)
-    inferred = []
-    _patch(root / "focus-source.vtk", sv, sf, source_selected)
-    target_support = []
-    if any(r.get("reconstruction") for r in focus_regions):
-        from diffeoforge.reconstruction_feedback import target_support as select_target_support
+    if joint_surface:
+        from diffeoforge.regional_joint_surface import prepare_objects
 
-        target_selected, target_support = select_target_support(
-            selection, sf, tv, tf, focus_regions, material_lineage=lineage)
+        if fixed_regions:
+            fixed_noise_divisor = 16
+        objects, source_selected, proposals = prepare_objects(
+            root, sv, sf, selection, tv, tf, focus_regions, fixed_ids, focus_width, focus_noise,
+            joint_widths)
     else:
-        target_selected = mask(target_centres, focus_regions)
-    _patch(root / "focus-target.vtk", tv, tf, target_selected)
+        source_selected, proposals = select(
+            selection, sf, tv, tf, focus_regions, fixed_ids, infer=guide_noise is None,
+            extend_partial=capture_profile, material_lineage=lineage)
+        if capture_profile:
+            from diffeoforge.regional_protected_capture import patch_capture_width
 
-    def row(name):
-        p = root / name
-        return dict(copy=name, sha256=sha256_file(p), bytes=p.stat().st_size)
+            focus_width, capture_measurement = patch_capture_width(
+                selection, sf, tv, tf, source_selected, focus_regions)
+        target_centres = tv[tf].mean(1)
+        _patch(root / "focus-source.vtk", sv, sf, source_selected)
+        if any(r.get("reconstruction") for r in focus_regions):
+            from diffeoforge.reconstruction_feedback import target_support as select_target_support
 
-    objects.append(
-        dict(
-            id="focus",
-            kind="SurfaceMesh",
-            noise_std=focus_noise,
-            kernel_width=focus_width,
-            source=row("focus-source.vtk"),
-            target=row("focus-target.vtk"),
+            target_selected, target_support = select_target_support(
+                selection, sf, tv, tf, focus_regions, material_lineage=lineage)
+        else:
+            target_selected = mask(target_centres, focus_regions)
+        _patch(root / "focus-target.vtk", tv, tf, target_selected)
+
+        def row(name):
+            p = root / name
+            return dict(copy=name, sha256=sha256_file(p), bytes=p.stat().st_size)
+
+        objects.append(
+            dict(
+                id="focus",
+                kind="SurfaceMesh",
+                noise_std=focus_noise,
+                kernel_width=focus_width,
+                source=row("focus-source.vtk"),
+                target=row("focus-target.vtk"),
+            )
         )
-    )
     t = selection[sf]
     area = np.linalg.norm(np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]), axis=1)
     ids = np.unique(
@@ -556,6 +565,11 @@ def prepare(
         scope="Experimental single-form protected objective; renewed coverage and "
         "a compatible joint scientific protocol are required before an atlas",
     )
+    if joint_surface:
+        from diffeoforge.regional_joint_surface import VERSION as JOINT
+
+        data["joint_surface"] = dict(version=JOINT, nominal_noise=focus_noise,
+                                     nominal_width=focus_width)
     if fixed_protection:
         data["fixed_protection"] = fixed_protection
     if lineage is not None:

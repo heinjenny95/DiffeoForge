@@ -43,9 +43,20 @@ def verify(root, manifest, record):
         raise ValueError("Regional objective source or study binding changed")
     focus = next(r for r in plan["objects"] if r["id"] == "focus")
     protect = next(r for r in plan["objects"] if r["id"] == "protect")
+    joint = plan.get("joint_surface") or {}
+    if joint.get("version") != recipe.get("joint_surface"):
+        raise ValueError("The marked-surface objective changed")
+    if joint:
+        terms = [o for o in plan["objects"] if o["kind"] == "SurfaceMesh"]
+        red = [r for r in feedback["regions"] if r.get("purpose", "problem") == "problem"]
+        if (plan["focus_regions"] != red
+                or [o["region_index"] for o in terms] != list(range(len(red)))
+                or ("joint_widths" in recipe and
+                    [o["kernel_width"] for o in terms] != recipe["joint_widths"])):
+            raise ValueError("The prepared terms must match every improvement mark")
     if (
-        focus["noise_std"] != recipe["focus_noise"]
-        or focus["kernel_width"] != recipe["focus_width"]
+        joint.get("nominal_noise", focus["noise_std"]) != recipe["focus_noise"]
+        or joint.get("nominal_width", focus["kernel_width"]) != recipe["focus_width"]
         or protect["noise_std"] != recipe["protection_noise"]
         or plan["protection_halo"] != recipe["protection_halo"]
         or plan.get('protection_close_distance') != recipe.get('protection_close_distance')
@@ -99,11 +110,16 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     # saved-fit material/retention guards and the more local rescue available.
     reference = data["anchor"] or data["current_reference"]
     shared_first = _first_shared_correction(snapshot, info, data, reference)
-    protected = None if shared_first else protected_proposal(
+    from diffeoforge import regional_joint_surface as joint_surface
+
+    joint = joint_surface.supported(data["regions"]) and symptom not in {"gap", "position"}
+    previous = (info.get("strategy") or {}).get("regional_recipe") or {}
+    legacy_step = previous.get("protected_capture")
+    protected = None if shared_first or (joint and not legacy_step) else protected_proposal(
         snapshot, identifier, data, info, symptom)
-    if protected:
+    if protected and (not joint or protected["regional_recipe"].get("previous_focus_regions")):
         return protected
-    numerical = numerical_proposal(snapshot, identifier, data, symptom=symptom)
+    numerical = None if joint else numerical_proposal(snapshot, identifier, data, symptom=symptom)
     resolution_evidence = numerical
     previous_symptom = ((info.get("strategy") or {}).get("regional_recipe") or {}).get("symptom")
     if resolution_evidence is None and {previous_symptom, symptom} == {"detail", "missing"}:
@@ -432,6 +448,8 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     if recipe['residual'] and recipe.get('control_scope') == 'full_surface':
         recipe['control_budget_policy'] = 'bounded-full-surface-v1'
     changed = False
+    if joint and recipe["guide_noise"] is None:
+        recipe["joint_surface"] = joint_surface.VERSION
     if evidence:
         from diffeoforge.regional_search import distinct
 
@@ -538,18 +556,22 @@ def proposal(snapshot, identifier, data, *, symptom=None):
     if retention and (not retention["available"] or not retention["automatic_start_allowed"]):
         available = False
         blocked = retention["reason"]
-    from diffeoforge.pilot_adaptive_native import eligible_seed
+    from diffeoforge.pilot_adaptive_native import eligible_seed, ordinary_start
     from diffeoforge.pilot_adaptive_run import eligible, has_bidirectional_baseline
 
     selected_parent = data["references"].get(seed["directory"])
     if selected_parent is None and Path(seed["directory"]).resolve() == snapshot.study_directory:
         selected_parent = snapshot
     bounded_seed = bool(selected_parent is not None and seed.get("candidate_id")
-                        and eligible_seed(selected_parent, seed["candidate_id"]))
+                        and (eligible_seed(selected_parent, seed["candidate_id"])
+                             or (joint and ordinary_start(selected_parent, seed["candidate_id"]))))
     bounded_available = available and bounded_seed and eligible(
         dict(goal="regional", regions=marked, method=method, reference=seed, regional_recipe=recipe)
     )
     bounded_note = ""
+    if recipe.get("joint_surface"):
+        reason = ("Fit each red mark with its own surface term in the same deformation. "
+                  "Check each mark and the surrounding surface after every stage. " + reason)
     if bounded_available:
         from diffeoforge.regional_material_frame import (
             PROTECTED_RESIDUAL_NOTE,
@@ -562,10 +584,10 @@ def proposal(snapshot, identifier, data, *, symptom=None):
             checks[key] = warm_start_requires_residual(
                 selected_parent, seed["candidate_id"], data.get("review_snapshot", snapshot),
             )
-        if checks[key]:
+        if checks[key] and not recipe.get("joint_surface"):
             bounded_available = False
             bounded_note = PROTECTED_RESIDUAL_NOTE
-    if bounded_available:
+    if bounded_available and not recipe.get("joint_surface"):
         from diffeoforge.guided_response import measured
 
         baseline = data.get("response_baseline") if seed == data["anchor"] else None
@@ -620,7 +642,7 @@ def proposal(snapshot, identifier, data, *, symptom=None):
         initialization_reference=seed,
         from_base=False,
         available=available,
-        blocked_reason=blocked,
+        blocked_reason="" if available else blocked,
         regions=marked,
         trials=1,
         symptom=symptom,
@@ -835,6 +857,8 @@ def bind(root, manifest, record):
         root / target["copy"],
         guides if recipe["guide_noise"] is not None else problem,
         focus_regions=problem,
+        joint_surface=bool(recipe.get("joint_surface")),
+        joint_widths=recipe.get("joint_widths"),
         material_evaluation=material_evidence,
         fixed_regions=fixed,
         retained_path=retained,
@@ -885,7 +909,8 @@ def bind(root, manifest, record):
         data["residual"] = residual
         from diffeoforge.regional_material_support import bind as bind_material_support
 
-        record = bind_material_support(root, manifest, record, data, path.parent)
+        if not (bounded and recipe.get("joint_surface")):
+            record = bind_material_support(root, manifest, record, data, path.parent)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     declaration["sha256"] = sha256_file(path)
     return dict(record, regional_objective=declaration)

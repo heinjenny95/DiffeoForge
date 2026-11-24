@@ -6,7 +6,8 @@ import numpy as np
 
 
 def select(vertices, faces, target_vertices, target_faces, regions, fixed_ids=(), *,
-           infer=True, extend_partial=False, target_masks=None, material_lineage=None):
+           infer=True, extend_partial=False, target_masks=None, material_lineage=None,
+           excluded_faces=None):
     """Exclude every fixed-incident face, including in absent-feature fallbacks.
 
     An absent feature gets one connected free patch, grown by edge distance until
@@ -21,6 +22,8 @@ def select(vertices, faces, target_vertices, target_faces, regions, fixed_ids=()
     tv, tf = np.asarray(target_vertices, float), np.asarray(target_faces, int)
     centres, target_centres = v[f].mean(1), tv[tf].mean(1)
     blocked = np.isin(f, fixed_ids).any(1)
+    if excluded_faces is not None:
+        blocked |= excluded_faces
     selected = np.zeros(len(f), bool)
     proposals = []
     adjacency = None

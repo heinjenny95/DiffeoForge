@@ -389,6 +389,10 @@ def render(window, prepared):
         effort.setObjectName("adaptiveEffort")
         effort.setWordWrap(True)
         window.content_layout.addWidget(effort)
+        if bounded_action.get("joint_status"):
+            detail = QLabel(bounded_action["joint_status"])
+            detail.setWordWrap(True)
+            window.content_layout.addWidget(detail)
         if bounded_action["closed"]:
             note = QLabel(bounded_action["reason"] + (
                 "" if regional_accepted else " Anatomical review is still required."))
@@ -738,19 +742,25 @@ def render(window, prepared):
                 )
                 window.status.setText(direction["reason"])
             elif mode == "trial":
+                from diffeoforge import regional_joint_surface
                 from diffeoforge.pilot_adaptive_run import eligible as adaptive_eligible
 
                 bounded = (not common_flow
                            and direction["request"].get("bounded_fit_available") is True
                            and adaptive_eligible(direction["request"]))
+                title = direction["title"]
+                if bounded:
+                    title = ("Fit marked areas together · adaptive correction"
+                             if regional_joint_surface.supported(direction["request"]["regions"])
+                             else "Adaptive correction") + " · ≤600 total iterations"
                 direction_pinned = pin_action(
                     window, snapshot,
-                    ("Adaptive correction · ≤600 total iterations · " if bounded else
-                     direction['title'] + " · ") + direction['start_label'],
+                    title + " · " + direction['start_label'],
                     "adaptive_bounded_fit" if bounded else direction.get(
                         "action", "adaptive_recover_start"), direction["identifier"],
-                    ("Prepare short sealed stages under one 600-iteration and two-hour "
-                     "action limit. All comparison arms count; Run starts fitting." if bounded
+                    ("Run fits the marked areas. If an area stalls, compare additional control "
+                     "points and a narrower movement kernel within 600 iterations and two hours."
+                     if bounded
                      else "Prepare this one test. Fitting starts only when you choose Run."),
                     goal=(dict(bounded_action=direction.get(
                         "action", "adaptive_recover_start"), goal=direction["request"])

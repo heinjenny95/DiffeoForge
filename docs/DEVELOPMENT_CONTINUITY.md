@@ -1,5 +1,19 @@
 # Development continuity
 
+## dev245 — adapt a single deformation to several marked surfaces
+
+New regional corrections with two or more red original-surface marks and optional
+fixed marks assign a separate surface term to each red area. The terms share a
+deformation, with capture widths measured on local material and weights normalized
+by target area. Green material and surrounding-shape checks remain active.
+The bounded pilot measures each geometric patch in both directions even when the
+initial brush contains no fitted faces. A stalled outstanding area triggers the
+existing baseline, added-control and movement-width contrasts within the cumulative
+600-iteration and two-hour allowance. A reviewed ordinary field can initialize
+the first guarded stage. A refined starting surface uses a zero residual on the
+complete saved field. A qualified field can still have unresolved red areas.
+Anatomical approval requires review.
+
 ## dev244 — follow every improvement mark in protected local corrections
 
 The protected capture procedure fits one projection at a time. After review,

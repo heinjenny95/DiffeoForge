@@ -166,8 +166,8 @@ def refine_evaluation(run, receipt, destination, plan, *, cancelled, event_callb
         return receipt
     root = Path(destination)
     root.mkdir()
-    obj = next(r for r in plan["objects"] if r["id"] == "focus")
-    width = obj["kernel_width"]
+    width = min(r["kernel_width"] for r in plan["objects"]
+                if r["id"] == "focus" or "region_index" in r)
     original_contacts = coarse_input_contacts(receipt, cache)
     maximum_passes = 16 if original_contacts['clean'] else 8
     stages, limited = [], False
