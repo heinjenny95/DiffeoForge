@@ -151,8 +151,8 @@ class _SavedFitComparison(QWidget):
         self.loader.failed.connect(lambda _key, error: self.status.setText(error))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.toggle = QCheckBox("Show comparison" if common_review else
-                                "Show best approved fit / alternatives")
+        self.toggle = QCheckBox("Show comparison")
+        self.toggle.setToolTip("Compare this fit with a saved fit")
         layout.addWidget(self.toggle)
         self.views = QGridLayout()
         self.views.setColumnStretch(0, 1)

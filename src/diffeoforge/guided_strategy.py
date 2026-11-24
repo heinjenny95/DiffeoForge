@@ -362,17 +362,10 @@ def prepare_proposals(snapshot, context):
                 continue  # No cached adjustment may silently invent a working source.
             if candidate.status == "failed":
                 if (context.get("failed_parents", {}).get(identifier) or {}).get("available"):
-                    from diffeoforge.guided_failed_parent import inputs as parent_inputs
-                    from diffeoforge.guided_failed_parent import propose as parent_propose
+                    from diffeoforge.guided_failed_parent import preview_options
 
-                    verified = parent_inputs(snapshot, identifier, context)
-                    context["failed_proposals"][identifier] = {
-                        request: parent_propose(snapshot, identifier, request, verified)
-                        for request in requests
-                        if request.startswith(("goal:", "regional:"))
-                        and request != "goal:optimize"
-                        or request == "other_method"
-                    }
+                    context["failed_proposals"][identifier] = preview_options(
+                        snapshot, identifier, context, requests)
                 continue
             if not (context["allowed"].get(identifier)
                     or (context["feedback"].get(identifier) or {}).get("selected")):

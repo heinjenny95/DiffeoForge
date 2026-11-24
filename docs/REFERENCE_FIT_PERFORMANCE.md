@@ -68,8 +68,16 @@ field and the entire unchanged numerical contract. It requires complete-original
 evaluation, fine-structure and preservation checks, and independent anatomical
 review. Preparing a contract starts nothing and qualifies nothing.
 
-The production mesh resolution, optimizer, tolerance, caps, time grid, existing
-fields and approvals remain unchanged. A full-resolution paired skull/GPU study
-is still required before enabling any scientific resolution shortcut. Tests must
-wait while the owner's GPU computation is active, and expired remote access is
-not an alternative execution permission.
+For a bounded replay on a copied regional fit, keep the same verified starting
+field, full focus and preservation objects, controls, time grid, precision and
+optimizer tolerance in both arms. Count accepted updates and objective/gradient
+evaluations separately, including the extra evaluations after restarting on the
+full mesh. Time integration, attachment and backward calculation within each
+evaluation, and record geometry preparation and final surface checks separately.
+Re-evaluating the same field can test reproducibility, but only repeated calls
+at the *same* field in a real optimization represent possible result-cache hits.
+
+A short paired GPU replay tests where time goes and how early changes affect
+the marked material. Prospective long-run comparisons and independent review of
+fine anatomy are still required before enabling a different fitting resolution.
+Schedule a local benchmark for a time when the owner's GPU is idle.

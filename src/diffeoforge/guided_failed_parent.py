@@ -79,13 +79,16 @@ def _terminal(snapshot, identifier):
         for line in (run / "output/numerical-guard/events.jsonl").read_text().splitlines()
         if line
     ]
-    terminals = [e for e in events if e.get("kind") == "terminal_violation"]
+    terminal = events[-1] if events else {}
+    details = violation.get("details", {})
     reason = violation.get("reason")
     if (
         reason not in NUMERICAL_REASONS
         or violation.get("automatic_restore") is not False
-        or not terminals
-        or terminals[-1].get("reason") != reason
+        or terminal.get("kind") != "terminal_violation"
+        or terminal.get("reason") != reason
+        or not isinstance(details, dict)
+        or any(key not in terminal or terminal[key] != value for key, value in details.items())
     ):
         raise ValueError("Unknown/context failure requires input review, not a new numerical test")
     return dict(
@@ -150,15 +153,23 @@ def resolve(snapshot, identifier, *, terminal=True, prepared=False):
 def preview(snapshot, identifier):
     """Trusted-parent inspection remains available even for an unqualified failure."""
     try:
-        _parent, evidence = resolve(snapshot, identifier, terminal=False)
+        parent, evidence = resolve(snapshot, identifier, terminal=False)
     except (ValueError, OSError, RuntimeError, KeyError, StopIteration) as error:
         return dict(reference=None, available=False, reason=str(error))
+    from diffeoforge.pilot_region_scope import label
+
+    ref = evidence["reference"]
+    retained = next(c for c in parent.candidates if c.candidate_id == ref["candidate_id"])
+    inspection = dict(
+        reference=ref, parent_label=f"Test {guided.record(parent)['screen_trials_spent']} "
+        f"· {retained.label}", area_labels=[label(i) for i in range(len(evidence["marks"]))],
+    )
     try:
         evidence["failure"] = _terminal(snapshot, identifier)
     except (ValueError, OSError, RuntimeError, KeyError, StopIteration) as error:
-        return dict(reference=evidence["reference"], available=False, reason=str(error))
+        return dict(**inspection, available=False, reason=str(error))
     return dict(
-        reference=evidence["reference"],
+        **inspection,
         available=True,
         reason="The failed trial stays saved. Choose a different test from the "
         "inspected earlier fit; its field and all marked areas are preserved.",
@@ -303,7 +314,8 @@ def propose(snapshot, identifier, request, verified):
     ):
         raise ValueError("Choose an explicit different adjustment; no failed optimizer is resumed")
     ref = verified["evidence"]["reference"]
-    proposal = ordinary_proposal(verified["parent"], ref["candidate_id"], request, verified["data"])
+    proposal = ordinary_proposal(verified["parent"], ref["candidate_id"], request, verified["data"],
+                                 follow_density_successors=False)
     mathematical = _objective(
         proposal["method"], proposal["values"], proposal.get("regional_recipe")
     )
@@ -316,7 +328,9 @@ def propose(snapshot, identifier, request, verified):
             blocked_reason="This repeats the failed objective. "
             "Choose a different adjustment; the failed field cannot be continued.",
         )
-    if proposal.get("initialization_reference") and proposal["initialization_reference"] != ref:
+    seed = proposal.get("initialization_reference")
+    if (seed is not None and seed != ref
+            or proposal["available"] and (seed != ref or proposal["anchor"] != ref)):
         raise ValueError("Failure recovery cannot seed any field except its verified parent")
     marker = deepcopy(verified["evidence"])
     marker["failed_objectives"] = deepcopy(verified["failed_objectives"])
@@ -324,9 +338,44 @@ def propose(snapshot, identifier, request, verified):
     return proposal
 
 
+def preview_options(snapshot, identifier, context, requests):
+    """A locally unavailable adjustment must not suppress inspection or its siblings."""
+    try:
+        verified = inputs(snapshot, identifier, context)
+    except InterruptedError:
+        raise
+    except (ValueError, OSError, RuntimeError) as error:
+        context["failed_parents"][identifier]["adjustment_error"] = str(error)
+        return {}
+    options = {}
+    for request in requests:
+        if request == "goal:optimize" or not (
+            request.startswith(("goal:", "regional:")) or request == "other_method"
+        ):
+            continue
+        try:
+            options[request] = propose(snapshot, identifier, request, verified)
+        except InterruptedError:
+            raise
+        except (ValueError, OSError, RuntimeError) as error:
+            options[request] = dict(available=False, blocked_reason=str(error))
+    return options
+
+
+def selection(request, proposal):
+    """Bind the explicit UI choice to the displayed seed, marks, settings and failure seals."""
+    return dict(request=request, fingerprint=_fingerprint({
+        key: proposal[key] for key in ("method", "values", "regional_recipe",
+                                       "failure_parent_recovery") if key in proposal}))
+
+
 def trial(snapshot, identifier, request, context):
     """Fresh evidence for the explicit preparation; GUI preview objects are not accepted."""
-    return propose(snapshot, identifier, request, inputs(snapshot, identifier, context))
+    action = request["request"] if isinstance(request, dict) else request
+    proposal = propose(snapshot, identifier, action, inputs(snapshot, identifier, context))
+    if isinstance(request, dict) and request != selection(action, proposal):
+        raise ValueError("The retained fit, marks or proposed test changed. Reopen the pilot.")
+    return proposal
 
 
 def verify_marker(marker, info, record, manifest):

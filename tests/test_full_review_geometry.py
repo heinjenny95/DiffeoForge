@@ -114,7 +114,7 @@ def test_preview_is_sufficient_to_approve_without_loading_full_geometry(viewer):
 
 
 def test_full_screen_fits_the_mesh_and_keeps_review_controls_reachable(viewer):
-    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtCore import QPoint, QRect, Qt
     from PySide6.QtTest import QTest
 
     dialog = viewer.v
@@ -128,11 +128,13 @@ def test_full_screen_fits_the_mesh_and_keeps_review_controls_reachable(viewer):
     viewport = dialog.body_scroll.viewport()
 
     def whole_canvas_visible():
-        spare_height = viewport.height() - dialog.canvas.height()
-        top = dialog.canvas.mapTo(viewport, QPoint()).y()
-        return 0 <= top <= spare_height <= 20
+        bounds = QRect(dialog.canvas.mapTo(dialog, QPoint()), dialog.canvas.size())
+        return (dialog.canvas.visibleRegion().contains(dialog.canvas.rect())
+                and dialog.rect().contains(bounds)
+                and bounds.bottom() < dialog.body_scroll.mapTo(dialog, QPoint()).y())
 
-    wait(viewer.app, lambda: dialog.isFullScreen() and dialog.canvas.comparison_ready
+    wait(viewer.app, lambda: dialog.isFullScreen()
+         and dialog.size() == dialog.screen().geometry().size() and dialog.canvas.comparison_ready
          and whole_canvas_visible())
     assert dialog.full_screen_button.text() == "Exit full screen"
     assert dialog.close_button.isVisible()
@@ -143,9 +145,10 @@ def test_full_screen_fits_the_mesh_and_keeps_review_controls_reachable(viewer):
     assert dialog.complete_button.isEnabled() and not dialog.review_recorded
 
     QTest.keyClick(dialog, Qt.Key.Key_Escape)
-    wait(viewer.app, lambda: not dialog.isFullScreen() and dialog.canvas.comparison_ready)
+    wait(viewer.app, lambda: not dialog.isFullScreen() and dialog.geometry() == windowed_geometry
+         and dialog.canvas.comparison_ready)
     assert dialog.isVisible() and dialog.geometry() == windowed_geometry
-    assert dialog.decision_panel.parentWidget() == dialog
+    assert dialog.body_scroll.isAncestorOf(dialog.decision_panel) and whole_canvas_visible()
     assert dialog.canvas.minimumHeight() == windowed_minimum
     assert dialog.anatomical_notes.text() == "Retain review notes while resizing"
     assert dialog.full_screen_button.text() == "Full screen"

@@ -64,7 +64,9 @@ class _FitPreferencePanel(QWidget):
         left.setContentsMargins(0, 0, 0, 0)
         self.reference_label = QLabel("Saved fit")
         left.addWidget(self.reference_label)
-        self.reference_canvas = CalibrationComparisonCanvas3D()
+        self.reference_canvas = CalibrationComparisonCanvas3D(
+            fit_review_viewport=self._shared_canvas
+        )
         left.addWidget(self.reference_canvas, 1)
         right_panel = QWidget()
         right = QVBoxLayout(right_panel)
@@ -77,7 +79,7 @@ class _FitPreferencePanel(QWidget):
         views.addWidget(right_panel, 1)
         layout.addLayout(views, 1)
         for canvas in (self.reference_canvas, self.current_canvas):
-            canvas.setMinimumHeight(220 if self._shared_canvas else 300)
+            canvas.setMinimumHeight(current_canvas.minimumHeight() if self._shared_canvas else 300)
             if canvas is self.reference_canvas or not self._shared_canvas:
                 canvas.original_detail.hide()
             canvas.fullResolutionReadyChanged.connect(self._update_actions)

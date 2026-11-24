@@ -54,13 +54,14 @@ def terminal(tmp_path, monkeypatch):
         ),
     )
 
-    def rewrite(reason="accepted_cost_regression"):
+    def rewrite(reason="accepted_cost_regression", *, details=None):
+        details = details or {}
         write(
             run / "output/numerical-guard/violation.json",
-            dict(reason=reason, automatic_restore=False),
+            dict(reason=reason, automatic_restore=False, details=details),
         )
         (run / "output/numerical-guard/events.jsonl").write_text(
-            json.dumps(dict(kind="terminal_violation", reason=reason)) + "\n"
+            json.dumps(dict(kind="terminal_violation", reason=reason, **details)) + "\n"
         )
         records = [
             dict(
@@ -239,6 +240,44 @@ def test_preserved_marks_parent_only_seed_and_one_capture_per_preview(route):
     assert "goal:optimize" not in proposals
 
 
+def test_optional_wrong_seed_isolated_on_reopen_and_rejected_on_dispatch(route, monkeypatch):
+    from diffeoforge import guided_search
+
+    original = guided_search.propose
+    observed = []
+
+    def proposal(snapshot, identifier, request, data, *, follow_density_successors=True):
+        observed.append((request, follow_density_successors))
+        result = original(snapshot, identifier, request, data,
+                          follow_density_successors=follow_density_successors)
+        if request == "goal:density":
+            result["initialization_reference"] = dict(data["anchor"], candidate_id="other-field")
+        return result
+
+    monkeypatch.setattr(guided_search, "propose", proposal)
+    context = strategy.prepare_proposals(route.failed, strategy.state(route.failed))
+    assert ("goal:density", False) in observed
+    options = context["failed_proposals"][route.identifier]
+    assert not options["goal:density"]["available"] and options["goal:weight"]["available"]
+    assert context["failed_parents"][route.identifier]["reference"]["directory"] == str(
+        route.parent.study_directory)
+    with pytest.raises(ValueError, match="verified parent"):
+        guided.next_action(route.failed.study_directory, "adaptive_recover_from_retained",
+                           route.identifier, goal="goal:density")
+
+
+def test_optional_input_failure_leaves_verified_parent_accessible(route, monkeypatch):
+    def unavailable(*_):
+        raise ValueError("No verified surface measurement")
+
+    monkeypatch.setattr(recovery, "inputs", unavailable)
+    context = strategy.prepare_proposals(route.failed, strategy.state(route.failed))
+    parent = context["failed_parents"][route.identifier]
+    assert parent["reference"]["directory"] == str(route.parent.study_directory)
+    assert parent["adjustment_error"] == "No verified surface measurement" and parent["area_labels"]
+    assert not context["failed_proposals"][route.identifier]
+
+
 def test_actual_prepare_preserves_failed_history_and_never_runs(route, monkeypatch):
     old = {p: sha256_file(p) for p in route.failed.study_directory.rglob("*") if p.is_file()}
     old_events = study._load_events(route.failed.study_directory)
@@ -247,11 +286,17 @@ def test_actual_prepare_preserves_failed_history_and_never_runs(route, monkeypat
         "run_current_stage",
         lambda *_a, **_k: pytest.fail("Prepare ran optimizer"),
     )
+    context = strategy.prepare_proposals(route.failed, strategy.state(route.failed))
+    goal = recovery.selection(
+        "goal:weight", context["failed_proposals"][route.identifier]["goal:weight"])
+    with pytest.raises(ValueError, match="changed"):
+        guided.next_action(route.failed.study_directory, "adaptive_recover_from_retained",
+                           route.identifier, goal=dict(goal, fingerprint="stale"))
     new = guided.next_action(
         route.failed.study_directory,
         "adaptive_recover_from_retained",
         route.identifier,
-        goal="goal:weight",
+        goal=goal,
     )
     info = guided.record(new)
     marker = info["strategy"]["failure_parent_recovery"]
@@ -345,18 +390,20 @@ def test_actual_failed_card_inspects_parent_then_explicitly_prepares_without_run
     inspected = []
     window._start_pilot = lambda *a, **k: invoked.append((a, k))
     window._open_candidate = lambda *_: pytest.fail("Failed field inspection")
-    window._open_guided_saved_fit = lambda ref: inspected.append(ref)
+    window._open_guided_saved_fit = lambda ref, *, failed_for: inspected.append((ref, failed_for))
     context = strategy.prepare_proposals(route.failed, strategy.state(route.failed))
     ui.render(window, SimpleNamespace(snapshot=route.failed, guidance=context))
     window.show()
     app.processEvents()
     try:
         buttons = window.content.findChildren(QPushButton)
-        inspect = next(b for b in buttons if b.text() == "Inspect retained earlier fit")
+        inspect = next(b for b in buttons if b.text().startswith("Inspect retained fit · Test "))
+        assert inspect.text().endswith("marked areas A")
         prepare = next(b for b in buttons if b.text() == "Prepare different test from retained fit")
         assert inspect.isEnabled() and not prepare.isEnabled() and not invoked
         inspect.click()
-        assert inspected[0]["directory"] == str(route.parent.study_directory)
+        assert inspected[0][0]["directory"] == str(route.parent.study_directory)
+        assert inspected[0][1] == route.identifier
         selector = window.content.findChildren(QComboBox)[0]
         index = next(i for i in range(selector.count()) if selector.itemData(i) == "goal:weight")
         selector.setCurrentIndex(index)
@@ -370,7 +417,8 @@ def test_actual_failed_card_inspects_parent_then_explicitly_prepares_without_run
                     guided_action=(
                         "adaptive_recover_from_retained",
                         route.identifier,
-                        "goal:weight",
+                        recovery.selection("goal:weight",
+                            context["failed_proposals"][route.identifier]["goal:weight"]),
                     ),
                 ),
             )
@@ -401,8 +449,11 @@ def test_display_seed_cap_policy_only_differences_do_not_make_a_different_object
 
 
 def test_unverified_shutdown_retains_inspection_but_not_preparation(monkeypatch):
-    reference = {"directory": "verified-earlier"}
-    monkeypatch.setattr(recovery, "resolve", lambda *a, **k: (object(), dict(reference=reference)))
+    reference = {"directory": "verified-earlier", "candidate_id": "trusted"}
+    parent = SimpleNamespace(candidates=[SimpleNamespace(candidate_id="trusted", label="Saved")])
+    monkeypatch.setattr(guided, "record", lambda _: dict(screen_trials_spent=2))
+    monkeypatch.setattr(recovery, "resolve",
+                        lambda *a, **k: (parent, dict(reference=reference, marks=[])))
 
     def blocked(*_):
         raise RuntimeError("BackendShutdownUnverified")
@@ -410,6 +461,32 @@ def test_unverified_shutdown_retains_inspection_but_not_preparation(monkeypatch)
     monkeypatch.setattr(recovery, "_terminal", blocked)
     result = recovery.preview(object(), "failed")
     assert result["reference"] == reference and not result["available"]
+
+
+def test_inspect_retained_fit_keeps_verified_marks_when_ancestor_location_unavailable(monkeypatch):
+    from pathlib import Path
+
+    from diffeoforge.desktop import region_marking_geometry
+    from diffeoforge.desktop.guided_failed_parent import inspection
+    from diffeoforge.desktop.reference_calibration_dialog import CalibrationQcPair
+
+    ref = dict(target="shape.vtk", candidate_id="earlier")
+    parent = SimpleNamespace(candidates=[SimpleNamespace(candidate_id="earlier", label="Varifold")])
+    mark = dict(source_sha256="original", center=[1., 2., 3.])
+    evidence = dict(reference=ref, marks=[mark, dict(mark, reconstruction=dict(sha256="ancestor"))],
+                    regions_cleared=False)
+    monkeypatch.setattr(recovery, "resolve", lambda *a, **kw: (parent, evidence))
+    monkeypatch.setattr(guided, "record", lambda _: dict(screen_trials_spent=6))
+    def unavailable(*args):
+        raise ValueError("Earlier material unavailable")
+    monkeypatch.setattr(region_marking_geometry, "load_region_marking_mesh", unavailable)
+    pair = CalibrationQcPair("subject", "shape", Path("shape.vtk"), Path("fit.vtk"), True,
+                             "original", "verified-parent")
+    pairs, view = inspection(None, "failed", ref, (pair,))
+    assert pairs[0].inspection_markers == (("A", (1., 2., 3.)),)
+    assert "location unverified for B" in view["title"] and view["marks"] == evidence["marks"]
+    with pytest.raises(ValueError, match="changed"):
+        inspection(None, "failed", dict(ref, candidate_id="stale"), (pair,))
 
 
 @pytest.mark.parametrize("blocked", ["pending", "orphaned", "worker", "restoring"])
@@ -441,7 +518,8 @@ def test_failed_selector_and_click_keep_live_idle_terminal_gates(blocked, monkey
     guidance = dict(
         failed_parents={
             "failed": dict(
-                reference={"directory": "verified"}, available=True, reason="Earlier fit retained"
+                reference={"directory": "verified"}, available=True, reason="Earlier fit retained",
+                parent_label="Test 2 · Saved fit", area_labels=[],
             )
         },
         failed_proposals={"failed": proposals},
@@ -490,7 +568,7 @@ def test_failed_selector_and_click_keep_live_idle_terminal_gates(blocked, monkey
         assert len(invoked) == 1 and invoked[0]["guided_action"] == (
             "adaptive_recover_from_retained",
             "failed",
-            "goal:weight",
+            recovery.selection("goal:weight", proposals["goal:weight"]),
         )
     finally:
         window.close()

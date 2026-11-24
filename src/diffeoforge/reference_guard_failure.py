@@ -62,15 +62,26 @@ def read_failure(directory):
     details = data.get("details", {})
     if not isinstance(details, dict) or any(terminal.get(k) != v for k, v in details.items()):
         raise ValueError("Guard failure details disagree with the terminal event")
-    message = (
-        "Numerical consistency check stopped this trial: identical parameters produced "
-        "different objective or gradient values. Inspect the retained earlier fit. "
-        "Repeating this test or adding iterations does not resolve this inconsistency."
-        if reason == "inconsistent_FG_for_identical_parameters" else
-        "The numerical safety check stopped this trial. Inspect the retained earlier "
-        "fit and failure details before preparing a different test."
-    )
-    return dict(reason=reason, message=message, verified=True, block_retry=True)
+    explanations = {
+        "nonfinite_or_invalid_objective": "The fit returned a non-finite or invalid objective.",
+        "nonfinite_or_invalid_gradient": "The optimizer returned a non-finite or invalid gradient.",
+        "nonfinite_or_invalid_parameters": "The fit produced non-finite or invalid parameters.",
+        "gradient_norm_overflow": "The gradient norm overflowed.",
+        "accepted_cost_regression": "An accepted step increased cost beyond the allowed margin.",
+        "inconsistent_FG_for_identical_parameters":
+            "Evaluations with identical parameters produced different objective or gradient "
+            "values. Repeating this test or adding iterations does not resolve this inconsistency.",
+    }
+    iteration = details.get("attempted_native_iteration", details.get("native_iteration"))
+    if type(iteration) is not int or iteration < 0:
+        iteration = None
+    when = f" at iteration {iteration}" if iteration is not None else ""
+    message = f"The numerical safety check stopped this fit{when}. "
+    if reason in explanations:
+        message += explanations[reason] + " "
+    message += "Inspect the retained earlier fit before choosing a different test."
+    return dict(reason=reason, message=message, native_iteration=iteration,
+                verified=True, block_retry=True)
 
 
 def for_candidate(candidate):

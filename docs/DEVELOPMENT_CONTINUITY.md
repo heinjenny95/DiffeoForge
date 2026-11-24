@@ -1,5 +1,14 @@
 # Development continuity
 
+## dev241 — reopen a stopped local fit and keep meshes visible during review
+
+After a numerical stop, the pilot identifies the retained starting fit and its
+marks. Each proposed adjustment is checked against that fit. An unavailable
+adjustment leaves the other choices and saved-fit inspection accessible.
+Individual and common-model reviews keep their meshes above a separately
+scrollable assessment, including when the reviewer opens an approved alternative.
+See the [workflow and recovery checks](PILOT_DEAD_END_CHECKS.md).
+
 ## dev240 — carry marked material through corrections and recover pilot decisions
 
 Corrections on a refined reconstruction follow the verified parent faces from

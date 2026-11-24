@@ -438,7 +438,7 @@ def test_shared_capture_blocks_run_and_opens_exact_template_and_target(panel, mo
     assert window.start_button.isHidden() and not window.start_button.isEnabled()
     assert "template.vtk has 21 faces" in window.status.text()
     texts = [widget.text() for cls in (QLabel, QPushButton) for widget in window.findChildren(cls)]
-    assert not any("finite-accepted guard" in text or "Inspect retained earlier fit" in text
+    assert not any("finite-accepted guard" in text or text.startswith("Inspect retained fit")
                    for text in texts)
     window.next_step_button.click()
     assert len(opened) == 1 and not panel.invoked

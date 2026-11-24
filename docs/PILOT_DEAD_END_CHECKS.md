@@ -14,12 +14,22 @@ Rendering an enabled button exercises only the first part of this path.
 | The material relationship cannot be verified | Explain which correction is blocked. Keep access to the saved surfaces and the mark editor. |
 | A correction ends with a numerical recommendation | An outstanding choice of starting fit takes priority. After an explicit choice or approval the next action follows that decision. A qualifying extension still requires an explicit preparation and Run. |
 | Retry, interruption or checks stopped after fitting | Reopen the latest attempt. When a supported worker exited after recording normal native completion, verify its lease, attempt and output evidence before offering to run the remaining checks on that candidate alone. An active or unidentified worker requires inspection. |
+| A marked fit stopped at a numerical guard with a retained parent | Open the saved pilot and retry verification. Read the recorded reason and iteration when available. Inspect the named earlier fit and its marked locations. Every offered adjustment must independently resolve to that same verified parent, even when an intervening control-point test succeeded. |
+| The reviewer scrolls through a long assessment | At laptop size and increased display scaling, open an individual or common fit. Show and hide an alternative, rotate or zoom, then scroll to the last action and back. The meshes should stay in place throughout. |
 | Individual reviews, shared checks, joint fit and finish | Use the approved field only on a compatible basis for the same specimen. Verify the shared settings on the remaining forms and require the separate joint review. Reopening the completed pilot must return to its saved result. |
 
 The tests use synthetic controllers for branching outcomes. Read-only replays on
 saved studies exercise real mesh identities and mark histories. A passing
 workflow check establishes that the researcher can take the indicated step.
 The anatomy of a newly computed result needs its own review.
+
+For an independent first-use check, give a new reviewer a saved example with
+one improved feature that still needs work. Ask them to record both judgments
+and return to the marked fit after closing the pilot. Ask which fit and marks
+will start the next test. Record the answer, any prompts they needed, and
+whether the earlier approval is still present. A scripted GUI replay verifies
+the saved state and navigation. Evidence of first-use clarity requires a
+person to complete these tasks.
 
 When a saved brush has moved with the reconstruction, the editor places its
 letter on a verified current face and reports the number of faces it tracks.

@@ -42,6 +42,21 @@ def test_failed_field_coefficients_are_not_read(terminal, monkeypatch):
     assert "adding iterations does not resolve" in diagnostic["message"]
 
 
+@pytest.mark.parametrize("details, expected", [
+    ({"native_iteration": 448, "evaluation_reference": 477}, 448),
+    ({"attempted_native_iteration": 3}, 3), ({"native_iteration": True}, None), ({}, None),
+])
+def test_sealed_stop_explains_reason_and_only_verified_iteration(terminal, details, expected):
+    terminal.rewrite("nonfinite_or_invalid_objective", details=details)
+    diagnostic = failure.read_failure(terminal.run)
+    assert "non-finite or invalid objective" in diagnostic["message"]
+    assert diagnostic["native_iteration"] == expected
+    if expected is None:
+        assert "iteration " not in diagnostic["message"]
+    else:
+        assert f"at iteration {expected}." in diagnostic["message"]
+
+
 @pytest.mark.parametrize("name", ["violation.json", "events.jsonl"])
 def test_missing_sealed_stop_file_does_not_reenable_retry(terminal, name):
     (terminal.run / "output/numerical-guard" / name).unlink()

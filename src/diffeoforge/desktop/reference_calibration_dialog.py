@@ -13,7 +13,6 @@ from PySide6.QtGui import (
     QDesktopServices,
     QKeyEvent,
     QKeySequence,
-    QResizeEvent,
     QShortcut,
 )
 from PySide6.QtWidgets import (
@@ -548,7 +547,6 @@ class _FullscreenPilotDialog(QDialog):
         if self._windowed_state is not None:
             geometry, minimum, maximized = self._windowed_state
             self._windowed_state = None
-            self._full_screen_layout(False)
             self.setMinimumSize(minimum)
             if maximized:
                 self.showMaximized()
@@ -560,13 +558,9 @@ class _FullscreenPilotDialog(QDialog):
             return
         self._windowed_state = (self.geometry(), self.minimumSize(), self.isMaximized())
         self.setMinimumSize(0, 0)
-        self._full_screen_layout(True)
         self.showFullScreen()
         self.full_screen_button.setText("Exit full screen")
         self.full_screen_button.setToolTip("Restore the previous window (F11 or Esc)")
-
-    def _full_screen_layout(self, enabled: bool) -> None:
-        """Give canvas-based dialogs a chance to resize their existing layout."""
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Escape and self._windowed_state is not None:
@@ -644,7 +638,6 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         self._read_only = read_only
         self._compact_review = compact_review
         self._common_review = (guided_feedback_context or {}).get("common_review")
-        self._pinned_mesh_review = common_model or bool(self._common_review)
         self.fit_preferences = None
         self.guided_feedback = None
         self._guided_feedback_only = False
@@ -673,37 +666,26 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         self._mesh_loader.loaded.connect(self._pair_loaded)
         self._mesh_loader.failed.connect(self._pair_failed)
         self.setWindowTitle(f"Visual registration check — {candidate.candidate_id}")
-        self.resize(1080, 900)
-        self.setMinimumSize(760, 640)
-        if self._pinned_mesh_review:
-            # Leave room for the native title bar and taskbar on a laptop.
-            available = (parent.screen() if parent else self.screen()).availableGeometry()
-            self.setMinimumSize(min(760, available.width() - 24),
-                                min(600, available.height() - 48))
-            self.resize(min(1080, available.width() - 24), min(900, available.height() - 48))
-        root = self._root_layout = QVBoxLayout(self)
+        # Screen geometry is in logical pixels, including on a scaled display.
+        available = self.screen().availableGeometry()
+        self.setMinimumSize(min(760, available.width() - 24), min(600, available.height() - 48))
+        self.resize(min(1080, available.width() - 24), min(900, available.height() - 48))
+        root = QVBoxLayout(self)
+        body = QWidget()
+        body.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(body, 3)
         self.body_scroll = QScrollArea()
+        self.body_scroll.setAccessibleName("Fit assessment and review actions")
         self.body_scroll.setWidgetResizable(True)
         self.body_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.body_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        body = QWidget()
-        body.setSizePolicy(
-            QSizePolicy.Policy.Ignored,
-            QSizePolicy.Policy.Preferred,
-        )
-        layout = self._body_layout = QVBoxLayout(body)
-        if self._pinned_mesh_review:
-            root.addWidget(body, 3)
-            layout.setContentsMargins(0, 0, 0, 0)
-            feedback_body = QWidget()
-            assessment = QVBoxLayout(feedback_body)
-            assessment.setContentsMargins(0, 0, 0, 0)
-            assessment.setAlignment(Qt.AlignmentFlag.AlignTop)
-            self.body_scroll.setAccessibleName("Fit assessment and review actions")
-            self.body_scroll.setWidget(feedback_body)
-        else:
-            assessment = layout
-            self.body_scroll.setWidget(body)
+        feedback_body = QWidget()
+        assessment = QVBoxLayout(feedback_body)
+        assessment.setContentsMargins(0, 0, 0, 0)
+        assessment.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.body_scroll.setWidget(feedback_body)
         root.addWidget(self.body_scroll, 1)
         title = QLabel("Does the reconstruction preserve the original anatomy?")
         if read_only:
@@ -743,7 +725,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         instructions.setWordWrap(True)
         instructions.setObjectName("card")
         instructions_disclosure = InfoDisclosure("What to check", instructions)
-        layout.addWidget(instructions_disclosure)
+        assessment.addWidget(instructions_disclosure)
         self.mesh_combo = QComboBox()
         for index, pair in enumerate(self._pairs):
             if pair.required:
@@ -784,7 +766,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             self.joint_transfer_button.setObjectName("secondary")
             self.joint_transfer_button.clicked.connect(self._open_joint_transfer)
             self.joint_transfer_button.setEnabled(False)
-            toggles.addWidget(self.joint_transfer_button)
+            assessment.addWidget(self.joint_transfer_button, alignment=Qt.AlignmentFlag.AlignLeft)
         layout.addLayout(toggles)
         self.retention_button = None
         if self._common_review or joint_transfer:
@@ -795,10 +777,9 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         self.status.setObjectName("statusSuccess")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
-        self.canvas = CalibrationComparisonCanvas3D(fit_review_viewport=self._pinned_mesh_review)
-        if self._pinned_mesh_review:
-            self.canvas.setMinimumHeight(150)
-            assessment.addWidget(self.canvas.original_detail, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.canvas = CalibrationComparisonCanvas3D(fit_review_viewport=True)
+        self.canvas.setMinimumHeight(150)
+        assessment.addWidget(self.canvas.original_detail, alignment=Qt.AlignmentFlag.AlignLeft)
         self.canvas.fullResolutionReadyChanged.connect(self._pair_original_presented)
         self.canvas.originalDetailRequested.connect(self._load_original_detail)
         self.show_original.toggled.connect(self.canvas.set_show_original)
@@ -830,9 +811,8 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             layout.removeWidget(self.canvas)
             self.saved_comparison = SavedFitComparison(
                 self.canvas, alternative_pairs, self, cache_directory=self._preview_cache,
-                common_review=self._common_review, fit_review_viewport=self._pinned_mesh_review)
-            if self._pinned_mesh_review:
-                toggles.insertWidget(2, self.saved_comparison.toggle)
+                common_review=self._common_review, fit_review_viewport=True)
+            toggles.insertWidget(2, self.saved_comparison.toggle)
             layout.addWidget(self.saved_comparison, 1)
             self.finished.connect(self.saved_comparison.loader.cancel)
         canvas_help = QLabel(
@@ -842,7 +822,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         canvas_help.setObjectName("hint")
         canvas_help.setWordWrap(True)
         canvas_help.setVisible(self.fit_preferences is None)
-        layout.addWidget(canvas_help)
+        assessment.addWidget(canvas_help)
         self.specimen_decision = QComboBox()
         self.specimen_decision.setAccessibleName("Surface fit of this specimen")
         for label, value in (
@@ -1011,10 +991,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             suitability_actions.setLayout(controls)
         else:
             decision_layout.addLayout(controls)
-        if self._pinned_mesh_review:
-            assessment.insertWidget(0, self.decision_panel)
-        else:
-            root.addWidget(self.decision_panel)
+        assessment.insertWidget(0, self.decision_panel)
         # Closing must remain possible while geometry is loading or unavailable.
         self._window_actions = QWidget()
         window_actions = QHBoxLayout(self._window_actions)
@@ -1027,15 +1004,8 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             close_comparison.clicked.connect(self.reject)
             window_actions.addWidget(close_comparison)
         root.addWidget(self._window_actions)
-        self._windowed_canvas_limits = {}
-        self._full_screen_canvas_timer = QTimer(self)
-        self._full_screen_canvas_timer.setSingleShot(True)
-        self._full_screen_canvas_timer.timeout.connect(self._fit_full_screen_canvas)
-        self._full_screen_scroll_timer = QTimer(self)
-        self._full_screen_scroll_timer.setSingleShot(True)
-        self._full_screen_scroll_timer.timeout.connect(self._show_full_screen_canvas)
         if compact_review:
-            title.setText("Inspect fit")
+            title.setText("Review common-model fit" if common_model else "Inspect fit")
             intro.setText("Orange: original · Blue: reconstruction")
             instructions_disclosure.hide()
             canvas_help.hide()
@@ -1111,56 +1081,6 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         if self._common_review and alternative_pairs:
             self.saved_comparison.toggle.setChecked(True)
         self._update_review_progress()
-
-    def _full_screen_layout(self, enabled: bool) -> None:
-        if self._pinned_mesh_review:
-            # The meshes already have a dedicated viewport in both window modes.
-            return
-        panel = self.decision_panel
-        hidden = panel.isHidden()
-        if enabled:
-            # The assessment stays reachable, but its height no longer clips
-            # the mesh on a small screen. Window controls stay in the footer.
-            self._root_layout.removeWidget(panel)
-            self._body_layout.addWidget(panel)
-            canvases = [self.canvas]
-            if self.fit_preferences is not None:
-                canvases.append(self.fit_preferences.reference_canvas)
-            if hasattr(self, "saved_comparison"):
-                canvases.append(self.saved_comparison.canvas)
-            self._windowed_canvas_limits = {
-                c: (c.minimumHeight(), c.maximumHeight()) for c in canvases
-            }
-            self._full_screen_canvas_timer.start(0)
-        else:
-            self._full_screen_scroll_timer.stop()
-            self._body_layout.removeWidget(panel)
-            self._root_layout.insertWidget(self._root_layout.indexOf(self._window_actions), panel)
-            for canvas, (minimum, maximum) in self._windowed_canvas_limits.items():
-                canvas.setMinimumHeight(minimum)
-                canvas.setMaximumHeight(maximum)
-            self._windowed_canvas_limits.clear()
-        panel.setVisible(not hidden)
-
-    def resizeEvent(self, event: QResizeEvent) -> None:
-        super().resizeEvent(event)
-        # Window systems apply the final full-screen size asynchronously.
-        if self._windowed_state is not None and self._windowed_canvas_limits:
-            self._full_screen_canvas_timer.start(0)
-
-    def _fit_full_screen_canvas(self) -> None:
-        if not self.isFullScreen():
-            return
-        height = max(120, self.body_scroll.viewport().height() - 12)
-        for canvas in self._windowed_canvas_limits:
-            canvas.setFixedHeight(height)
-        # A scaled screen can queue several child layout passes after the
-        # viewport resize. Reveal the canvas after those passes settle.
-        self._full_screen_scroll_timer.start(35)
-
-    def _show_full_screen_canvas(self) -> None:
-        if self.isFullScreen() and self.isVisible():
-            self.body_scroll.ensureWidgetVisible(self.canvas, 0, 0)
 
     def done(self, result):
         if self.fit_preferences:
@@ -5303,7 +5223,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
 
     def _open_guided_saved_fit(self, reference, *, working_for=None, view_hint=None,
                                restore_partial=False, expected_starting_choice=None,
-                               require_selected=False):
+                               require_selected=False, failed_for=None):
         if self._view_loading or self._view_closed or self._review_saving or self._worker:
             return
         origin = self.study_directory
@@ -5344,8 +5264,15 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                                            cleared_region_subjects=[], partial_draft=draft)
                     return (parent, collect_calibration_qc_pairs(parent.study_directory, candidate),
                             normalized_candidate_subject_fit(parent, candidate), candidate, context)
-                return (parent, collect_calibration_qc_pairs(parent.study_directory, candidate),
-                        normalized_candidate_subject_fit(parent, candidate), (), None)
+                pairs = collect_calibration_qc_pairs(parent.study_directory, candidate)
+                inspected = None
+                if failed_for is not None:
+                    from diffeoforge.desktop.guided_failed_parent import inspection
+
+                    pairs, inspected = inspection(load_reference_calibration_study(origin),
+                                                  failed_for, reference, pairs)
+                return (parent, pairs, normalized_candidate_subject_fit(parent, candidate),
+                        (), None, inspected)
 
         self._viewer_preparation.request_operation(
             ("guided-working", origin, reference, working_for) if working_for is not None else
@@ -5538,6 +5465,16 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                     name: [dict(row) for row in rows]
                     for name, rows in prepared[4].get("problem_regions", {}).items()}
                 dialog.cleared_region_subjects = set(prepared[4].get("cleared_region_subjects", []))
+            if key[0] == "guided-saved" and len(prepared) >= 6 and prepared[5]:
+                inspected = prepared[5]
+                dialog.setWindowTitle(inspected["title"])
+                dialog.findChild(QLabel, "title").setText(inspected["title"])
+                dialog.problem_regions = {inspected["target"]: inspected["marks"]}
+                dialog.cleared_region_subjects = (
+                    {inspected["target"]} if inspected["cleared"] else set())
+                dialog._comparison_intro.setText(
+                    "Orange: original · Blue: retained reconstruction. "
+                    "Close to choose another test.")
             # Re-review is a new human decision. Previous decisions remain in the
             # journal but must not silently pre-pass specimens or lock bulk approval.
             dialog.subject_decisions = {}

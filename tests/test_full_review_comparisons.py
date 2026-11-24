@@ -100,6 +100,7 @@ def case(tmp_path, monkeypatch, request):
         alternative_pairs=tuple((False, "alternative " + str(i), p) for i, p in enumerate(choices)),
         guided_feedback_context=context,
         compact_review=True,
+        read_only=common_case == "read_only",
         common_model=common_case == "legacy_saved_common",
     )
     viewer.resize(1250, 850)
@@ -301,8 +302,8 @@ def test_inspection_only_checkpoint_allows_suitability_without_a_progress_rating
 
 
 @pytest.mark.parametrize("size", [(960, 640), (1280, 720)])
-@pytest.mark.parametrize("case", ["common"], indirect=True)
-def test_common_review_keeps_both_meshes_visible_while_scrolling_actions(case, size):
+@pytest.mark.parametrize("case", ["common", "individual"], indirect=True)
+def test_review_keeps_both_meshes_visible_while_scrolling_actions(case, size):
     from PySide6.QtCore import QPoint, QRect
 
     from diffeoforge.desktop.widgets import _STYLE
@@ -310,6 +311,7 @@ def test_common_review_keeps_both_meshes_visible_while_scrolling_actions(case, s
     dialog = case.v
     dialog.setStyleSheet(_STYLE)
     dialog.resize(*size)
+    case.saved.toggle.setChecked(True)
     def long_specimen(mesh):
         return replace(mesh, vertices=tuple((5 * x, 0.3 * y, z) for x, y, z in mesh.vertices),
                        bounds=(-5, 5, -0.3, 0.3, -0.2, 0.2))
@@ -366,6 +368,44 @@ def test_common_review_keeps_both_meshes_visible_while_scrolling_actions(case, s
     wait(case.app, lambda: not dialog.isFullScreen() and case.saved.full_comparison_ready)
     assert rectangles() == bounds
     assert [canvas.camera_state() for canvas in viewports] == cameras
+
+
+@pytest.mark.parametrize("case", ["individual", "read_only"], indirect=True)
+def test_single_review_scrolls_assessment_and_wheel_zooms_only_the_mesh(case):
+    from PySide6.QtCore import QPoint, QRect
+    from test_combo_wheel import _wheel
+
+    from diffeoforge.desktop.widgets import _STYLE
+
+    dialog = case.v
+    dialog.setStyleSheet(_STYLE + "\nQLabel, QPushButton, QCheckBox { font-size: 17px; }")
+    dialog.resize(800, 600)
+    canvas = dialog.canvas
+    wait(case.app, lambda: canvas.comparison_ready)
+    assert not case.saved.toggle.isChecked()
+    assert not dialog.body_scroll.isAncestorOf(canvas)
+    bounds = QRect(canvas.mapTo(dialog, QPoint()), canvas.size())
+    assert dialog.rect().contains(bounds)
+    assert canvas.visibleRegion().boundingRect() == canvas.rect()
+    assert bounds.bottom() < dialog.body_scroll.mapTo(dialog, QPoint()).y()
+    _, screen = canvas._project(np.asarray(canvas.reconstruction_model.vertices))
+    assert (screen >= 0).all() and (screen < [canvas.width(), canvas.height()]).all()
+    bar = dialog.body_scroll.verticalScrollBar()
+    camera = canvas.camera_state()
+    if not dialog._read_only:
+        bar.setValue(0)
+        _wheel(dialog.body_scroll.viewport())
+        assert bar.value() > 0
+        assert canvas.camera_state() == camera
+        assert QRect(canvas.mapTo(dialog, QPoint()), canvas.size()) == bounds
+    old_scroll = bar.value()
+    _wheel(canvas)
+    wait(case.app, lambda: canvas.comparison_ready and canvas.camera_state()[2] < camera[2])
+    assert bar.value() == old_scroll
+    assert dialog.close_button.isVisible()
+    assert dialog.fail_button.isHidden() == dialog._read_only
+    assert dialog.decision_panel.isHidden() == dialog._read_only
+    assert not dialog.review_recorded
 
 
 @pytest.mark.parametrize("case", ["legacy_saved_common"], indirect=True)
