@@ -140,6 +140,7 @@ def test_previous_settings_can_fund_different_hypothesis_but_no_duplicate_fit(
 def test_actual_rejected_method_buttons_and_repeat_click_guard(tmp_path, monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
     from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
@@ -153,13 +154,25 @@ def test_actual_rejected_method_buttons_and_repeat_click_guard(tmp_path, monkeyp
         wait_pilot_view(dialog)
         scope = dialog.content.findChild(QLabel, "pilotScope")
         assert scope.text().splitlines()[0] == guided.record(snapshot)["target"]
-        button = next(b for b in dialog.content.findChildren(QPushButton)
-                      if b.text().startswith("Use Varifold as starting method"))
+        button = dialog.next_step_button
+        assert dialog._guided_footer_action[1] == "choose_method"
+
+        def pick_varifold():
+            chooser = app.activeModalWidget()
+            try:
+                next(b for b in chooser.findChildren(QPushButton)
+                     if b.text() == "Varifold fit better").click()
+            finally:
+                if chooser.isVisible():
+                    chooser.reject()
+
+        QTimer.singleShot(0, pick_varifold)
         queued = []
         monkeypatch.setattr(dialog._thread_pool, "start", queued.append)
         for _ in range(10):
             button.click()
         assert len(queued) == 1
+        assert queued[0].guided_action == ("adaptive_prefer", "guided-varifold", None)
         queued.pop().run()
         wait_pilot_view(dialog)
         assert dialog._snapshot.visual_reviews["guided-varifold"] is False
