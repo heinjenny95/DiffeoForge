@@ -722,34 +722,38 @@ def run(runner, event_callback=None, *, candidate_ids=None):
                 snapshot=study.load_reference_calibration_study(runner.study_directory),
             )
         )
-    lock = runner.study_directory / "method-comparison-active.lock"
-    lock.mkdir()  # Existing lock requires explicit recovery, never duplicate work.
-    try:
-        runner._method_comparison_dispatch = True
-        result = runner.run_current_stage(
-            event_callback=event_callback, candidate_ids=candidate_ids
-        )
-        if result.current_stage and result.current_stage.order == 1:
-            decision = recommendation(result)
-            payload = dict(
-                decision=decision,
-                manifest_sha256=sha256_file(result.study_directory / study.STUDY_MANIFEST),
-                candidate_events=[
-                    e["event_hash"]
-                    for e in study._load_events(result.study_directory)
-                    if e["event"]
-                    in {"candidate_completed", "candidate_failed", "candidate_interrupted"}
-                ],
-                anatomical_approval=False,
-            )
-            study._write_json(
-                result.study_directory / "method-comparison.json",
-                dict(payload=payload, sha256=_canonical_hash(payload)),
-                overwrite=True,
-            )
-        from diffeoforge.pilot_multiscale_study import followup
+    from diffeoforge.pilot_execution_recovery import writer
 
-        return followup(runner, result, event_callback)
-    finally:
-        runner._method_comparison_dispatch = False
-        lock.rmdir()
+    with writer(runner.study_directory):
+        try:
+            return _run_locked_comparison(runner, event_callback, candidate_ids)
+        finally:
+            runner._method_comparison_dispatch = False
+
+
+def _run_locked_comparison(runner, event_callback, candidate_ids):
+    from diffeoforge import reference_calibration_study as study
+    from diffeoforge.pilot_multiscale_study import followup
+
+    runner._method_comparison_dispatch = True
+    result = runner.run_current_stage(event_callback=event_callback, candidate_ids=candidate_ids)
+    if result.current_stage and result.current_stage.order == 1:
+        decision = recommendation(result)
+        payload = dict(
+            decision=decision,
+            manifest_sha256=sha256_file(result.study_directory / study.STUDY_MANIFEST),
+            candidate_events=[
+                e["event_hash"]
+                for e in study._load_events(result.study_directory)
+                if e["event"] in {
+                    "candidate_completed", "candidate_failed", "candidate_interrupted"
+                }
+            ],
+            anatomical_approval=False,
+        )
+        study._write_json(
+            result.study_directory / "method-comparison.json",
+            dict(payload=payload, sha256=_canonical_hash(payload)),
+            overwrite=True,
+        )
+    return followup(runner, result, event_callback)

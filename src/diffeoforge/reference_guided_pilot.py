@@ -604,6 +604,12 @@ def verify_approvals(rows):
 
 def next_action(directory, action, candidate_id=None, *, goal=None):
     """Serialize preparation; an abandoned lock needs explicit recovery."""
+    if action == "recover_saved_native_fit":
+        from diffeoforge.pilot_execution_recovery import recover
+
+        if not goal or goal.get("candidate") != candidate_id:
+            raise ValueError("Choose the exact completed fit to recover")
+        return recover(directory, goal)
     lock = Path(directory) / "guided-transition-active.lock"
     try:
         lock.mkdir()

@@ -93,6 +93,8 @@ def test_learned_seed_preserves_gpa_subject_cohort_and_passes_parameter_review(h
     values = {item.label: item.value for item in review.parameters}
     assert values["Landmark alignment"] == "generalized Procrustes · 3 landmarks · 6 meshes"
     assert values["Atlas initialization"] == "verified learned pilot template and control points"
+    assert sum(item.label == "Atlas initialization" for item in review.parameters) == 1
+    assert not review.preserved_pilot_atlas and not review.cold_individual_atlas
     assert all(p.read_bytes() == data for p, data in protected.items())
 
 

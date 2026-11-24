@@ -1,5 +1,16 @@
 # Development continuity
 
+## dev240 — carry marked material through corrections and recover pilot decisions
+
+Corrections on a refined reconstruction follow the verified parent faces from
+the inspected mesh into the next preparation and its quality checks. Saved
+starting-fit choices and anatomical approvals take priority over an earlier
+adaptive recommendation. The review can recover from an unavailable correction
+or a failed reload, and a retried candidate reports its latest attempt.
+The atlas parameter review also identifies the verified learned template and
+control points when reopening older pilot handoffs. See
+the [workflow and recovery checks](PILOT_DEAD_END_CHECKS.md).
+
 ## dev239 — reuse an approved specimen's deformation
 
 When preparing a shared-settings check, the pilot can start from the approved

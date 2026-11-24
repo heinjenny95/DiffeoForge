@@ -8,7 +8,7 @@ from diffeoforge.private_runs import _acquire_nonblocking_lock, _LeaseHeld, _rel
 
 
 @contextmanager
-def stage_lock(root, stage):
+def stage_lock(root, stage, *, busy_message="This approved anatomy step is already running"):
     path = root / (stage + ".lease")
     with path.open("a+b", buffering=0) as handle:
         if not handle.tell():
@@ -16,7 +16,7 @@ def stage_lock(root, stage):
         try:
             _acquire_nonblocking_lock(handle)
         except _LeaseHeld as exc:
-            raise ValueError("This approved anatomy step is already running") from exc
+            raise ValueError(busy_message) from exc
         try:
             yield
         finally:

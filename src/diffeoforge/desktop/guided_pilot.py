@@ -98,6 +98,62 @@ def _marked_area_changes(feedback, subjects, target):
     return changes
 
 
+def _locked_view(window, snapshot, guidance, running):
+    from diffeoforge.desktop.pilot_common_model import pin_action
+
+    for button in (window.start_button, window.advance_button, window.review_next_button,
+                   window.keep_previous_button, window.find_fit_button, window.selection_combo,
+                   window.next_step_button, window.pilot_assistant_button):
+        button.hide()
+    window._guided_footer_action = None
+    window._guided_review_target = None
+    window._mark_error_action = None
+    window.pilot_tools.setEnabled(False)
+    window.cancel_button.setVisible(running)
+    window.cancel_button.setEnabled(running)
+    if running:
+        window.status.setText("The pilot worker is active.")
+        return
+    recovery = guidance.get("saved_native_recovery")
+    checks = guidance.get("recovered_checks")
+    if checks:
+        message = ("The recovered native fit is ready for its surface checks. Run the checks "
+                   "on this saved result before reviewing its anatomy.")
+        pin_action(window, snapshot, "Resume surface checks on recovered fit",
+                   "resume_recovered_fit_checks", checks["candidate"], message, goal=checks)
+    elif recovery:
+        message = ("The native fit finished and its worker has released the pilot. Recover "
+                   "the saved fit, then resume its surface checks.")
+        pin_action(window, snapshot, "Recover saved fit for surface checks",
+                   "recover_saved_native_fit", recovery["candidate"], message, goal=recovery)
+    else:
+        message = ("This pilot is locked. Check the original Pilot window, then refresh here. "
+                   "If it has closed, use the path below for support. Recovery requires a released "
+                   "worker and a verified completed fit from a supported single-stage test.")
+    window.status.setText(message)
+    refresh = QPushButton("Refresh pilot status")
+    refresh.setObjectName("refreshPilotStatus")
+    refresh.clicked.connect(window._retry_view)
+    window.content_layout.addWidget(refresh)
+    paths = []
+    for candidate in snapshot.candidates:
+        if candidate.run_directory and (
+                candidate.status == "orphaned" or (checks or recovery or {}).get("candidate")
+                == candidate.candidate_id):
+            paths.append(f"{candidate.label} · Attempt {candidate.attempts}\n"
+                         f"{candidate.run_directory}")
+    path = QLabel("\n".join(paths) or str(snapshot.study_directory))
+    path.setObjectName("unresolvedAttemptPath")
+    path.setTextFormat(Qt.TextFormat.PlainText)
+    path.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    path.setWordWrap(True)
+    window.content_layout.addWidget(path)
+    for label, source in guidance.get("locked_saved_fits", ()):
+        button = QPushButton("Inspect saved " + label)
+        button.clicked.connect(lambda _=False, ref=source: window._open_guided_saved_fit(ref))
+        window.content_layout.addWidget(button)
+
+
 def render(window, prepared):
     from diffeoforge.desktop.pilot_common_model import pin_action, pin_recovery, pin_revision
     from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
@@ -111,14 +167,23 @@ def render(window, prepared):
     window.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
     info = record(snapshot)
     guidance = prepared.guidance
+    running = window._worker is not None or window._restoring_search
+    if ((guidance.get("unresolved_writer") or guidance.get("recovered_checks"))
+            and (not running or "preferred" not in guidance)):
+        _locked_view(window, snapshot, guidance, running)
+        return
     bounded_action = guidance.get("bounded_adaptive")
     regional_trial = bool(snapshot.attachment_comparison.get("regional_objective"))
     iterations = snapshot.attachment_comparison.get("iterations")
     strategy = info.get("strategy") or {}
     checkpoint = (strategy.get("regional_recipe") or {}).get("review_checkpoint")
     checkpoint_continuation = bool(checkpoint and strategy.get("optimization"))
-    starting_choice = next((row for row in guidance.get("feedback", {}).values()
-                            if row and row.get("starting_fit_choice")), None)
+    pending_choice = guidance.get("starting_fit_choice")
+    starting_choice = (
+        guidance["feedback"][pending_choice["identifier"]] if pending_choice else
+        next((row for row in guidance.get("feedback", {}).values()
+              if row and row.get("starting_fit_choice")), None)
+    )
     density_pair = snapshot.attachment_comparison.get("early_density_comparison")
     common_flow = (
         info["phase"] == "joint"
@@ -142,7 +207,6 @@ def render(window, prepared):
     failure_inspection = bool(common_failure and common_failure["action"] in {
         "inspect", "inspect_template",
     })
-    running = window._worker is not None or window._restoring_search
     regional_accepted = bool(
         snapshot.attachment_comparison.get("regional_objective")
         and any(snapshot.visual_reviews.get(c.candidate_id) is True
@@ -245,7 +309,8 @@ def render(window, prepared):
         effort.setWordWrap(True)
         window.content_layout.addWidget(effort)
         if bounded_action["closed"]:
-            note = QLabel(bounded_action["reason"] + " Anatomical review is still required.")
+            note = QLabel(bounded_action["reason"] + (
+                "" if regional_accepted else " Anatomical review is still required."))
             note.setObjectName("adaptiveResult")
             note.setWordWrap(True)
             window.content_layout.addWidget(note)
@@ -396,7 +461,8 @@ def render(window, prepared):
     unresolved = [
         c for c in snapshot.candidates if c.status not in {"completed", "failed", "interrupted"}
     ]
-    failed = [c for c in snapshot.candidates if c.status in {"failed", "interrupted", "orphaned"}]
+    failed = [c for c in snapshot.candidates if c.status == "failed"]
+    interrupted = [c for c in snapshot.candidates if c.status == "interrupted"]
     resume_checks = bool(pending) and all(c.candidate_id in checks_pending for c in pending)
     retry_blocked = any(c.candidate_id in guard_failures for c in pending)
     window.progress.setVisible(running or bool(completed))
@@ -418,6 +484,8 @@ def render(window, prepared):
         if (info.get("strategy") or {}).get("common_multiscale", {}).get("stage") == "detail"
         else f"Run control-point comparison · {len(pending)} remaining"
         if density_pair
+        else f"Retry {interrupted[0].label} on this specimen"
+        if len(pending) == len(interrupted) == 1
         else f"Compare Current / Varifold · {len(pending)} trials on 1 specimen"
         if len(snapshot.candidates) == 2
         else "Run prepared test · 1 trial on 1 specimen"
@@ -462,10 +530,12 @@ def render(window, prepared):
         if retry_blocked
         else "Fit saved; checks incomplete. Resume checks without fitting again."
         if resume_checks
-        else "A trial failed. Inspect details, retry, or choose an approved alternative."
-        if failed
         else valid_next.get("transfer_note") or "Suitable fit saved. Prepare the next check."
         if valid_next
+        else "This trial stopped before completion. You can retry it from the saved pilot."
+        if interrupted and not failed
+        else "A trial failed. Inspect details, retry, or choose an approved alternative."
+        if failed
         else "Suitable fit saved. Review the next-form input issue below."
         if next_forms
         else "Suitable fit saved. Next: prepare its atlas-model check below."
@@ -665,7 +735,13 @@ def render(window, prepared):
         window.status.setText("Starting fit not selected. Review the reported checks, then "
                               "choose the exact saved fit to continue from.")
 
-    if bounded_action and not running and bounded_action.get("recommendation"):
+    # A closed action can recommend an earlier field. A verified human choice
+    # or approval already has its own next step, including after reopening.
+    extension = (bounded_action or {}).get("extension")
+    reviewed_next = valid_next or regional_accepted or (
+        direction_pinned and direction.get("explicit_start") and not extension)
+    if (bounded_action and bounded_action.get("recommendation") and not running
+            and not starting_choice and not reviewed_next and not common_failure):
         retained = bounded_action["recommendation"]
         identifier = snapshot.candidates[0].candidate_id
         # A numerical recommendation is viewable; it is not a saved human choice.
@@ -673,8 +749,7 @@ def render(window, prepared):
         window._guided_review_target = None
         window.review_next_button.hide()
         window._guided_footer_action = None
-        extension = bounded_action.get("extension")
-        if extension and not starting_choice:
+        if extension:
             pin_action(window, snapshot, "Prepare +300 iterations",
                        "adaptive_extend_bounded", identifier,
                        "Continue from this exact saved fit with the same areas and settings. "
@@ -886,7 +961,7 @@ def render(window, prepared):
             detail.setTextFormat(Qt.TextFormat.PlainText)
             detail.setWordWrap(True)
             layout.addWidget(InfoDisclosure(report["title"], detail))
-        elif candidate in failed:
+        elif candidate.status in {"failed", "interrupted", "orphaned"}:
             failure = guard_failures.get(candidate.candidate_id)
             if failure:
                 note = QLabel(failure["message"])
@@ -899,7 +974,8 @@ def render(window, prepared):
                 note.setWordWrap(True)
                 layout.addWidget(note)
             else:
-                layout.addWidget(InfoDisclosure('Technical failure', failure['reason'] if failure
+                title = "Technical failure" if candidate.status == "failed" else "Attempt details"
+                layout.addWidget(InfoDisclosure(title, failure['reason'] if failure
                                  else candidate.error or 'No usable result'))
             if (not running and candidate.status == "failed"
                     and candidate.candidate_id not in checks_pending):

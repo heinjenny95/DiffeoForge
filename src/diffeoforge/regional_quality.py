@@ -318,6 +318,9 @@ def _evaluate_and_measure(
         comparisons.append(dict(coarse=coarse["timepoints"], fine=count, **delta))
         if delta["maximum"] <= TEMPORAL_TOLERANCE:
             break
+    from diffeoforge.reconstruction_material_lineage import on_staged_grid
+
+    receipt = on_staged_grid(receipt, plan.get("starting_material_lineage"))
     receipt = refine_evaluation(
         run,
         receipt,
@@ -362,7 +365,7 @@ def _evaluate_and_measure(
                 # identities. Preserve the bound spatial ancestry for later QC.
                 if receipt["reference_source"] != coarse["reference_source"]:
                     raise ValueError("Temporal replay changed the refined material grid")
-                receipt["material_lineage"] = coarse["material_lineage"]
+                receipt = on_staged_grid(receipt, coarse["material_lineage"])
             # A finer time grid can reveal extra spatial curvature. Recheck the
             # original material mesh at that grid; an older refinement receipt
             # cannot qualify this new endpoint by being copied onto it.
@@ -414,6 +417,14 @@ def _evaluate_and_measure(
     from diffeoforge.reconstruction_material_lineage import from_evaluation
 
     lineage = from_evaluation(receipt, cancelled=cancelled, event_callback=event_callback)
+    if lineage is not None:
+        same_reference = automatic is baseline
+        if baseline is not None:
+            baseline = on_staged_grid(baseline, receipt["material_lineage"])
+        if same_reference:
+            automatic = baseline
+        elif automatic is not None:
+            automatic = on_staged_grid(automatic, receipt["material_lineage"])
     material_options = dict(material_lineage=lineage) if lineage is not None else {}
     quality = measure(
         config,

@@ -1,6 +1,7 @@
 """Edit independent surface instructions together, committing only on Save."""
 
 from copy import deepcopy
+from threading import Event
 
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
 from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.pilot_regions import BOX_VERSION, EDIT_VERSION, MAX_REGIONS, SYMPTOMS, validate
+from diffeoforge.reconstruction_feedback import ReconstructionMaterialUnavailable
 
 _CORRECT_COLOR = "#bc283d"
 _PROTECT_COLOR = "#137748"
@@ -38,7 +40,7 @@ _INSTRUCTIONS = SYMPTOMS | {
 
 class RegionFeedbackDialog(QDialog):
     def __init__(self, marking, parent=None, *, regions=(), rotation=None,
-                 fit_preview=None, pilot_cache=None):
+                 fit_preview=None, pilot_cache=None, candidate=None, subject=None):
         super().__init__(parent)
         self.setProperty("processRecordingPilotReview", True)
         self.setWindowTitle("Correct fit · click an area")
@@ -273,9 +275,20 @@ class RegionFeedbackDialog(QDialog):
             self._fit_loader.loaded.connect(self._fit_ready)
             self._fit_loader.failed.connect(self._fit_failed)
             self.finished.connect(self._fit_loader.cancel)
-            self._fit_loader.request_operation(fit_preview.sha256, lambda: load_region_marking_mesh(
-                fit_preview.path, fit_preview.sha256, fit_preview, pilot_cache,
-            ))
+            initial = self._initial_rows
+
+            cancelled = Event()
+            self._fit_loader.cancelled.connect(cancelled.set)
+
+            def prepare_fit():
+                geometry = load_region_marking_mesh(
+                    fit_preview.path, fit_preview.sha256, fit_preview, pilot_cache)
+                if any(r.get("reconstruction") for r in initial):
+                    geometry.prepare_inherited_faces(candidate, subject, initial,
+                                                     cancelled=cancelled.is_set)
+                return geometry
+
+            self._fit_loader.request_operation(fit_preview.sha256, prepare_fit)
 
     def resizeEvent(self, event):  # noqa: N802 - Qt API
         super().resizeEvent(event)
@@ -545,6 +558,12 @@ class RegionFeedbackDialog(QDialog):
             self._render()  # Preselect shape/extent without creating or changing a mark.
             return
         row = self._rows[index]
+        if self._earlier_material(row):
+            point = self._fit_marking.tracked_point(row) if self._fit_marking else None
+            if point is None:
+                self._selected(index)
+                return
+            row["center"] = list(map(float, point))
         self._set_area_shape(row)
         if row.get("reconstruction") and self._fit_marking is not None:
             self._bind_reconstruction(row)
@@ -569,6 +588,35 @@ class RegionFeedbackDialog(QDialog):
             self.move.setChecked(False)
             self._refresh_list(min(index, len(self._rows) - 1))
 
+    def _earlier_material(self, row):
+        evidence = row.get("reconstruction")
+        return evidence and (self._fit_preview is None
+                             or evidence["sha256"] != self._fit_preview.sha256)
+
+    def _display_regions(self, selected, counts):
+        brushes, markers, colors = [], {}, {}
+        selected_brush = None
+        for i, (row, count) in enumerate(zip(self._rows, counts, strict=True)):
+            if count < 0:
+                continue
+            if self._earlier_material(row):
+                if self._fit_marking is None or self.view.currentData() == "original":
+                    continue
+                centre = self._fit_marking.tracked_point(row)
+                if centre is None:
+                    continue
+            else:
+                if i == selected:
+                    selected_brush = len(brushes)
+                brushes.append(row)
+                centre = tuple(row["center"])
+            letter = chr(65 + i)
+            markers[letter] = centre
+            colors[letter] = (_CORRECT_COLOR if row.get("purpose", "problem") == "problem"
+                              else _PROTECT_COLOR)
+        self.canvas.set_surface_regions(brushes, selected_brush)
+        self.canvas.set_markers(markers, colors=colors)
+
     def _render(self):
         index = self.listing.currentRow()
         boxed = self.shape.currentData() == "box"
@@ -583,12 +631,11 @@ class RegionFeedbackDialog(QDialog):
                    repr(evidence))
             if key not in self._area_counts:
                 if evidence:
-                    from diffeoforge.reconstruction_feedback import material_mask
-
                     try:
-                        self._area_counts[key] = (int(material_mask(
-                            self._fit_marking.model.vertices, self._fit_marking.model.triangles,
-                            [row]).sum()) if self._fit_marking else 0)
+                        self._area_counts[key] = (len(self._fit_marking.material_faces(row))
+                                                  if self._fit_marking else 0)
+                    except ReconstructionMaterialUnavailable:
+                        self._area_counts[key] = -1
                     except ValueError:
                         self._area_counts[key] = 0
                 else:
@@ -596,17 +643,34 @@ class RegionFeedbackDialog(QDialog):
             current_counts[key] = self._area_counts[key]
             counts.append(current_counts[key])
         self._area_counts = current_counts
-        self.canvas.set_surface_regions(self._rows, index if index >= 0 else None)
-        markers = {chr(65 + i): tuple(r["center"]) for i, r in enumerate(self._rows)}
-        colors = {label: _CORRECT_COLOR if row.get("purpose", "problem") == "problem"
-                  else _PROTECT_COLOR for label, row in zip(markers, self._rows, strict=True)}
-        self.canvas.set_markers(markers, colors=colors)
-        self.save.setEnabled(bool(self._rows) and all(counts) or self._had_rows and not self._rows)
-        if index >= 0:
+        self._display_regions(index, counts)
+        valid = all(count > 0 for count in counts)
+        self.save.setEnabled(bool(self._rows) and valid or self._had_rows and not self._rows)
+        unmapped = []
+        for i, (row, count) in enumerate(zip(self._rows, counts, strict=True)):
+            letter = chr(65 + i)
+            label = f"{letter} · {self._label(row)}"
+            if count < 0:
+                label += " · place again on this reconstruction"
+                unmapped.append(letter)
+            elif count > 0 and self._earlier_material(row):
+                label += " · tracked on the fit"
+            self.listing.item(i).setText(label)
+        if unmapped:
+            labels = ", ".join(unmapped)
+            self.status.setText(f"Could not locate {labels} on this reconstruction. "
+                                "Select the affected mark, choose Reconstruction surface, "
+                                "then use Move point to place it again.")
+        elif index >= 0 and self._earlier_material(self._rows[index]) and counts[index] > 0:
+            self.status.setText(
+                f"{chr(65 + index)} · {counts[index]:,} tracked reconstruction faces. "
+                "In Fit or Overlay, the letter marks one face in this area. "
+                "Resizing draws a new brush at that face.")
+        elif index >= 0:
             surface = "reconstruction" if self._rows[index].get("reconstruction") else "original"
             self.status.setText(f"{chr(65 + index)} · {counts[index]:,} {surface} faces selected. "
                 + ("Enlarge or move empty areas on the intended surface."
-                   if not all(counts) else
+                   if not valid else
                    f"{len(self._rows)} / {MAX_REGIONS} areas. Click to add another point."))
         else:
             self.status.setText("No corrections marked.")
@@ -616,9 +680,10 @@ class RegionFeedbackDialog(QDialog):
         if not self.save.isEnabled():
             return
         from diffeoforge.mesh import sha256_file
+        from diffeoforge.reconstruction_feedback import same_saved_material_mark
 
         for row in self._rows:
-            if row.get("reconstruction") and row not in self._initial_rows:
+            if row.get("reconstruction") and not same_saved_material_mark(row, self._initial_rows):
                 if (self._fit_preview is None
                         or row["reconstruction"]["sha256"] != self._fit_preview.sha256
                         or sha256_file(self._fit_preview.path) != self._fit_preview.sha256):

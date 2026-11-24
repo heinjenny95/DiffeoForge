@@ -473,6 +473,15 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
                 )
                 for item in recommendation_items
             )
+            handoff = calibration_result.get("full_cohort_initialization", {})
+            if (preflight.inputs.cohort_template is not None and handoff.get("method")
+                    == "learned_pilot_template_and_controls_zero_full_cohort_momenta"):
+                recommendation_items += (ReviewItem(
+                    "Atlas initialization",
+                    "verified learned pilot template and control points",
+                    "The full cohort uses the saved pilot geometry. The original cohort template "
+                    "remains the alignment reference.",
+                ),)
         recommendation_warnings = tuple(
             str(warning) for warning in recommendation["warnings"]
         )

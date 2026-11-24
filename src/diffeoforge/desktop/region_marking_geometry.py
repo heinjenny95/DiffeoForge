@@ -55,6 +55,8 @@ class RegionMarkingGeometry:
 
     def __init__(self, model: RegionMarkingModel) -> None:
         self.model = model
+        self._inherited_faces = {}
+        self._tracked_points = {}
         self._cell_locator = _cell_locator(model.vertices, model.triangles)
         self._centres = np.empty((len(model.triangles), 3), dtype=np.float64)
         for start in range(0, len(model.triangles), _CENTROID_BLOCK_SIZE):
@@ -64,6 +66,60 @@ class RegionMarkingGeometry:
         for axis in self._centres.T:
             order = np.argsort(axis)
             self._axes.append((order, axis[order]))
+
+    @staticmethod
+    def _material_key(evidence):
+        return (evidence["sha256"], evidence["topology_sha256"], tuple(evidence["face_ids"]))
+
+    def prepare_inherited_faces(self, candidate, subject, rows, *, cancelled):
+        """Cache exact descendant indices for saved reconstruction marks in the load worker."""
+        from diffeoforge.reconstruction_feedback import (
+            ReconstructionMaterialUnavailable,
+            material_mask,
+            topology_sha256,
+        )
+        from diffeoforge.reconstruction_material_lineage import from_evaluation
+        from diffeoforge.regional_evaluation import endpoint
+
+        m = self.model
+        inherited = [r for r in rows if r.get("reconstruction")
+                     and r["reconstruction"]["sha256"] != m.sha256]
+        if not inherited:
+            return
+        topology = topology_sha256(m.vertices, m.triangles)
+        lineage = None
+        if candidate and any(r["reconstruction"]["topology_sha256"] != topology for r in inherited):
+            evaluated = endpoint(candidate, subject=subject)
+            if (evaluated and evaluated["sha256"] == m.sha256
+                    and Path(evaluated["path"]).resolve() == m.path.resolve()):
+                quality = candidate.metrics["attachment_comparison"]["subjects"][subject]
+                receipt, = [quality[k]["evaluation"] for k in
+                            ("regional_quality", "ordinary_quality", "cohort_quality")
+                            if quality.get(k)]
+                lineage = from_evaluation(receipt, cancelled=cancelled)
+        for row in inherited:
+            try:
+                selected = material_mask(m.vertices, m.triangles, [row], lineage=lineage)
+            except ReconstructionMaterialUnavailable:
+                continue
+            key = self._material_key(row["reconstruction"])
+            ids = np.flatnonzero(selected)
+            self._inherited_faces[key] = ids
+            # The label must lie on an actual selected triangle, even in a curved patch.
+            centres = self._centres[ids]
+            nearest = np.square(centres - centres.mean(axis=0)).sum(axis=1).argmin()
+            self._tracked_points[key] = tuple(centres[nearest])
+
+    def tracked_point(self, row):
+        return self._tracked_points.get(self._material_key(row["reconstruction"]))
+
+    def material_faces(self, row):
+        from diffeoforge.reconstruction_feedback import material_mask
+
+        ids = self._inherited_faces.get(self._material_key(row["reconstruction"]))
+        if ids is not None:
+            return ids
+        return np.flatnonzero(material_mask(self.model.vertices, self.model.triangles, [row]))
 
     def pick(self, start, end) -> tuple[float, float, float] | None:
         """Return the first original intersection from the viewer toward the scene."""

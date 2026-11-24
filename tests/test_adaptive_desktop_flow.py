@@ -162,6 +162,33 @@ def test_adaptive_extension_is_the_primary_preparation_and_review_remains_availa
     assert panel.snapshot.visual_reviews == {}
 
 
+@pytest.mark.parametrize("decision", ["selected", "approved"])
+def test_reviewed_closed_action_advances_from_the_researchers_decision(panel, decision):
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    identifier = panel.candidate.candidate_id
+    retained = retained_reference(panel.snapshot.study_directory)
+    panel.guidance["bounded_adaptive"] = bounded(closed=True, recommendation=retained)
+    if decision == "approved":
+        panel.snapshot.visual_reviews[identifier] = True
+        panel.guidance["next_forms"] = {identifier: dict(available=True, action="next_form",
+            target="next.vtk", label="Review next specimen", shapes=1, checked=0, total=2)}
+        expected = "adaptive_next_form"
+    else:
+        panel.guidance["fit_direction"] = dict(mode="trial", explicit_start=True,
+            title="Correct the remaining area", start_label="Selected fit", identifier=identifier,
+            action="adaptive_recover_start",
+            request=dict(goal="regional", request="regional:missing"),
+            reason="Saved choice")
+        expected = "adaptive_recover_start"
+    panel.render()
+    assert panel.window._guided_footer_action[1:] == (expected, identifier)
+    assert panel.window.next_step_button.isEnabled() and panel.window.start_button.isHidden()
+    ReferenceCalibrationDialog._perform_final_next_step(panel.window)
+    assert len(panel.invoked) == 1
+    assert panel.invoked[0][1]["guided_action"][:2] == (expected, identifier)
+
+
 def test_prepared_extension_requires_a_separate_run(panel):
     from PySide6.QtWidgets import QLabel
 

@@ -348,8 +348,14 @@ class _CalibrationStageWorker(QRunnable):
                 from diffeoforge.reference_guided_pilot import next_action, upgrade
 
                 action, identifier, goal = self.guided_action
-                result = (upgrade(self.runner.study_directory) if action == "upgrade" else
-                          next_action(self.runner.study_directory, action, identifier, goal=goal))
+                if action == "resume_recovered_fit_checks":
+                    from diffeoforge.pilot_execution_recovery import resume_checks
+
+                    result = resume_checks(self.runner, identifier, goal, emit)
+                else:
+                    result = (upgrade(self.runner.study_directory) if action == "upgrade" else
+                              next_action(self.runner.study_directory, action, identifier,
+                                          goal=goal))
                 self.runner.study_directory = result.study_directory
             elif self.stage_selection_id is not None:
                 result, _assessment = record_reference_calibration_stage_review(
@@ -613,6 +619,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         )
         self._preview_cache = preview_cache or study_directory / "display-cache"
         self._joint_transfer_source = (study_directory, candidate.candidate_id)
+        self._marking_candidate = candidate
         self.display_scopes: dict[str, str] = {}
         self._fit = dict(subject_fit or {})
         self._pairs = tuple(
@@ -1456,7 +1463,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         dialog = RegionFeedbackDialog(
             marking, self, regions=self.problem_regions.get(name, []),
             rotation=self.canvas.view_rotation(), fit_preview=fit_preview,
-            pilot_cache=self._preview_cache,
+            pilot_cache=self._preview_cache, candidate=self._marking_candidate, subject=name,
         )
         try:
             if dialog.exec() == QDialog.DialogCode.Accepted and dialog.regions is not None:
@@ -1771,6 +1778,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         self._prepared_view = None
         self._view_loading = False
         self._view_closed = False
+        self._mark_error_action = None
         self._review_saving = False
         self._review_save_loader = PreviewMeshLoader(self)
         self._review_save_loader.loaded.connect(self._review_saved)
@@ -2082,9 +2090,14 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         root.addWidget(self.status)
         self.operation_error = QLabel()
         self.operation_error.setObjectName("statusError")
+        self.operation_error.setTextFormat(Qt.TextFormat.PlainText)
         self.operation_error.setWordWrap(True)
         self.operation_error.hide()
         root.addWidget(self.operation_error)
+        self.retry_view_button = QPushButton("Retry saved pilot verification")
+        self.retry_view_button.clicked.connect(self._retry_view)
+        self.retry_view_button.hide()
+        root.addWidget(self.retry_view_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -2341,6 +2354,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                 if snapshot is not None:
                     self._snapshot = snapshot
                 self._view_loading = True
+                self.retry_view_button.hide()
+                if self._worker is None:
+                    self.cancel_button.hide()
+                    self.cancel_button.setEnabled(False)
                 self.content.setEnabled(False)
                 self.pilot_tools.setEnabled(False)
                 for control in (self.start_button, self.advance_button,
@@ -2351,13 +2368,16 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                                 self.collect_evidence_button,
                                 self.advanced_mode, self.afk_mode):
                     control.setEnabled(False)
-                self.status.setText("Verifying saved evidence in background…")
+                self.status.hide()  # The loader already displays the verification activity.
                 root = self.study_directory
+                local_worker = self._worker is not None
                 self._view_loader.request_operation(
-                    root, lambda: prepare_pilot_view(root, snapshot),
+                    root, (lambda: prepare_pilot_view(root, snapshot, local_worker=True))
+                    if local_worker else (lambda: prepare_pilot_view(root, snapshot)),
                 )
                 return
         self._view_loading = False
+        self.retry_view_button.hide()
         self._prepared_view = prepared
         for control, visible in getattr(self, "_guided_hidden_visibility", {}).items():
             control.setVisible(visible)
@@ -2502,6 +2522,8 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             from diffeoforge.desktop.guided_pilot import render
 
             render(self, prepared)
+            if self._mark_error_action:
+                self._offer_mark_recovery()
             return
         context = prepared.manifest
         directory = context["inputs"].get("full_cohort", {}).get("directory")
@@ -3196,6 +3218,28 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
     def _view_loaded(self, root, prepared) -> None:
         if self._view_closed or self._review_saving or root != self.study_directory:
             return
+        guidance = prepared.guidance or {}
+        if "mark_review_failure" in guidance:
+            self._view_failed(root, guidance["mark_review_failure"])
+            self._snapshot = prepared.snapshot
+            self._clear_content()
+            self.content.setEnabled(True)
+            self.operation_error.setToolTip(guidance["mark_review_failure"])
+            self.operation_error.setText("The pilot could not prepare a correction with the "
+                                        "saved reconstruction marks.")
+            choices = guidance["editable_mark_sources"]
+            if len(choices) == 1:
+                identifier, reference, _ = choices[0]
+                self._mark_error_action = root, identifier, reference
+                self._offer_mark_recovery()
+            else:
+                for identifier, reference, label in choices:
+                    button = QPushButton(f"Review marks on {label}…")
+                    button.clicked.connect(
+                        lambda _=False, i=identifier, r=reference:
+                        self._open_guided_working_fit(i, r, require_selected=True))
+                    self.content_layout.addWidget(button)
+            return
         self._render(prepared=prepared)
         selected = getattr(self, "_pending_view_selection", None)
         self._pending_view_selection = None
@@ -3219,7 +3263,46 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         if self._view_closed or root != self.study_directory:
             return
         self._view_loading = False
-        self.status.setText("Saved evidence could not be verified: " + error)
+        self._prepared_view = None
+        self._mark_error_action = None
+        self._guided_footer_action = None
+        self._guided_review_target = None
+        self._pending_specimen_review = None
+        self._pending_screen_review = False
+        self._pending_continue_stage = False
+        self.status.hide()
+        self.operation_error.setText(f"Could not verify the saved pilot. {error}")
+        self.operation_error.setToolTip("")
+        self.operation_error.show()
+        self.retry_view_button.show()
+
+    def _retry_view(self):
+        if self._view_closed or self._view_loading or self._review_saving or self._worker:
+            return
+        self.operation_error.hide()
+        self.operation_error.setToolTip("")
+        self._mark_error_action = None
+        self._render()
+
+    def _offer_mark_recovery(self):
+        origin, identifier, reference = self._mark_error_action
+        if origin != self.study_directory:
+            self._mark_error_action = None
+            return
+        self.status.hide()
+        self._guided_footer_action = origin, "review_failed_marks", (identifier, reference)
+        self._guided_footer_goal = None
+        self.next_step_button.setText("Review marks on the selected starting fit…")
+        self.next_step_button.setToolTip(
+            "Open the saved reconstruction and its marked areas for editing.")
+        self.next_step_button.setVisible(True)
+        self.next_step_button.setEnabled(True)
+        _set_action_emphasis(self.next_step_button, True)
+
+    def _current_worker_signal(self):
+        sender = self.sender()
+        return not self._view_closed and (not isinstance(sender, _CalibrationSignals)
+                                          or sender is getattr(self._worker, "signals", None))
 
     def _update_final_next_step(self) -> None:
         if self._view_loading:
@@ -3352,6 +3435,8 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                     self._open_guided_saved_fit(identifier)
                 elif action == "bounded_retained":
                     self._open_guided_working_fit(*identifier)
+                elif action == "review_failed_marks":
+                    self._open_guided_working_fit(*identifier, require_selected=True)
                 elif action == "inspect_failed_template":
                     from diffeoforge.desktop.guided_diagnosis import inspect_template
 
@@ -4218,6 +4303,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             self.cancel_button.hide()
             message = f"Pilot start failed: {type(error).__name__}: {error}"
             self.status.setText(message)
+            self.status.hide()
             self.operation_error.setText(message)
             self.operation_error.show()
             QMessageBox.critical(self, "Pilot could not start", message)
@@ -4264,6 +4350,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             self.cancel_button.hide()
             message = f"Pilot start failed: {type(error).__name__}: {error}"
             self.status.setText(message)
+            self.status.hide()
             self.operation_error.setText(message)
             self.operation_error.show()
             QMessageBox.critical(self, "Pilot could not start", message)
@@ -4368,7 +4455,9 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         self._worker = worker
         self.content.setEnabled(False)
         self._fit_search_stop_text = None
+        self._mark_error_action = None
         self.operation_error.clear()
+        self.operation_error.setToolTip("")
         self.operation_error.hide()
         self.advanced_mode.setEnabled(False)
         self.afk_mode.setEnabled(False)
@@ -4414,6 +4503,8 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
 
     @Slot(object)
     def _event(self, event: Mapping[str, object]) -> None:
+        if not self._current_worker_signal():
+            return
         if event["event"] == "bounded_adaptive_progress":
             self._bounded_adaptive_progress = dict(event)
             if event.get("snapshot") is not None:
@@ -4723,6 +4814,8 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
 
     @Slot(object)
     def _succeeded(self, snapshot: ReferenceCalibrationStudySnapshot) -> None:
+        if not self._current_worker_signal():
+            return
         finishing = getattr(self._worker, "finish_candidate_id", None) is not None
         previous_final_fit_ids = getattr(self._worker, "previous_final_fit_ids", None)
         self._pending_continue_stage = bool(
@@ -4774,12 +4867,35 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
 
     @Slot(str)
     def _failed(self, message: str) -> None:
+        if not self._current_worker_signal():
+            return
+        action = getattr(self._worker, "guided_action", None)
         self._worker = None
         self._live_fit_preview.clear()
-        self.operation_error.setText(f"Calibration stage could not continue: {message}")
+        self._pending_specimen_review = None
+        self._pending_screen_review = False
+        self._pending_continue_stage = False
+        recovery = None
+        if (action and message.startswith("ReconstructionMaterialUnavailable:")
+                and self._prepared_view and self._prepared_view.snapshot is self._snapshot):
+            _, identifier, request = action
+            if isinstance(request, dict):
+                request = request.get("goal") if "bounded_action" in request else request
+            reference = request.get("reference") if isinstance(request, dict) else None
+            guidance = self._prepared_view.guidance or {}
+            feedback = (guidance.get("feedback") or {}).get(identifier) or {}
+            if reference and feedback.get("selected") == reference:
+                recovery = self.study_directory, identifier, reference
+        self._mark_error_action = recovery
+        self.operation_error.setText(
+            "The correction could not use a marked area on the reconstruction. "
+            "Review its position on the selected starting fit and replace the affected mark."
+            if recovery else f"Calibration stage could not continue: {message}")
+        self.operation_error.setToolTip(message)
         self.operation_error.show()
-        self._render()
-        self.status.setText(f"Calibration stage could not continue: {message}")
+        # A rejected guided preparation did not run an optimizer. The mark editor
+        # independently reloads this exact source and its current working marks.
+        self._render(self._snapshot if recovery else None)
         self._notify_review_ready(failure=message)
 
     def _progress_label(self, candidate_id):
@@ -4852,18 +4968,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
     def _worker_finished(self, worker: _CalibrationStageWorker) -> None:
         # A prior completion may already have dispatched a new specimen worker.
         if self._worker is worker:
-            self._worker = None
-            self._live_fit_preview.clear()
-            self._pending_specimen_review = None
-            self.operation_error.setText(
-                worker.error_message
-                or "The background task ended. Saved fits are retained; retry or close.")
-            self.operation_error.show()
-            self._render()
-            self.status.setText(
-                worker.error_message
-                or "The background task ended. Saved fits are retained; retry or close."
-            )
+            self._failed(worker.error_message or "The background task ended before completion.")
 
     def _release_finished_worker(self) -> None:
         if self._worker is not None and getattr(self._worker, "is_finished", False):
@@ -5151,10 +5256,12 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         )
 
     def _open_guided_working_fit(self, identifier, reference, *, view_hint=None,
-                                 restore_partial=False, expected_starting_choice=None):
+                                 restore_partial=False, expected_starting_choice=None,
+                                 require_selected=False):
         self._open_guided_saved_fit(reference, working_for=identifier, view_hint=view_hint,
                                     restore_partial=restore_partial,
-                                    expected_starting_choice=expected_starting_choice)
+                                    expected_starting_choice=expected_starting_choice,
+                                    require_selected=require_selected)
 
     def _open_common_saved_fit(self, reference):
         if self._view_loading or self._view_closed or self._review_saving or self._worker:
@@ -5195,7 +5302,8 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         self._viewer_preparation.request_operation(("guided-common", origin, reference), prepare)
 
     def _open_guided_saved_fit(self, reference, *, working_for=None, view_hint=None,
-                               restore_partial=False, expected_starting_choice=None):
+                               restore_partial=False, expected_starting_choice=None,
+                               require_selected=False):
         if self._view_loading or self._view_closed or self._review_saving or self._worker:
             return
         origin = self.study_directory
@@ -5220,6 +5328,8 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                                 "The starting-fit decision changed; reopen the current choice."
                             )
                     context = presentation(current, working_for)
+                    if require_selected and context["selected"] != reference:
+                        raise ValueError("The starting fit changed. Recheck the saved pilot.")
                     choice = next(r for r in context["choices"] if r["reference"] == reference)
                     context.update(reference=reference, label=choice["label"],
                                    target=reference["target"], view_hint=view_hint)
@@ -5279,6 +5389,13 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         if (self._view_closed or self._review_saving or self._worker
                 or origin != self.study_directory):
             return
+        if key[0] == "guided-working" and self._mark_error_action:
+            self.operation_error.setText("Could not open the marked fit. " + message)
+            self.operation_error.show()
+            self.retry_view_button.show()
+            self.status.hide()
+            return
+        self.status.show()
         self.status.setText("Comparison unavailable: " + message)
 
     @Slot()
@@ -5515,6 +5632,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         origin, root, candidate_id, approved, keep, screen_parent = key
         if self._view_closed or self.study_directory != origin:
             return
+        if self._mark_error_action:
+            self._mark_error_action = None
+            self.operation_error.hide()
+            self.retry_view_button.hide()
         if keep:
             self._render(self._snapshot)
             if root == self.study_directory and self._worker is None:

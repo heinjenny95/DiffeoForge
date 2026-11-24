@@ -166,7 +166,8 @@ def test_better_feedback_alone_does_not_promote_a_severe_regression(tmp_path, mo
     selected = feedback.save_feedback(
         trial.study_directory, "guided-varifold", decision(base, trial, "better")
     )
-    assert feedback.selection(selected, "guided-varifold") == feedback.reference(
-        base, "guided-varifold"
-    )
+    assert feedback.selection(selected, "guided-varifold") is None
+    pending = feedback.starting_fit_choice(selected, "guided-varifold")
+    assert pending["latest"] == feedback.reference(trial, "guided-varifold")
+    assert pending["comparison"] == feedback.reference(base, "guided-varifold")
     assert not selected.visual_reviews

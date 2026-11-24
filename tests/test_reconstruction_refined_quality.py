@@ -1,5 +1,6 @@
 """Post-fit QC follows marked material through subdivision, without editing marks."""
 from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -72,3 +73,121 @@ def test_rejected_ancestry_still_blocks_postfit_measurement(tmp_path):
     np.save(path, parents)
     with pytest.raises(ValueError, match='evidence changed'):
         measure(original, refined, [row], material_lineage=lineage)
+
+
+def test_inherited_mark_prepares_and_follows_the_exact_faces_in_the_next_fit(tmp_path):
+    from diffeoforge.reconstruction_feedback import material_mask
+    from diffeoforge.reconstruction_material_lineage import on_staged_grid, starting_evidence
+    from diffeoforge.regional_fit import prepare, read_plan
+    from diffeoforge.regional_warm_support import assess
+    from diffeoforge.surface_io import load_surface_mesh
+
+    _, fit, _, mark, inspected, parents = refined_bridge(tmp_path)
+    saved_mark = deepcopy(mark)
+    grid = Path(inspected["reference_source"]["path"])
+    refined = load_surface_mesh(grid).geometry
+    source = np.isin(parents, mark["reconstruction"]["face_ids"])
+    expected_vertices = np.unique(np.asarray(refined.triangles)[source])
+    evidence = starting_evidence(inspected["reference_source"], {}, inspected)
+    controls = tmp_path / "controls.txt"
+    np.savetxt(controls, np.asarray(refined.vertices)[expected_vertices])
+    record = dict(refinement=dict(initialization="learned"),
+                  controls=dict(copy=controls.name, sha256=sha256_file(controls)))
+    residual = dict(control_coverage=dict(version="source-target-coverage-v1",
+                                          maximum_local_support_distance=.001))
+    target = tmp_path / "original.vtk"
+    support = assess(tmp_path, record, residual, grid, grid, grid, target, [mark], [],
+                     material_evaluation=evidence)
+    assert support["passed"] and support["material_vertices"] == len(expected_vertices)
+
+    local = prepare(tmp_path / "next", grid, target, [mark], focus_width=.2, focus_noise=.1,
+                    protection_noise=.1, retained_path=grid, material_evaluation=evidence)
+    plan = read_plan(dict(project=dict(parameter_provenance=dict(regional_fit=local))))
+    assert plan["focus_regions"] == [saved_mark]
+    assert plan["material_selection"]["source_faces"] == np.flatnonzero(source).tolist()
+    assert len(plan["focus_target_face_ids"]) > 0  # The original has a hole inside this brush.
+    assert plan["reconstruction_target_support"][0]["biological_correspondence_claim"] is False
+
+    # The scientific run stages a byte-identical original grid at a new path.
+    # A second round of subdivision must retain both generations of face ancestry.
+    staged = tmp_path / "staged-original.vtk"
+    staged.write_bytes(grid.read_bytes())
+    info = dict(path=str(staged), sha256=sha256_file(staged))
+    incoming = dict(reference_source=info, prefix=dict(reference_source=info, prefix=None))
+    rebound = on_staged_grid(incoming, plan["starting_material_lineage"])
+    final, v, f, p2 = stage(tmp_path, rebound, np.asarray(refined.vertices),
+                            np.asarray(refined.triangles), np.flatnonzero(source)[:2],
+                            "second-refinement")
+    for receipt in (final, final["prefix"]):
+        chosen = material_mask(v, f, [mark], lineage=from_evaluation(receipt))
+        np.testing.assert_array_equal(chosen, source[p2])
+    assert len(final["material_lineage"]["stages"]) == 2
+    assert inspected["material_lineage"]["current"]["path"] == str(grid)
+    assert len(fit.triangles) < len(refined.triangles) and mark == saved_mark
+    assert "material_lineage" not in incoming
+
+    staged.write_bytes(staged.read_bytes() + b" ")
+    with pytest.raises(ValueError, match="evidence changed"):
+        on_staged_grid(incoming, plan["starting_material_lineage"])
+    assert starting_evidence(dict(sha256="f" * 64), inspected) is None
+
+
+def test_original_only_successor_keeps_old_reconstruction_patch_for_later_review(
+        tmp_path, monkeypatch):
+    from diffeoforge import (
+        config,
+        reference_fixed_shooting,
+        regional_evaluation,
+        regional_quality,
+        source_refinement,
+    )
+    from diffeoforge.reconstruction_feedback import material_mask
+    from diffeoforge.reconstruction_material_lineage import starting_evidence
+    from diffeoforge.regional_fit import prepare, read_plan
+    from diffeoforge.surface_io import load_surface_mesh
+
+    _, _, _, mark, inspected, parents = refined_bridge(tmp_path)
+    grid = Path(inspected["reference_source"]["path"])
+    copied = tmp_path / "original-source-grid.vtk"
+    copied.write_bytes(grid.read_bytes())
+    expected = np.isin(parents, mark["reconstruction"]["face_ids"])
+    original_only = {k: v for k, v in mark.items() if k != "reconstruction"}
+    original_only["center"] = [.75, 0, 0]
+    local = prepare(tmp_path / "original-only", copied, tmp_path / "original.vtk", [original_only],
+                    focus_width=.2, focus_noise=.1, protection_noise=.1, retained_path=copied,
+                    material_evaluation=starting_evidence(inspected["reference_source"], inspected))
+    settings = dict(input=dict(subject_pattern="original.vtk"),
+                    project=dict(parameter_provenance=dict(regional_fit=local)))
+    plan = read_plan(settings)
+    for key in ("retained_run", "automatic_reference_run"):
+        run = tmp_path / key
+        run.mkdir()
+        (run / "manifest.json").write_text("{}")
+        plan[key] = dict(path=str(run), manifest_sha256=sha256_file(run / "manifest.json"))
+    monkeypatch.setattr(config, "load_config", lambda _: settings)
+    monkeypatch.setattr(config, "validate_input_paths", lambda *_: SimpleNamespace(
+        template=copied, input_directory=tmp_path))
+    monkeypatch.setattr(regional_quality, "read_plan", lambda _: plan)
+
+    # Deterministic identity fields on the staged material for all three runs.
+    def evaluate(run, destination, *, count=73, _source=None, **kwargs):
+        destination.mkdir(parents=True)
+        grid = Path(_source or copied)
+        identity = dict(path=str(grid), sha256=sha256_file(grid))
+        return dict(source_run=str(run), reference_source=identity, endpoint=identity,
+                    prefix=None, timepoints=count)
+
+    monkeypatch.setattr(regional_evaluation, "evaluate", evaluate)
+    monkeypatch.setattr(reference_fixed_shooting, "movement", lambda *_: {"maximum": 0.})
+    monkeypatch.setattr(source_refinement, "refine_evaluation",
+                        lambda run, receipt, *a, **k: receipt)
+    checked = regional_quality.evaluate_and_measure(
+        tmp_path / "qc", dict(attachment_comparison=dict(regional_objective=True)),
+        SimpleNamespace(candidate_id="test", config_path=tmp_path / "atlas.yaml"), tmp_path / "run")
+    geometry = load_surface_mesh(copied).geometry
+    for key in ("evaluation", "baseline_evaluation", "automatic_baseline_evaluation"):
+        # A later edit may reinstate the old reconstruction mark after the intervening
+        # correction used only original geometry. All reviewed references keep its exact IDs.
+        lineage = from_evaluation(checked[key])
+        actual = material_mask(geometry.vertices, geometry.triangles, [mark], lineage=lineage)
+        np.testing.assert_array_equal(actual, expected)

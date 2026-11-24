@@ -2013,6 +2013,10 @@ def _load_verified_calibration_study(
     from diffeoforge.reference_resolution_adoption import superseded_checks
 
     superseded = superseded_checks(events)
+    lifecycle_states = {
+        "candidate_started": "orphaned", "candidate_completed": "completed",
+        "candidate_failed": "failed", "candidate_interrupted": "interrupted",
+    }
     candidate_states: list[CalibrationStudyCandidateState] = []
     for candidate in stage.candidates:
         candidate_events = [
@@ -2021,25 +2025,19 @@ def _load_verified_calibration_study(
             if event.get("stage_id") == stage.stage_id
             and event.get("candidate_id") == candidate.candidate_id
         ]
-        completed = [event for event in candidate_events if event["event"] == "candidate_completed"]
-        failures = [
-            event
-            for event in candidate_events
-            if event["event"] in {"candidate_failed", "candidate_interrupted"}
-        ]
-        starts = [event for event in candidate_events if event["event"] == "candidate_started"]
-        latest = (completed or failures or starts or [None])[-1]
+        # A retry can start after an earlier failure and lose its final event.
+        # Its path, checks and shutdown status must all refer to that same attempt.
+        latest = next(
+            (event for event in reversed(candidate_events) if event["event"] in lifecycle_states),
+            {},
+        )
+        status = lifecycle_states.get(latest.get("event"), "pending")
+        error = latest.get("error")
+        if status == "orphaned":
+            error = "The latest attempt has started. Its final status has not been recorded."
         history = [e for e in candidate_events if e["event"] == "candidate_history_retained"]
         if history or candidate.candidate_id in superseded:
             status = "superseded"
-        elif completed:
-            status = "completed"
-        elif failures:
-            status = "interrupted" if failures[-1]["event"] == "candidate_interrupted" else "failed"
-        elif starts:
-            status = "orphaned"
-        else:
-            status = "pending"
         candidate_states.append(
             CalibrationStudyCandidateState(
                 candidate_id=candidate.candidate_id,
@@ -2048,26 +2046,13 @@ def _load_verified_calibration_study(
                 config_path=_safe_study_path(root, prepared[candidate.candidate_id]["config"]),
                 run_directory=(
                     None
-                    if latest is None or latest.get("run_directory") is None
+                    if latest.get("run_directory") is None
                     else _safe_study_path(root, latest["run_directory"])
                 ),
-                metrics=(completed[-1]["metrics"] if completed else None),
-                error=(
-                    None
-                    if completed
-                    else (
-                        str(failures[-1].get("error"))
-                        if failures
-                        else (
-                            "The previous DiffeoForge process ended before recording a "
-                            "terminal candidate event; retry creates a new immutable attempt."
-                            if starts
-                            else None
-                        )
-                    )
-                ),
-                attempts=len(starts),
-                failure=failures[-1].get("failure") if not completed and failures else None,
+                metrics=latest["metrics"] if latest.get("event") == "candidate_completed" else None,
+                error=error,
+                attempts=sum(event["event"] == "candidate_started" for event in candidate_events),
+                failure=latest.get("failure"),
             )
         )
     from diffeoforge.reference_stage_screening import screening_state
@@ -2118,11 +2103,9 @@ def _load_verified_calibration_study(
         event["event"] == "stage_awaiting_review" and event["stage_id"] == stage.stage_id
         for event in events
     )
-    status = (
-        "awaiting_review"
-        if awaiting
-        else ("running" if any(item.status == "orphaned" for item in candidate_states) else "ready")
-    )
+    status = "awaiting_review" if awaiting else "ready"
+    if any(item.status == "orphaned" for item in candidate_states):
+        status = "running"
     from diffeoforge.reference_integration_check import verified_tolerances
 
     tolerances = verified_tolerances(manifest, stage, candidate_states, events)
@@ -2336,6 +2319,9 @@ class ReferenceCalibrationStudyRunner:
             from diffeoforge.reference_qualification_resume import verified_run
 
             checks_run = verified_run(snapshot, candidate)
+            if checks_run is None and getattr(self, "_recovered_checks_only", False):
+                raise ReferenceCalibrationStudyError(
+                    "The selected native fit is no longer verified")
             if multiscale:
                 from diffeoforge.pilot_multiscale_failure import diagnose as stage_failure
 

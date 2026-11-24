@@ -227,6 +227,43 @@ def from_evaluation(receipt, *, cancelled=_not_cancelled, event_callback=None):
     return MaterialLineage(tuple(deepcopy(grids)), tuple(maps), tuple(deepcopy(files)), cancelled)
 
 
+def starting_evidence(grid, *evaluations):
+    """Find saved ancestry for the exact original-material grid used for the next fit."""
+    matching = [entry for entry in evaluations if entry and entry.get("material_lineage")
+                and entry["reference_source"]["sha256"] == grid["sha256"]]
+    if not matching:
+        return None
+    entry = max(matching, key=lambda row: len(row["material_lineage"]["stages"]))
+    return {key: entry[key] for key in ("reference_source", "material_lineage")}
+
+
+def _attach(receipt, data, source):
+    if receipt["reference_source"] != source:
+        raise ValueError("Composed fields do not share the refined original material grid")
+    updated = dict(receipt, material_lineage=deepcopy(data))
+    if receipt.get("prefix"):
+        updated["prefix"] = _attach(receipt["prefix"], data, source)
+    return updated
+
+
+def on_staged_grid(receipt, data):
+    """Keep exact ancestors when a successor evaluates a byte-identical staged grid."""
+    if not data:
+        return receipt
+    source = receipt["reference_source"]
+    current = data["current"]
+    if source["sha256"] != current["sha256"] or data["stages"][-1]["new_grid"] != current:
+        raise ValueError("Saved reconstruction ancestry does not bind the staged material grid")
+    path = str(Path(source["path"]).resolve())
+    if path != current["path"]:
+        _checked_file(current, grid=True)
+        current = dict(current, path=path)
+        stages = [*data["stages"][:-1], dict(data["stages"][-1], new_grid=current)]
+        data = dict(data, stages=stages, current=current)
+    _checked_file(current, grid=True)
+    return _attach(receipt, data, source)
+
+
 def append_stage(before, after, parent_faces, split_edges, *, old_geometry=None, new_geometry=None):
     """Attach newly saved refinement evidence without changing any old receipt or mark."""
     old = _grid(before["reference_source"]["path"], old_geometry)
@@ -245,12 +282,4 @@ def append_stage(before, after, parent_faces, split_edges, *, old_geometry=None,
                                parent_faces=_file(parent_faces), split_edges=_file(split_edges)))
     data["current"] = new
 
-    def attach(row):
-        if row["reference_source"] != after["reference_source"]:
-            raise ValueError("Composed fields do not share the refined original material grid")
-        updated = dict(row, material_lineage=deepcopy(data))
-        if row.get("prefix"):
-            updated["prefix"] = attach(row["prefix"])
-        return updated
-
-    return attach(after)
+    return _attach(after, data, after["reference_source"])

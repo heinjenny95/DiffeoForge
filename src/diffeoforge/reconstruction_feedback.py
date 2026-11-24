@@ -75,8 +75,18 @@ def bind(row, model):
                 face_ids=chosen.tolist())
 
 
+def same_saved_material_mark(row, previous_rows):
+    """A new diagnosis can describe the same previously inspected reconstruction patch."""
+    from diffeoforge.pilot_regions import SYMPTOMS
+
+    if (not row.get("reconstruction") or row.get("purpose", "problem") != "problem"
+            or row.get("symptom") not in SYMPTOMS):
+        return False
+    return any(dict(previous, symptom=row["symptom"]) == row for previous in previous_rows)
+
+
 def verify_review_regions(snapshot, candidate, regions, *, previous_regions=None):
-    """New marks must name the exact inspected output; unchanged journals persist."""
+    """New material selections must name the exact inspected output."""
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.mesh import sha256_file
     from diffeoforge.regional_evaluation import endpoint
@@ -92,7 +102,8 @@ def verify_review_regions(snapshot, candidate, regions, *, previous_regions=None
 
             inherited, _ = region_state(snapshot, candidate.candidate_id, name)
             previous = [*previous, *inherited]
-        new = [r for r in rows if r.get("reconstruction") and r not in previous]
+        new = [r for r in rows if r.get("reconstruction")
+               and not same_saved_material_mark(r, previous)]
         if new:
             pending[name] = new
     if not pending:
@@ -131,7 +142,8 @@ def verify_review_regions(snapshot, candidate, regions, *, previous_regions=None
                 raise ValueError("The inspected reconstruction faces differ from the marked brush")
 
 
-def target_support(source_vertices, source_faces, target_vertices, target_faces, regions):
+def target_support(source_vertices, source_faces, target_vertices, target_faces, regions, *,
+                   material_lineage=None):
     """Select target support for a reconstruction mark, explicitly without pairing.
 
     A brush can lie in empty original space. Its selected source material is
@@ -152,7 +164,7 @@ def target_support(source_vertices, source_faces, target_vertices, target_faces,
             # Swap roles only to propose connected original support. Removing
             # the marker binding avoids interpreting target face IDs as source IDs.
             spatial = {k: v for k, v in row.items() if k != "reconstruction"}
-            material = material_mask(sv, sf, [row])
+            material = material_mask(sv, sf, [row], lineage=material_lineage)
             chosen, _ = select(tv, tf, sv, sf[material], [spatial], infer=True,
                                target_masks=[np.ones(int(material.sum()), bool)])
             proposals.append(dict(region=index, target_faces=np.flatnonzero(chosen).tolist(),

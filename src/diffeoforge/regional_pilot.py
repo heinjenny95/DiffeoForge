@@ -774,8 +774,10 @@ def bind(root, manifest, record):
         automatic_evaluation = qualify(seed_run, root / 'automatic-seed-qualification',
                                        source=original['path'] if original else None)
     verify_source(automatic_evaluation)
+    from diffeoforge.reconstruction_material_lineage import starting_evidence
     from diffeoforge.regional_material_frame import align
 
+    prior_evaluations = (automatic_evaluation, anchor_evaluation)
     (record, recipe, residual, fit_source, automatic_evaluation,
      anchor_evaluation, material_response) = align(
         root, manifest, record, recipe, residual, fit_source, automatic_evaluation,
@@ -783,9 +785,13 @@ def bind(root, manifest, record):
     retained = anchor_evaluation['endpoint']['path']
     from diffeoforge.regional_warm_support import assess as assess_warm_support
 
+    material_evidence = starting_evidence(
+        automatic_evaluation["reference_source"], automatic_evaluation,
+        anchor_evaluation, *prior_evaluations)
     support = assess_warm_support(
         root, record, residual, fit_source, automatic_evaluation['endpoint']['path'],
-        retained, root / target['copy'], problem, fixed, guide_noise=recipe['guide_noise'])
+        retained, root / target['copy'], problem, fixed, guide_noise=recipe['guide_noise'],
+        material_evaluation=material_evidence)
     if support and not support['passed']:
         # Keep the old coefficients on their own basis as a complete prefix;
         # adding controls to that nonzero field in place is not a warm restart.
@@ -811,6 +817,8 @@ def bind(root, manifest, record):
                                        source=original['path'])
             verify_source(anchor_evaluation)
             retained = anchor_evaluation['endpoint']['path']
+        material_evidence = starting_evidence(automatic_evaluation["reference_source"],
+            automatic_evaluation, anchor_evaluation, material_evidence, *prior_evaluations)
     from diffeoforge.pilot_adaptive_run import marker as adaptive_marker
 
     bounded = adaptive_marker(record)
@@ -820,6 +828,7 @@ def bind(root, manifest, record):
         root / target["copy"],
         guides if recipe["guide_noise"] is not None else problem,
         focus_regions=problem,
+        material_evaluation=material_evidence,
         fixed_regions=fixed,
         retained_path=retained,
         automatic_path=automatic_evaluation['endpoint']['path'],

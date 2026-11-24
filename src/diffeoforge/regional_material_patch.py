@@ -6,7 +6,7 @@ import numpy as np
 
 
 def select(vertices, faces, target_vertices, target_faces, regions, fixed_ids=(), *,
-           infer=True, extend_partial=False, target_masks=None):
+           infer=True, extend_partial=False, target_masks=None, material_lineage=None):
     """Exclude every fixed-incident face, including in absent-feature fallbacks.
 
     An absent feature gets one connected free patch, grown by edge distance until
@@ -36,7 +36,7 @@ def select(vertices, faces, target_vertices, target_faces, regions, fixed_ids=()
         if reconstruction:
             from diffeoforge.reconstruction_feedback import material_mask
 
-            chosen = material_mask(v, f, [region])
+            chosen = material_mask(v, f, [region], lineage=material_lineage)
             if (chosen & blocked).any():
                 raise ValueError('The marked reconstruction material overlaps a Retain area. '
                                  'Separate the correction and Retain areas.')

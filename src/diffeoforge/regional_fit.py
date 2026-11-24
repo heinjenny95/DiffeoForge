@@ -321,6 +321,7 @@ def prepare(
     protection_tolerance=None,
     capture_profile=False,
     fixed_noise_divisor=4,
+    material_evaluation=None,
 ):
     """Prepare native terms from feedback; no optimizer, oracle or acceptance.
 
@@ -380,8 +381,18 @@ def prepare(
         if len(vertex_ids(fixed_selection, sf, [region])) < 3:
             raise ValueError("A Retain area has no surface patch in this starting fit. "
                              "Choose the saved fit where that part is correct, or revise the area.")
+    from diffeoforge.reconstruction_material_lineage import from_evaluation
+
+    lineage = from_evaluation(material_evaluation or {})
+    if lineage is not None:
+        from diffeoforge.reconstruction_feedback import topology_sha256
+
+        frame = material_evaluation["material_lineage"]["current"]
+        if topology_sha256(sv, sf) != frame["topology_sha256"]:
+            raise ValueError("Saved reconstruction ancestry does not match the fitting grid")
     source_selected, proposals = select(selection, sf, tv, tf, focus_regions, fixed_ids,
-                                        infer=guide_noise is None, extend_partial=capture_profile)
+                                        infer=guide_noise is None, extend_partial=capture_profile,
+                                        material_lineage=lineage)
     capture_measurement = None
     if capture_profile:
         from diffeoforge.regional_protected_capture import patch_capture_width
@@ -406,7 +417,7 @@ def prepare(
         from diffeoforge.reconstruction_feedback import target_support as select_target_support
 
         target_selected, target_support = select_target_support(
-            selection, sf, tv, tf, focus_regions)
+            selection, sf, tv, tf, focus_regions, material_lineage=lineage)
     else:
         target_selected = mask(target_centres, focus_regions)
     _patch(root / "focus-target.vtk", tv, tf, target_selected)
@@ -547,6 +558,8 @@ def prepare(
     )
     if fixed_protection:
         data["fixed_protection"] = fixed_protection
+    if lineage is not None:
+        data["starting_material_lineage"] = material_evaluation["material_lineage"]
     if any(r.get("reconstruction") for r in focus_regions):
         data["focus_target_face_ids"] = np.flatnonzero(target_selected).tolist()
         data["reconstruction_target_support"] = target_support

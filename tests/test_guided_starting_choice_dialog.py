@@ -26,13 +26,19 @@ def _choice(tmp_path):
     ])
 
 
-def test_pending_choice_is_only_primary_and_explains_specific_checks(panel):
+@pytest.mark.parametrize("bounded_complete", [False, True])
+def test_pending_choice_is_only_primary_and_explains_specific_checks(panel, bounded_complete):
     from PySide6.QtWidgets import QLabel, QPushButton
 
     data = _choice(panel.snapshot.study_directory)
     data.update(panel.guidance["feedback"][panel.candidate.candidate_id])
     data["selected"] = None
     panel.guidance["feedback"][panel.candidate.candidate_id] = data
+    if bounded_complete:
+        from test_adaptive_desktop_flow import bounded
+
+        panel.guidance["bounded_adaptive"] = bounded(
+            closed=True, recommendation=data["starting_fit_choice"]["comparison"])
     # Even a stale repair/density suggestion cannot outrank the unresolved source.
     panel.guidance["fit_direction"] = dict(mode="trial", identifier=panel.candidate.candidate_id,
         request=dict(goal="regional"), reason="Do not prepare this stale trial")

@@ -20,7 +20,7 @@ class PilotView:
     guidance: dict | None = None
 
 
-def prepare_pilot_view(directory: Path, snapshot=None) -> PilotView:
+def prepare_pilot_view(directory: Path, snapshot=None, *, local_worker=False) -> PilotView:
     """Read-only presentation; dispatch still performs its own fresh verification."""
     from diffeoforge.reference_sequential_fit import sequence_info, sequence_progress
 
@@ -59,23 +59,49 @@ def prepare_pilot_view(directory: Path, snapshot=None) -> PilotView:
         return PilotView(
             snapshot, manifest, assessment, fits, frozenset(provisional), report,
             sequence_info(root), sequence_progress(root), density_rows,
-            _guidance(snapshot, manifest),
+            _guidance(snapshot, manifest, local_worker=local_worker),
         )
 
 
-def _guidance(snapshot, manifest):
+def _guidance(snapshot, manifest, *, local_worker=False):
+    from diffeoforge import pilot_execution_recovery
     from diffeoforge.guided_strategy import prepare_proposals, state
+    from diffeoforge.reconstruction_feedback import ReconstructionMaterialUnavailable
     from diffeoforge.reference_guided_pilot import record
 
     info = record(snapshot)
     if info and snapshot.current_stage and snapshot.current_stage.order == 1:
         from diffeoforge.pilot_input_topology import prepare_for_snapshot
 
-        context = state(snapshot)
+        locked = (snapshot.study_directory / pilot_execution_recovery.LOCK).exists()
+        if locked and not local_worker:
+            from diffeoforge.guided_feedback import reference
+
+            recovery = pilot_execution_recovery.inspect(snapshot)
+            saved = []
+            if info.get("target"):
+                for candidate in snapshot.candidates:
+                    if candidate.status == "completed":
+                        try:
+                            exact = reference(snapshot, candidate.candidate_id)
+                            saved.append((candidate.label, exact))
+                        except (OSError, ValueError):
+                            continue
+            earlier = (snapshot.attachment_comparison.get("refinement") or {}).get("reference")
+            if earlier:
+                saved.append(("earlier starting fit", earlier))
+            return dict(unresolved_writer=True, saved_native_recovery=recovery,
+                        locked_saved_fits=saved)
         from diffeoforge.reference_guard_failure import for_candidate
         from diffeoforge.reference_qualification_resume import pending
 
-        context['qualification_pending'] = pending(snapshot)
+        qualification = pending(snapshot)
+        if not locked and not local_worker:
+            checks = pilot_execution_recovery.check_offer(snapshot, qualification)
+            if checks:
+                return {"recovered_checks": checks}
+        context = state(snapshot)
+        context['qualification_pending'] = qualification
         context["guard_failures"] = {
             c.candidate_id: failure for c in snapshot.candidates
             if c.candidate_id not in context['qualification_pending']
@@ -83,7 +109,21 @@ def _guidance(snapshot, manifest):
             if (failure := for_candidate(c)) is not None
         }
         context["input_topology"] = prepare_for_snapshot(snapshot, manifest)
-        result = prepare_proposals(snapshot, context)
+        try:
+            result = prepare_proposals(snapshot, context)
+        except ReconstructionMaterialUnavailable as error:
+            # A proposal can fail even though the saved fit and its review passed
+            # verification above. Keep its bound mark editor available on reopen.
+            choices = []
+            for identifier, feedback in context["feedback"].items():
+                selected = (feedback or {}).get("selected")
+                if selected and any(mark.get("reconstruction") for mark in
+                        feedback["problem_regions"].get(selected["target"], ())):
+                    selected_row = next((row for row in feedback["choices"]
+                                         if row["reference"] == selected), None)
+                    if selected_row:
+                        choices.append((identifier, selected, selected_row["label"]))
+            return {"mark_review_failure": str(error), "editable_mark_sources": choices}
         result["prepared_start_note"] = _prepared_start_note(snapshot, info)
         from diffeoforge.pilot_adaptive_run import presentation as adaptive_presentation
 

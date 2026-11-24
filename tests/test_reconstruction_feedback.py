@@ -154,6 +154,47 @@ def test_new_marks_must_bind_to_the_exact_inspected_reconstruction(tmp_path, mon
         verify_review_regions(snapshot, candidate, {a.name: [row]})
 
 
+def test_only_diagnosis_can_change_without_reselecting_saved_material(tmp_path, monkeypatch):
+    from diffeoforge import reference_calibration_study as study
+    from diffeoforge import regional_evaluation, result_report
+    from diffeoforge.pilot_regions import BOX_VERSION
+    from diffeoforge.reconstruction_feedback import same_saved_material_mark
+
+    original, _, _, fit, saved = bridge(tmp_path)
+    saved.update(version=BOX_VERSION, shape="box", bounds=[-.2, .2] * 3)
+    saved["reconstruction"] = bind(saved, fit)
+    current = tmp_path / "next.vtk"
+    write_vtk_polydata(current, fit.vertices + [0, 0, .1], fit.triangles)
+    candidate = SimpleNamespace(candidate_id="saved")
+    snapshot = SimpleNamespace(problem_regions={"saved": {original.name: [deepcopy(saved)]}},
+                               attachment_comparison={})
+    monkeypatch.setattr(study, "calibration_candidate_run_directory", lambda _: tmp_path)
+    monkeypatch.setattr(result_report, "collect_run_report", lambda _: SimpleNamespace(
+        manifest=dict(effective_config=dict(model=dict(object_id="surface")))))
+    monkeypatch.setattr(regional_evaluation, "endpoint", lambda *_a, **_k: dict(
+        path=str(current), sha256=sha256_file(current)))
+
+    edited = dict(saved, symptom="unsure")
+    verified = validate({original.name: [edited]}, {original.name: sha256_file(original)})
+    verify_review_regions(snapshot, candidate, verified)
+    assert saved["symptom"] == "distortion" and saved["reconstruction"] == edited["reconstruction"]
+    for changes in (
+        dict(center=[.01, 0, 0]), dict(bounds=[-.3, .2] * 3), dict(radius=.3),
+        dict(source_sha256="1" * 64), dict(reconstruction=dict(saved["reconstruction"],
+                                                               face_ids=[0])),
+        dict(reconstruction=dict(saved["reconstruction"], topology_sha256="2" * 64)),
+        dict(reconstruction=dict(saved["reconstruction"], sha256="3" * 64)),
+    ):
+        altered = dict(edited, **changes)
+        assert not same_saved_material_mark(altered, [saved])
+        with pytest.raises(ValueError, match="exact inspected reconstruction"):
+            verify_review_regions(snapshot, candidate, {original.name: [altered]})
+    protected = dict(edited, purpose="fixed")
+    assert not same_saved_material_mark(protected, [saved])
+    with pytest.raises(ValueError, match="Retain areas"):
+        validate({original.name: [protected]}, {original.name: sha256_file(original)})
+
+
 @pytest.mark.parametrize("route", ["feedback", "working"])
 def test_feedback_and_selected_earlier_fit_reject_stale_or_forged_material_before_append(
     tmp_path, monkeypatch, route,

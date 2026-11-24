@@ -6,7 +6,7 @@ from diffeoforge.mesh import sha256_file
 
 
 def assess(root, record, residual, source_path, numerical_path, retained_path,
-           target_path, regions, fixed_regions, *, guide_noise=None):
+           target_path, regions, fixed_regions, *, guide_noise=None, material_evaluation=None):
     """Read-only geometry/control test; no coefficient or basis is modified."""
     coverage = (residual or {}).get('control_coverage') or {}
     if (record.get('refinement', {}).get('initialization') != 'learned'
@@ -30,7 +30,10 @@ def assess(root, record, residual, source_path, numerical_path, retained_path,
                          'before their control support can be checked')
     tv, tf = np.asarray(target.vertices, float), np.asarray(target.triangles, int)
     fixed_ids = vertex_ids(rv, rf, fixed_regions) if fixed_regions else []
-    selected, _ = select(nv, nf, tv, tf, regions, fixed_ids)
+    from diffeoforge.reconstruction_material_lineage import from_evaluation
+
+    lineage = from_evaluation(material_evaluation or {})
+    selected, _ = select(nv, nf, tv, tf, regions, fixed_ids, material_lineage=lineage)
     # The optimizer's current basis acts on its incoming material, not on a
     # mixture of output coordinates and initial control-point coordinates.
     material = sv[np.unique(sf[selected])]

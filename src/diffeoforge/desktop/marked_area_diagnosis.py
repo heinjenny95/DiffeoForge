@@ -12,10 +12,8 @@ _MIN_SAMPLES = 16
 
 def _measure(origin, target, area, *, reconstruction=False):
     if reconstruction and area.get("reconstruction"):
-        from diffeoforge.reconstruction_feedback import material_mask
-
         m = origin.model
-        selected = material_mask(m.vertices, m.triangles, [area])
+        selected = origin.material_faces(area)
         centres = np.asarray(m.vertices)[np.asarray(m.triangles)[selected]].mean(1)
     else:
         centres = origin.centres_in(area)
