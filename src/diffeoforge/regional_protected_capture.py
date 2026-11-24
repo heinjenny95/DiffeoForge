@@ -40,7 +40,7 @@ def proposal(snapshot, identifier, data, info, symptom):
     missing = [r for r in rows if _missing_original(r)]
     explicit_capture = explicit_detail and (persistent or any(
         (r['original_to_fit_p95'] or 0) > r['region']['radius'] for r in rows))
-    if not missing and not explicit_capture:
+    if not persistent and not missing and not explicit_capture:
         return None
     from diffeoforge.regional_pilot import _quality_for_regions
     from diffeoforge.regional_search import capture_rows
@@ -60,10 +60,22 @@ def proposal(snapshot, identifier, data, info, symptom):
             current_missing = [r for r in current_rows if _missing_original(r)]
             # Recheck the actual seed. A previous missing patch is no longer
             # evidence for prioritizing it if the new field already reaches it.
-            if missing and not current_missing and not explicit_capture:
-                return None
             seed, rows, missing = data['current_reference'], current_rows, current_missing
-    worst = max(missing or rows, key=lambda r: r['symmetric_tail'])
+    # The sealed active region also identifies the first step of older, single-area
+    # plans. Carry progress only along that reviewed field with the same instructions.
+    tried = []
+    if (persistent and seed == data.get('current_reference') and current_is_bound(data)
+            and (not data.get('severe') or data.get('required_starting_reference') == seed)
+            and feedback.get('outcome') not in {'worse', 'unsure'}
+            and (info.get('feedback') or {}).get('regions') == marked):
+        tried = [*previous.get('previous_focus_regions', []), *previous['active_regions']]
+    remaining = [row for row in rows if row['region'] not in tried]
+    if tried and len(problem) > 1 and not remaining:
+        return None
+    following = bool(tried and remaining)
+    if not following and not missing and not explicit_capture:
+        return None
+    worst = max(remaining if following else missing or rows, key=lambda r: r['symmetric_tail'])
     if not math.isfinite(worst['symmetric_tail']) or worst['symmetric_tail'] <= 0:
         return None
     active = worst['region']
@@ -98,6 +110,8 @@ def proposal(snapshot, identifier, data, info, symptom):
         capture_evidence=dict(reference=seed, per_region=rows,
             before_movement_width=before_width, movement_width=width,
             capture_and_movement_independent=True, anatomical_approval=False))
+    if following:
+        recipe['previous_focus_regions'] = tried
     retention = data.get('retention_context')
     available = not retention or (retention['available'] and retention['automatic_start_allowed'])
     blocked = retention['reason'] if retention and not available else ''
@@ -116,12 +130,19 @@ def proposal(snapshot, identifier, data, info, symptom):
     from diffeoforge.pilot_region_scope import label
 
     area = label(marked.index(active))
-    rationale = (f'Area {area} contains original surface beyond the starting fit. '
-                 if missing else
+    waiting = [label(marked.index(row)) for row in problem if row != active and row not in tried]
+    schedule = (' After review, the remaining improvement marks are ' + ', '.join(waiting) + '.'
+                if waiting else ' Review all marked areas together after this trial.')
+    rationale = (f'Area {area} is next in your saved improvement marks. ' if following else
+                 f'Area {area} contains original surface beyond the starting fit. '
+                 if worst in missing else
                  f'Area {area} has the largest measured remaining surface mismatch. ')
-    return dict(goal='regional', title=f'Improve marked area {area}; retain the rest',
+    fixed = ', '.join(label(i) for i, row in enumerate(marked) if row.get('purpose') == 'fixed')
+    title = f'Improve {area} next · keep {fixed} in place' if following else (
+        f'Improve marked area {area}; retain the rest')
+    return dict(goal='regional', title=title,
         reason=rationale + 'Keep the complete starting fit and the Retain areas. '
-        'This trial improves one marked area; the other instructions remain saved. '
+        'This trial targets one area.' + schedule + ' '
         'Use a broad capture range with separate local movement. '
         + ('An earlier identical test is retained; this is a distinct weight contrast. '
            if changed else '') +

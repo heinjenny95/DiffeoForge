@@ -49,6 +49,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._frames.changed.connect(self.update)
         self._presented_key: tuple | None = None
         self._inspection_markers: dict[str, tuple[float, float, float]] = {}
+        self._marker_colors: dict[str, str] = {}
         self._control_points: np.ndarray | None = None
         self._wheel_timer = QTimer(self)
         self._wheel_timer.setSingleShot(True)
@@ -138,9 +139,11 @@ class CalibrationComparisonCanvas3D(QWidget):
             self._set_home_view_size(maximum - minimum)
         self.update()
 
-    def set_inspection_markers(self, markers: dict[str, tuple[float, float, float]]) -> None:
+    def set_inspection_markers(self, markers: dict[str, tuple[float, float, float]], *,
+                               colors: dict[str, str] | None = None) -> None:
         """Show measured positions in the shared camera without changing either layer."""
         self._inspection_markers = dict(markers)
+        self._marker_colors = dict(colors or {})
         self.update()
 
     def set_control_points(self, points: np.ndarray | None) -> None:
@@ -151,6 +154,8 @@ class CalibrationComparisonCanvas3D(QWidget):
     def clear(self) -> None:
         """Release the previous pair immediately; it cannot stand in for a new case."""
         self._original = self._reconstruction = None
+        self._inspection_markers.clear()
+        self._marker_colors.clear()
         self.original_detail.setEnabled(False)
         self._original_vertices = np.empty((0, 3), dtype=np.float64)
         self._original_triangles = np.empty((0, 3), dtype=np.int64)
@@ -490,11 +495,16 @@ class CalibrationComparisonCanvas3D(QWidget):
                 painter.drawPoints(points)
             if self._inspection_markers:
                 _, positions = self._project(np.asarray(tuple(self._inspection_markers.values())))
-                painter.setPen(QColor("#aa1551"))
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 for label, (x, y) in zip(self._inspection_markers, positions, strict=True):
+                    painter.setPen(QPen(QColor("white"), 5))
                     painter.drawEllipse(QPointF(x, y), 8, 8)
-                    painter.drawText(QPointF(x + 11, y - 7), label)
+                    painter.setPen(QPen(QColor(self._marker_colors.get(label, "#aa1551")), 2))
+                    painter.drawEllipse(QPointF(x, y), 8, 8)
+                    rect = painter.fontMetrics().boundingRect(label).adjusted(-3, -2, 3, 2)
+                    rect.moveBottomLeft(QPointF(x + 10, y - 3).toPoint())
+                    painter.fillRect(rect, QColor("white"))
+                    painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
         has_geometry = bool(layers) and all(
             len(layer.vertices) and len(layer.indices) for layer in layers
         )

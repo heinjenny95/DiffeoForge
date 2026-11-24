@@ -121,6 +121,10 @@ class PilotLivePreviewPanel(QFrame):
         self.resolution_note = QLabel("Display only. Snapshots update at most every 20 seconds.")
         self.resolution_note.setWordWrap(True)
         body.addWidget(self.resolution_note)
+        self.mark_scope = QLabel()
+        self.mark_scope.setWordWrap(True)
+        self.mark_scope.hide()
+        body.addWidget(self.mark_scope)
         self.resolution.currentIndexChanged.connect(self._resolution_changed)
 
         self.canvas = CalibrationComparisonCanvas3D(show_inspection_hints=False)
@@ -160,6 +164,8 @@ class PilotLivePreviewPanel(QFrame):
         self._frame = None
         self._displayed_attempt = None
         self.control_points.setEnabled(False)
+        self.mark_scope.clear()
+        self.mark_scope.hide()
         self.canvas.clear()
         self.canvas.hide()
         self.hide()
@@ -232,6 +238,10 @@ class PilotLivePreviewPanel(QFrame):
         if attempt is not self._attempt or not self._active():
             return
         self._update_resolution_support(attempt)
+        scope = getattr(attempt.binding, "region_scope", None)
+        if scope:
+            self.mark_scope.setText(scope["text"])
+            self.mark_scope.show()
         if frame is None:
             return
         if frame is _UNAVAILABLE:
@@ -244,6 +254,18 @@ class PilotLivePreviewPanel(QFrame):
         self._frame = frame
         self._displayed_attempt = attempt
         self.canvas.set_models(frame.target, frame.fit, keep_viewport=True)
+        if scope and scope["markers"]:
+            markers, colors = {}, {}
+            for role, caption, color in (
+                ("active", "Active", "#ac391e"), ("fixed", "Fixed", "#147162"),
+                ("shape", "Retain shape", "#147162"), ("waiting", "Queued", "#535c68"),
+                ("previous", "Recheck", "#4c5292"),
+            ):
+                for name in scope[role]:
+                    if name in scope["markers"]:
+                        text = f"{name} · {caption}"
+                        markers[text], colors[text] = scope["markers"][name], color
+            self.canvas.set_inspection_markers(markers, colors=colors)
         self.control_points.setEnabled(frame.controls is not None and len(frame.controls) > 0)
         self._show_control_points()
         self.canvas.show()

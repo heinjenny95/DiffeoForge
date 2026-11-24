@@ -26,6 +26,13 @@ def verify(root, manifest, record):
 
     plan = read_plan(dict(project=dict(parameter_provenance=dict(regional_fit=declaration))))
     feedback = record["guided"]["feedback"]
+    if recipe.get("previous_focus_regions"):
+        previous = recipe["previous_focus_regions"]
+        if (plan.get("previous_focus_regions") != previous
+                or plan["focus_regions"] != recipe["active_regions"]
+                or any(r not in feedback["regions"] or r in plan["focus_regions"]
+                       or r.get("purpose", "problem") != "problem" for r in previous)):
+            raise ValueError("The saved sequence of protected areas changed")
     target = next(r for r in manifest["inputs"]["subjects"] if r["filename"] == feedback["target"])
     if (
         plan.get("residual", {}).get("original_template_sha256", plan["template_sha256"])
@@ -852,6 +859,8 @@ def bind(root, manifest, record):
     data['instruction_regions'] = regions
     if recipe.get('protected_capture'):
         data['requested_regions'] = requested
+        if recipe.get('previous_focus_regions'):
+            data['previous_focus_regions'] = recipe['previous_focus_regions']
         recipe = dict(recipe, focus_width=next(o for o in data['objects']
                                                if o['id'] == 'focus')['kernel_width'])
         record = dict(record, guided=dict(record['guided'], strategy=dict(

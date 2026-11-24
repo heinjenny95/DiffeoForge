@@ -76,6 +76,52 @@ def test_numeric_extension_other_symptoms_and_small_ordinary_miss_are_unchanged(
     assert proposal(None, 'x', data, info, 'detail') is None
 
 
+def test_reviewed_legacy_b_offers_a_even_when_b_still_has_the_larger_gap():
+    from pathlib import Path
+
+    from diffeoforge.guided_strategy import _next_area_direction
+    from diffeoforge.pilot_region_scope import summary
+
+    data, info = setup_data()
+    a, b, c = data['regions']
+    first = proposal(None, 'x', data, info, 'detail')['regional_recipe']
+    assert first['active_regions'] == [b] and 'previous_focus_regions' not in first
+    info.update(strategy=dict(regional_recipe=first), feedback=dict(regions=deepcopy([a, b, c])))
+    data.update(anchor=data['current_reference'], severe=False)
+    result = proposal(None, 'x', data, info, 'unsure')
+    recipe = result['regional_recipe']
+    assert recipe['active_regions'] == [a] and recipe['previous_focus_regions'] == [b]
+    assert result['initialization_reference'] == data['current_reference']
+    assert result['regions'] == [a, b, c] and result['initialization'] == 'residual'
+    assert recipe['fixed_noise_divisor'] == first['fixed_noise_divisor'] == 16
+    scope = summary(dict(instruction_regions=result['regions'], focus_regions=[a],
+                         previous_focus_regions=[b]))
+    assert (scope['active'], scope['fixed'], scope['previous'], scope['waiting']) == (
+        ['A'], ['C'], ['B'], [])
+
+    seed = data['current_reference']
+    candidate_id = seed['candidate_id']
+    view = SimpleNamespace(candidates=[SimpleNamespace(candidate_id=candidate_id)],
+                           attachment_comparison={'regional_objective': True},
+                           study_directory=Path(seed['directory']),
+                           visual_reviews={candidate_id: False})
+    context = dict(allowed={candidate_id: True}, working_proposals={},
+                   proposals={candidate_id: {'regional:unsure': result}},
+                   feedback={candidate_id: dict(choices=[dict(reference=seed, label='B')])})
+    direction = _next_area_direction(view, context, None)
+    assert direction['title'] == 'Improve A next · keep C in place'
+    assert direction['request']['active_regions'] == [a]
+    assert direction['request']['reference'] == seed
+    assert _next_area_direction(view, context, dict(reference={'directory': 'older'})) is None
+    # Both instructed areas have had their own trial. Do not start the pass again.
+    info['strategy']['regional_recipe'] = recipe
+    assert proposal(None, 'x', data, info, 'detail') is None
+    info['strategy']['regional_recipe'] = first
+    # A newly edited set of marks is a new instruction, not the previous queue.
+    info['feedback']['regions'][0]['radius'] *= .5
+    assert not proposal(None, 'x', data, info, 'unsure')
+
+
 def test_one_sided_original_box_focuses_capture_among_mixed_marks():
     data, info = setup_data()
     missing, other_original, fixed = data['regions']

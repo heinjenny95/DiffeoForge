@@ -400,8 +400,11 @@ def prepare_proposals(snapshot, context):
         from diffeoforge.pilot_capped_direction import preview as capped_direction
 
         pending = context.get("starting_fit_choice")
+        context["next_area"] = None if pending else _next_area_direction(snapshot, context, chosen)
+        next_area = None if any(snapshot.visual_reviews.values()) else context["next_area"]
         context["fit_direction"] = (dict(pending, mode="choose_start") if pending else
-                                    capped_direction(snapshot, context, chosen)
+                                    next_area
+                                    or capped_direction(snapshot, context, chosen)
                                     or _selected_start_direction(snapshot, context, chosen)
                                     or _marked_trial_direction(snapshot, context, chosen,
                                                                fresh_only=True)
@@ -409,6 +412,42 @@ def prepare_proposals(snapshot, context):
                                     or _marked_trial_direction(snapshot, context, chosen)
                                     or _default_trial_direction(snapshot, context, chosen))
     return context
+
+
+def _next_area_direction(snapshot, context, chosen):
+    """After inspecting one protected correction, offer the next mark on that exact field."""
+    if (len(snapshot.candidates) != 1
+            or not snapshot.attachment_comparison.get("regional_objective")):
+        return None
+    identifier = snapshot.candidates[0].candidate_id
+    if not context["allowed"].get(identifier) or (chosen and chosen.get("confirm_retention")):
+        return None
+    feedback = context["feedback"].get(identifier) or {}
+    request = "regional:" + default_recovery_symptom(feedback)
+    # An inherited working fit can still point to the pre-B field. Only offer
+    # a successor that will actually keep the reviewed result of this trial.
+    for source in ("working_proposals", "proposals"):
+        proposal = context[source].get(identifier, {}).get(request) or {}
+        recipe = proposal.get("regional_recipe") or {}
+        seed = proposal.get("initialization_reference") or {}
+        if (recipe.get("previous_focus_regions") and proposal.get("available")
+                and seed.get("directory") == str(snapshot.study_directory)
+                and seed.get("candidate_id") == identifier
+                and (not chosen or chosen["reference"] == seed)):
+            break
+    else:
+        return None
+    choice = next((r for r in feedback["choices"] if r["reference"] == seed), None)
+    if choice is None or context.get("starting_fit_choice"):
+        return None
+    return dict(mode="trial", identifier=identifier, current=seed, explicit_start=bool(chosen),
+                action="adaptive_recover_start" if source == "working_proposals" else
+                       "adaptive_recover",
+                title=proposal["title"], start_label=choice["label"], reason=proposal["reason"],
+                request=dict(request=request, reference=seed, values=proposal["values"],
+                             goal="regional", regions=proposal["regions"],
+                             area_review=snapshot.visual_reviews.get(identifier),
+                             active_regions=recipe["active_regions"]))
 
 
 def _explicit_start(snapshot, context):
@@ -1004,6 +1043,12 @@ def _plan_transition(snapshot, action, identifier, *, goal=None):
         if (bound and "optimization_iterations" in goal
                 and proposed["optimization_iterations"] != goal["optimization_iterations"]):
             raise ValueError("The suggested iteration allowance changed. Reopen the guidance.")
+        if (bound and "active_regions" in goal and goal["active_regions"] !=
+                (proposed.get("regional_recipe") or {}).get("active_regions")):
+            raise ValueError("The next marked area changed. Reopen the guidance.")
+        if bound and "area_review" in goal and goal["area_review"] != snapshot.visual_reviews.get(
+                identifier):
+            raise ValueError("The saved review changed. Reopen the next-area guidance.")
         if not proposed["available"]:
             raise ValueError(proposed.get("blocked_reason", "This unchanged combination was "
                 "already tested. Inspect saved alternatives or choose another adjustment; "

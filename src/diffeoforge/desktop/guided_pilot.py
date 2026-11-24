@@ -1214,6 +1214,13 @@ def render(window, prepared):
                 recovery_tools(candidate, layout)
             regional = bool(snapshot.attachment_comparison.get("regional_objective"))
             if decision is True and regional and not separate_start:
+                next_area = guidance.get("next_area")
+                if next_area and next_area["identifier"] == candidate.candidate_id:
+                    button = action(layout, next_area["title"],
+                                    next_area["action"].removeprefix("adaptive_"),
+                                    candidate.candidate_id, goal=next_area["request"])
+                    button.setToolTip(next_area["reason"])
+                    _set_action_emphasis(button, False)
                 note = QLabel("This fit is saved as suitable for this specimen. Further "
                               "refinement is optional. The shared atlas setup still needs "
                               "its own check.")

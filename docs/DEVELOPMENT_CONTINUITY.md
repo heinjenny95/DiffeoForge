@@ -1,5 +1,14 @@
 # Development continuity
 
+## dev244 — follow every improvement mark in protected local corrections
+
+The protected capture procedure fits one projection at a time. After review,
+the next action targets an outstanding mark from the inspected field and keeps
+its fixed-area requirements. Existing single-area plans provide the initial
+step when reopened. Each preparation still needs an explicit Run. The live
+overlay identifies active, queued, previously targeted and protected marks on
+the verified original target. Recheck all marked areas on the resulting fit.
+
 ## dev243 — choose a method after two unsuitable screen fits
 
 After both Current and Varifold receive Needs improvement in a valid paired

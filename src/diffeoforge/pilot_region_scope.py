@@ -9,7 +9,7 @@ def summary(plan):
     from diffeoforge.regional_fit import instruction_regions
 
     regions = instruction_regions(plan)
-    active, fixed, shaped, waiting = [], [], [], []
+    active, fixed, shaped, waiting, previous = [], [], [], [], []
     for index, region in enumerate(regions):
         name = label(index)
         purpose = region.get('purpose', 'problem')
@@ -19,6 +19,8 @@ def summary(plan):
             shaped.append(name)
         elif region in plan.get('focus_regions', []):
             active.append(name)
+        elif region in plan.get('previous_focus_regions', []):
+            previous.append(name)
         else:
             waiting.append(name)
     if not active and not shaped:
@@ -33,4 +35,7 @@ def summary(plan):
     text = 'This trial: '+'; '.join(parts)+'.'
     if waiting:
         text += ' Other improvement marks stay saved for a later step: '+', '.join(waiting)+'.'
-    return dict(active=active, fixed=fixed, shape=shaped, waiting=waiting, text=text)
+    if previous:
+        text += ' Recheck previously targeted areas: '+', '.join(previous)+'.'
+    return dict(active=active, fixed=fixed, shape=shaped, waiting=waiting,
+                previous=previous, text=text)

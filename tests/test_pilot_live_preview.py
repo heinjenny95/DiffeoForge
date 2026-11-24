@@ -66,7 +66,11 @@ def test_live_preview_uses_blank_pilot_area_and_exact_frame_iteration(app, tmp_p
         reads.append((binding.request_id, after))
         return buffer.pop(0) if buffer else None
 
-    host(monkeypatch, prepare=lambda _run, request, **_: SimpleNamespace(request_id=request),
+    scope = dict(text="This trial: improve B; keep C in place.", active=["B"], fixed=["C"],
+                 shape=[], previous=[], waiting=["A"],
+                 markers={"A": (-.5, 0., 0.), "B": (.5, 0., 0.), "C": (0., .1, 0.)})
+    host(monkeypatch, prepare=lambda _run, request, **_: SimpleNamespace(
+        request_id=request, region_scope=scope),
          read_frame=read_frame, release=lambda binding: released.append(binding.request_id))
     worker = SimpleNamespace(runner=SimpleNamespace(_cancel_requested=False))
     worker.request_cancel = lambda: True
@@ -83,6 +87,9 @@ def test_live_preview_uses_blank_pilot_area_and_exact_frame_iteration(app, tmp_p
         panel.poll()
         wait(app, lambda: panel.status.text().startswith("Accepted iteration 42"))
         assert panel.canvas.reconstruction_model is fit
+        assert panel.mark_scope.isVisible() and panel.mark_scope.text() == scope["text"]
+        assert panel.canvas._inspection_markers == {
+            "B · Active": (.5, 0., 0.), "C · Fixed": (0., .1, 0.), "A · Queued": (-.5, 0., 0.)}
         assert panel.control_points.isEnabled() and not panel.control_points.isChecked()
         assert panel.canvas._control_points is None
         assert reads == [(display_id, -1)]

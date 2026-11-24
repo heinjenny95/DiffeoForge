@@ -64,6 +64,31 @@ def _run(tmp_path: Path, n=4, *, version=VERSION):
     return v
 
 
+def test_live_marks_bind_to_staged_target_and_plan(tmp_path):
+    _run(tmp_path)
+    manifest = tmp_path / "manifest.json"
+    data = json.loads(manifest.read_bytes())
+    target = sha256_file(tmp_path / "input/target.vtk")
+    marks = [dict(center=[i / 2, 0., .125], purpose=purpose, source_sha256=target)
+             for i, purpose in enumerate(("problem", "problem", "fixed"))]
+    path = tmp_path / "input/regional/plan.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps(dict(target_sha256=target, instruction_regions=marks,
+                                    focus_regions=[marks[1]])))
+    data["protected_artifacts"].append(dict(path="input/regional/plan.json",
+                                             sha256=sha256_file(path)))
+    data["effective_config"]["project"]["parameter_provenance"]["regional_fit"] = {
+        "sha256": sha256_file(path)}
+    manifest.write_text(json.dumps(data))
+    (tmp_path / "manifest.sha256").write_text(f"{sha256_file(manifest)}  manifest.json\n")
+    scope = prepare(tmp_path, "verified-regions").region_scope
+    assert scope["active"] == ["B"] and scope["waiting"] == ["A"] and scope["fixed"] == ["C"]
+    assert scope["markers"]["B"] == tuple(marks[1]["center"])
+    path.write_text("{}")
+    unusable = prepare(tmp_path, "stale-regions").region_scope
+    assert not unusable["markers"] and "unavailable" in unusable["text"]
+
+
 def _write_frame(binding, points, *, iteration=6, identifier=None, controls=None, compressed=False):
     store = np.savez_compressed if compressed else np.savez
     frame_id = np.asarray(identifier or binding.identifier, dtype="U32")

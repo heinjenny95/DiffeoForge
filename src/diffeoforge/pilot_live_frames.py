@@ -49,6 +49,7 @@ class Binding:
     protocol_version: str = VERSION
     point_limit: int = FACE_BUDGET * 3
     frame_limit: int = _FRAME_LIMIT
+    region_scope: dict | None = None
 
 
 @dataclass(frozen=True, eq=False)
@@ -188,6 +189,41 @@ def _model(path, sha256, points, faces, edges, source_faces, face_budget=FACE_BU
     )
 
 
+def _region_scope(run, provenance, protected, target_hash):
+    from diffeoforge.pilot_region_scope import label, summary
+    from diffeoforge.regional_fit import instruction_regions
+
+    declaration = provenance.get("regional_fit")
+    if not declaration:
+        return None
+    try:
+        path = "input/regional/plan.json"
+        if protected.get(path) != declaration["sha256"]:
+            raise ValueError("Regional plan identity changed")
+        plan = json.loads(_protected_file(run, path, protected, _MESH_LIMIT))
+        if plan["target_sha256"] != target_hash:
+            raise ValueError("Regional plan belongs to another target")
+        scope = summary(plan)
+        if not scope:
+            return None
+        markers = {}
+        for index, region in enumerate(instruction_regions(plan)):
+            if region.get("source_sha256") != target_hash:
+                raise ValueError("Mark belongs to another specimen")
+            # A reconstruction brush binds material on an earlier field. Its saved
+            # centre is not a location on this frame's target or moving surface.
+            if not region.get("reconstruction"):
+                center = np.asarray(region["center"], dtype=float)
+                if center.shape != (3,) or not np.isfinite(center).all():
+                    raise ValueError("Invalid mark centre")
+                markers[label(index)] = tuple(center)
+        if len(markers) != len(instruction_regions(plan)):
+            scope["text"] += " Marks on an earlier reconstruction are listed here by role only."
+        return dict(scope, markers=markers)
+    except (OSError, KeyError, ValueError, TypeError):
+        return dict(text="Mark positions unavailable for this preview.", markers={})
+
+
 def prepare(run: Path, request_id: str, *, face_budget=FACE_BUDGET) -> Binding | None:
     """Prepare one small request for an eligible, freshly staged pilot run."""
     if type(face_budget) is not int or face_budget not in FACE_BUDGETS:
@@ -246,6 +282,7 @@ def prepare(run: Path, request_id: str, *, face_budget=FACE_BUDGET) -> Binding |
     target_points.setflags(write=False)
     target = _model(target_path, protected[relative], target_points,
                     target_faces, target_edges, len(faces), face_budget)
+    scope = _region_scope(run, provenance, protected, protected[relative])
     folder = run / "pilot-preview"
     folder.mkdir(exist_ok=True)
     if folder.resolve() != folder or folder.is_symlink():
@@ -269,7 +306,7 @@ def prepare(run: Path, request_id: str, *, face_budget=FACE_BUDGET) -> Binding |
         temporary.unlink(missing_ok=True)
     return Binding(folder, identifier, target, indices, triangles, edges, source_faces,
                    face_budget, requested_face_budget, legacy_runtime, version, point_limit,
-                   _LEGACY_FRAME_LIMIT if legacy_runtime else _FRAME_LIMIT)
+                   _LEGACY_FRAME_LIMIT if legacy_runtime else _FRAME_LIMIT, scope)
 
 
 def release(binding: Binding) -> None:

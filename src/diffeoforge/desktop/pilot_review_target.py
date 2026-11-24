@@ -76,6 +76,15 @@ def choose(snapshot, guidance, info):
         candidate = repair
     pending = candidate.candidate_id not in snapshot.visual_reviews and not feedback_only
     name = info["target"] or f"{snapshot.plan.pilot_subject_count} forms"
+    regions = guidance.get("regional_scope") or {}
+    if pending and regions.get("active") and regions.get("waiting"):
+        active = ", ".join(regions["active"])
+        waiting = ", ".join(regions["waiting"])
+        return dict(root=snapshot.study_directory, kind="current",
+                    candidate_id=candidate.candidate_id,
+                    pending=True, label=f"Review area {active} · still to improve: {waiting}",
+                    explanation=f"Inspect area {active} and the protected shape on this saved fit. "
+                                f"Area {waiting} is still queued for refinement.")
     method = " · " + candidate.label if len(completed) > 1 else ""
     if (pending and scope == "individual" and any(
             proposal.get("available") and snapshot.visual_reviews.get(identifier) is True
