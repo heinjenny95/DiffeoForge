@@ -486,6 +486,9 @@ def render(window, prepared):
         if density_pair
         else f"Retry {interrupted[0].label} on this specimen"
         if len(pending) == len(interrupted) == 1
+        else f"Run remaining {pending[0].label} fit · 1 specimen"
+        if (info["phase"] == "screen" and len(snapshot.candidates) == 2
+            and len(pending) == 1 and pending[0].status == "pending")
         else f"Compare Current / Varifold · {len(pending)} trials on 1 specimen"
         if len(snapshot.candidates) == 2
         else "Run prepared test · 1 trial on 1 specimen"

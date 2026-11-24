@@ -151,3 +151,37 @@ def test_past_stage_review_banner_cannot_mask_new_unfinished_attempt(tmp_path, m
     assert reopened.visual_reviews == {"guided-current": True}
     with pytest.raises(ValueError, match="resolve the current batch"):
         guided.next_action(root, "adaptive_next_form", "guided-current")
+
+
+@pytest.mark.parametrize(("finished", "label"), [
+    (None, "Compare Current / Varifold · 2 trials on 1 specimen"),
+    ("guided-current", "Run remaining Varifold fit · 1 specimen"),
+    ("guided-varifold", "Run remaining Current fit · 1 specimen"),
+])
+def test_method_screen_names_only_the_fit_that_will_run(tmp_path, monkeypatch, finished, label):
+    initial = new_pilot(tmp_path)
+    if finished:
+        normal_run = study.ReferenceCalibrationStudyRunner.run_current_stage
+
+        def run_one(runner, **kwargs):
+            kwargs["candidate_ids"] = {finished}
+            return normal_run(runner, **kwargs)
+
+        with monkeypatch.context() as selected:
+            selected.setattr(study.ReferenceCalibrationStudyRunner, "run_current_stage", run_one)
+            initial = run_batch(initial, monkeypatch)
+        target = guided.record(initial)["target"]
+        initial = study.record_reference_calibration_candidate_review(
+            initial.study_directory, candidate_id=finished, approved=False,
+            reviewed_subjects=(target,), subject_decisions={target: "fail"},
+            display_scopes={target: "preview"},
+        )
+    app, dialog = dialog_for(initial, monkeypatch)
+    try:
+        assert dialog.start_button.isVisible() and dialog.start_button.isEnabled()
+        assert dialog.start_button.text() == label and dialog.start_button.objectName() == "primary"
+        assert dialog.next_step_button.isHidden()
+        assert all(c.attempts == int(c.candidate_id == finished) for c in initial.candidates)
+    finally:
+        dialog.close()
+        app.processEvents()

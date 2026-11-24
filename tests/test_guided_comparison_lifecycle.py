@@ -39,6 +39,7 @@ class Window(QWidget):
         super().__init__()
         self.study_directory = root
         self._worker = None
+        self._mark_error_action = None
         self._view_loading = self._view_closed = self._review_saving = False
         self.status = QLabel("Reviewed fit saved; choose the next step.", self)
         self._viewer_preparation = PreviewMeshLoader(self)
