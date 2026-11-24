@@ -5,6 +5,8 @@ import math
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFrame,
     QLabel,
     QLayout,
@@ -17,6 +19,60 @@ from PySide6.QtWidgets import (
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.guided_strategy import remaining_forms
 from diffeoforge.reference_guided_pilot import ATLAS_FIRST, record
+
+
+def choose_method(window):
+    view = window._prepared_view
+    if not view or not view.guidance.get("method_choice_pending"):
+        return
+    snapshot = view.snapshot
+    comparison = view.guidance["provisional_comparison"]
+    dialog = QDialog(window)
+    dialog.setWindowTitle("Which method fit this specimen better?")
+    layout = QVBoxLayout(dialog)
+    prompt = QLabel("Choose a starting method for refinement. Both fits keep their "
+                    "Needs improvement rating.")
+    prompt.setWordWrap(True)
+    layout.addWidget(prompt)
+    selection = None
+
+    def option(label, action, identifier=None):
+        button = QPushButton(label)
+        button.setAutoDefault(False)
+
+        def select():
+            nonlocal selection
+            selection = action, identifier, None
+            dialog.accept()
+
+        button.clicked.connect(select)
+        layout.addWidget(button)
+
+    for candidate in snapshot.candidates:
+        option(f"{candidate.label} fit better", "adaptive_prefer", candidate.candidate_id)
+    if comparison["available"]:
+        option("No clear winner · prepare both methods on the next specimen",
+               "adaptive_compare_unresolved")
+        detail = "Next specimen: " + comparison["target"] + ". Choose Run to start the two fits."
+    else:
+        detail = comparison["explanation"]
+    note = QLabel(detail)
+    note.setTextFormat(Qt.TextFormat.PlainText)
+    note.setWordWrap(True)
+    layout.addWidget(note)
+    cancel = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+    cancel.rejected.connect(dialog.reject)
+    layout.addWidget(cancel)
+    cancel.button(QDialogButtonBox.StandardButton.Cancel).setFocus()
+    try:
+        if (dialog.exec() == QDialog.DialogCode.Accepted and selection
+                and window._prepared_view is view
+                and window.study_directory == snapshot.study_directory
+                and not (window._view_loading or window._view_closed or window._review_saving
+                         or window._worker or window._restoring_search)):
+            window._start_pilot(adaptive=False, guided_action=selection)
+    finally:
+        dialog.deleteLater()
 
 
 def _extension_reason(offer):
@@ -179,6 +235,7 @@ def render(window, prepared):
     window.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
     info = record(snapshot)
     guidance = prepared.guidance
+    method_choice = guidance.get("method_choice_pending")
     running = window._worker is not None or window._restoring_search
     if ((guidance.get("unresolved_writer") or guidance.get("recovered_checks"))
             and (not running or "preferred" not in guidance)):
@@ -211,6 +268,8 @@ def render(window, prepared):
     from diffeoforge.desktop.pilot_review_target import choose as review_target
 
     review = review_target(snapshot, guidance, info)
+    if method_choice:
+        review = None  # Both reviewed fits have their own equally accessible inspection buttons.
     window._guided_review_target = review
     guard_failures = guidance.get("guard_failures", {})
     checks_pending = guidance.get('qualification_pending', {})
@@ -253,7 +312,8 @@ def render(window, prepared):
         and guidance.get("common_revision", {}).get(snapshot.candidates[0].candidate_id)
     )
     title = QLabel(
-        "Choose a starting fit" if starting_choice and not running
+        "Which method fit this specimen better?" if method_choice
+        else "Choose a starting fit" if starting_choice and not running
         else "Review the stopped test" if guard_failures
         else "Finish checks on the saved fit" if checks_pending
         else "Compare control-point density"
@@ -302,7 +362,8 @@ def render(window, prepared):
         note.setWordWrap(True)
         note.setObjectName("preparedSpecimenStart")
         window.content_layout.addWidget(note)
-    if strategy.get("correction_policy") == ATLAS_FIRST and info["phase"] == "screen":
+    if (strategy.get("correction_policy") == ATLAS_FIRST and info["phase"] == "screen"
+            and not method_choice):
         from diffeoforge.regional_pilot import MINIMUM_NEW_NATIVE_TIMEPOINTS
 
         basis_note = QLabel(
@@ -461,7 +522,7 @@ def render(window, prepared):
                 InfoDisclosure("Why this test was prepared", description)
                 if common_flow else description
             )
-    if info["phase"] == "screen" and not guidance.get("fit_direction"):
+    if info["phase"] == "screen" and not guidance.get("fit_direction") and not method_choice:
         why = QLabel(
             "Current uses oriented surfaces; Varifold ignores normal direction. "
             "Inspect each result when ready. You can choose a starting method even if "
@@ -634,7 +695,15 @@ def render(window, prepared):
     marked_direction = bool(direction and direction["mode"] == "trial" and not common_flow
                             and direction["request"]["goal"] == "regional")
     offers = guidance.get("density_comparisons", {})
-    if not running and not unresolved and not common_failure and not starting_choice:
+    if method_choice and not running:
+        comparison = guidance["provisional_comparison"]
+        reason = ("Both fits need improvement. Which method better preserved the overall shape "
+                  "and the projections that matter to you? " + (
+                      "If neither looks better, compare both on the next specimen."
+                      if comparison["available"] else comparison["explanation"]))
+        pin_action(window, snapshot, "Choose starting method…", "choose_method", None, reason)
+        window.status.setText(reason)
+    elif not running and not unresolved and not common_failure and not starting_choice:
         pin_recovery(
             window, snapshot, guidance.get("common_recovery"), current_target=info.get("target"),
         )
@@ -711,7 +780,7 @@ def render(window, prepared):
             window.content_layout.addWidget(InfoDisclosure("Optional control-point test", density))
 
     def recovery_tools(candidate, layout):
-        if starting_choice:
+        if starting_choice or method_choice:
             return  # No parameter adjustment may silently select an older field.
         if (direction and direction.get("explicit_start")
                 and direction["identifier"] != candidate.candidate_id):
@@ -1134,7 +1203,7 @@ def render(window, prepared):
                     "alignment before retrying; it cannot be a starting fit.")
                 explanation.setWordWrap(True)
                 layout.addWidget(explanation)
-            if (decision is False and valid and not unresolved
+            if (decision is False and valid and not unresolved and not method_choice
                     and guidance["preferred"] != method and info["phase"] != "joint"):
                 action(layout, "Use " + candidate.label + " as starting method → improve",
                        "prefer", candidate.candidate_id)
@@ -1190,7 +1259,7 @@ def render(window, prepared):
         )
         emphasize_next_action()
         return
-    if len(snapshot.candidates) == 2 and not density_pair:
+    if len(snapshot.candidates) == 2 and not density_pair and not method_choice:
         covered = {r["filename"] for r in info["approved"]} | {info["target"]}
         remaining = set(info["pilot_order"]) - covered
         action(

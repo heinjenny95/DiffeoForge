@@ -3361,6 +3361,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                     from diffeoforge.desktop.guided_diagnosis import inspect_template
 
                     inspect_template(self, identifier)
+                elif action == "choose_method":
+                    from diffeoforge.desktop.guided_pilot import choose_method
+
+                    choose_method(self)
                 elif action == "fit_direction_compare":
                     from diffeoforge.desktop.guided_fit_direction import open_comparison
 
@@ -4424,6 +4428,10 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             if provisional_candidate_id
             else "Verifying the saved fit and preparing the +300 continuation…"
             if guided_action and guided_action[0] == "adaptive_extend_bounded"
+            else "Saving your starting method…"
+            if guided_action and guided_action[0] == "adaptive_prefer"
+            else "Preparing Current and Varifold on the next specimen…"
+            if guided_action and guided_action[0] == "adaptive_compare_unresolved"
             else "Preparing the next attempt…"
         )
         self._thread_pool.start(worker)

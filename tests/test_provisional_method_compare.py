@@ -221,65 +221,113 @@ def test_genuine_both_approved_tie_flow_keeps_approval_credit(tmp_path, monkeypa
     assert all(c.attempts == 0 for c in result.candidates)
 
 
-def test_actual_qt_provisional_prepare_and_exhaustion_keep_starting_cards(tmp_path, monkeypatch):
+@pytest.mark.parametrize("choice", ["Current", "Varifold", "No clear winner"])
+def test_reviewed_method_choice_through_real_footer(tmp_path, monkeypatch, choice):
+    import time
+
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from pilot_view_helpers import wait_pilot_view
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication, QDialogButtonBox, QPushButton
+    from test_guided_pilot import run_batch
+    from test_interactive_pilot import initial
+    from test_pilot_region_feedback import reject
 
+    from diffeoforge import pilot_capped_direction
+    from diffeoforge.desktop.info_disclosure import InfoDisclosure
+    from diffeoforge.desktop.pilot_assistant_context import context_for_view
     from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+    from diffeoforge.pilot_assistant import reply
 
     app = QApplication.instance() or QApplication([])
-    snapshot = rejected_fixture(tmp_path, monkeypatch)
+    snapshot = run_batch(initial(tmp_path), monkeypatch, capped=True)
+    snapshot = reject(reject(snapshot, "guided-current"), "guided-varifold")
+    # Only one arm has evidence for continuing past its cap. It cannot choose the method.
+    monkeypatch.setattr(pilot_capped_direction, "_objective_tail", lambda c:
+                        ((115, -20.), (120, -19.)) if c.candidate_id == "guided-varifold" else None)
+    monkeypatch.setattr(study.ReferenceCalibrationStudyRunner, "run_current_stage",
+                        lambda *_a, **_k: pytest.fail("Choice launched a fit"))
     dialog = ReferenceCalibrationDialog(snapshot.study_directory)
     dialog.show()
+    journal = snapshot.study_directory / study.STUDY_EVENTS
+    prefix = journal.read_bytes()
+
+    def choose(invoke, label):
+        seen = []
+
+        def inspect():
+            modal = app.activeModalWidget()
+            if modal:
+                try:
+                    buttons = modal.findChildren(QPushButton)
+                    seen.extend(b.text() for b in buttons if b.isVisible())
+                    if label:
+                        next(b for b in buttons if b.text().startswith(label)).click()
+                    else:
+                        modal.findChild(QDialogButtonBox).button(
+                            QDialogButtonBox.StandardButton.Cancel).click()
+                finally:
+                    if modal.isVisible():
+                        modal.reject()
+
+        QTimer.singleShot(0, inspect)
+        invoke()
+        assert "Current fit better" in seen and "Varifold fit better" in seen
+        return seen
+
     try:
         wait_pilot_view(dialog)
-        buttons = dialog.content.findChildren(QPushButton)
-        initial = [b for b in buttons if "as starting method" in b.text() and not b.isHidden()]
-        assert len(initial) == 2
-        button = next(
-            b for b in buttons if b.text().startswith("No clear winner yet") and not b.isHidden()
-        )
-        assert button.isEnabled() and button.objectName() == "secondary"
-        invoked = []
-        monkeypatch.setattr(dialog, "_start_pilot", lambda *a, **k: invoked.append((a, k)))
-        assert not invoked
-        button.click()
-        assert invoked == [
-            ((), dict(adaptive=False, guided_action=("adaptive_compare_unresolved", None, None)))
-        ]
+        footer = dialog.next_step_button
         prepared = dialog._prepared_view
+        assert prepared.guidance["fit_direction"] is None
+        assert [b for b in dialog.findChildren(QPushButton, "primary")
+                if b.isVisible() and b.isEnabled()] == [footer]
+        assert not any(w.title == "Optional control-point test"
+                       for w in dialog.content.findChildren(InfoDisclosure))
+        assert {b.text() for b in dialog.content.findChildren(QPushButton)
+                if b.isVisible() and b.text().startswith("Inspect ")} >= {
+            "Inspect Current fit", "Inspect Varifold fit"}
+        context, callbacks = context_for_view(dialog, prepared)
+        for question in ("Which fit was better?", "More CP?", "What next?"):
+            answer = reply(context, question)
+            assert answer["verified"] and answer["actions"] == ("choose_method",)
+        comparison = prepared.guidance["provisional_comparison"]
         prepared.guidance["provisional_comparison"] = dict(
-            eligible=True,
-            available=False,
-            target=None,
-            explanation=(
-                "All selected forms have already been screened. "
-                "Choose a starting method and refine the marked problems."
-            ),
-        )
+            comparison, available=False, target=None,
+            explanation="All selected forms have already been screened.")
         dialog._render(prepared=prepared)
-        app.processEvents()
-        assert not [
-            b
-            for b in dialog.content.findChildren(QPushButton)
-            if b.text().startswith("No clear winner yet") and not b.isHidden()
-        ]
-        assert (
-            len(
-                [
-                    b
-                    for b in dialog.content.findChildren(QPushButton)
-                    if "as starting method" in b.text() and not b.isHidden()
-                ]
-            )
-            == 2
-        )
-        assert any(
-            "All selected forms have already been screened" in label.text() and not label.isHidden()
-            for label in dialog.content.findChildren(QLabel)
-        )
-        assert len(invoked) == 1 and not dialog._worker
+        assert "All selected forms" in dialog.status.text()
+        assert not any("No clear winner" in s for s in choose(footer.click, None))
+        prepared.guidance["provisional_comparison"] = comparison
+        dialog._render(prepared=prepared)
+        assert any("No clear winner" in s for s in choose(callbacks["choose_method"], None))
+        assert journal.read_bytes() == prefix
+
+        choose(footer.click, choice)
+        deadline = time.monotonic() + 30
+        while (dialog._worker or dialog._view_loading) and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(.002)
+        assert dialog._prepared_view, dialog.operation_error.text()
+        wait_pilot_view(dialog)
+        assert not dialog._worker, dialog.operation_error.text()
+        saved = study.load_reference_calibration_study(snapshot.study_directory)
+        assert saved.visual_reviews == snapshot.visual_reviews
+        assert saved.problem_regions == snapshot.problem_regions
+        if choice == "No clear winner":
+            successor = dialog._prepared_view.snapshot
+            assert successor.study_directory != snapshot.study_directory
+            assert guided.record(successor)["target"] == comparison["target"]
+            methods = successor.attachment_comparison["methods"].values()
+            assert set(methods) == {"current", "varifold"}
+            assert not guided.record(successor)["approved"]
+            assert all(c.status == "pending" and c.attempts == 0 for c in successor.candidates)
+        else:
+            guidance = dialog._prepared_view.guidance
+            assert dialog.study_directory == snapshot.study_directory
+            assert guidance["preferred"] == choice.lower() and not guidance["method_choice_pending"]
+            assert guidance["fit_direction"]["identifier"] == "guided-" + choice.lower()
+            assert all(c.attempts == 1 for c in saved.candidates)
     finally:
         dialog.close()
         app.processEvents()

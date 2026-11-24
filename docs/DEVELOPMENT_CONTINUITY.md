@@ -1,5 +1,14 @@
 # Development continuity
 
+## dev243 — choose a method after two unsuitable screen fits
+
+After both Current and Varifold receive Needs improvement in a valid paired
+screen, the pilot asks which method better preserved the specimen's shape.
+Picking a method keeps both reviews and opens refinement from the chosen fit.
+A tie prepares both methods with the same settings on the next untested pilot
+specimen. If all selected specimens have been screened, the chooser explains
+that limit. Cancel leaves the decision open. Pilot chat follows the same choice.
+
 ## dev242 — keep pilot guidance tied to the action the researcher can take
 
 The review footer and Pilot chat use the same highlighted action. Once both

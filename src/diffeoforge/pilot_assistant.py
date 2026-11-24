@@ -66,6 +66,9 @@ def _pilot_reply(context, question, topic):
 
     next_label = facts.get("next_label")
     next_text = f"Choose “{next_label}” next." if next_label else ""
+    if facts.get("next_action") == "choose_method" and topic in {
+            None, "next", "compare", "keep", "review", "controls", "iterations"}:
+        return dict(answer(facts["next_reason"] + " " + next_text, "next"), verified=True)
     if facts.get("guard_stop") and topic == "keep":
         label = context["assistant_actions"]["review"]
         named = re.search(r"\b(?:test|trial)\s*#?\s*(\d+)\b", question)

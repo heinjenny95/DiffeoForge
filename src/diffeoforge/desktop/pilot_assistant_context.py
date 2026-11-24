@@ -52,7 +52,8 @@ def context_for_view(window, view):
     if enabled(window.next_step_button) and window.next_step_button.objectName() == "primary":
         facts["next_label"] = window.next_step_button.text()
         # A chat action may open a view. Trial preparation stays in the regular pilot.
-        mode = {"fit_direction_compare": "compare", "fit_direction_inputs": "inputs",
+        mode = {"choose_method": "choose_method",
+                "fit_direction_compare": "compare", "fit_direction_inputs": "inputs",
                 "inspect_failed_template": "inputs", "common_retained": "retained",
                 "common_review": "review", "fit_direction_choose_start": "choose_start",
                 "fit_direction_working": "retained", "bounded_retained": "retained",
@@ -66,6 +67,9 @@ def context_for_view(window, view):
         facts["next_label"] = window.start_button.text()
     if facts.get("next_label") and not window.status.isHidden():
         facts["next_status"] = window.status.text()
+    if facts.get("next_action") == "choose_method":
+        facts["next_reason"] = window.status.text()
+        return dict(assistant_actions=labels, facts=facts), callbacks
     if review.get("kind") == "guard_stop" and "review" in labels:
         facts.update(guard_stop=guidance["guard_failures"][review["candidate_id"]]["message"],
                      next_reason=(review["explanation"] if facts.get("next_action") == "review"

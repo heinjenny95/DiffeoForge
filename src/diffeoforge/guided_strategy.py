@@ -356,6 +356,17 @@ def prepare_proposals(snapshot, context):
         context["working_proposals"] = {}
         context["failed_proposals"] = {}
         chosen = _explicit_start(snapshot, context)
+        # Two unsuitable fits can still have a clear visual winner. Only the
+        # researcher can make that relative choice, including after reopening.
+        context["method_choice_pending"] = bool(
+            context["provisional_comparison"]["eligible"]
+            and not (chosen or context["preferred"] or context.get("starting_fit_choice"))
+            and all(snapshot.visual_reviews.get(c.candidate_id) is False
+                    for c in snapshot.candidates)
+        )
+        if context["method_choice_pending"]:
+            context["fit_direction"] = None
+            return context
         for candidate in snapshot.candidates:
             identifier = candidate.candidate_id
             if (context["feedback"].get(identifier) or {}).get("starting_fit_choice"):
