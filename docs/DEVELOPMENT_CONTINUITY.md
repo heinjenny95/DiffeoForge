@@ -9,6 +9,14 @@ Individual and common-model reviews keep their meshes above a separately
 scrollable assessment, including when the reviewer opens an approved alternative.
 See the [workflow and recovery checks](PILOT_DEAD_END_CHECKS.md).
 
+The installed Windows build came from [ec1bfec](https://github.com/heinjenny95/DiffeoForge/commit/ec1bfec80b1967081af6b0b57782b03353262dd6).
+Its 91 release checks passed against the packaged source and frozen code.
+The [subsequent test changes](https://github.com/heinjenny95/DiffeoForge/commit/26e6f90cb6eb1b96cb47e9027f2f3307fc3407d0)
+updated fixtures for worker events and starting-fit choices. For the next
+usability check, follow the first-use task in the workflow checks above.
+Longer-run [fit performance comparisons](REFERENCE_FIT_PERFORMANCE.md) and
+independent anatomical review remain open.
+
 ## dev240 — carry marked material through corrections and recover pilot decisions
 
 Corrections on a refined reconstruction follow the verified parent faces from
