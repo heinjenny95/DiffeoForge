@@ -113,7 +113,7 @@ def test_bound_postfit_event_banner_keeps_native_success_clear(panel, kind):
     from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
 
     cleared = []
-    window = SimpleNamespace(_worker=None, status=QLabel(),
+    window = SimpleNamespace(_worker=None, _current_worker_signal=lambda: True, status=QLabel(),
         _live_fit_preview=SimpleNamespace(clear=lambda: cleared.append(True)))
     event = dict(event=kind, candidate_id="synthetic-fit", phase="qualification",
                  completed_native_fit=dict(optimizer_restart=False),
@@ -129,7 +129,7 @@ def test_native_failure_banner_does_not_claim_a_saved_completed_fit(panel):
 
     from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
 
-    window = SimpleNamespace(_worker=None, status=QLabel(),
+    window = SimpleNamespace(_worker=None, _current_worker_signal=lambda: True, status=QLabel(),
         _live_fit_preview=SimpleNamespace(clear=lambda: None))
     event = dict(event="candidate_failed", candidate_id="synthetic-fit",
                  error="Native consistency guard stopped this fit")

@@ -23,7 +23,8 @@ def case(monkeypatch):
     candidate = SimpleNamespace(candidate_id=identifier, status="completed", metrics=dict(
         attachment_comparison=dict(subjects={"target.vtk": dict(regional_quality=quality)})))
     snapshot = SimpleNamespace(study_directory=Path("current"), candidates=[candidate],
-        visual_reviews={}, region_edits={}, problem_regions={},
+        plan=SimpleNamespace(pilot_subject_count=1), visual_reviews={}, region_edits={},
+        problem_regions={},
         attachment_comparison=dict(methods={identifier: "varifold"}))
     parent = SimpleNamespace(study_directory=Path("previous"))
     infos = {"current": dict(target="target.vtk", screen_trials_spent=4, history=[], strategy={}),
