@@ -469,7 +469,8 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False, common_
                         "optimization", "failure_parent_recovery", "shared_model_check",
                         "search_family", "common_model_step", "control_capacity_request",
                         "common_diagnosis_test", "common_basis_step", "common_capacity_request",
-                        "common_candidate_step", "common_multiscale", "approved_projection"):
+                        "common_candidate_step", "common_multiscale", "approved_projection",
+                        "adaptive_fit"):
                 strategy.pop(key, None)
             previous = dict(directory=str(snapshot.study_directory),
                 manifest_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST))

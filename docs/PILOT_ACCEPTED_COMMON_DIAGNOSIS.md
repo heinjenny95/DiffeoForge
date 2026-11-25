@@ -2,9 +2,12 @@
 
 ### Reviewing a saved common fit
 
-The left pane shows the current common fit against the original specimen.
-When the trial has a reviewed starting fit, the right pane initially shows that
-exact fit. After the previews settle, rate how the relevant features changed.
+The common fit opens in the individual-fit viewer with the orange original
+and the blue reconstruction. Once the preview settles, choose **Suitable fit**
+or **Still needs work**. To inspect an earlier result as well, select
+**Show comparison**. A request for progress feedback opens the comparison
+directly. When the trial has a reviewed starting fit, you can rate how its
+relevant features changed.
 For example, choose **Better** when a projection is closer to the original than
 it was at the start of this trial. Two successive trials can share the same start.
 
@@ -22,7 +25,7 @@ different starting fit. A later rating about another reference preserves an
 earlier progress rating for the same fit and marks. Changing the marks requires a
 fresh judgement before that rating can support continuation.
 
-The two mesh views stay in place while the assessment below scrolls. The review
+The mesh views stay in place while the assessment below scrolls. The review
 can use the settled previews, with full detail available on request.
 
 Reopening an older common field does not discard later working annotations.
@@ -142,12 +145,9 @@ saves do not grant suitability, adopt parameters, create a numerical child or
 erase earlier reviews. The next candidate preparation is available in the fixed
 action area; contrasts are labelled as setting tests rather than extra iterations.
 
-The first review of a common result saves relative comparison and the explicit
-Suitable fit / Needs improvement decision together. Its comparison-only save
-is hidden, with a visible explanation of these two decisions. An already reviewed
-result can still save relative feedback independently. This avoids reopening the
-same first review merely because a comparison was saved without a fit decision;
-Better never silently becomes suitability.
+The first review saves the explicit suitability decision. If the researcher
+also rates a displayed comparison, both decisions are saved together. An
+already reviewed result can still receive relative feedback independently.
 
 Before preparing a different-setting trial after an approved individual result,
 the successor retains any still-unrecorded individual review. An explicit shared

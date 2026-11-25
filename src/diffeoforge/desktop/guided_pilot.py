@@ -313,8 +313,19 @@ def render(window, prepared):
         and snapshot.visual_reviews.get(snapshot.candidates[0].candidate_id) is True
         and guidance.get("common_revision", {}).get(snapshot.candidates[0].candidate_id)
     )
+    next_forms = guidance.get("next_forms", {})
+    valid_next = next((row for row in next_forms.values() if row.get("available")), None)
+    accepted_to_common = bool(regional_accepted and valid_next
+                              and valid_next.get("action") == "form_model_check")
+    common_step = None
+    if accepted_to_common:
+        mode = (valid_next.get("common_reuse") or {}).get("mode")
+        common_step = ("Review the saved common fit." if mode in {"review", "feedback"}
+                       else "Open the anatomy transfer." if mode == "project_approved"
+                       else "Prepare the common fit.")
     title = QLabel(
         "Which method fit this specimen better?" if method_choice
+        else "Check the approved fit with the common model" if accepted_to_common
         else "Suitable fit saved" if optional_choice
         else "Choose a starting fit" if starting_choice and not running
         else "Review the stopped test" if guard_failures
@@ -377,6 +388,12 @@ def render(window, prepared):
         )
         basis_note.setWordWrap(True)
         window.content_layout.addWidget(basis_note)
+    effort_layout = window.content_layout
+    if accepted_to_common and bounded_action:
+        previous_effort = QWidget()
+        effort_layout = QVBoxLayout(previous_effort)
+        window.content_layout.addWidget(InfoDisclosure(
+            f"Individual correction · Test {info['screen_trials_spent']}", previous_effort))
     if bounded_action:
         extension_from = bounded_action.get("extension_from")
         effort_label = (
@@ -391,17 +408,17 @@ def render(window, prepared):
             "and checks. Saved fits and approvals stay available.")
         effort.setObjectName("adaptiveEffort")
         effort.setWordWrap(True)
-        window.content_layout.addWidget(effort)
+        effort_layout.addWidget(effort)
         if bounded_action.get("joint_status"):
             detail = QLabel(bounded_action["joint_status"])
             detail.setWordWrap(True)
-            window.content_layout.addWidget(detail)
+            effort_layout.addWidget(detail)
         if bounded_action["closed"]:
             note = QLabel(bounded_action["reason"] + (
                 "" if regional_accepted else " Anatomical review is still required."))
             note.setObjectName("adaptiveResult")
             note.setWordWrap(True)
-            window.content_layout.addWidget(note)
+            effort_layout.addWidget(note)
     elif regional_trial and not guard_failures and type(iterations) is int and iterations > 0:
         if checkpoint:
             total = checkpoint["total_iterations"]
@@ -448,9 +465,7 @@ def render(window, prepared):
         scope = QLabel(guidance['regional_scope']['text'])
         scope.setWordWrap(True)
         scope.setObjectName('regionalTrialScope')
-        window.content_layout.addWidget(scope)
-    next_forms = guidance.get("next_forms", {})
-    valid_next = next((row for row in next_forms.values() if row.get("available")), None)
+        effort_layout.addWidget(scope)
     progress_summary = valid_next or guidance.get("form_progress_summary")
     if progress_summary:
         multiscale = (info.get("strategy") or {}).get("common_multiscale")
@@ -468,16 +483,15 @@ def render(window, prepared):
             f"{progress_summary['total']}.")
         progress_note.setWordWrap(True)
         window.content_layout.addWidget(progress_note)
-        if progress_summary.get("transfer_note"):
-            transfer_note = QLabel(progress_summary["transfer_note"])
-            transfer_note.setWordWrap(True)
-            window.content_layout.addWidget(transfer_note)
-        proposed_start = (progress_summary.get("common_reuse") or {}).get("start_description")
-        if proposed_start:
-            note = QLabel(proposed_start)
+        start_description = (progress_summary.get("common_reuse") or {}).get("start_description")
+        descriptions = (progress_summary.get("transfer_note"), start_description)
+        for description in dict.fromkeys(descriptions):
+            if not description or description == start_note:
+                continue
+            note = QLabel(description)
             note.setWordWrap(True)
             window.content_layout.addWidget(note)
-        elif progress_summary.get("common_start"):
+        if not start_description and progress_summary.get("common_start"):
             start = progress_summary["common_start"]
             note = QLabel(f"Common-model starting basis: {start['controls']} controls. "
                           f"Accepted complete-field demand: {start['required_controls']}. "
@@ -640,6 +654,8 @@ def render(window, prepared):
         if retry_blocked
         else "Fit saved; checks incomplete. Resume checks without fitting again."
         if resume_checks
+        else f"Test {info['screen_trials_spent']} is saved as suitable. {common_step}"
+        if common_step
         else valid_next.get("transfer_note") or "Suitable fit saved. Prepare the next check."
         if valid_next
         else "This trial stopped before completion. You can retry it from the saved pilot."
@@ -871,15 +887,14 @@ def render(window, prepared):
     extension = (bounded_action or {}).get("extension")
     reviewed_next = valid_next or regional_accepted or (
         direction_pinned and direction.get("explicit_start") and not extension)
+    pending_latest = review and review["pending"] and review["kind"] == "current"
     if (bounded_action and bounded_action.get("recommendation") and not running
             and not starting_choice and not reviewed_next
+            and not (pending_latest and not extension)
             and not common_failure and not retry_blocked):
         retained = bounded_action["recommendation"]
         identifier = snapshot.candidates[0].candidate_id
         # A numerical recommendation is viewable; it is not a saved human choice.
-        review = None
-        window._guided_review_target = None
-        window.review_next_button.hide()
         window._guided_footer_action = None
         if extension:
             pin_action(window, snapshot, "Prepare +300 iterations",
@@ -887,16 +902,21 @@ def render(window, prepared):
                        "Continue from this exact saved fit with the same areas and settings. "
                        "Fitting starts when you select Run.",
                        goal=extension)
-            window._guided_review_target = dict(
-                root=snapshot.study_directory, kind="bounded_retained",
-                candidate_id=identifier, reference=retained,
-            )
-            window.review_next_button.setText("Review retained fit · mark / edit areas…")
-            window.review_next_button.setToolTip("Inspect the saved reconstruction and its areas.")
-            window.review_next_button.setEnabled(True)
-            window.review_next_button.show()
+            if not pending_latest:
+                review = None
+                window._guided_review_target = dict(
+                    root=snapshot.study_directory, kind="bounded_retained",
+                    candidate_id=identifier, reference=retained,
+                )
+                window.review_next_button.setText("Review retained fit · mark / edit areas…")
+                window.review_next_button.setToolTip("Inspect the saved fit and its areas.")
+                window.review_next_button.setEnabled(True)
+                window.review_next_button.show()
             window.status.setText(_extension_reason(extension))
         else:
+            review = None
+            window._guided_review_target = None
+            window.review_next_button.hide()
             pin_action(window, snapshot, "Review retained adaptive fit · mark / edit areas…",
                        "bounded_retained", (identifier, retained),
                        "Inspect the verified retained field. Save a starting fit and its marks "
@@ -1271,7 +1291,17 @@ def render(window, prepared):
                     available=not unresolved and valid,
                     fixed=common_flow,
                 )
-        window.content_layout.addWidget(card)
+        if accepted_to_common:
+            if quality and quality.get("numerical_selection_suitable") is False:
+                warning = QLabel("The individual fit has numerical warnings. "
+                                 "Open its results below to see the checks.")
+                warning.setObjectName("statusWarning")
+                warning.setWordWrap(True)
+                window.content_layout.addWidget(warning)
+            window.content_layout.addWidget(InfoDisclosure(
+                f"Individual fit results · Test {info['screen_trials_spent']}", card))
+        else:
+            window.content_layout.addWidget(card)
     if running or not completed:
         emphasize_next_action()
         return

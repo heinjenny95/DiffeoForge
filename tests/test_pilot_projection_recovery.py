@@ -56,6 +56,34 @@ def test_reopen_after_hard_stop_reuses_guarded_recovery(tmp_path, monkeypatch):
     assert transfer.status(tmp_path)["projection"] == "interrupted"
 
 
+def test_running_transfer_shows_native_iterations_then_check_and_return(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(transfer, "default_directory", lambda *_: tmp_path)
+    monkeypatch.setattr(PreviewMeshLoader, "request_operation", lambda *_: None)
+    dialog = CommonProjectionDialog(None, object(), {"target": "subject.vtk"})
+    try:
+        dialog._loaded("status", {"projection": "pending"})
+        dialog.primary.click()
+        assert dialog.operation == "projection" and dialog.primary.isHidden()
+        assert dialog.cancel_run.isEnabled() and not dialog.progress_bar.isHidden()
+        assert dialog.progress_bar.maximum() == 0
+        dialog._progress({"worker_event": {"kind": "progress", "payload": {"iteration": 37}}})
+        assert dialog.progress_bar.maximum() == transfer.BUDGET
+        assert dialog.progress_bar.value() == 37
+        dialog._progress({"event": "qualification_phase", "message": "Checking saved anatomy"})
+        assert dialog.status.text() == "Checking saved anatomy"
+        assert dialog.progress_bar.maximum() == 0
+        dialog._loaded("projection", {})
+        dialog._loaded("status", {"projection": "completed", "can_fit_original": False})
+        assert dialog.progress_bar.isHidden() and dialog.primary.isHidden()
+        assert dialog.next_action is None and dialog.close_button.text() == "Return to pilot"
+        assert dialog.close_button.isEnabled() and dialog.cancel_run.isHidden()
+    finally:
+        dialog.close()
+        app.processEvents()
+
+
 def test_transfer_recovery_requires_confirmation_and_only_refreshes(tmp_path, monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     app = QApplication.instance() or QApplication([])

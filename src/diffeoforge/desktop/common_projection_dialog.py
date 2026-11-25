@@ -4,13 +4,21 @@ from functools import partial
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QVBoxLayout,
+)
 
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 
 
 class CommonProjectionDialog(QDialog):
-    progress = Signal(str)
+    progress = Signal(object)
 
     def __init__(self, parent, snapshot, choice):
         super().__init__(parent)
@@ -47,6 +55,9 @@ class CommonProjectionDialog(QDialog):
         self.status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setAccessibleName("Common fit progress")
+        layout.addWidget(self.progress_bar)
         layout.addStretch()
         self.inspect = QPushButton("Compare saved anatomy…")
         self.inspect.clicked.connect(self._inspect)
@@ -77,7 +88,10 @@ class CommonProjectionDialog(QDialog):
 
     def _start(self, operation, text, fn):
         self.operation = operation
+        self.primary.hide()
         self.primary.setEnabled(False)
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.show()
         self.inspect.setEnabled(False)
         self.refresh_status.hide()
         self.cancel_run.setVisible(self.runner is not None)
@@ -108,9 +122,11 @@ class CommonProjectionDialog(QDialog):
 
         self.operation = None
         self.runner = None
+        self.progress_bar.hide()
         self.setProperty("processRecordingWaiting", False)
         self.cancel_run.hide()
         self.close_button.setEnabled(True)
+        self.close_button.setText("Close")
         if key == "attach":
             self.successor = value
             self.accept()
@@ -147,8 +163,9 @@ class CommonProjectionDialog(QDialog):
                 if approved is False:
                     notes.append("You rated this result as needing improvement.")
                 notes.append(
-                    "Compare the saved anatomy or close this window to choose another model."
+                    "Return to the pilot to choose the next common fit."
                 )
+                self.close_button.setText("Return to pilot")
                 self._show_action(None, "", " ".join(notes))
             elif value.get("can_attach") is True:
                 self._show_action(
@@ -164,6 +181,8 @@ class CommonProjectionDialog(QDialog):
                     "fit with the approved anatomy before using it in the pilot.",
                 )
         elif "running" in (projection, original):
+            self.progress_bar.setRange(0, 0)
+            self.progress_bar.show()
             self._show_action(
                 "refresh",
                 "Refresh status",
@@ -194,10 +213,9 @@ class CommonProjectionDialog(QDialog):
             reason = check.get("summary") or "The transfer needs review."
             if value.get("projection_numerical", {}).get("passed") is not True:
                 reason += " The numerical checks for the transferred field did not pass."
+            self.close_button.setText("Return to pilot")
             self._show_action(
-                None,
-                "",
-                reason + " Compare the saved anatomy or close this window to choose another model.",
+                None, "", reason + " Return to the pilot to prepare the next common fit."
             )
         elif ready:
             self._show_action(
@@ -260,10 +278,9 @@ class CommonProjectionDialog(QDialog):
             )
 
             def event(row):
-                if isinstance(row, dict):
-                    text = row.get("message") or row.get("event") or ""
-                    if text:
-                        self.progress.emit(str(text))
+                if isinstance(row, dict) and ("worker_event" in row
+                                              or row.get("event") == "qualification_phase"):
+                    self.progress.emit(row)
 
             self._start(
                 action,
@@ -333,9 +350,25 @@ class CommonProjectionDialog(QDialog):
             self, self.choice["target"], partial(prepare_projection_retention, self.directory)
         )
 
-    def _progress(self, text):
-        if self.runner is not None:
-            self.status.setText(text)
+    def _progress(self, row):
+        from diffeoforge.pilot_common_projection import BUDGET
+
+        if self.runner is None or not self.cancel_run.isEnabled():
+            return
+        event = row.get("worker_event") or {}
+        payload = event.get("payload") or {}
+        iteration = payload.get("iteration")
+        if event.get("kind") == "progress" and type(iteration) is int:
+            self.progress_bar.setRange(0, BUDGET)
+            self.progress_bar.setValue(iteration)
+            self.progress_bar.setFormat("Iteration %v of up to %m")
+            self.status.setText("Transferring the approved shape…" if self.operation == "projection"
+                                else "Fitting the original specimen…")
+        elif row.get("event") == "qualification_phase":
+            self.progress_bar.setRange(0, 0)
+            self.status.setText(row.get("message") or "Checking the saved common fit…")
+        elif self.progress_bar.maximum() == 0 and payload.get("message"):
+            self.status.setText(str(payload["message"]))
 
     def _cancel(self):
         if self.runner:
@@ -345,6 +378,7 @@ class CommonProjectionDialog(QDialog):
 
     def _failed(self, key, message):
         self.runner = self.operation = None
+        self.progress_bar.hide()
         self.cancel_run.hide()
         self.setProperty("processRecordingWaiting", False)
         self.close_button.setEnabled(True)

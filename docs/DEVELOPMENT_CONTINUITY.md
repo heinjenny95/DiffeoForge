@@ -1,5 +1,20 @@
 # Development continuity
 
+## dev247 — review a common fit in the individual fit viewer
+
+Common fits open with the original and the current reconstruction in one view.
+The researcher can decide suitability there or open a saved comparison. An
+explicit request for relative feedback opens that comparison directly. A
+completed adaptive trial awaiting review opens its own reconstruction.
+
+Preparing a separate common check after an approved adaptive correction now
+starts a fresh stage contract. The approved shape remains the anatomical
+reference even when the common model needs an earlier numerical starting field.
+Individual correction history is available on demand. During transfer the
+dialog shows native iterations when available and identifies the check phase.
+Preparation and inspection start no fit. A completed transfer still has to
+meet the retention and numerical criteria before fitting the original.
+
 ## dev246 — continue from the inspected comparison after a worse local fit
 
 When a marked regional trial is rated Worse, the pilot offers the available

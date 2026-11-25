@@ -616,6 +616,9 @@ class ProjectionRunner:
                         detail = candidate.error or candidate.status
                         raise ValueError(f"The native original-target fit stopped ({detail})")
                     run = study.calibration_candidate_run_directory(candidate)
+                if callback:
+                    callback(dict(event="qualification_phase",
+                                  message="Checking the fitted shape and saved areas…"))
                 endpoint = _evidence(root, run, stage, d)
                 field_quality = {}
                 if stage == "original":

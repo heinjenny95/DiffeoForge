@@ -112,7 +112,27 @@ def test_closed_failed_child_disables_run_and_reviews_exact_retained_field(panel
     panel.window._worker = None
 
 
-def test_adaptive_extension_is_the_primary_preparation_and_review_remains_available(panel):
+def test_completed_adaptive_trial_opens_its_own_pending_review(panel):
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    retained = retained_reference(panel.snapshot.study_directory)
+    panel.snapshot.visual_reviews.clear()
+    panel.guidance.update(
+        bounded_adaptive=bounded(closed=True, recommendation=retained), feedback={}, proposals={}
+    )
+    panel.window._snapshot = panel.snapshot
+    opened = []
+    panel.window._open_candidate = opened.append
+    panel.render()
+    assert panel.window.review_next_button.isVisible()
+    assert panel.window.review_next_button.text().startswith("Review individual result · Test 5")
+    assert panel.window._guided_review_target["kind"] == "current"
+    ReferenceCalibrationDialog._open_next_review(panel.window)
+    assert opened == [panel.candidate] and not panel.invoked and not panel.snapshot.visual_reviews
+
+
+@pytest.mark.parametrize("pending", [True, False])
+def test_adaptive_extension_keeps_the_unreviewed_result_reachable(panel, pending):
     from PySide6.QtWidgets import QPushButton
 
     from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
@@ -125,10 +145,11 @@ def test_adaptive_extension_is_the_primary_preparation_and_review_remains_availa
             dict(label="C", improvement_percent=5.5),
         ],
     )
-    panel.snapshot.visual_reviews.clear()
+    if pending:
+        panel.snapshot.visual_reviews.clear()
     result = bounded(closed=True, recommendation=reference)
     result.update(spent=600, extension=offer)
-    panel.guidance.update(bounded_adaptive=result, feedback={}, proposals={})
+    panel.guidance.update(bounded_adaptive=result, feedback={})
     panel.window.layout().addWidget(panel.window.start_button)
     panel.window.next_step_button.clicked.connect(
         lambda: ReferenceCalibrationDialog._perform_final_next_step(panel.window)
@@ -147,19 +168,24 @@ def test_adaptive_extension_is_the_primary_preparation_and_review_remains_availa
         button for button in panel.window.findChildren(QPushButton)
         if button.isVisible() and button.isEnabled() and button.objectName() == "primary"
     ]
-    assert primaries == [panel.window.next_step_button]
+    primary = panel.window.review_next_button if pending else panel.window.next_step_button
+    assert primaries == [primary]
     assert "Area A (14.3%), Area C (5.5%)" in panel.window.status.text()
     assert "Protection checks passed" in panel.window.status.text()
     assert not panel.invoked
     panel.window.review_next_button.click()
-    assert opened == [(panel.candidate.candidate_id, reference)]
+    if pending:
+        assert panel.inspected == [panel.candidate] and not opened
+    else:
+        assert opened == [(panel.candidate.candidate_id, reference)] and not panel.inspected
     assert not panel.invoked
 
     panel.window.next_step_button.click()
     assert panel.invoked == [((), dict(adaptive=False, guided_action=(
         "adaptive_extend_bounded", panel.candidate.candidate_id, offer,
     )))]
-    assert panel.snapshot.visual_reviews == {}
+    expected_reviews = {} if pending else {panel.candidate.candidate_id: False}
+    assert panel.snapshot.visual_reviews == expected_reviews
 
 
 @pytest.mark.parametrize("decision", ["selected", "approved"])

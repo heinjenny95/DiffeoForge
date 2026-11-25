@@ -981,17 +981,10 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             self.complete_button.setObjectName("secondary")
             for button in (self.fail_button, self.complete_button):
                 button.setAutoDefault(False)
-                controls.addWidget(button, 1)
-        else:
-            controls.addStretch()
-            controls.addWidget(self.fail_button)
-            controls.addWidget(self.complete_button)
-        if compact_review and self._common_review:
-            suitability_actions = QWidget()
-            controls.setContentsMargins(0, 0, 0, 0)
-            suitability_actions.setLayout(controls)
-        else:
-            decision_layout.addLayout(controls)
+        controls.addStretch()
+        controls.addWidget(self.fail_button)
+        controls.addWidget(self.complete_button)
+        decision_layout.addLayout(controls)
         assessment.insertWidget(0, self.decision_panel)
         # Closing must remain possible while geometry is loading or unavailable.
         self._window_actions = QWidget()
@@ -1051,6 +1044,8 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
                     self.guided_feedback = GuidedFeedbackControls(
                         guided_feedback_context, visible_reference=bool(self._common_review))
                     if self._common_review:
+                        self.guided_feedback.setVisible(self.saved_comparison.toggle.isChecked())
+                        self.saved_comparison.toggle.toggled.connect(self.guided_feedback.setVisible)
                         self.guided_feedback.buttons.buttonClicked.connect(
                             self._review_common_suitability)
                         self.guided_feedback.reviseProgressRequested.connect(
@@ -1067,9 +1062,6 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
                 else:
                     self.anatomical_notes.setPlaceholderText("What needs work? (optional)")
                     decision_layout.insertWidget(1, self.anatomical_notes)
-            if self._common_review:
-                decision_layout.insertWidget(decision_layout.indexOf(quality) + 1,
-                                             suitability_actions)
         if self._required_pair_indexes:
             first_required = self._required_pair_indexes[0]
             combo_index = self.mesh_combo.findData(first_required)
@@ -1079,7 +1071,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
                 self.mesh_combo.setCurrentIndex(combo_index)
         elif self.mesh_combo.count():
             self._load_selected(self.mesh_combo.currentIndex())
-        if self._common_review and alternative_pairs:
+        if self._common_review and self._common_review.get("open_feedback") and alternative_pairs:
             self.saved_comparison.toggle.setChecked(True)
         self._update_review_progress()
 
@@ -5234,6 +5226,8 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                                  if c.candidate_id == reference["candidate_id"])
                 context = prepare_context(parent, candidate.candidate_id, common_origin=current)
                 requested = choice.get("requested_comparison")
+                if choice["mode"] == "feedback" and context and context.get("common_review"):
+                    context["common_review"]["open_feedback"] = True
                 if requested and context and context.get("common_review"):
                     if requested != context["common_review"]["numerical_seed"]:
                         raise ValueError("The requested starting fit changed; reopen this check")

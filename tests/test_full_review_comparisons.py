@@ -76,7 +76,7 @@ def case(tmp_path, monkeypatch, request):
         comparison_reconstruction_sha256=choices[0].reconstruction_sha256,
     )
     common_case = getattr(request, "param", None)
-    if common_case in {"common", "same_reference", "no_seed", "unreviewed_seed"}:
+    if common_case in {"common", "common_single", "same_reference", "no_seed", "unreviewed_seed"}:
         seed = (reference if common_case == "same_reference" else
                 None if common_case == "no_seed" else dict(reference, candidate_id="seed"))
         choices = [replace(choices[0], rating_reference=reference),
@@ -111,6 +111,12 @@ def case(tmp_path, monkeypatch, request):
     )
     viewer._pair_loaded(0, main_models)
     wait(app, lambda: viewer.canvas.comparison_ready)
+    if viewer._common_review:
+        assert not viewer.saved_comparison.toggle.isChecked() and viewer.canvas.isVisible()
+        assert not viewer.guided_feedback.isVisible() and viewer.fail_button.isEnabled()
+        assert viewer.guided_feedback_decision is None
+        if common_case != "common_single":
+            viewer.saved_comparison.toggle.click()
     yield SimpleNamespace(
         app=app,
         v=viewer,
@@ -370,7 +376,7 @@ def test_review_keeps_both_meshes_visible_while_scrolling_actions(case, size):
     assert [canvas.camera_state() for canvas in viewports] == cameras
 
 
-@pytest.mark.parametrize("case", ["individual", "read_only"], indirect=True)
+@pytest.mark.parametrize("case", ["individual", "common_single", "read_only"], indirect=True)
 def test_single_review_scrolls_assessment_and_wheel_zooms_only_the_mesh(case):
     from PySide6.QtCore import QPoint, QRect
     from test_combo_wheel import _wheel

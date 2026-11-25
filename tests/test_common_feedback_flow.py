@@ -56,7 +56,13 @@ def test_common_viewer_feedback_roundtrip_and_fixed_next_action(tmp_path, monkey
                 assert not viewer.guided_feedback.outcomes[outcome].isEnabled()
                 viewer._pair_loaded(0, (_model(original), _model(fitted)))
                 comparison = viewer.saved_comparison
-                assert comparison.toggle.isChecked()
+                if outcome == "better":
+                    # The fixed action explicitly asks for the missing comparison.
+                    assert comparison.toggle.isChecked()
+                else:
+                    # Reopening a reviewed result starts with its ordinary single-fit view.
+                    assert not comparison.toggle.isChecked()
+                    comparison.toggle.click()
                 seed = viewer._common_review["numerical_seed"]
                 pair = comparison.choice.currentData()
                 assert pair.rating_reference == seed
@@ -163,8 +169,10 @@ def test_first_common_review_saves_starting_progress_and_still_needs_work(tmp_pa
             assert viewer.problem_regions == marks
             viewer._pair_loaded(0, (_model(original), _model(fitted)))
             wait(app, lambda: viewer.canvas.comparison_ready)
-            assert not viewer.fail_button.isEnabled()
             saved_pane = viewer.saved_comparison
+            assert not saved_pane.toggle.isChecked() and viewer.fail_button.isEnabled()
+            saved_pane.toggle.click()
+            assert not viewer.fail_button.isEnabled()
             seed = saved_pane.choice.currentData()
             assert seed.rating_reference == viewer._common_review["numerical_seed"]
             assert viewer._common_review["current_label"] in saved_pane.current_label.text()

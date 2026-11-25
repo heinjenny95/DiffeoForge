@@ -21,7 +21,7 @@ def local_fit(tmp_path, monkeypatch):
     return base, regional_fit(completed, monkeypatch)
 
 
-def regional_fit(completed, monkeypatch):
+def regional_fit(completed, monkeypatch, *, adaptive=False):
     from dataclasses import replace
 
     accepted = approve(completed, 'guided-varifold')
@@ -34,8 +34,11 @@ def regional_fit(completed, monkeypatch):
             return snapshot
         # Only regional classification is synthetic. Source references, approved
         # receipts, next-form staging and joint assembly are real controller paths.
-        return replace(snapshot, attachment_comparison=dict(snapshot.attachment_comparison,
-            regional_objective=dict(version='synthetic-regional-classification')))
+        comparison = deepcopy(snapshot.attachment_comparison)
+        comparison['regional_objective'] = dict(version='synthetic-regional-classification')
+        if adaptive:
+            comparison['guided']['strategy']['adaptive_fit'] = {'version': 'synthetic-parent-stage'}
+        return replace(snapshot, attachment_comparison=comparison)
 
     monkeypatch.setattr(study, 'load_reference_calibration_study', classified)
     return classified(root)
@@ -43,7 +46,8 @@ def regional_fit(completed, monkeypatch):
 
 def test_suitable_regional_result_prepares_next_form_without_transferring_field_or_approval(
         tmp_path, monkeypatch):
-    base, local = local_fit(tmp_path, monkeypatch)
+    base, completed = attempted(tmp_path, monkeypatch)
+    local = regional_fit(completed, monkeypatch, adaptive=True)
     before = {p: sha256_file(p) for p in local.study_directory.rglob('*') if p.is_file()}
     context = strategy.state(local)
     following = context['next_forms']['guided-varifold']
@@ -56,6 +60,8 @@ def test_suitable_regional_result_prepares_next_form_without_transferring_field_
     assert not child.attachment_comparison.get('refinement')
     assert not child.attachment_comparison.get('regional_objective')
     assert not {'baseline', 'anchor', 'regional_recipe'} & info['strategy'].keys()
+    assert 'adaptive_fit' in guided.record(local)['strategy']
+    assert 'adaptive_fit' not in info['strategy']
     assert not info['feedback'] and not child.visual_reviews
     assert child.candidates[0].attempts == 0
     assert child.attachment_comparison['iterations'] == 120
