@@ -364,8 +364,9 @@ def prepare_proposals(snapshot, context):
         # Two unsuitable fits can still have a clear visual winner. Only the
         # researcher can make that relative choice, including after reopening.
         context["method_choice_pending"] = bool(
-            context["provisional_comparison"]["eligible"]
-            and not (chosen or context["preferred"] or context.get("starting_fit_choice"))
+            not context.get("starting_fit_choice")
+            and context["provisional_comparison"]["eligible"]
+            and not (chosen or context["preferred"])
             and all(snapshot.visual_reviews.get(c.candidate_id) is False
                     for c in snapshot.candidates)
         )
