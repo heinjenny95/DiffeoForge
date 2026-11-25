@@ -3,6 +3,7 @@
 ## dev247 — review a common fit in the individual fit viewer
 
 Common fits open with the original and the current reconstruction in one view.
+The suitability buttons appear directly below the question on a small screen.
 The researcher can decide suitability there or open a saved comparison. An
 explicit request for relative feedback opens that comparison directly. A
 completed adaptive trial awaiting review opens its own reconstruction.

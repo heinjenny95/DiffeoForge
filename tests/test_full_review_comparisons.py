@@ -394,6 +394,10 @@ def test_single_review_scrolls_assessment_and_wheel_zooms_only_the_mesh(case):
     assert dialog.rect().contains(bounds)
     assert canvas.visibleRegion().boundingRect() == canvas.rect()
     assert bounds.bottom() < dialog.body_scroll.mapTo(dialog, QPoint()).y()
+    if dialog._common_review:
+        viewport = dialog.body_scroll.viewport()
+        for button in (dialog.complete_button, dialog.fail_button):
+            assert viewport.rect().contains(QRect(button.mapTo(viewport, QPoint()), button.size()))
     _, screen = canvas._project(np.asarray(canvas.reconstruction_model.vertices))
     assert (screen >= 0).all() and (screen < [canvas.width(), canvas.height()]).all()
     bar = dialog.body_scroll.verticalScrollBar()

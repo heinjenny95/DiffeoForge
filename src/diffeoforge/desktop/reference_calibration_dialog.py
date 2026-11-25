@@ -966,8 +966,10 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         self.maybe_button.clicked.connect(self._record_plan_b)
         controls.addWidget(self.maybe_button)
         # Reserve the shared primary style's wider padding before its role changes.
+        accept_label = ("Suitable fit" if compact_review and len(self._required_pair_indexes) == 1
+                        else self.complete_button.text())
         self.complete_button.setMinimumWidth(
-            self.complete_button.fontMetrics().horizontalAdvance(self.complete_button.text()) + 64
+            self.complete_button.fontMetrics().horizontalAdvance(accept_label) + 64
         )
         self.complete_button.setToolTip("I inspected every specimen and accept all their fits.")
         if self.fit_preferences:
@@ -981,9 +983,13 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             self.complete_button.setObjectName("secondary")
             for button in (self.fail_button, self.complete_button):
                 button.setAutoDefault(False)
-        controls.addStretch()
+        compact_decision = compact_review and self.fit_preferences is None
+        if not compact_decision:
+            controls.addStretch()
         controls.addWidget(self.fail_button)
         controls.addWidget(self.complete_button)
+        if compact_decision:
+            controls.addStretch()
         decision_layout.addLayout(controls)
         assessment.insertWidget(0, self.decision_panel)
         # Closing must remain possible while geometry is loading or unavailable.
@@ -1033,6 +1039,9 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             quality.setWordWrap(True)
             decision_layout.insertWidget(0, quality)
             if self.fit_preferences is None:
+                # Keep the decision directly below its question on a laptop viewport.
+                decision_layout.removeItem(controls)
+                decision_layout.insertLayout(1, controls)
                 decision_layout.removeWidget(self.anatomical_notes)
                 has_comparison = (
                     alternative_pairs if self._common_review else
@@ -1061,7 +1070,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
                     feature_layout.addWidget(self.anatomical_notes)
                 else:
                     self.anatomical_notes.setPlaceholderText("What needs work? (optional)")
-                    decision_layout.insertWidget(1, self.anatomical_notes)
+                    decision_layout.insertWidget(2, self.anatomical_notes)
         if self._required_pair_indexes:
             first_required = self._required_pair_indexes[0]
             combo_index = self.mesh_combo.findData(first_required)
@@ -1561,7 +1570,8 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
             )
         if self._compact_review and total == 1 and not self._read_only:
             if self._common_review:
-                label = "Still needs work → next step"
+                comparing = self.saved_comparison and self.saved_comparison.toggle.isChecked()
+                label = "Still needs work → next step" if comparing else "Needs improvement"
             else:
                 label = "Save corrections → next step" if count else "Needs improvement"
             self.fail_button.setText(label)

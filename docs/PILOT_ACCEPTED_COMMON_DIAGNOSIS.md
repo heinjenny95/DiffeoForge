@@ -4,7 +4,7 @@
 
 The common fit opens in the individual-fit viewer with the orange original
 and the blue reconstruction. Once the preview settles, choose **Suitable fit**
-or **Still needs work**. To inspect an earlier result as well, select
+or **Needs improvement**. To inspect an earlier result as well, select
 **Show comparison**. A request for progress feedback opens the comparison
 directly. When the trial has a reviewed starting fit, you can rate how its
 relevant features changed.
