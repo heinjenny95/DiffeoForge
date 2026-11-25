@@ -230,8 +230,11 @@ def starting_fit_choice(snapshot, identifier):
     )
 
 
-def require_starting_fit_choice(snapshot, identifier):
+def require_starting_fit_choice(snapshot, identifier, *, next_individual=False):
     """Fresh preparation gate; presentation state cannot authorize a seed choice."""
+    # The form transition verifies the actual destination before preparing it.
+    if next_individual and snapshot.visual_reviews.get(identifier) is True:
+        return
     pending = starting_fit_choice(snapshot, identifier)
     if pending:
         raise ValueError(pending["reason"])

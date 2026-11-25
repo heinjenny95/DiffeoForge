@@ -1,5 +1,22 @@
 # Development continuity
 
+## dev246 — continue from the inspected comparison after a worse local fit
+
+When a marked regional trial is rated Worse, the pilot offers the available
+protected correction from the saved comparison if the marks match its review.
+Changed marks can be checked on that earlier fit. An explicit alignment or
+topology concern still leads to input inspection. Preparation requires a
+separate Run. Requalifying a retained field on the same refined source grid now
+carries its recorded material ancestry, so reconstruction marks continue to
+identify the inspected faces. A different grid requires its own evidence.
+
+An approved individual review advances to the next unseen specimen even when
+its separate Better rating leaves numerical warnings. The warnings remain
+visible, and choosing a field for further work on that specimen stays under
+“Correct this specimen further”. Shared-model coverage still requires its own
+checks. The Inspect fit viewer supports native maximize and restore from its
+title bar alongside the existing full-screen control.
+
 ## dev245 — adapt a single deformation to several marked surfaces
 
 New regional corrections with two or more red original-surface marks and optional

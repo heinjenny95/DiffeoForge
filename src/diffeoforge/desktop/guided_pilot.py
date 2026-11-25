@@ -248,7 +248,9 @@ def render(window, prepared):
     checkpoint = (strategy.get("regional_recipe") or {}).get("review_checkpoint")
     checkpoint_continuation = bool(checkpoint and strategy.get("optimization"))
     pending_choice = guidance.get("starting_fit_choice")
+    optional_choice = guidance.get("optional_starting_fit_choice")
     starting_choice = (
+        None if optional_choice else
         guidance["feedback"][pending_choice["identifier"]] if pending_choice else
         next((row for row in guidance.get("feedback", {}).values()
               if row and row.get("starting_fit_choice")), None)
@@ -313,6 +315,7 @@ def render(window, prepared):
     )
     title = QLabel(
         "Which method fit this specimen better?" if method_choice
+        else "Suitable fit saved" if optional_choice
         else "Choose a starting fit" if starting_choice and not running
         else "Review the stopped test" if guard_failures
         else "Finish checks on the saved fit" if checks_pending
@@ -418,15 +421,24 @@ def render(window, prepared):
         note.setObjectName("singleRegionalEffort")
         note.setWordWrap(True)
         window.content_layout.addWidget(note)
-    if starting_choice and not running:
+    if (starting_choice or optional_choice) and not running:
         from diffeoforge.desktop.guided_feedback import render_starting_choice
 
         choice_card = QFrame(window.content)
         choice_card.setObjectName("card")
         choice_card.setProperty("startingFitChoice", True)
-        render_starting_choice(window, starting_choice["starting_fit_choice"]["identifier"],
-                               QVBoxLayout(choice_card), starting_choice)
-        window.content_layout.addWidget(choice_card)
+        data = starting_choice or guidance["feedback"][optional_choice["identifier"]]
+        render_starting_choice(window, data["starting_fit_choice"]["identifier"],
+                               QVBoxLayout(choice_card), data)
+        if optional_choice:
+            notice = QLabel("Checks to review · " + " ".join(optional_choice["reasons"]))
+            notice.setObjectName("regionalCheckWarning")
+            notice.setWordWrap(True)
+            window.content_layout.addWidget(notice)
+            window.content_layout.addWidget(InfoDisclosure("Correct this specimen further",
+                                                          choice_card))
+        else:
+            window.content_layout.addWidget(choice_card)
     if review and review["pending"] and review["kind"] != "guard_stop" and not starting_choice:
         target_note = QLabel(review["label"] if common_flow else review["explanation"])
         target_note.setObjectName("pilotReviewTarget")

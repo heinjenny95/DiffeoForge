@@ -607,6 +607,7 @@ class _CalibrationCandidateViewerDialog(_FullscreenPilotDialog):
         super().__init__(parent)
         if candidate.run_directory is None and not (read_only and pairs):
             raise ValueError("Candidate has no completed run directory")
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
         self.setProperty("processRecordingPilotReview", True)
         self._pairs = (
             pairs if pairs is not None else collect_calibration_qc_pairs(study_directory, candidate)

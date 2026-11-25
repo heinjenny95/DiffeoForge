@@ -228,8 +228,9 @@ def test_distinct_retained_field_is_evaluated_on_the_same_fine_grid(
     assert result[5]['optimizer_updates']==0
 
 
+@pytest.mark.parametrize("with_ancestry", [False, True], ids=["coarse-cache", "marked-fine-grid"])
 def test_residual_binding_qualifies_requested_fine_grid_instead_of_using_old_coarse_cache(
-    tmp_path,materials,monkeypatch,
+    tmp_path,materials,monkeypatch,with_ancestry,
 ):
     from diffeoforge import (
         guided_feedback,
@@ -239,8 +240,16 @@ def test_residual_binding_qualifies_requested_fine_grid_instead_of_using_old_coa
     )
     from diffeoforge.surface_io import load_surface_mesh
 
+    cached = materials.coarse
+    if with_ancestry:
+        from test_reconstruction_material_lineage import stage
+
+        refined, _, _, _ = stage(tmp_path, cached, materials.vertices, materials.faces,
+                                 [0], "refined")
+        cached = dict(cached, **refined, starting_frame_qualification={},
+                      endpoint=materials.fine["endpoint"])
     candidate=SimpleNamespace(candidate_id='saved',metrics=dict(attachment_comparison=dict(
-        subjects={'target.vtk':dict(regional_quality=dict(evaluation=materials.coarse))})))
+        subjects={'target.vtk':dict(regional_quality=dict(evaluation=cached))})))
     parent=SimpleNamespace(candidates=[candidate])
     monkeypatch.setattr(guided_feedback,'verify_reference',lambda _:parent)
     monkeypatch.setattr(reference_calibration_study,'calibration_candidate_run_directory',
@@ -271,3 +280,7 @@ def test_residual_binding_qualifies_requested_fine_grid_instead_of_using_old_coa
     assert np.array_equal(saved.vertices,expected.vertices)
     assert np.array_equal(saved.triangles,expected.triangles)
     assert result['refinement']['initialization']=='residual'
+    if with_ancestry:
+        from diffeoforge.reconstruction_material_lineage import from_evaluation
+
+        assert from_evaluation(result["refinement"]["parent_evaluation"]) is not None

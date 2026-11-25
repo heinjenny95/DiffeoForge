@@ -155,6 +155,23 @@ def test_full_screen_fits_the_mesh_and_keeps_review_controls_reachable(viewer):
     assert dialog.complete_button.isEnabled() and not dialog.review_recorded
 
 
+def test_native_maximize_and_restore_preserve_the_fit_review(viewer):
+    from PySide6.QtCore import Qt
+
+    show_proxy(viewer)
+    dialog = viewer.v
+    assert dialog.windowFlags() & Qt.WindowType.WindowMaximizeButtonHint
+    dialog.anatomical_notes.setText("Keep this note on restore")
+    previous = dialog.geometry()
+    dialog.showMaximized()
+    wait(viewer.app, lambda: dialog.isMaximized() and dialog.canvas.comparison_ready)
+    assert not dialog.isFullScreen()
+    dialog.showNormal()
+    wait(viewer.app, lambda: not dialog.isMaximized() and dialog.geometry() == previous)
+    assert dialog.anatomical_notes.text() == "Keep this note on restore"
+    assert not dialog.review_recorded
+
+
 def test_initial_fit_marker_keeps_preview_ready_and_clears_for_the_next_pair(viewer):
     v = viewer.v
     original_pair = v._pairs[0]

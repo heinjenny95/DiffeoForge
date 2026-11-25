@@ -267,11 +267,16 @@ def _read_state(snapshot):
                  or (info.get("strategy") or {}).get("form_progress")
                  or ((info.get("strategy") or {}).get("correction_policy") == guided.ATLAS_FIRST
                      and sum(v is True for v in snapshot.visual_reviews.values()) == 1))):
-        from diffeoforge.pilot_form_progress import preview
+        from diffeoforge.pilot_form_progress import advances_another_individual, preview
 
         result["next_forms"] = {c.candidate_id: preview(snapshot, c.candidate_id, result)
                                 for c in snapshot.candidates
                                 if snapshot.visual_reviews.get(c.candidate_id) is True}
+        pending = result.get("starting_fit_choice")
+        if pending and advances_another_individual(
+                snapshot, pending["identifier"], result["next_forms"].get(pending["identifier"])):
+            result["optional_starting_fit_choice"] = pending
+            result["starting_fit_choice"] = None
     if snapshot.attachment_comparison.get("regional_objective"):
         from diffeoforge.guided_shared_check import preview as shared_preview
 
@@ -402,7 +407,8 @@ def prepare_proposals(snapshot, context):
         pending = context.get("starting_fit_choice")
         context["next_area"] = None if pending else _next_area_direction(snapshot, context, chosen)
         next_area = None if any(snapshot.visual_reviews.values()) else context["next_area"]
-        context["fit_direction"] = (dict(pending, mode="choose_start") if pending else
+        context["fit_direction"] = (None if context.get("optional_starting_fit_choice") else
+                                    dict(pending, mode="choose_start") if pending else
                                     next_area
                                     or capped_direction(snapshot, context, chosen)
                                     or _selected_start_direction(snapshot, context, chosen)
@@ -714,6 +720,20 @@ def _prepare_fit_direction(snapshot, context, chosen):
 
     direction = preview(snapshot, context)
     if direction and direction["mode"] == "return":
+        if not chosen and direction.get("retry_comparison_marks"):
+            retained = dict(editing_candidate_id=direction["identifier"],
+                            reference=direction["current"])
+            retry = _prepare_return_direction(context, direction, retained)
+            if retry["mode"] == "trial":
+                old = direction["current"]["values"]["deformation_kernel_width"]
+                new = retry["request"]["values"]["deformation_kernel_width"]
+                scale = (f" Movement kernel width {old:.3g} → {new:.3g}." if new != old else "")
+                return dict(retry, reason="You rated the last attempt worse. The next test "
+                            f"uses the saved marks on {retry['start_label']}.{scale} "
+                            + retry["reason"])
+            if retry["mode"] == "blocked":
+                return dict(direction, reason=retry["reason"])
+            return retry
         return _prepare_return_direction(context, direction, chosen)
     if not direction or direction["mode"] != "compare":
         return direction
@@ -1188,7 +1208,7 @@ def transition(snapshot, action, identifier, *, goal=None):
         identifiers = ([identifier] if identifier is not None else
                        [candidate.candidate_id for candidate in snapshot.candidates])
         for current_id in identifiers:
-            require_starting_fit_choice(snapshot, current_id)
+            require_starting_fit_choice(snapshot, current_id, next_individual=action == "next_form")
     if action == "multiscale_detail":
         from diffeoforge.pilot_multiscale_study import prepare_detail
 

@@ -370,6 +370,14 @@ def transfer_marker(snapshot, target, approved_reference=None):
     return None
 
 
+def advances_another_individual(snapshot, identifier, proposed):
+    """An approved review advances a different specimen on the shared starting basis."""
+    info = guided.record(snapshot)
+    return bool(proposed and proposed.get("available") and proposed.get("action") == "next_form"
+                and proposed.get("target") and proposed["target"] != info["target"]
+                and snapshot.visual_reviews.get(identifier) is True and not is_common_check(info))
+
+
 def preview(snapshot, identifier, context, *, starting_fit=False, defer_common=False):
     try:
         return proposal(snapshot, identifier, context, starting_fit=starting_fit,
@@ -446,6 +454,11 @@ def transition(snapshot, identifier, *, model=False, starting_fit=False, common_
             proposed = dict(target=common_target, marker=value, common=common, joint=False,
                             action="form_model_check")
         value = proposed["marker"]
+        if (not (model or starting_fit or revise or defer_common or common_target is not None)
+                and not advances_another_individual(snapshot, identifier, proposed)):
+            from diffeoforge.guided_feedback import require_starting_fit_choice
+
+            require_starting_fit_choice(snapshot, identifier)
         decision = "adaptive_defer_common" if defer_common else "adaptive_" + proposed["action"]
         if proposed["target"] is None and not proposed["joint"]:
             plan = None

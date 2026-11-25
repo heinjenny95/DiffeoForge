@@ -340,6 +340,22 @@ def _input_direction(snapshot, context, target):
     retained = _prior_partial(snapshot, context, reference["candidate_id"], reason)
     if retained is not None:
         return retained
+    if regional and len(current) == 1:
+        identifier = reference["candidate_id"]
+        data = context["feedback"].get(identifier) or {}
+        verdict = data.get("feedback") or {}
+        earlier = data.get("selected")
+        marks = data.get("problem_regions", {}).get(target, [])
+        if (verdict.get("outcome") == "worse" and earlier and earlier != reference
+                and earlier == verdict.get("comparison") and _problem_marks(marks)):
+            from diffeoforge.guided_feedback import region_state
+
+            retained = _return_direction(snapshot, context, identifier, earlier,
+                                         "You rated this attempt worse than the starting fit.")
+            if retained:
+                parent = verify_reference(earlier)
+                saved, cleared = region_state(parent, earlier["candidate_id"], target)
+                return dict(retained, retry_comparison_marks=not cleared and saved == marks)
     return dict(
         mode="inputs", identifier=reference["candidate_id"], current=reference,
         reason=reason + " Check the pose and the corresponding structure in the original "

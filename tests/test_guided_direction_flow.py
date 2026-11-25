@@ -680,6 +680,62 @@ def test_rejected_protected_fit_offers_bound_input_check(
         _assert_read_only_input_footer(reopened, direction, monkeypatch)
 
 
+def test_suitable_but_warned_fit_advances_the_next_individual_with_local_choice_optional(
+        tmp_path, monkeypatch):
+    from pilot_view_helpers import wait_pilot_view
+    from PySide6.QtWidgets import QApplication, QLabel
+    from test_guided_feedback import decision
+    from test_guided_pilot import approve
+
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    base, trial, identifier = _regional_trial(tmp_path, monkeypatch)
+    trial = _complete_with_regions(trial, monkeypatch, "improved", failed_guard=True)
+    trial = approve(trial, identifier)
+    trial = guided_feedback.save_feedback(trial.study_directory, identifier,
+                                         decision(base, trial, "better"))
+    reopened = study.load_reference_calibration_study(trial.study_directory)
+    guidance = guided_strategy.prepare_proposals(reopened, guided_strategy.state(reopened))
+    assert guidance["optional_starting_fit_choice"]["identifier"] == identifier
+    assert not guidance["starting_fit_choice"] and not guidance["fit_direction"]
+    with pytest.raises(ValueError, match="Choose the inspected starting fit"):
+        guided.next_action(trial.study_directory, "adaptive_recover", identifier, goal="unsure")
+    app = QApplication.instance() or QApplication([])
+    view = ReferenceCalibrationDialog(trial.study_directory)
+    view.show()
+    try:
+        wait_pilot_view(view)
+        assert view.next_step_button.text().startswith("Prepare individual fit")
+        assert view.findChild(QLabel, "regionalCheckWarning").isVisible()
+        assert not view.findChild(QLabel, "startingFitChoiceWarning").isVisible()
+    finally:
+        view.close()
+        app.processEvents()
+    child = guided.next_action(trial.study_directory, "adaptive_next_form", identifier)
+    assert guided.record(child)["target"] != guided.record(trial)["target"]
+    assert not child.visual_reviews and not child.attachment_comparison.get("refinement")
+    assert child.candidates[0].attempts == 0
+
+
+def test_worse_local_fit_offers_another_preparation_from_the_marked_comparison(
+        tmp_path, monkeypatch):
+    from test_guided_feedback import decision
+    from test_pilot_region_feedback import reject
+
+    base, trial, identifier = _regional_trial(tmp_path, monkeypatch, mark_count=2)
+    trial = reject(_complete_with_regions(trial, monkeypatch, "regression"), identifier)
+    target = guided.record(trial)["target"]
+    regions = guided_feedback.regions(base, identifier, target)
+    verdict = dict(decision(base, trial, "worse"), problem_regions={target: regions})
+    trial = guided_feedback.save_feedback(trial.study_directory, identifier, verdict)
+    reopened = study.load_reference_calibration_study(trial.study_directory)
+    direction = guided_strategy.prepare_proposals(reopened, guided_strategy.state(reopened))[
+        "fit_direction"]
+    assert direction["mode"] == "trial" and "worse" in direction["reason"]
+    assert direction["request"]["reference"] == guided_feedback.reference(base, identifier)
+    assert direction["request"]["regions"] == regions and len(regions) == 2
+
+
 def test_rejected_density_pair_offers_its_seed_after_both_reviews(tmp_path, monkeypatch):
     from test_guided_early_density import METHOD, REFERENCE, _marked_rejection, first_trial
     from test_pilot_region_feedback import reject

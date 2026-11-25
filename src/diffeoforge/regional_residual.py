@@ -113,9 +113,14 @@ def bind(root, manifest, record, recipe, *, source_grid=None):
         raise ValueError('Requested original material grid changed')
     if (not compatible(evaluation) or (source_grid
             and evaluation.get('reference_source', {}).get('sha256') != source_grid['sha256'])):
+        from diffeoforge.reconstruction_material_lineage import on_staged_grid, starting_evidence
+
         original = source_grid or (evaluation or {}).get("reference_source")
+        ancestry = starting_evidence(original, evaluation) if original else None
         evaluation = qualify(run, root / "retained-frame-qualification",
                              source=original["path"] if original else None)
+        if ancestry:
+            evaluation = on_staged_grid(evaluation, ancestry["material_lineage"])
     verify_source(evaluation)
     if source_grid and Path(evaluation['source_run']).resolve() != run.resolve():
         raise ValueError('Requested material frame belongs to a different retained field')

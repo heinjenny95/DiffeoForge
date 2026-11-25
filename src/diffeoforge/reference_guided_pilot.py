@@ -644,7 +644,8 @@ def _next_action(directory, action, candidate_id=None, *, goal=None):
         identifiers = ([candidate_id] if candidate_id is not None else
                        [candidate.candidate_id for candidate in snapshot.candidates])
         for identifier in identifiers:
-            require_starting_fit_choice(snapshot, identifier)
+            require_starting_fit_choice(snapshot, identifier,
+                                        next_individual=local_action == "next_form")
     if action == "finish_joint":
         return finish_joint(snapshot, candidate_id)
     if action == "adaptive_extend_bounded":
