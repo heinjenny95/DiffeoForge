@@ -1,5 +1,14 @@
 # Development continuity
 
+## dev248 — estimate atlas storage from the exported template
+
+Reference surface atlases write the template connectivity at every flow time
+point and in the final reconstructions. The start and resume estimates now use
+that geometry for exports and count every subject at its actual staged input
+size. Resume also accounts for a larger previously observed output. The
+destination check reads free space again on refresh and shows decimal GB for
+available, required and missing space. The gate compares exact bytes.
+
 ## dev247 — review a common fit in the individual fit viewer
 
 Common fits open with the original and the current reconstruction in one view.

@@ -139,6 +139,41 @@ def test_binary_input_size_cannot_underestimate_ascii_mesh_output(tmp_path: Path
     assert readiness.projected_output_bytes > 40 * 10_002 * 3 * 24
 
 
+def test_dense_target_counts_as_input_once_per_run_and_never_as_export_geometry(tmp_path):
+    preflight = _preflight(tmp_path, subjects=2)
+    base = assess_reference_production_readiness(preflight, observed_free_bytes=0)
+    target = replace(preflight.subjects[0], cells=9_000_000, points=4_500_002,
+                     bytes=280_000_000)
+    mixed = replace(preflight, subjects=(target, preflight.subjects[1]))
+    fresh = assess_reference_production_readiness(mixed, observed_free_bytes=6_000_000_000)
+    assert fresh.projected_output_bytes == base.projected_output_bytes
+    assert fresh.required_free_bytes - base.required_free_bytes == 2 * (
+        target.bytes - preflight.subjects[0].bytes
+    )
+    assert fresh.ready
+
+    def entry(role, mesh):
+        return {"role": role, "geometry": {
+            "points": mesh.points, "cells": mesh.cells, "bytes": mesh.bytes,
+        }}
+
+    evidence = SimpleNamespace(
+        source_run=tmp_path / "source",
+        manifest={"input_count": {"subjects": 2}, "effective_config": mixed.config,
+                  "inputs": [entry("template", mixed.template),
+                             *(entry("subject", mesh) for mesh in mixed.subjects)]},
+        result={"outputs": {"total_bytes": 0}},
+    )
+    resumed = assess_reference_resume_production_readiness(evidence, observed_free_bytes=0)
+    assert resumed.projected_output_bytes == fresh.projected_output_bytes
+    assert resumed.required_free_bytes == fresh.required_free_bytes - (
+        mixed.total_input_bytes + fresh.projected_output_bytes
+    )
+    evidence.result["outputs"]["total_bytes"] = fresh.projected_output_bytes * 2
+    larger_export = assess_reference_resume_production_readiness(evidence, observed_free_bytes=0)
+    assert larger_export.required_free_bytes - resumed.required_free_bytes == fresh.projected_output_bytes
+
+
 @pytest.mark.parametrize("subjects", [94, 300])
 def test_resume_rechecks_successor_disk_below_and_above_production_threshold(
     tmp_path: Path, subjects: int,

@@ -731,10 +731,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         ),
         ReviewItem(
             "Disk space for run and continuation",
-            (
-                f"{_bytes(production_readiness.observed_free_bytes)} free · "
-                f"{_bytes(production_readiness.required_free_bytes)} required"
-            ),
+            production_readiness.storage_summary,
             "The requirement includes staged inputs, projected retained flow "
             "meshes, one immutable resume successor, and a fixed free-space reserve.",
         ),

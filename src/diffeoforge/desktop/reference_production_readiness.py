@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import shutil
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -23,12 +23,22 @@ RESUME_STORAGE_COPIES = 2
 MINIMUM_FREE_DISK_RESERVE_BYTES = 2 * 1024**3
 
 
-def _mesh_output_bytes(*, points: int, cells: int, source_bytes: int) -> int:
-    """Plan for ASCII coordinates/connectivity even when the input is binary."""
+def _template_export(
+    *, subjects: int, timepoints: int, points: int, cells: int, source_bytes: int
+) -> tuple[int, int]:
+    """All native flows and final surfaces carry the template's connectivity."""
     coordinate_bytes = points * 3 * 32
     index_digits = len(str(max(points - 1, 0)))
     connectivity_bytes = cells * (3 * (index_digits + 1) + 3)
-    return max(source_bytes, 4096 + coordinate_bytes + connectivity_bytes)
+    mesh_bytes = max(source_bytes, 4096 + coordinate_bytes + connectivity_bytes)
+    count = 1 + subjects * (timepoints + 1)
+    return count, math.ceil(count * mesh_bytes * OUTPUT_SERIALIZATION_SAFETY_FACTOR)
+
+
+def _gb(size: int) -> str:
+    if 0 < size < 100_000_000:
+        return "<0.1 GB"
+    return f"{size / 1_000_000_000:,.1f} GB"
 
 
 @dataclass(frozen=True)
@@ -36,7 +46,6 @@ class ReferenceProductionReadiness:
     """Measured prelaunch storage and recovery contract for one reviewed cohort."""
 
     production_scale: bool
-    ready: bool
     subject_count: int
     maximum_subject_faces: int
     template_faces: int
@@ -47,8 +56,31 @@ class ReferenceProductionReadiness:
     required_free_bytes: int
     observed_free_bytes: int
     output_root: Path
-    blockers: tuple[str, ...]
+    reserve_name: str
+    recovery_blockers: tuple[str, ...]
     warnings: tuple[str, ...]
+
+    @property
+    def storage_summary(self) -> str:
+        missing = max(0, self.required_free_bytes - self.observed_free_bytes)
+        return (
+            f"{_gb(self.observed_free_bytes)} free · {_gb(self.required_free_bytes)} required"
+            f" · {_gb(missing)} missing"
+        )
+
+    @property
+    def blockers(self) -> tuple[str, ...]:
+        if self.observed_free_bytes < self.required_free_bytes:
+            shortage = f"Insufficient {self.reserve_name}. {self.storage_summary}"
+            return (*self.recovery_blockers, shortage)
+        return self.recovery_blockers
+
+    @property
+    def ready(self) -> bool:
+        return not self.blockers
+
+    def refresh_disk_space(self) -> ReferenceProductionReadiness:
+        return replace(self, observed_free_bytes=_free_bytes(self.output_root, None))
 
 
 def _nearest_existing_directory(path: Path) -> Path:
@@ -118,15 +150,9 @@ def assess_reference_production_readiness(
     # final reconstruction per subject, and the estimated template. The safety
     # factor covers ASCII formatting and small metadata differences without
     # pretending to be an observed byte-exact forecast.
-    projected_vtk_file_count = 1 + subject_count * (timepoints + 1)
-    largest_mesh_bytes = max(
-        _mesh_output_bytes(points=mesh.points, cells=mesh.cells, source_bytes=mesh.bytes)
-        for mesh in (preflight.template, *preflight.subjects)
-    )
-    projected_output_bytes = math.ceil(
-        projected_vtk_file_count
-        * largest_mesh_bytes
-        * OUTPUT_SERIALIZATION_SAFETY_FACTOR
+    projected_vtk_file_count, projected_output_bytes = _template_export(
+        subjects=subject_count, timepoints=timepoints, points=preflight.template.points,
+        cells=template_faces, source_bytes=preflight.template.bytes,
     )
     # Reserve enough room for the first immutable run and one immutable resume
     # successor. Source data outside the project are not counted as available
@@ -154,15 +180,9 @@ def assess_reference_production_readiness(
                 output_root=output_root,
             )
         )
-    if free_bytes < required_free_bytes:
-        blockers.append(
-            "Free disk space is below the fail-safe run-plus-resume reserve: "
-            f"{free_bytes} observed bytes versus {required_free_bytes} required bytes."
-        )
 
     return ReferenceProductionReadiness(
         production_scale=production_scale,
-        ready=not blockers,
         subject_count=subject_count,
         maximum_subject_faces=maximum_subject_faces,
         template_faces=template_faces,
@@ -173,7 +193,8 @@ def assess_reference_production_readiness(
         required_free_bytes=required_free_bytes,
         observed_free_bytes=free_bytes,
         output_root=output_root,
-        blockers=tuple(blockers),
+        reserve_name="run-plus-resume reserve",
+        recovery_blockers=tuple(blockers),
         warnings=tuple(warnings),
     )
 
@@ -196,17 +217,9 @@ def assess_reference_resume_production_readiness(
     if subject_count != len(subjects):
         raise ValueError("Resume source subject count differs from its input evidence")
     subject_faces = [int(item["geometry"]["cells"]) for item in subjects]
-    template_faces = int(templates[0]["geometry"]["cells"])
+    template_geometry = templates[0]["geometry"]
+    template_faces = int(template_geometry["cells"])
     input_bytes = sum(int(item["geometry"]["bytes"]) for item in inputs)
-    largest_mesh_bytes = max(
-        _mesh_output_bytes(
-            points=int(item["geometry"].get("points", 3 * int(item["geometry"]["cells"]))),
-            cells=int(item["geometry"]["cells"]),
-            source_bytes=int(item["geometry"]["bytes"]),
-        )
-        for item in inputs
-        if item["role"] in {"template", "subject"}
-    )
     timepoints = int(config["model"]["deformation"]["timepoints"])
     checkpoint_interval = int(config["optimization"]["save_every_n_iterations"])
     maximum_subject_faces = max(subject_faces)
@@ -214,11 +227,10 @@ def assess_reference_resume_production_readiness(
         subject_count >= PRODUCTION_SUBJECT_THRESHOLD
         and max(maximum_subject_faces, template_faces) >= PRODUCTION_FACE_THRESHOLD
     )
-    projected_vtk_file_count = 1 + subject_count * (timepoints + 1)
-    geometric_projection = math.ceil(
-        projected_vtk_file_count
-        * largest_mesh_bytes
-        * OUTPUT_SERIALIZATION_SAFETY_FACTOR
+    projected_vtk_file_count, geometric_projection = _template_export(
+        subjects=subject_count, timepoints=timepoints,
+        points=int(template_geometry.get("points", 3 * template_faces)),
+        cells=template_faces, source_bytes=int(template_geometry["bytes"]),
     )
     observed_output_bytes = int(evidence.result["outputs"]["total_bytes"])
     projected_output_bytes = max(geometric_projection, observed_output_bytes)
@@ -245,15 +257,9 @@ def assess_reference_resume_production_readiness(
                 output_root=output_root,
             )
         )
-    if free_bytes < required_free_bytes:
-        blockers.append(
-            "Free disk space is below the immutable-successor reserve: "
-            f"{free_bytes} observed bytes versus {required_free_bytes} required bytes."
-        )
 
     return ReferenceProductionReadiness(
         production_scale=production_scale,
-        ready=not blockers,
         subject_count=subject_count,
         maximum_subject_faces=maximum_subject_faces,
         template_faces=template_faces,
@@ -264,6 +270,7 @@ def assess_reference_resume_production_readiness(
         required_free_bytes=required_free_bytes,
         observed_free_bytes=free_bytes,
         output_root=output_root,
-        blockers=tuple(blockers),
+        reserve_name="immutable-successor reserve",
+        recovery_blockers=tuple(blockers),
         warnings=tuple(warnings),
     )

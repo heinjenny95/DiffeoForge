@@ -2909,14 +2909,21 @@ def test_desktop_reference_prelaunch_refresh_retains_visible_run_identity(
     from types import SimpleNamespace
 
     from PySide6.QtWidgets import QApplication
+    from test_desktop_reference_production_readiness import _preflight
 
     from diffeoforge.desktop.project_review import ProjectReviewResult
     from diffeoforge.desktop.project_setup import DesktopEngine
     from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
+    from diffeoforge.desktop.reference_production_readiness import (
+        assess_reference_production_readiness,
+    )
     from diffeoforge.desktop.widgets import DiffeoForgeWindow
 
     application = QApplication.instance() or QApplication(["diffeoforge-reference-identity-test"])
     config = (tmp_path / "atlas.yaml").resolve()
+    storage = assess_reference_production_readiness(
+        _preflight(tmp_path, subjects=2), observed_free_bytes=0
+    )
     review = ProjectReviewResult(
         engine=DesktopEngine.DEFORMETRICA_REFERENCE,
         project_name="Reference",
@@ -2929,6 +2936,7 @@ def test_desktop_reference_prelaunch_refresh_retains_visible_run_identity(
         workload=(),
         warnings=(),
         scientific_boundary="boundary",
+        production_readiness=storage,
     )
     observed_identities = []
 
@@ -2949,8 +2957,20 @@ def test_desktop_reference_prelaunch_refresh_retains_visible_run_identity(
     window._review = review
     window._reference_readiness = SimpleNamespace(ready=True)  # type: ignore[assignment]
 
+    disk = SimpleNamespace(free=storage.required_free_bytes - 1)
+    monkeypatch.setattr("diffeoforge.desktop.reference_production_readiness.shutil.disk_usage",
+                        lambda _: disk)
+    assert window._refresh_reference_run_readiness(review) is None
+    assert "<0.1 GB missing" in window.run_readiness_detail_label.text()
+    assert not window.start_atlas_button.isEnabled()
+    assert not observed_identities
+
+    disk.free = storage.required_free_bytes
     first = window._refresh_reference_run_readiness(review)
+    assert "0.0 GB missing" in window.run_readiness_detail_label.text()
+    disk.free = 9_000_000_000
     second = window._refresh_reference_run_readiness(review)
+    assert "9.0 GB free" in window.run_readiness_detail_label.text()
 
     assert first is not None
     assert second is not None

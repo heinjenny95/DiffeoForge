@@ -11562,6 +11562,16 @@ class DiffeoForgeWindow(QMainWindow):
             self.start_atlas_button.setEnabled(False)
             return None
         production_readiness = review.production_readiness
+        if production_readiness is not None:
+            try:
+                production_readiness = production_readiness.refresh_disk_space()
+            except OSError as error:
+                self.run_readiness_status_label.setObjectName("statusError")
+                self.run_readiness_status_label.setStyleSheet("")
+                self.run_readiness_status_label.setText("Could not check the destination's free space.")
+                self.run_readiness_detail_label.setText(str(error))
+                self.start_atlas_button.setEnabled(False)
+                return None
         if (
             production_readiness is not None
             and not production_readiness.ready
@@ -11572,7 +11582,9 @@ class DiffeoForgeWindow(QMainWindow):
                 "Atlas execution is blocked until its recovery and storage "
                 "requirements pass."
             )
-            self.run_readiness_detail_label.setText("\n".join(production_readiness.blockers))
+            self.run_readiness_detail_label.setText("\n".join((
+                *production_readiness.recovery_blockers, production_readiness.storage_summary,
+            )))
             self.start_atlas_button.setEnabled(False)
             return None
         try:
@@ -11620,7 +11632,8 @@ class DiffeoForgeWindow(QMainWindow):
             "Reviewed configuration, ready environment, and absent destination are bound."
         )
         self.run_readiness_detail_label.setText(
-            f"Deformetrica installation: {launcher_label(request.launcher)}\n"
+            (production_readiness.storage_summary + "\n" if production_readiness else "")
+            + f"Deformetrica installation: {launcher_label(request.launcher)}\n"
             "This check was read-only. The destination and all reviewed inputs are checked "
             "again inside the worker immediately before preparation."
         )
