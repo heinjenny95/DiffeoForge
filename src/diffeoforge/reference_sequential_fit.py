@@ -684,6 +684,35 @@ def run_specimen_sequence(runner, *, action=None, event_callback=None):
         lock.rmdir()
 
 
+def _saved_successor(directory, pointer):
+    record = study._read_json(pointer, "latest fit search")
+    target = Path(record["directory"]).resolve()
+    crosses_workspace = not target.is_relative_to(directory.parent)
+    if crosses_workspace:
+        # Guided stages can leave a nested action directory for the pilot's
+        # original workspace. Derive that boundary from the verified source.
+        source = study._verify_manifest(directory).get("attachment_comparison") or {}
+        origin = (source.get("guided") or {}).get("origin")
+        if not origin:
+            raise ValueError("Saved fit-search target is outside this pilot's workspace")
+        workspace = Path(origin).resolve().parent
+        if not (directory.is_relative_to(workspace) and target.is_relative_to(workspace)):
+            raise ValueError("Saved fit-search target is outside this pilot's workspace")
+
+    manifest_path = target / study.STUDY_MANIFEST
+    if not manifest_path.is_file() or sha256_file(manifest_path) != record["manifest_sha256"]:
+        raise ValueError("Saved fit-search target manifest is missing or its checksum changed")
+    if crosses_workspace:
+        child = study._read_json(manifest_path, "saved guided successor")
+        guided = (child.get("attachment_comparison") or {}).get("guided") or {}
+        previous = (guided.get("strategy") or {}).get("previous") or {}
+        if (guided.get("origin") != origin or not previous.get("directory")
+                or Path(previous["directory"]).resolve() != directory
+                or previous.get("manifest_sha256") != sha256_file(directory / study.STUDY_MANIFEST)):
+            raise ValueError("Saved guided successor does not identify this pilot and previous fit")
+    return target
+
+
 def resume_directory(directory, _seen=None):
     """Follow only content-bound saved pointers; never launch a computation."""
     directory = Path(directory).resolve()
@@ -693,13 +722,7 @@ def resume_directory(directory, _seen=None):
     seen.add(directory)
     pointer = directory / "fit-search-latest.json"
     if pointer.exists():
-        record = study._read_json(pointer, "latest fit search")
-        root = Path(record["directory"]).resolve()
-        if (
-            not root.is_relative_to(directory.parent)
-            or sha256_file(root / study.STUDY_MANIFEST) != record["manifest_sha256"]
-        ):
-            raise ValueError("Saved fit-search pointer changed")
+        root = _saved_successor(directory, pointer)
         if (root / "fit-search-latest.json").exists():
             return resume_directory(root, seen)
         if study._verify_manifest(root).get("attachment_comparison"):

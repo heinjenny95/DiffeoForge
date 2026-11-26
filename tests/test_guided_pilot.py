@@ -1,5 +1,6 @@
 """Synthetic software qualification. No native optimizer or owner data."""
 
+import shutil
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -36,6 +37,48 @@ def origin(tmp_path):
     )
     study._write_yaml(config_path, config, overwrite=True)
     return study.create_reference_calibration_study(config_path, tmp_path / "pilot")
+
+
+def test_reopen_guided_successor_from_nested_action(tmp_path):
+    workspace = tmp_path / "calibration"
+    workspace.mkdir()
+    source = origin(workspace)
+    action = workspace / "adaptive-action"
+    action.mkdir()
+    options = dict(target=guided._pilot_order(source.plan)[0], values=source.plan.effective_values,
+                   approved=(), history=())
+    nested = guided._batch(source, None, phase="screen", methods=("current", "varifold"),
+                           strategy={}, spent=0, destination_parent=action, **options)
+    guided._pointer(source.study_directory, nested.study_directory)
+    previous = dict(directory=str(nested.study_directory),
+                    manifest_sha256=sha256_file(nested.study_directory / study.STUDY_MANIFEST))
+    child = guided._batch(source, nested, phase="refine", methods=("varifold",), spent=2,
+                          strategy=dict(previous=previous), **options)
+    for start in (source.study_directory, nested.study_directory):
+        reopened = study.latest_reference_calibration_search_extension_directory(start)
+        assert reopened == child.study_directory
+
+    pointer = nested.study_directory / "fit-search-latest.json"
+
+    def redirect(target, digest=None):
+        checksum = digest or sha256_file(target / study.STUDY_MANIFEST)
+        study._write_json(pointer, dict(directory=str(target), manifest_sha256=checksum),
+                          overwrite=True)
+
+    redirect(child.study_directory, "0" * 64)
+    with pytest.raises(ValueError, match="checksum changed"):
+        resume_directory(source.study_directory)
+    other_project = tmp_path / "other-project"
+    shutil.copytree(child.study_directory, other_project)
+    redirect(other_project)
+    with pytest.raises(ValueError, match="outside this pilot"):
+        resume_directory(source.study_directory)
+    redirect(source.study_directory)
+    with pytest.raises(ValueError, match="previous fit"):
+        resume_directory(nested.study_directory)
+    redirect(nested.study_directory)
+    with pytest.raises(ValueError, match="cycle"):
+        resume_directory(source.study_directory)
 
 
 def run_batch(snapshot, monkeypatch, *, controller=_CompletedController, refinement_guard=None,

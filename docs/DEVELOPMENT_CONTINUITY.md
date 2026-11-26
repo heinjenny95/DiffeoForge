@@ -1,5 +1,13 @@
 # Development continuity
 
+## dev249 — reopen a pilot after a nested adaptive fit
+
+A saved guided fit can lead from an adaptive action back to the common-model
+study in the original pilot workspace. Desktop status and explicit reopening
+now follow that link when its target manifest matches the saved checksum and
+identifies the same pilot and exact predecessor. The completed calibration
+then follows the usual review and apply workflow.
+
 ## dev248 — estimate atlas storage from the exported template
 
 Reference surface atlases write the template connectivity at every flow time
