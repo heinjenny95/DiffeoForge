@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLabel
 
 from diffeoforge.convergence_advice import run_advice
+from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY
 from diffeoforge.reference_morphospace_stopping import read_morphospace_stability
 from diffeoforge.runs import ToleranceContinuation, run_status, tolerance_extension_preview
 
@@ -61,7 +62,7 @@ def _review_advice(source):
     try:
         evidence = read_morphospace_stability(source)
     except (OSError, RuntimeError, TypeError, ValueError, KeyError):
-        return None, "The saved morphospace stopping evidence could not be verified."
+        return None, "The saved atlas stopping evidence could not be verified."
     if evidence is not None:
         terminal = evidence["terminal"]
         if terminal is None or terminal["reason"] != "iteration_limit":
@@ -84,31 +85,34 @@ def _review_advice(source):
                 "cancelled": "Cancelled",
             }[terminal["reason"]]
         rows = evidence["observations"]
-        diagnostic = morphospace_text(rows[-1]) if rows else "No accepted state could be assessed."
-        if rows and rows[-1]["previous_iteration"] is not None:
-            old = next(row for row in rows if row["iteration"] == rows[-1]["previous_iteration"])
-            diagnostic += (
-                f"\nWeighted fit error over the short comparison window "
-                f"{old['weighted_fit_error']:.6g} → {rows[-1]['weighted_fit_error']:.6g}"
-            )
-        if (terminal is not None and terminal["reason"] == "iteration_limit"
-                and evidence["policy"]["mode"] == "morphospace_stability"
-                and (not rows or rows[-1]["window_iterations"] < 200)):
-            diagnostic += "\nThe full 200-iteration window was unavailable at the limit."
-        fit_history = ""
-        if len(rows) > 1:
-            fit_history = (
-                f"\nWeighted fit error, first to last checkpoint "
-                f"{rows[0]['weighted_fit_error']:.6g} → {rows[-1]['weighted_fit_error']:.6g}"
-            )
+        stability_stop = evidence["policy"]["mode"] == MORPHOSPACE_STABILITY
         mode = (
-            "Run until morphospace stabilizes"
-            if evidence["policy"]["mode"] == "morphospace_stability" else
+            "Run until morphospace stabilizes" if stability_stop else
             "Stop at optimizer convergence and review"
         )
         if evidence["policy"].get("unlimited_iterations"):
             mode += " (no iteration limit)"
-        advice = f"{mode} · {reason}\n{diagnostic}{fit_history}"
+        lines = [f"{mode} · {reason}"]
+        if stability_stop:
+            lines.append(
+                morphospace_text(rows[-1]) if rows else "No accepted state could be assessed."
+            )
+            if rows and rows[-1]["previous_iteration"] is not None:
+                previous = rows[-1]["previous_iteration"]
+                old = next(row for row in rows if row["iteration"] == previous)
+                lines.append(
+                    f"Weighted fit error over the short comparison window "
+                    f"{old['weighted_fit_error']:.6g} → {rows[-1]['weighted_fit_error']:.6g}"
+                )
+            if (terminal is not None and terminal["reason"] == "iteration_limit"
+                    and (not rows or rows[-1]["window_iterations"] < 200)):
+                lines.append("The full 200-iteration window was unavailable at the limit.")
+        if len(rows) > 1:
+            lines.append(
+                f"Weighted fit error, first to last checkpoint "
+                f"{rows[0]['weighted_fit_error']:.6g} → {rows[-1]['weighted_fit_error']:.6g}"
+            )
+        advice = "\n".join(lines)
         if terminal is not None and terminal["export"] == "complete":
             advice += "\nReview the saved reconstructions in Visual QC for anatomical plausibility."
         elif terminal is not None:

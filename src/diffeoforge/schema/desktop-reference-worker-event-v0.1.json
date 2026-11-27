@@ -155,6 +155,7 @@
         "elapsed_seconds": {"type": "number", "minimum": 0},
         "seconds_per_iteration": {"type": ["number", "null"], "exclusiveMinimum": 0},
         "eta_to_iteration_cap_seconds": {"type": ["number", "null"], "minimum": 0},
+        "optimizer_convergence_tolerance": {"type": "number", "exclusiveMinimum": 0},
         "likely_convergence_iteration_lower": {
           "type": ["integer", "null"],
           "minimum": 0

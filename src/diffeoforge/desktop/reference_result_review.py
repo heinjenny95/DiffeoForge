@@ -22,6 +22,7 @@ from diffeoforge.desktop.result_review import (
     ResultReviewItem,
 )
 from diffeoforge.mesh import sha256_file
+from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY, OPTIMIZER_CONVERGENCE
 from diffeoforge.reference_calibration_metrics import (
     ReferenceCalibrationRunMetrics,
     _collect_reference_calibration_metrics_from_report,
@@ -98,7 +99,8 @@ class AtlasStopReview:
 
 def _atlas_stop_review(run: Path, report: RunReport) -> AtlasStopReview | None:
     """Present the accepted-state receipt alongside the original objective history."""
-    policy = report.manifest["effective_config"]["project"].get("atlas_stop")
+    config = report.manifest["effective_config"]
+    policy = config["project"].get("atlas_stop")
     if policy is None:
         return None
     try:
@@ -124,8 +126,14 @@ def _atlas_stop_review(run: Path, report: RunReport) -> AtlasStopReview | None:
         "The retained native record identifies the final accepted atlas checkpoint. "
         "Assess the saved surface fits in Visual QC.",
     )]
-    if evidence["observations"]:
-        row = evidence["observations"][-1]
+    if policy["mode"] == OPTIMIZER_CONVERGENCE:
+        items.append(ResultReviewItem(
+            "Optimizer convergence tolerance",
+            f"{config['optimization']['convergence_tolerance']:g}",
+            "Relative objective-change tolerance used by the joint atlas optimizer.",
+        ))
+    row = evidence["observations"][-1] if evidence["observations"] else None
+    if row is not None and policy["mode"] == MORPHOSPACE_STABILITY:
         windows = [(policy["window_iterations"], row)]
         if policy.get("long_window_iterations") is not None:
             windows.append((policy["long_window_iterations"], row["long_window"]))
@@ -146,6 +154,7 @@ def _atlas_stop_review(run: Path, report: RunReport) -> AtlasStopReview | None:
                 value = "Change unavailable"
                 detail = comparison
             items.append(ResultReviewItem(f"Morphospace over {target} iterations", value, detail))
+    if row is not None:
         items.append(ResultReviewItem(
             "Weighted fit error at the accepted checkpoint",
             f"{row['weighted_fit_error']:.6g}",

@@ -1,5 +1,12 @@
 # Development continuity
 
+## dev251 — display the selected atlas stop criterion
+
+The live monitor and reopened result use the stopping rule saved for the
+joint atlas. Optimizer-convergence runs display the configured tolerance.
+Both morphospace-stability modes display the 200- and 400-iteration
+comparisons. The checkpoint evidence used for continuation is still recorded.
+
 ## dev250 — keep the objective reference when extending a capped atlas
 
 The desktop +300 action for a joint atlas with optimizer convergence and final

@@ -244,18 +244,21 @@ def _completed_reference_run(
     return run
 
 
-@pytest.mark.parametrize(("qc_only", "reason"), [
-    (False, "numerical_failure"), (True, "native_tolerance"),
+@pytest.mark.parametrize(("qc_only", "reason", "mode", "unlimited"), [
+    (False, "numerical_failure", "optimizer_convergence", False),
+    (True, "native_tolerance", "optimizer_convergence", False),
+    (False, "numerical_failure", "morphospace_stability", False),
+    (True, "numerical_failure", "morphospace_stability", True),
 ])
 def test_reference_result_displays_verified_stop_and_preserves_log(
-    tmp_path, monkeypatch, qc_only, reason,
+    tmp_path, monkeypatch, qc_only, reason, mode, unlimited,
 ):
     from diffeoforge import reference_morphospace_stopping as stopping
-    from diffeoforge.reference_atlas_stop import OPTIMIZER_CONVERGENCE, stop_policy
+    from diffeoforge.reference_atlas_stop import stop_policy
     from diffeoforge.reference_morphospace_native import REPORT_NAME, manifest_subject_labels
     from diffeoforge.runs import _inventory_outputs, _read_manifest
 
-    policy = stop_policy(OPTIMIZER_CONVERGENCE)
+    policy = stop_policy(mode, unlimited_iterations=unlimited)
     run = _completed_reference_run(tmp_path, atlas_stop=policy)
     manifest = _read_manifest(run)
     labels = manifest_subject_labels(manifest)
@@ -312,9 +315,16 @@ def test_reference_result_displays_verified_stop_and_preserves_log(
     assert "accepted joint-atlas iteration 2" in review.optimizer_stop_interpretation
     by_label = {item.label: item for item in review.optimization}
     assert "accepted iteration 2" in by_label["Verified atlas stop"].value
-    assert "2/200" in by_label["Morphospace over 200 iterations"].explanation
-    assert "2/400" in by_label["Morphospace over 400 iterations"].explanation
-    assert "Cohort 3%" in by_label["Morphospace over 400 iterations"].value
+    if mode == "morphospace_stability":
+        assert "2/200" in by_label["Morphospace over 200 iterations"].explanation
+        assert "2/400" in by_label["Morphospace over 400 iterations"].explanation
+        assert "Cohort 3%" in by_label["Morphospace over 400 iterations"].value
+        assert "Optimizer convergence tolerance" not in by_label
+    else:
+        assert not any(label.startswith("Morphospace over") for label in by_label)
+        assert float(by_label["Optimizer convergence tolerance"].value) == (
+            manifest["effective_config"]["optimization"]["convergence_tolerance"]
+        )
     if not qc_only:
         assert by_label["Final plotted state"].value == "last logged iteration 1"
 

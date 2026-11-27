@@ -3092,11 +3092,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_live_optimizer_plot = LiveOptimizerPlot()
         self.run_live_optimizer_plot.hide()
         progress_layout.addWidget(self.run_live_optimizer_plot)
-        self.run_morphospace_label = QLabel()
-        self.run_morphospace_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.run_morphospace_label.setWordWrap(True)
-        self.run_morphospace_label.hide()
-        progress_layout.addWidget(self.run_morphospace_label)
+        self.run_stop_rule_label = QLabel()
+        self.run_stop_rule_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.run_stop_rule_label.setWordWrap(True)
+        self.run_stop_rule_label.hide()
+        progress_layout.addWidget(self.run_stop_rule_label)
         progress_layout.addWidget(self.run_optimizer_label)
         progress_layout.addWidget(InfoDisclosure("Event log", self.run_event_log))
         layout.addWidget(progress)
@@ -7799,7 +7799,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._refresh_convergence_advice(None)
         self.run_live_optimizer_plot.clear()
         self.run_live_optimizer_plot.hide()
-        self.run_morphospace_label.hide()
+        self.run_stop_rule_label.hide()
         self.template_preview_card.hide()
         self.reference_readiness_card.hide()
         self.reference_preparation_status_card.hide()
@@ -8975,7 +8975,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_run_request = request
         self.run_live_optimizer_plot.clear()
         self.run_live_optimizer_plot.show()
-        self.run_morphospace_label.hide()
+        self.run_stop_rule_label.hide()
         origin = result.convergence_origin_iteration
         resume_detail = (
             f"The convergence test keeps the objective from iteration {origin}. "
@@ -11924,7 +11924,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._refresh_convergence_advice(None)
         self.run_live_optimizer_plot.clear()
         self.run_live_optimizer_plot.setVisible(reference)
-        self.run_morphospace_label.hide()
+        self.run_stop_rule_label.hide()
         self.run_result_card.hide()
         self.run_event_log.clear()
         self._reference_cancel_pending = False
@@ -12198,10 +12198,10 @@ class DiffeoForgeWindow(QMainWindow):
         elif event.kind == "morphospace_progress":
             from diffeoforge.desktop.convergence_advice import morphospace_text
 
-            if self.run_morphospace_label.isHidden():
+            if self.run_stop_rule_label.isHidden():
                 self.run_live_optimizer_plot.attachment_checkbox.setChecked(True)
-            self.run_morphospace_label.setText(morphospace_text(event.payload))
-            self.run_morphospace_label.show()
+            self.run_stop_rule_label.setText(morphospace_text(event.payload))
+            self.run_stop_rule_label.show()
             return
         elif event.kind == "activity":
             elapsed = float(event.payload["elapsed_seconds"])
@@ -12269,6 +12269,10 @@ class DiffeoForgeWindow(QMainWindow):
             iteration = int(event.payload["iteration"])
             maximum = event.payload["maximum_iterations"]
             objective = float(event.payload["log_likelihood"])
+            tolerance = event.payload.get("optimizer_convergence_tolerance")
+            if tolerance is not None:
+                self.run_stop_rule_label.setText(f"Optimizer convergence tolerance {tolerance:g}")
+                self.run_stop_rule_label.show()
             self.run_live_optimizer_plot.show()
             self.run_live_optimizer_plot.add_sample(
                 iteration,

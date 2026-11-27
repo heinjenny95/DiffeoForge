@@ -72,12 +72,15 @@ def test_run_window_observes_progress_and_clears_engine_bound_history(app, monke
     event = DesktopReferenceWorkerEvent(
         request_id="plot-test", sequence=1, kind="progress", payload={
             "iteration": 300, "maximum_iterations": 600,
+            "optimizer_convergence_tolerance": 1e-6,
             "log_likelihood": -10., "attachment": -8., "regularity": -2.,
             "elapsed_seconds": 3., "eta_to_iteration_cap_seconds": None,
             "seconds_per_iteration": None, "estimate_status": "warming_up",
         },
     )
     window._reference_atlas_event(event)
+    assert not window.run_stop_rule_label.isHidden()
+    assert window.run_stop_rule_label.text() == "Optimizer convergence tolerance 1e-06"
     assert window.run_live_optimizer_plot.samples[0].iteration == 300
     assert not window.run_live_optimizer_plot.isHidden()
     source = tmp_path / "finished"
@@ -130,6 +133,7 @@ def test_run_window_observes_progress_and_clears_engine_bound_history(app, monke
     assert not request.destination.exists()
     assert not window.run_live_optimizer_plot.samples
     window._clear_engine_project_state()
+    assert window.run_stop_rule_label.isHidden()
     assert window._iteration_extension_source is None
     assert window.run_more_iterations_button.isHidden()
     assert window.run_live_optimizer_plot.isHidden()
@@ -159,6 +163,23 @@ def test_tolerance_stop_shows_diagnosis_without_continuation_on_every_page(
     window.close()
 
 
+@pytest.mark.parametrize(("stability", "unlimited"), [(False, False), (True, False), (True, True)])
+def test_reopened_advice_shows_thresholds_only_for_stability(tmp_path, stability, unlimited):
+    from test_reference_morphospace_stopping import _retained_report
+
+    from diffeoforge.desktop.convergence_advice import _review_advice
+
+    run, _ = _retained_report(
+        tmp_path, full_window=True if stability else None, unlimited=unlimited,
+        reason="morphospace_stable" if stability else "native_tolerance",
+    )
+    _, advice = _review_advice(run)
+    assert "Weighted fit error, first to last checkpoint" in advice
+    assert ("requires <1%" in advice) == stability
+    assert ("requires <2%" in advice) == stability
+    assert ("400/400" in advice) == stability
+
+
 def test_atlas_live_checkpoint_shows_outlier_and_available_window(app):
     from diffeoforge.desktop import widgets
     from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
@@ -176,7 +197,7 @@ def test_atlas_live_checkpoint_shows_outlier_and_available_window(app):
     window._reference_atlas_event(DesktopReferenceWorkerEvent(
         request_id="window", sequence=0, kind="morphospace_progress", payload=payload,
     ))
-    preview = window.run_morphospace_label.text()
+    preview = window.run_stop_rule_label.text()
     assert "225 → 425" in preview and "200/200" in preview
     assert "25 → 425" in preview and "400/400" in preview
     assert "Cohort 1.5% (requires <1%; above or at threshold)" in preview
@@ -184,7 +205,7 @@ def test_atlas_live_checkpoint_shows_outlier_and_available_window(app):
     assert "Highest specimen 3% (requires <2%; above or at threshold)" in preview
     assert "outlier.vtk" in preview and "Weighted fit error 0.08" in preview
     window._clear_engine_project_state()
-    assert window.run_morphospace_label.isHidden()
+    assert window.run_stop_rule_label.isHidden()
     window.close()
 
 

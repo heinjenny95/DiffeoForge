@@ -268,7 +268,7 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
         "progress",
         "progress",
         "progress",
-        *(("morphospace_progress",) if mode is not None else ()),
+        *(("morphospace_progress",) if mode == "morphospace_stability" else ()),
         "activity",
         "phase",
         "phase",
@@ -291,7 +291,12 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
     else:
         assert progress[-1].payload["estimate_status"] == "observed_rate_to_iteration_cap"
         assert progress[-1].payload["eta_to_iteration_cap_seconds"] == pytest.approx(97 * 6)
-    if mode is not None:
+    if mode == "optimizer_convergence":
+        assert all(event.payload["optimizer_convergence_tolerance"]
+                   == config["optimization"]["convergence_tolerance"] for event in progress)
+    else:
+        assert all("optimizer_convergence_tolerance" not in event.payload for event in progress)
+    if mode == "morphospace_stability":
         stability = next(event.payload for event in events if event.kind == "morphospace_progress")
         assert stability["weighted_fit_error"] == 8.0
         assert stability["long_window"]["window_iterations"] == 3

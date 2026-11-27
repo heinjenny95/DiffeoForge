@@ -25,7 +25,11 @@ from diffeoforge.desktop.reference_worker_protocol import (
     DesktopReferenceWorkerProtocolError,
 )
 from diffeoforge.desktop.worker_protocol import parse_json_object, sha256_file
-from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY, atlas_iteration_limit
+from diffeoforge.reference_atlas_stop import (
+    MORPHOSPACE_STABILITY,
+    OPTIMIZER_CONVERGENCE,
+    atlas_iteration_limit,
+)
 from diffeoforge.reference_morphospace_native import LIVE_PREFIX
 from diffeoforge.reference_morphospace_stopping import read_morphospace_stability
 from diffeoforge.report import PreflightInspectionProgress, collect_preflight
@@ -278,17 +282,16 @@ def run_reference_execution_worker(
         # unchanged original source-config. Observe the actual successor settings.
         config = verify_prepared_run(run_directory)["effective_config"]
         maximum_iterations = atlas_iteration_limit(config)
+        stop_mode = config["project"].get("atlas_stop", {}).get("mode")
+        tolerance = float(config["optimization"]["convergence_tolerance"])
         tracker = ReferenceProgressTracker(
             maximum_iterations,
-            convergence_tolerance=float(config["optimization"]["convergence_tolerance"]),
-            estimate_native_stop=(
-                config["project"].get("atlas_stop", {}).get("mode") != MORPHOSPACE_STABILITY
-            ),
+            convergence_tolerance=tolerance,
+            estimate_native_stop=stop_mode != MORPHOSPACE_STABILITY,
         )
         started = time.monotonic()
         last_iteration: int | None = None
         last_morphospace_iteration: int | None = None
-        has_morphospace_policy = "atlas_stop" in config["project"]
         latest_resources: Mapping[str, object] | None = None
         review_wait_started = None
         review_wait_seconds = 0.0
@@ -305,7 +308,9 @@ def run_reference_execution_worker(
                 # execute_run delivers and verifies the backend cancellation.
                 # Raising here would bypass that handshake on the next log line.
                 return
-            if has_morphospace_policy and LIVE_PREFIX in line:
+            if LIVE_PREFIX in line:
+                if stop_mode != MORPHOSPACE_STABILITY:
+                    return
                 # The native logger may prepend a timestamp. Only the verified
                 # run report is authoritative for decisions and checkpoint identity.
                 try:
@@ -356,7 +361,10 @@ def run_reference_execution_worker(
             )
             if progress is not None:
                 last_iteration = progress.iteration
-                emit("progress", progress.as_dict())
+                payload = progress.as_dict()
+                if stop_mode == OPTIMIZER_CONVERGENCE:
+                    payload["optimizer_convergence_tolerance"] = tolerance
+                emit("progress", payload)
 
         def observe_activity(
             elapsed_seconds: float,
@@ -450,7 +458,7 @@ def run_reference_execution_worker(
                 f"Deformetrica finished with return code {return_code} and "
                 f"status {report.result['status']!r}"
             )
-        if has_morphospace_policy and not request.final_export_only:
+        if stop_mode is not None and not request.final_export_only:
             if read_morphospace_stability(run_directory) is None:
                 raise RuntimeError("The accepted primary atlas stop assessment is missing.")
         return terminal("completed", "Deformetrica completed and its result evidence verified.")

@@ -8,8 +8,8 @@ approved pilot fields. Existing project configurations without a stopping
 policy retain their native behavior.
 
 **Stop at optimizer convergence and review** keeps the Deformetrica stop and
-shows the final accepted joint state. A short available comparison window is
-shown with its actual length. When the joint atlas reaches its iteration cap,
+shows the configured objective-change tolerance during optimization and in
+the saved result. When the joint atlas reaches its iteration cap,
 **Continue +300 iterations** restores the accepted parameters and iteration.
 The relative tolerance test uses the exact objective at the start of the
 original joint optimization, normally iteration 0. The source report, origin
@@ -47,7 +47,8 @@ accepted iteration measurements and observed runtime. Completion time is
 unknown until the stopping condition is met. The saved policy persists when
 resuming an interrupted open-ended run.
 
-At termination, both comparisons report their available spans. A partial
+In both morphospace stopping modes, the live display and saved result show
+the stability comparisons. At termination, both report their available spans. A partial
 comparison cannot satisfy a required full window. Resuming from a saved
 checkpoint starts a new comparison history at that checkpoint.
 
