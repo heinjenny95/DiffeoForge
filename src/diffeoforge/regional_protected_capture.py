@@ -1,0 +1,201 @@
+"""Separate capture distance from local movement for a missing protected feature."""
+
+import math
+
+VERSION = 'protected-missing-feature-v1'
+NATIVE_TIMEPOINTS = 145
+DETAIL_SYMPTOMS = {'detail', 'missing'}
+
+
+def active_regions(recipe, regions):
+    active = recipe.get('active_regions')
+    if recipe.get('protected_capture') != VERSION:
+        return regions
+    if (not active or len(active) != 1 or active[0] not in regions
+            or active[0].get('purpose', 'problem') != 'problem'):
+        raise ValueError('Protected capture must name one unchanged problem mark')
+    return active
+
+
+def proposal(snapshot, identifier, data, info, symptom):
+    """Prepare protected capture when a marked original feature needs reach."""
+    if symptom not in DETAIL_SYMPTOMS | {'unsure'}:
+        return None
+    marked = data['regions']
+    problem = [r for r in marked if r.get('purpose', 'problem') == 'problem']
+    if (not any(r.get('purpose') == 'fixed' for r in marked) or not problem
+            or any(r['symptom'] in {'gap', 'position'} for r in problem)
+            or any(r.get('purpose') == 'preserve' for r in marked)):
+        return None
+    evidence = data.get('regional_capture') or {}
+    rows = evidence.get('per_region') or []
+    if [r['region'] for r in rows] != problem:
+        return None
+    reference = data['anchor'] or data['current_reference']
+    previous = (info.get('strategy') or {}).get('regional_recipe') or {}
+    persistent = previous.get('protected_capture') == VERSION
+    explicit_detail = (symptom in DETAIL_SYMPTOMS
+                       and all(not r.get('reconstruction') and r['symptom'] in DETAIL_SYMPTOMS
+                               for r in problem))
+    missing = [r for r in rows if _missing_original(r)]
+    explicit_capture = explicit_detail and (persistent or any(
+        (r['original_to_fit_p95'] or 0) > r['region']['radius'] for r in rows))
+    if not persistent and not missing and not explicit_capture:
+        return None
+    from diffeoforge.regional_pilot import _quality_for_regions
+    from diffeoforge.regional_search import capture_rows
+    from diffeoforge.retained_mark_source import current_is_bound
+
+    seed = reference
+    quality = _quality_for_regions(data['current'], reference['target'], marked)
+    feedback = (data['context'].get('feedback', {}).get(identifier) or {}).get('feedback') or {}
+    if (data['current_reference'] and quality.get('numerical_selection_suitable')
+            and current_is_bound(data) and feedback.get('outcome') != 'worse'):
+        subject = ((data['current'].metrics or {}).get('attachment_comparison', {})
+                   .get('subjects', {}).get(reference['target'], {}))
+        measured = subject.get('marked_regions', {}).get('measurements', [])
+        subset = [a for a in measured if a['region'] in problem]
+        if [a['region'] for a in subset] == problem:
+            current_rows = capture_rows(subset)
+            current_missing = [r for r in current_rows if _missing_original(r)]
+            # Recheck the actual seed. A previous missing patch is no longer
+            # evidence for prioritizing it if the new field already reaches it.
+            seed, rows, missing = data['current_reference'], current_rows, current_missing
+    # The sealed active region also identifies the first step of older, single-area
+    # plans. Carry progress only along that reviewed field with the same instructions.
+    tried = []
+    if (persistent and seed == data.get('current_reference') and current_is_bound(data)
+            and (not data.get('severe') or data.get('required_starting_reference') == seed)
+            and feedback.get('outcome') not in {'worse', 'unsure'}
+            and (info.get('feedback') or {}).get('regions') == marked):
+        tried = [*previous.get('previous_focus_regions', []), *previous['active_regions']]
+    remaining = [row for row in rows if row['region'] not in tried]
+    if tried and len(problem) > 1 and not remaining:
+        return None
+    following = bool(tried and remaining)
+    if not following and not missing and not explicit_capture:
+        return None
+    worst = max(remaining if following else missing or rows, key=lambda r: r['symmetric_tail'])
+    if not math.isfinite(worst['symmetric_tail']) or worst['symmetric_tail'] <= 0:
+        return None
+    active = worst['region']
+    values = dict(seed['values'])
+    before_width = values['deformation_kernel_width']
+    # Dyadic refinement relative to this seed; repeating a request does not
+    # blindly halve the movement scale again. Attachment capture is independent.
+    size = _half_span(active)
+    width = before_width
+    for _ in range(16):
+        if width <= size * .5:
+            break
+        width *= .5
+    if width > size * .5:
+        raise ValueError('This marked feature needs a smaller supported movement scale')
+    values['deformation_kernel_width'] = width
+    warm = (persistent and seed == data['current_reference'] and width == before_width
+            and previous.get('active_regions') == [active])
+    diagonal = data.get('spatial_diagonal')
+    halo = min(before_width*2, diagonal*.1) if diagonal else before_width*2
+    recipe = dict(version='protected-local-v12', protected_capture=VERSION,
+        phase='capture', symptom=symptom, level=len(data['context']['cases']),
+        active_regions=[active], residual=not warm, control_scope='marked_halo',
+        control_support='source-target-coverage-v1',
+        focus_width=2*worst['symmetric_tail'], focus_noise=values['noise_std']*.075,
+        protection_noise=previous.get('protection_noise', values['noise_std']),
+        protection_halo=previous.get('protection_halo', halo), guide_noise=None,
+        guide_points=192,
+        protection_close_distance=previous.get('protection_close_distance', values['noise_std']*.5),
+        protection_tolerance=previous.get('protection_tolerance', values['noise_std']*.25),
+        fixed_noise_divisor=16, native_timepoints=NATIVE_TIMEPOINTS,
+        capture_evidence=dict(reference=seed, per_region=rows,
+            before_movement_width=before_width, movement_width=width,
+            capture_and_movement_independent=True, anatomical_approval=False))
+    if following:
+        recipe['previous_focus_regions'] = tried
+    retention = data.get('retention_context')
+    available = not retention or (retention['available'] and retention['automatic_start_allowed'])
+    blocked = retention['reason'] if retention and not available else ''
+    from diffeoforge.regional_search import distinct
+
+    distinct_available, changed = distinct(recipe, values, reference['method'], seed,
+                                            data['context']['cases'], quality)
+    available &= distinct_available
+    if not distinct_available:
+        blocked = ('This protected contrast already reached its numerical weight guard. '
+                   'Keep the saved fit and review the marks or movement scale.')
+    parent = data['references'].get(seed['directory'], snapshot)
+    if parent.plan.pilot_subject_count != 1:
+        available = False
+        blocked = 'Choose a compatible saved single-form fit before a local correction.'
+    from diffeoforge.pilot_region_scope import label
+
+    area = label(marked.index(active))
+    waiting = [label(marked.index(row)) for row in problem if row != active and row not in tried]
+    schedule = (' After review, the remaining improvement marks are ' + ', '.join(waiting) + '.'
+                if waiting else ' Review all marked areas together after this trial.')
+    rationale = (f'Area {area} is next in your saved improvement marks. ' if following else
+                 f'Area {area} contains original surface beyond the starting fit. '
+                 if worst in missing else
+                 f'Area {area} has the largest measured remaining surface mismatch. ')
+    fixed = ', '.join(label(i) for i, row in enumerate(marked) if row.get('purpose') == 'fixed')
+    title = f'Improve {area} next · keep {fixed} in place' if following else (
+        f'Improve marked area {area}; retain the rest')
+    return dict(goal='regional', title=title,
+        reason=rationale + 'Keep the complete starting fit and the Retain areas. '
+        'This trial targets one area.' + schedule + ' '
+        'Use a broad capture range with separate local movement. '
+        + ('An earlier identical test is retained; this is a distinct weight contrast. '
+           if changed else '') +
+        'After fitting, check all important projections in the saved result. '
+        'This test does not approve the other areas or the final anatomy.',
+        target=reference['target'], method=reference['method'], values=values,
+        anchor=reference, initialization_reference=seed, from_base=False,
+        available=available, blocked_reason=blocked, regions=marked, trials=1,
+        symptom=symptom, regional_recipe=recipe,
+        initialization='learned' if warm else 'residual', numerical_extension=False,
+        optimization_iterations=None, remaining_checks=max(0, len(info['pilot_order'])-1),
+        hypothesis_count=len(data['context']['cases']),
+        contrast_level=len(data['context']['cases']),
+        response_evidence=[])
+
+
+def _missing_original(row):
+    region = row['region']
+    forward = row['original_to_fit_p95']
+    if (not row.get('empty_fit_patch') or region.get('reconstruction')
+            or region['symptom'] not in DETAIL_SYMPTOMS | {'unsure'}
+            or forward is None or not math.isfinite(forward)):
+        return False
+    return forward > _half_span(region)
+
+
+def _half_span(region):
+    if region.get('shape') == 'box':
+        bounds = region['bounds']
+        return max(bounds[i+1]-bounds[i] for i in (0, 2, 4)) / 2
+    return region['radius']
+
+
+def patch_capture_width(vertices, faces, target_vertices, target_faces, chosen, regions):
+    """Measure the actual free patch on the numerical output, without point pairs."""
+    import numpy as np
+
+    from diffeoforge.reference_fit_search import grouped_surface_distances, surface_samples
+    from diffeoforge.regional_fit import mask
+
+    selected = target_faces[mask(target_vertices[target_faces].mean(1), regions)]
+    if not len(selected) or not np.any(chosen):
+        raise ValueError('Protected capture needs nonempty free source and original target patches')
+    seeds = (2026103001, 2026103002)
+    a = grouped_surface_distances([
+        surface_samples(target_vertices, selected, 2048, seed=s) for s in seeds],
+        vertices, faces[chosen])
+    b = grouped_surface_distances([
+        surface_samples(vertices, faces[chosen], 2048, seed=s) for s in seeds],
+        target_vertices, selected)
+    tail = max(float(np.quantile(d, .95)) for d in [*a, *b])
+    if not np.isfinite(tail) or tail <= 0:
+        raise ValueError('Protected capture needs a positive finite measured patch distance')
+    return 2*tail, dict(version=VERSION, samples=2048, seeds=list(seeds),
+        symmetric_patch_p95=tail, focus_width=2*tail, geometric_capture_only=True,
+        biological_correspondence_claim=False)

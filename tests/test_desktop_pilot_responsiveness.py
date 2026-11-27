@@ -1,0 +1,387 @@
+"""Slow saved evidence must not block navigation or supply action authorization."""
+import hashlib
+import threading
+import time
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from pilot_view_helpers import wait_pilot_view
+
+pytest.importorskip("PySide6")
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication
+
+import diffeoforge.desktop.widgets as module
+from diffeoforge.desktop.project_setup import DesktopEngine
+from diffeoforge.reference_calibration_study import create_reference_calibration_study
+
+
+def _wait(app, predicate):
+    deadline = time.monotonic() + 10
+    while not predicate() and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.002)
+    app.processEvents()
+    assert predicate()
+
+
+@pytest.fixture
+def pilot_window(monkeypatch, tmp_path):
+    from test_reference_calibration_study import _project
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    config = _project(tmp_path)
+    snapshot = create_reference_calibration_study(config, tmp_path / "study")
+    window = module.DiffeoForgeWindow()
+    window._review = SimpleNamespace(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        config_path=config, config_sha256=hashlib.sha256(config.read_bytes()).hexdigest(),
+    )
+    window._reference_readiness = SimpleNamespace(ready=True)
+    window._reference_calibration_study_directory = snapshot.study_directory
+    monkeypatch.setattr(
+        window, "_reference_calibration_context", lambda: (snapshot.plan, snapshot.study_directory)
+    )
+    # These tests exercise pilot status/open transitions independently of project creation.
+    monkeypatch.setattr(window, "_sync_ready_state", lambda: None)
+    yield app, window, snapshot
+    window._worker = None
+    window._reference_calibration_dialog = None
+    window.close()
+    _wait(app, lambda: window._pilot_status_loader._active is None)
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_slow_pilot_status_keeps_event_loop_live_and_is_not_repeated(
+    pilot_window, monkeypatch,
+):
+    app, window, snapshot = pilot_window
+    real_load = module.load_reference_calibration_study
+    real_resolve = module.latest_reference_calibration_search_extension_directory
+    started, release = threading.Event(), threading.Event()
+    calls = []
+    resolution_calls = []
+    gui_thread = threading.get_ident()
+
+    def slow_load(directory):
+        calls.append(threading.get_ident())
+        started.set()
+        assert release.wait(5)
+        return real_load(directory)
+
+    def resolve(directory):
+        resolution_calls.append(threading.get_ident())
+        return real_resolve(directory)
+
+    monkeypatch.setattr(module, "load_reference_calibration_study", slow_load)
+    monkeypatch.setattr(module, "latest_reference_calibration_search_extension_directory", resolve)
+    ticks = []
+    timer = QTimer()
+    timer.timeout.connect(lambda: ticks.append(time.monotonic()))
+    timer.start(2)
+    try:
+        assert window._reference_calibration_pending()
+        _wait(app, started.is_set)
+        for _ in range(20):
+            assert window._reference_calibration_action_text() == "Checking saved pilot…"
+            assert window._reference_calibration_pending()
+            app.processEvents()
+            time.sleep(0.003)
+        assert len(ticks) >= 5
+        assert calls == [calls[0]] and calls[0] != gui_thread
+    finally:
+        release.set()
+        timer.stop()
+    _wait(app, lambda: not window._pilot_status_loading)
+    assert window._pilot_status_snapshot.status == snapshot.status
+    for _ in range(20):
+        window._reference_calibration_action_text()
+    assert len(calls) == 1
+
+    # A changed record invalidates status; a failed verification is cached as an error,
+    # not retried every time the interface updates.
+    manifest = snapshot.study_directory / "study.json"
+    original = manifest.read_bytes()
+    manifest.write_bytes(original + b" ")
+    assert window._saved_pilot_status(window._reference_calibration_context()) is None
+    _wait(app, lambda: not window._pilot_status_loading)
+    assert window._pilot_status_snapshot is None
+    assert window._pilot_status_error
+    assert window._reference_calibration_action_text() == "Inspect pilot calibration issue"
+    for _ in range(20):
+        window._saved_pilot_status(window._reference_calibration_context())
+    # Tampered source manifests fail during verified successor resolution,
+    # before the final study loader. The rejected lookup is still cached.
+    assert len(resolution_calls) == 2 and gui_thread not in resolution_calls
+    assert len(calls) == 1
+
+
+def test_old_status_cannot_follow_a_project_switch(pilot_window):
+    _app, window, snapshot = pilot_window
+    old_key = window._pilot_status_context_key(window._reference_calibration_context())
+    window._review = None
+    window._pilot_status_loaded(old_key, (snapshot, ()))
+    window._pilot_status_failed(old_key, "Old project failed")
+    assert window._pilot_status_snapshot is None
+    assert window._pilot_status_error is None
+
+
+def test_explicit_open_reverifies_tampered_evidence_despite_cached_status(
+    pilot_window, monkeypatch,
+):
+    app, window, snapshot = pilot_window
+    window._saved_pilot_status(window._reference_calibration_context())
+    _wait(app, lambda: not window._pilot_status_loading)
+    assert window._pilot_status_snapshot is not None
+    (snapshot.study_directory / "study.json").write_text("{}", encoding="utf-8")
+    failures, finished, threads = [], [], []
+    real_resolve = module.latest_reference_calibration_search_extension_directory
+
+    def resolve(directory):
+        threads.append(threading.get_ident())
+        return real_resolve(directory)
+
+    monkeypatch.setattr(module, "latest_reference_calibration_search_extension_directory", resolve)
+    monkeypatch.setattr(module.QMessageBox, "warning", lambda *args: failures.append(args[2]))
+    monkeypatch.setattr(window, "_finish_reference_calibration", finished.append)
+    window._open_reference_calibration()
+    assert window._worker is not None
+    _wait(app, lambda: window._worker is None)
+    assert failures and not finished
+    assert threads and threading.get_ident() not in threads
+    assert window._reference_calibration_dialog is None
+    assert window._reference_calibrated_config_path is None
+
+
+@pytest.mark.parametrize("close_requested", [False, True])
+def test_open_does_not_apply_after_project_change_or_close(
+    pilot_window, monkeypatch, close_requested,
+):
+    _app, window, snapshot = pilot_window
+    queued, applied = [], []
+    window._thread_pool = SimpleNamespace(start=queued.append)
+    monkeypatch.setattr(window, "_finish_reference_calibration", applied.append)
+    window._open_reference_calibration()
+    assert len(queued) == 1
+    if close_requested:
+        window._close_after_worker = True
+    else:
+        window._review = None
+    window._reference_calibration_opened(snapshot)
+    assert not applied and window._reference_calibration_dialog is None
+    assert window._worker is None
+
+
+@pytest.mark.parametrize("changed_selection", [False, True])
+def test_completed_pilot_review_opens_without_applying_or_running(
+    pilot_window, monkeypatch, changed_selection,
+):
+    from PySide6.QtWidgets import QDialog
+
+    app, window, source = pilot_window
+    snapshot = replace(
+        source, status="completed", final_config_path=source.study_directory / "final.yaml"
+    )
+    queued, applied = [], []
+    window._thread_pool = SimpleNamespace(start=queued.append)
+    window._reference_readiness = None  # Browsing saved results needs no backend launch/check.
+    monkeypatch.setattr(window, "_finish_reference_calibration", applied.append)
+    monkeypatch.setattr(window, "_refresh_reference_calibration_execution_card", lambda: None)
+    monkeypatch.setattr(
+        module, "latest_reference_calibration_search_extension_directory", lambda d: d
+    )
+    monkeypatch.setattr(module, "load_reference_calibration_study", lambda _d: snapshot)
+
+    class SavedDialog(QDialog):
+        def __init__(self, directory, parent=None, *, verified_snapshot):
+            super().__init__(parent)
+            assert verified_snapshot is snapshot
+            self.study_directory = directory
+            self.snapshot = verified_snapshot
+
+    monkeypatch.setattr(module, "ReferenceCalibrationDialog", SavedDialog)
+    before = {p: p.read_bytes() for p in source.study_directory.rglob("*") if p.is_file()}
+    window.review_saved_reference_pilot_button.setEnabled(True)
+    window.review_saved_reference_pilot_button.click()
+    assert len(queued) == 1 and queued[0].existing_only
+    assert window._reference_calibration_dialog is None
+    queued.pop().run()  # Only the saved-evidence verification worker, never an optimizer.
+    app.processEvents()
+    dialog = window._reference_calibration_dialog
+    assert dialog is not None and dialog.isVisible()
+    assert not applied
+    if changed_selection:
+        child = source.study_directory.parent / "density-successor"
+        dialog.study_directory = child
+        dialog.snapshot = replace(
+            snapshot, study_directory=child, final_config_path=child / "final.yaml"
+        )
+    dialog.reject()
+    app.processEvents()
+    assert len(applied) == int(changed_selection)
+    if changed_selection:
+        assert applied[0].study_directory == child
+    assert all(p.read_bytes() == value for p, value in before.items())
+    assert window.centralWidget().isEnabled()
+
+
+def test_saved_pilot_review_never_creates_a_missing_study(tmp_path, monkeypatch):
+    created, failed = [], []
+    monkeypatch.setattr(
+        module, "create_reference_calibration_study", lambda *a, **k: created.append(a)
+    )
+    missing = tmp_path / "deleted-pilot"
+    worker = module._ReferenceCalibrationOpenWorker(
+        tmp_path / "atlas.yaml", missing, existing_only=True
+    )
+    worker.signals.failed.connect(failed.append)
+    worker.run()
+    assert failed and not created and not missing.exists()
+
+
+def test_unfinished_pilot_can_reopen_after_close_without_a_live_calibration_plan(
+    pilot_window, monkeypatch,
+):
+    from PySide6.QtWidgets import QDialog
+
+    app, window, source = pilot_window
+    queued = []
+    window._thread_pool = SimpleNamespace(start=queued.append)
+    monkeypatch.setattr(window, "_sync_ready_state",
+                        lambda: module.DiffeoForgeWindow._sync_ready_state(window))
+    monkeypatch.setattr(window, "_reference_calibration_plan_matches_current_inputs", lambda: False)
+
+    class SavedDialog(QDialog):
+        def __init__(self, directory, parent=None, *, verified_snapshot):
+            super().__init__(parent)
+            self.study_directory = directory
+            self.snapshot = verified_snapshot
+
+    monkeypatch.setattr(module, "ReferenceCalibrationDialog", SavedDialog)
+    window._sync_ready_state()
+    button = window.review_saved_reference_pilot_button
+    before = (source.study_directory / "events.jsonl").read_bytes()
+    for _ in range(2):
+        assert button.isEnabled()
+        button.click()
+        assert len(queued) == 1 and not button.isEnabled()
+        queued.pop().run()
+        app.processEvents()
+        dialog = window._reference_calibration_dialog
+        assert dialog is not None and dialog.snapshot.study_directory == source.study_directory
+        assert window.status_label.text().startswith("Pilot open.")
+        dialog.reject()
+        app.processEvents()
+        assert window._reference_calibration_dialog is None and window.centralWidget().isEnabled()
+        assert window.status_label.text().startswith("Pilot closed.")
+    assert (source.study_directory / "events.jsonl").read_bytes() == before
+
+
+def test_reopen_verifies_the_manifest_once_per_click(pilot_window, monkeypatch):
+    from diffeoforge import reference_calibration_study as study
+
+    _app, window, snapshot = pilot_window
+    checks, opened = [], []
+    verify = study._verify_manifest_uncached
+
+    def count_manifest(directory):
+        checks.append(directory)
+        return verify(directory)
+
+    monkeypatch.setattr(study, "_verify_manifest_uncached", count_manifest)
+    for count in (1, 2):
+        worker = module._ReferenceCalibrationOpenWorker(
+            window._review.config_path, snapshot.study_directory, existing_only=True,
+        )
+        worker.signals.succeeded.connect(opened.append)
+        worker.run()
+        assert checks == [snapshot.study_directory] * count
+        assert opened[-1].study_directory == snapshot.study_directory
+
+
+def test_saved_study_reopen_does_not_bootstrap_a_guided_candidate(pilot_window, monkeypatch):
+    from diffeoforge import reference_attachment_comparison as comparison
+    from diffeoforge import reference_guided_pilot as guided
+
+    _app, window, snapshot = pilot_window
+    monkeypatch.setattr(comparison, "pending", lambda _config: True)
+    monkeypatch.setattr(guided, "enabled", lambda _config: True)
+    monkeypatch.setattr(guided, "prepare", lambda *_: pytest.fail("Reopen prepared a fit"))
+    worker = module._ReferenceCalibrationOpenWorker(
+        window._review.config_path, snapshot.study_directory, existing_only=True,
+    )
+    opened = []
+    worker.signals.succeeded.connect(opened.append)
+    worker.run()
+    assert opened[0].study_directory == snapshot.study_directory
+    assert not (snapshot.study_directory / "fit-search-latest.json").exists()
+
+
+def test_malformed_saved_binding_returns_from_open_and_releases_the_worker(
+    pilot_window, monkeypatch,
+):
+    app, window, _snapshot = pilot_window
+    warnings = []
+
+    def bad_binding(_directory):
+        raise KeyError("manifest_sha256")
+
+    monkeypatch.setattr(module, "latest_reference_calibration_search_extension_directory",
+                        bad_binding)
+    monkeypatch.setattr(module.QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    window._review_saved_reference_pilot()
+    _wait(app, lambda: window._worker is None)
+    assert warnings == ["Saved pilot binding is missing 'manifest_sha256'."]
+    assert window._pilot_open_context_key is None
+    assert window._reference_calibration_dialog is None
+
+
+def test_dialog_reuses_fresh_worker_snapshot_without_loading_again(
+    pilot_window, monkeypatch, tmp_path: Path,
+):
+    import diffeoforge.desktop.reference_calibration_dialog as dialog_module
+
+    app, _window, snapshot = pilot_window
+
+    def unexpected_load(_directory):
+        pytest.fail("A freshly verified worker snapshot must not be verified twice on the GUI")
+
+    monkeypatch.setattr(dialog_module, "load_reference_calibration_study", unexpected_load)
+    dialog = dialog_module.ReferenceCalibrationDialog(
+        snapshot.study_directory, verified_snapshot=snapshot
+    )
+    wait_pilot_view(dialog)
+    assert dialog.snapshot is snapshot
+    dialog.close()
+    app.processEvents()
+    with pytest.raises(ValueError, match="different study"):
+        dialog_module.ReferenceCalibrationDialog(tmp_path / "different", verified_snapshot=snapshot)
+
+
+def test_pilot_full_screen_and_f11_preserve_the_dialog_and_footer(pilot_window):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    app, _window, snapshot = pilot_window
+    dialog = ReferenceCalibrationDialog(snapshot.study_directory, verified_snapshot=snapshot)
+    dialog.show()
+    wait_pilot_view(dialog)
+    geometry = dialog.geometry()
+    dialog.full_screen_button.click()
+    app.processEvents()
+    assert dialog.isFullScreen()
+    assert dialog.close_button.isVisible() and dialog.full_screen_button.isVisible()
+    dialog.activateWindow()
+    app.processEvents()
+    QTest.keyClick(dialog, Qt.Key.Key_F11)
+    app.processEvents()
+    assert dialog.isVisible() and not dialog.isFullScreen()
+    assert dialog.geometry() == geometry and dialog.snapshot is snapshot
+    dialog.close()
+    app.processEvents()

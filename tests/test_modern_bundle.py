@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import math
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -16,6 +17,7 @@ engine = pytest.importorskip("diffeoforge.engine")
 mesh = pytest.importorskip("diffeoforge.mesh")
 bundle_module = pytest.importorskip("diffeoforge.modern_bundle")
 quality_module = pytest.importorskip("diffeoforge.mesh_quality")
+modern_pca_stability_module = pytest.importorskip("diffeoforge.modern_pca_stability")
 
 momenta_pca = pca_module.momenta_pca
 flow_points = engine.flow_points
@@ -31,6 +33,8 @@ ModernBundleError = bundle_module.ModernBundleError
 verify_modern_atlas_bundle = bundle_module.verify_modern_atlas_bundle
 write_modern_atlas_bundle = bundle_module.write_modern_atlas_bundle
 MeshQualitySettings = quality_module.MeshQualitySettings
+ModernPCAStabilityError = modern_pca_stability_module.ModernPCAStabilityError
+verify_modern_pca_bundle = modern_pca_stability_module.verify_modern_pca_bundle
 
 DTYPE = torch.float64
 FIXED_TIME = "2026-07-16T08:00:00+00:00"
@@ -165,6 +169,24 @@ def test_bundle_contains_verified_open_outputs_and_exact_subject_identity(
     assert momenta_rows[formula_row][0] == "'=formula specimen"
 
 
+def test_bundle_records_declared_cuda_execution_device(
+    tmp_path: Path,
+    optimized: tuple,
+) -> None:
+    result, triangles, model = optimized
+    bundle = write_modern_atlas_bundle(
+        tmp_path / "cuda-evidence",
+        result,
+        triangles,
+        LABELS,
+        model,
+        execution_device="cuda",
+        created_at=FIXED_TIME,
+    )
+
+    assert verify_modern_atlas_bundle(bundle)["engine"]["device"] == "cuda"
+
+
 def test_reconstructions_equal_direct_engine_endpoints(
     tmp_path: Path,
     optimized: tuple,
@@ -216,6 +238,58 @@ def test_pca_csv_files_reproduce_in_memory_pca(
     np.testing.assert_array_equal(observed_scores, expected.scores)
     np.testing.assert_array_equal(observed_components, expected.components)
     np.testing.assert_array_equal(observed_mean, expected.mean)
+
+
+def test_verified_modern_pca_bundle_recomputes_stored_pca(
+    tmp_path: Path,
+    optimized: tuple,
+) -> None:
+    result, _, _ = optimized
+    bundle = _write_bundle(tmp_path / "bundle", optimized)
+
+    verified = verify_modern_pca_bundle(bundle)
+    expected = momenta_pca(
+        np.array(result.momenta.numpy(), dtype=np.float64, copy=True),
+        subject_labels=LABELS,
+    )
+
+    assert verified.manifest_sha256 == sha256_file(bundle / MANIFEST_NAME)
+    assert len(verified.momenta_sha256) == 64
+    assert len(verified.control_points_sha256) == 64
+    np.testing.assert_allclose(verified.pca.scores, expected.scores, rtol=1e-12, atol=1e-14)
+
+
+def test_verified_modern_pca_bundle_rejects_resigned_false_scores(
+    tmp_path: Path,
+    optimized: tuple,
+) -> None:
+    bundle = _write_bundle(tmp_path / "bundle", optimized)
+    manifest_path = bundle / MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    scores_path = bundle / manifest["pca"]["scores_path"]
+    rows = _csv(scores_path)
+    rows[1][1] = str(float(rows[1][1]) + 1.0)
+    with scores_path.open("w", encoding="utf-8", newline="") as handle:
+        csv.writer(handle, lineterminator="\n").writerows(rows)
+    score_record = next(
+        record
+        for record in manifest["artifacts"]
+        if record["path"] == manifest["pca"]["scores_path"]
+    )
+    score_record["bytes"] = scores_path.stat().st_size
+    score_record["sha256"] = sha256_file(scores_path)
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (bundle / MANIFEST_SIDECAR_NAME).write_text(
+        f"{sha256_file(manifest_path)}  {MANIFEST_NAME}\n",
+        encoding="ascii",
+    )
+
+    assert verify_modern_atlas_bundle(bundle)["bundle_version"] == "0.1"
+    with pytest.raises(ModernPCAStabilityError, match="scores values differ"):
+        verify_modern_pca_bundle(bundle)
 
 
 def test_bundle_adds_mandatory_pc2_pc3_plot_when_pc3_is_available(
@@ -527,24 +601,46 @@ def test_verifier_rejects_manifest_path_traversal(
         verify_modern_atlas_bundle(bundle)
 
 
-def test_verifier_recomputes_mesh_quality_instead_of_trusting_report(
+@pytest.mark.parametrize("tampered_field", ("report_path", "csv_path"))
+def test_verifier_recomputes_mesh_quality_and_binds_saved_rows(
     tmp_path: Path,
     optimized: tuple,
+    monkeypatch: pytest.MonkeyPatch,
+    tampered_field: str,
 ) -> None:
     bundle = _write_bundle(tmp_path / "bundle", optimized)
+    build_report = bundle_module.build_mesh_quality_report
+
+    def recompute_with_roundoff(*args, **kwargs):
+        report = build_report(*args, **kwargs)
+        angles = report["meshes"][0]["metrics"]["minimum_angle_degrees"]
+        for key in ("median", "q95", "maximum"):
+            angles[key] = math.nextafter(math.nextafter(angles[key], math.inf), math.inf)
+        return report
+
+    monkeypatch.setattr(bundle_module, "build_mesh_quality_report", recompute_with_roundoff)
+    verify_modern_atlas_bundle(bundle)
+
     manifest_path = bundle / MANIFEST_NAME
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    quality_path = bundle / manifest["quality"]["report_path"]
-    quality = json.loads(quality_path.read_text(encoding="utf-8"))
-    quality["meshes"][0]["metrics"]["boundary_edges"] += 1
-    quality_path.write_text(
-        json.dumps(quality, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    quality_path = bundle / manifest["quality"][tampered_field]
+    if tampered_field == "report_path":
+        quality = json.loads(quality_path.read_text(encoding="utf-8"))
+        quality["meshes"][0]["metrics"]["boundary_edges"] += 1
+        quality_path.write_text(json.dumps(quality) + "\n", encoding="utf-8")
+        error = "JSON differs from recomputed geometry"
+    else:
+        rows = _csv(quality_path)
+        index = rows[0].index("median_angle_degrees")
+        angle = float(rows[1][index])
+        rows[1][index] = format(math.nextafter(math.nextafter(angle, math.inf), math.inf), ".17g")
+        with quality_path.open("w", encoding="utf-8", newline="") as handle:
+            csv.writer(handle).writerows(rows)
+        error = "CSV differs from validated JSON"
     artifact = next(
         record
         for record in manifest["artifacts"]
-        if record["path"] == manifest["quality"]["report_path"]
+        if record["path"] == manifest["quality"][tampered_field]
     )
     artifact["bytes"] = quality_path.stat().st_size
     artifact["sha256"] = sha256_file(quality_path)
@@ -557,7 +653,7 @@ def test_verifier_recomputes_mesh_quality_instead_of_trusting_report(
         encoding="ascii",
     )
 
-    with pytest.raises(ModernBundleError, match="recomputed geometry"):
+    with pytest.raises(ModernBundleError, match=error):
         verify_modern_atlas_bundle(bundle)
 
 

@@ -16,6 +16,7 @@ import yaml
 
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
+from diffeoforge.reference_atlas_stop import atlas_iteration_limit
 from diffeoforge.runs import run_status
 
 _REPORT_MARKER = '<meta name="generator" content="DiffeoForge result report">'
@@ -61,8 +62,8 @@ class RunReport:
     notices: tuple[str, ...]
 
     @property
-    def max_iterations(self) -> int:
-        return int(self.manifest["effective_config"]["optimization"]["max_iterations"])
+    def max_iterations(self) -> int | None:
+        return atlas_iteration_limit(self.manifest["effective_config"])
 
     @property
     def final_iteration(self) -> int | None:
@@ -83,14 +84,21 @@ class RunReport:
                 f"The run was interrupted after the observation at iteration {final_iteration}; "
                 "interruption is not convergence."
             )
-        if final_iteration >= self.max_iterations:
+        maximum = self.max_iterations
+        if maximum is None:
             return (
-                f"The observed iteration reached the requested maximum of {self.max_iterations}. "
+                f"The last logged iteration was {final_iteration}. This atlas ran with no "
+                "joint iteration limit. See the saved atlas stopping evidence for the "
+                "accepted-state stop reason."
+            )
+        if final_iteration >= maximum:
+            return (
+                f"The observed iteration reached the requested maximum of {maximum}. "
                 "This report does not label that outcome as convergence."
             )
         return (
             f"The backend completed before the requested maximum ({final_iteration} of "
-            f"{self.max_iterations}). The recorded artifacts alone do not prove which stopping "
+            f"{maximum}). The recorded artifacts alone do not prove which stopping "
             "criterion caused termination."
         )
 
@@ -186,6 +194,76 @@ def _load_inventory(
     return tuple(records), check
 
 
+def _check_output_artifact_integrity(
+    run_directory: Path,
+    inventory: Sequence[Mapping[str, Any]],
+) -> EvidenceCheck:
+    output_directory = run_directory / "output"
+    issues: list[str] = []
+    declared: set[str] = set()
+    if not output_directory.is_dir() or output_directory.is_symlink():
+        return EvidenceCheck(
+            "Output artifact integrity",
+            "fail",
+            "The output directory is missing, is not a directory, or is symbolic.",
+        )
+
+    for record in inventory:
+        relative = PurePosixPath(str(record["path"]))
+        normalized = relative.as_posix()
+        if relative.is_absolute() or ".." in relative.parts or normalized in {"", "."}:
+            issues.append(f"unsafe inventory path {normalized!r}")
+            continue
+        if normalized in declared:
+            issues.append(f"duplicate inventory path {normalized!r}")
+            continue
+        declared.add(normalized)
+        candidate = output_directory.joinpath(*relative.parts)
+        cursor = output_directory
+        symbolic = False
+        for part in relative.parts:
+            cursor = cursor / part
+            if cursor.is_symlink():
+                symbolic = True
+                break
+        if symbolic:
+            issues.append(f"symbolic output path {normalized!r}")
+            continue
+        if not candidate.is_file():
+            issues.append(f"missing output file {normalized!r}")
+            continue
+        if candidate.stat().st_size != int(record["bytes"]):
+            issues.append(f"size mismatch for {normalized!r}")
+            continue
+        if sha256_file(candidate) != str(record["sha256"]):
+            issues.append(f"SHA-256 mismatch for {normalized!r}")
+
+    actual: set[str] = set()
+    for candidate in output_directory.rglob("*"):
+        relative = candidate.relative_to(output_directory).as_posix()
+        if candidate.is_symlink():
+            issues.append(f"symbolic untrusted output {relative!r}")
+        elif candidate.is_file():
+            actual.add(relative)
+    for unexpected in sorted(actual - declared):
+        issues.append(f"unlisted output file {unexpected!r}")
+    for absent in sorted(declared - actual):
+        if not any(absent in issue for issue in issues):
+            issues.append(f"declared output file is absent {absent!r}")
+
+    if issues:
+        detail = "; ".join(issues[:5])
+        if len(issues) > 5:
+            detail += f"; and {len(issues) - 5} more issue(s)"
+        return EvidenceCheck("Output artifact integrity", "fail", detail + ".")
+    return EvidenceCheck(
+        "Output artifact integrity",
+        "pass",
+        f"All {len(inventory)} inventoried output files match path, size, and SHA-256; "
+        "no unlisted files were found.",
+    )
+
+
 def _load_convergence(path: Path) -> tuple[ConvergenceRow, ...]:
     if not path.is_file():
         return ()
@@ -246,6 +324,7 @@ def collect_run_report(run_directory: Path | str) -> RunReport:
     manifest = _load_json(run_path / "manifest.json", "Run manifest")
     events = _load_events(run_path / "events.jsonl")
     inventory, inventory_digest_check = _load_inventory(run_path, result)
+    output_artifact_check = _check_output_artifact_integrity(run_path, inventory)
     convergence = _load_convergence(run_path / "logs" / "convergence.csv")
 
     outputs = result["outputs"]
@@ -274,6 +353,7 @@ def collect_run_report(run_directory: Path | str) -> RunReport:
             ),
         ),
         inventory_digest_check,
+        output_artifact_check,
         EvidenceCheck(
             "Output inventory summary",
             "pass" if inventory_summary_matches else "fail",
@@ -308,11 +388,18 @@ def collect_run_report(run_directory: Path | str) -> RunReport:
             else "No checkpoint is available, so this run cannot be resumed."
         )
         notices.append(f"The numerical run was interrupted: {error_detail}. {checkpoint_detail}")
-    if result.get("resume"):
+    resume = result.get("resume")
+    if isinstance(resume, dict) and resume:
+        reference = resume.get("convergence_reference")
+        objective = (
+            f"The tolerance test used the objective from iteration {reference['origin_iteration']}."
+            if isinstance(reference, dict) and type(reference.get("origin_iteration")) is int
+            else "The optimizer initialized a new objective baseline."
+        )
         notices.append(
-            "This is a Deformetrica 4.3 successor: model parameters and iteration were "
-            "restored, while the objective baseline, gradient, and line-search step sizes "
-            "were reinitialized. Exact optimization-trajectory continuity is not guaranteed."
+            f"Deformetrica restored the model parameters and iteration. {objective} "
+            "It recalculated the gradient and line-search step sizes. "
+            "Exact optimization-trajectory continuity is not guaranteed."
         )
     if not convergence:
         notices.append(
@@ -527,6 +614,13 @@ def render_result_html(report: RunReport) -> str:
     started_at = escape(str(result.get("started_at")))
     ended_at = escape(str(result.get("ended_at")))
     tolerance = escape(str(config["optimization"]["convergence_tolerance"]))
+    mode = config["project"].get("atlas_stop", {}).get("mode")
+    stopping_rule = {
+        "iteration_target": "Run to the chosen joint iteration",
+        "morphospace_stability": "Morphospace stability (cohort &lt;1%, every specimen &lt;2%)",
+    }.get(mode, f"Optimizer convergence (tolerance {tolerance})")
+    maximum = report.max_iterations
+    iteration_limit = "No joint iteration limit" if maximum is None else f"{maximum} iterations"
 
     return f"""<!doctype html>
 <html lang="en">
@@ -600,8 +694,8 @@ def render_result_html(report: RunReport) -> str:
       <tr><th>Backend</th><td>{backend_id}, contract {backend_contract}</td></tr>
       <tr><th>Return code</th><td>{escape(str(result.get("return_code")))}</td></tr>
       <tr><th>Started / ended</th><td>{started_at} / {ended_at}</td></tr>
-      <tr><th>Requested maximum</th><td>{report.max_iterations} iterations</td></tr>
-      <tr><th>Convergence tolerance</th><td>{tolerance}</td></tr>
+      <tr><th>Requested maximum</th><td>{iteration_limit}</td></tr>
+      <tr><th>Stopping rule</th><td>{stopping_rule}</td></tr>
       <tr><th>Observed objective change</th>
         <td>{escape(objective_change)}; final {escape(final_objective)}</td></tr>
       <tr><th>Stopping interpretation</th><td>{escape(report.stop_interpretation)}</td></tr>

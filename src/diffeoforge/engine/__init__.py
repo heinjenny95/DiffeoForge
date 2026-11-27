@@ -6,9 +6,12 @@ this package requires the optional ``modern-engine`` dependency set.
 
 from diffeoforge.engine.atlas_optimizer import (
     AtlasCancellationCallback,
+    AtlasCheckpointCallback,
+    AtlasCycleCheckpoint,
     AtlasOptimizationCancelled,
     AtlasOptimizationRecord,
     AtlasOptimizationResult,
+    AtlasOptimizerResumeState,
     AtlasOptimizerSettings,
     AtlasParameterBlock,
     AtlasProgressCallback,
@@ -16,6 +19,7 @@ from diffeoforge.engine.atlas_optimizer import (
 )
 from diffeoforge.engine.dense import (
     GaussianTilePlan,
+    PreparedSurfaceAttachmentTarget,
     ShootingTrajectory,
     TileAutogradStrategy,
     current_squared_distance,
@@ -27,7 +31,9 @@ from diffeoforge.engine.dense import (
     gaussian_convolve_gradient,
     gaussian_convolve_gradient_blockwise,
     gaussian_kernel,
+    prepare_surface_attachment_target,
     shoot,
+    surface_squared_distance_to_prepared_target,
     triangle_centers_and_area_normals,
     varifold_squared_distance,
     varifold_squared_distance_blockwise,
@@ -44,17 +50,22 @@ from diffeoforge.engine.optimizer import (
     OptimizationRecord,
     optimize_momenta,
 )
+from diffeoforge.engine.sobolev import sobolev_template_gradient
 
 __all__ = [
     "ShootingTrajectory",
     "GaussianTilePlan",
+    "PreparedSurfaceAttachmentTarget",
     "TileAutogradStrategy",
     "PairwiseEvaluationPlan",
     "AtlasObjective",
     "AtlasCancellationCallback",
+    "AtlasCheckpointCallback",
     "AtlasOptimizationCancelled",
+    "AtlasCycleCheckpoint",
     "AtlasOptimizationRecord",
     "AtlasOptimizationResult",
+    "AtlasOptimizerResumeState",
     "AtlasOptimizerSettings",
     "AtlasParameterBlock",
     "AtlasProgressCallback",
@@ -71,9 +82,12 @@ __all__ = [
     "gaussian_convolve_gradient",
     "gaussian_convolve_gradient_blockwise",
     "gaussian_kernel",
+    "prepare_surface_attachment_target",
     "optimize_momenta",
     "optimize_atlas",
     "shoot",
+    "sobolev_template_gradient",
+    "surface_squared_distance_to_prepared_target",
     "subject_objective",
     "triangle_centers_and_area_normals",
     "varifold_squared_distance",

@@ -1,0 +1,1496 @@
+{
+  "auto_reference_pass": true,
+  "compatible_reference_pass": true,
+  "cpu_model": "AMD EPYC 7763 64-Core Processor",
+  "cpu_vendor": "AuthenticAMD",
+  "diagnostic_complete": true,
+  "evidence_sha256": {
+    "auto-r1/engine/data_set.xml": "6e742561eb0e176996b2b670a288210179b79573935206f7453e8230b6229914",
+    "auto-r1/engine/model.xml": "51939375eb5bf43080b066a0334f827a4dee5ed4766c75dc8467844dbd14afe6",
+    "auto-r1/engine/optimization_parameters.xml": "4a4599f1e6e00bae5fdc53ee26e893c5cf92c1bc2b6e237f3798686e6a4fa71e",
+    "auto-r1/logs/convergence.csv": "c4b1ef5440e5157724c8df3789786f3d6f88fae7bd85a55c51cf981fbfcec8b2",
+    "auto-r1/logs/deformetrica.log": "88a2addf623de06ef91670f68e9838be2d1e1395bdf8163cde6a591bbb337c17",
+    "auto-r1/output/DeterministicAtlas__EstimatedParameters__ControlPoints.txt": "680df34cfef0ab11657460e32396df225e11e0fb362baeafb223cb13a016fe44",
+    "auto-r1/output/DeterministicAtlas__EstimatedParameters__Momenta.txt": "947197486bc6574c6646e03647ced22b470aa23dfab28974f871b1d9c02f6d78",
+    "auto-r1/output/DeterministicAtlas__EstimatedParameters__Residuals.txt": "e8cd02f0211a24d5c0981d388bb8c091da961e57b28e6192f00f7391eb9f3789",
+    "auto-r1/output/DeterministicAtlas__EstimatedParameters__Template_surface.vtk": "899d362191033fad441192e9dc91231ab758f6c501bcfacedebf0942bb4a52c9",
+    "auto-r1/output/DeterministicAtlas__Reconstruction__surface__subject_subject-01.vtk.vtk": "2f9c27c87307eef6f8b88d5ffe54ece05b3437bf4bf566b2a2dba158e1bebbe8",
+    "auto-r1/output/DeterministicAtlas__Reconstruction__surface__subject_subject-02.vtk.vtk": "a53d499de63016174834deac8ae8c78e8327c9f82fdc5781fb128777c73718ad",
+    "auto-r1/output/DeterministicAtlas__Reconstruction__surface__subject_subject-03.vtk.vtk": "91af56114285633d97ece31413958cdc99858eb72b67cf17a8ee0b52aabfc920",
+    "auto-r1/output/DeterministicAtlas__Reconstruction__surface__subject_subject-04.vtk.vtk": "4bfb30cfbd12cef28c2294585a80da2b388d9a5d39253e02ce3678213db3c00e",
+    "auto-r1/output/DeterministicAtlas__Reconstruction__surface__subject_subject-05.vtk.vtk": "1db00632016fe4ff63fe036e966c0db5050d9749b8527b5e6eca5d72f4eb9e32",
+    "auto-r2/engine/data_set.xml": "6e742561eb0e176996b2b670a288210179b79573935206f7453e8230b6229914",
+    "auto-r2/engine/model.xml": "51939375eb5bf43080b066a0334f827a4dee5ed4766c75dc8467844dbd14afe6",
+    "auto-r2/engine/optimization_parameters.xml": "4a4599f1e6e00bae5fdc53ee26e893c5cf92c1bc2b6e237f3798686e6a4fa71e",
+    "auto-r2/logs/convergence.csv": "c4b1ef5440e5157724c8df3789786f3d6f88fae7bd85a55c51cf981fbfcec8b2",
+    "auto-r2/logs/deformetrica.log": "68b224551bc86499ceb9820ac7f3eb3c835acdba588d1d9d4f75beea4e8d364a",
+    "auto-r2/output/DeterministicAtlas__EstimatedParameters__ControlPoints.txt": "680df34cfef0ab11657460e32396df225e11e0fb362baeafb223cb13a016fe44",
+    "auto-r2/output/DeterministicAtlas__EstimatedParameters__Momenta.txt": "947197486bc6574c6646e03647ced22b470aa23dfab28974f871b1d9c02f6d78",
+    "auto-r2/output/DeterministicAtlas__EstimatedParameters__Residuals.txt": "e8cd02f0211a24d5c0981d388bb8c091da961e57b28e6192f00f7391eb9f3789",
+    "auto-r2/output/DeterministicAtlas__EstimatedParameters__Template_surface.vtk": "899d362191033fad441192e9dc91231ab758f6c501bcfacedebf0942bb4a52c9",
+    "auto-r2/output/DeterministicAtlas__Reconstruction__surface__subject_subject-01.vtk.vtk": "2f9c27c87307eef6f8b88d5ffe54ece05b3437bf4bf566b2a2dba158e1bebbe8",
+    "auto-r2/output/DeterministicAtlas__Reconstruction__surface__subject_subject-02.vtk.vtk": "a53d499de63016174834deac8ae8c78e8327c9f82fdc5781fb128777c73718ad",
+    "auto-r2/output/DeterministicAtlas__Reconstruction__surface__subject_subject-03.vtk.vtk": "91af56114285633d97ece31413958cdc99858eb72b67cf17a8ee0b52aabfc920",
+    "auto-r2/output/DeterministicAtlas__Reconstruction__surface__subject_subject-04.vtk.vtk": "4bfb30cfbd12cef28c2294585a80da2b388d9a5d39253e02ce3678213db3c00e",
+    "auto-r2/output/DeterministicAtlas__Reconstruction__surface__subject_subject-05.vtk.vtk": "1db00632016fe4ff63fe036e966c0db5050d9749b8527b5e6eca5d72f4eb9e32",
+    "compatible-r1/engine/data_set.xml": "6e742561eb0e176996b2b670a288210179b79573935206f7453e8230b6229914",
+    "compatible-r1/engine/model.xml": "51939375eb5bf43080b066a0334f827a4dee5ed4766c75dc8467844dbd14afe6",
+    "compatible-r1/engine/optimization_parameters.xml": "4a4599f1e6e00bae5fdc53ee26e893c5cf92c1bc2b6e237f3798686e6a4fa71e",
+    "compatible-r1/logs/convergence.csv": "c4b1ef5440e5157724c8df3789786f3d6f88fae7bd85a55c51cf981fbfcec8b2",
+    "compatible-r1/logs/deformetrica.log": "68b224551bc86499ceb9820ac7f3eb3c835acdba588d1d9d4f75beea4e8d364a",
+    "compatible-r1/output/DeterministicAtlas__EstimatedParameters__ControlPoints.txt": "680df34cfef0ab11657460e32396df225e11e0fb362baeafb223cb13a016fe44",
+    "compatible-r1/output/DeterministicAtlas__EstimatedParameters__Momenta.txt": "947197486bc6574c6646e03647ced22b470aa23dfab28974f871b1d9c02f6d78",
+    "compatible-r1/output/DeterministicAtlas__EstimatedParameters__Residuals.txt": "e8cd02f0211a24d5c0981d388bb8c091da961e57b28e6192f00f7391eb9f3789",
+    "compatible-r1/output/DeterministicAtlas__EstimatedParameters__Template_surface.vtk": "899d362191033fad441192e9dc91231ab758f6c501bcfacedebf0942bb4a52c9",
+    "compatible-r1/output/DeterministicAtlas__Reconstruction__surface__subject_subject-01.vtk.vtk": "2f9c27c87307eef6f8b88d5ffe54ece05b3437bf4bf566b2a2dba158e1bebbe8",
+    "compatible-r1/output/DeterministicAtlas__Reconstruction__surface__subject_subject-02.vtk.vtk": "a53d499de63016174834deac8ae8c78e8327c9f82fdc5781fb128777c73718ad",
+    "compatible-r1/output/DeterministicAtlas__Reconstruction__surface__subject_subject-03.vtk.vtk": "91af56114285633d97ece31413958cdc99858eb72b67cf17a8ee0b52aabfc920",
+    "compatible-r1/output/DeterministicAtlas__Reconstruction__surface__subject_subject-04.vtk.vtk": "4bfb30cfbd12cef28c2294585a80da2b388d9a5d39253e02ce3678213db3c00e",
+    "compatible-r1/output/DeterministicAtlas__Reconstruction__surface__subject_subject-05.vtk.vtk": "1db00632016fe4ff63fe036e966c0db5050d9749b8527b5e6eca5d72f4eb9e32",
+    "compatible-r2/engine/data_set.xml": "6e742561eb0e176996b2b670a288210179b79573935206f7453e8230b6229914",
+    "compatible-r2/engine/model.xml": "51939375eb5bf43080b066a0334f827a4dee5ed4766c75dc8467844dbd14afe6",
+    "compatible-r2/engine/optimization_parameters.xml": "4a4599f1e6e00bae5fdc53ee26e893c5cf92c1bc2b6e237f3798686e6a4fa71e",
+    "compatible-r2/logs/convergence.csv": "c4b1ef5440e5157724c8df3789786f3d6f88fae7bd85a55c51cf981fbfcec8b2",
+    "compatible-r2/logs/deformetrica.log": "60db5692c155499f49fb03e76cee7ff1fc6b4dafc88c1a86b524dbd67b5d653f",
+    "compatible-r2/output/DeterministicAtlas__EstimatedParameters__ControlPoints.txt": "680df34cfef0ab11657460e32396df225e11e0fb362baeafb223cb13a016fe44",
+    "compatible-r2/output/DeterministicAtlas__EstimatedParameters__Momenta.txt": "947197486bc6574c6646e03647ced22b470aa23dfab28974f871b1d9c02f6d78",
+    "compatible-r2/output/DeterministicAtlas__EstimatedParameters__Residuals.txt": "e8cd02f0211a24d5c0981d388bb8c091da961e57b28e6192f00f7391eb9f3789",
+    "compatible-r2/output/DeterministicAtlas__EstimatedParameters__Template_surface.vtk": "899d362191033fad441192e9dc91231ab758f6c501bcfacedebf0942bb4a52c9",
+    "compatible-r2/output/DeterministicAtlas__Reconstruction__surface__subject_subject-01.vtk.vtk": "2f9c27c87307eef6f8b88d5ffe54ece05b3437bf4bf566b2a2dba158e1bebbe8",
+    "compatible-r2/output/DeterministicAtlas__Reconstruction__surface__subject_subject-02.vtk.vtk": "a53d499de63016174834deac8ae8c78e8327c9f82fdc5781fb128777c73718ad",
+    "compatible-r2/output/DeterministicAtlas__Reconstruction__surface__subject_subject-03.vtk.vtk": "91af56114285633d97ece31413958cdc99858eb72b67cf17a8ee0b52aabfc920",
+    "compatible-r2/output/DeterministicAtlas__Reconstruction__surface__subject_subject-04.vtk.vtk": "4bfb30cfbd12cef28c2294585a80da2b388d9a5d39253e02ce3678213db3c00e",
+    "compatible-r2/output/DeterministicAtlas__Reconstruction__surface__subject_subject-05.vtk.vtk": "1db00632016fe4ff63fe036e966c0db5050d9749b8527b5e6eca5d72f4eb9e32",
+    "probe-AUTO.json": "6e22a417a0bdb4d4563de761666a28c43b34bd59b4e3c6da09ac71db46964884",
+    "probe-COMPATIBLE.json": "90b57b18119bf4ccb82c92c29703eab2326212fd283456912635d59c3a5b67a8"
+  },
+  "fixed_files": {
+    "examples/minimal-atlas-container.yaml": "56eca7c12b9ecb67c147cc3ce60528ae78fec6456e6c5aa3d97beb7348c179f6",
+    "reference/synthetic-v1/reference-manifest.json": "92a42df282cbf9564e8995bd8380735e9f2063a48686530c3b2ab8350ab3511a"
+  },
+  "image_id": "sha256:c0d7980eae0d9f2c7153731ef026a6570e161d2e551b964a35089d6baaca74ac",
+  "limits": "Public fixture only; not production defaults or universal CPU qualification.",
+  "mode_repeatability": {
+    "AUTO": true,
+    "COMPATIBLE": true
+  },
+  "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+  "protocol": "public-reference-cpu-full-pair-v1",
+  "records": [
+    {
+      "argv": [
+        "docker",
+        "run",
+        "--name",
+        "df-cpu-pair-510ec477b52b48dcbab4867bd66fedd4",
+        "--env",
+        "MKL_CBWR=AUTO",
+        "--rm",
+        "--pull=never",
+        "--network=none",
+        "--read-only",
+        "--tmpfs=/tmp:rw,exec,nosuid,size=1g",
+        "--mount",
+        "type=bind,source=/home/runner/work/_temp/cpu-pair/runs/auto-r1,target=/work",
+        "--workdir",
+        "/work",
+        "--user",
+        "1001:1001",
+        "--env",
+        "OMP_NUM_THREADS=4",
+        "--env",
+        "CUDA_VISIBLE_DEVICES=-1",
+        "--env",
+        "USE_CUDA=0",
+        "diffeoforge-deformetrica:4.3.0-cpu",
+        "estimate",
+        "engine/model.xml",
+        "engine/data_set.xml",
+        "-p",
+        "engine/optimization_parameters.xml",
+        "--output=output",
+        "-v",
+        "INFO"
+      ],
+      "artifact_sha256": {
+        "control-points": "680df34cfef0ab11657460e32396df225e11e0fb362baeafb223cb13a016fe44",
+        "convergence": "c4b1ef5440e5157724c8df3789786f3d6f88fae7bd85a55c51cf981fbfcec8b2",
+        "estimated-template": "899d362191033fad441192e9dc91231ab758f6c501bcfacedebf0942bb4a52c9",
+        "momenta": "947197486bc6574c6646e03647ced22b470aa23dfab28974f871b1d9c02f6d78",
+        "reconstruction-subject-01": "2f9c27c87307eef6f8b88d5ffe54ece05b3437bf4bf566b2a2dba158e1bebbe8",
+        "reconstruction-subject-02": "a53d499de63016174834deac8ae8c78e8327c9f82fdc5781fb128777c73718ad",
+        "reconstruction-subject-03": "91af56114285633d97ece31413958cdc99858eb72b67cf17a8ee0b52aabfc920",
+        "reconstruction-subject-04": "4bfb30cfbd12cef28c2294585a80da2b388d9a5d39253e02ce3678213db3c00e",
+        "reconstruction-subject-05": "1db00632016fe4ff63fe036e966c0db5050d9749b8527b5e6eca5d72f4eb9e32",
+        "residuals": "e8cd02f0211a24d5c0981d388bb8c091da961e57b28e6192f00f7391eb9f3789"
+      },
+      "comparison": {
+        "artifact_count": 10,
+        "artifacts": [
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "columns": 4,
+              "header": [
+                "iteration",
+                "log_likelihood",
+                "attachment",
+                "regularity"
+              ],
+              "rows": 23
+            },
+            "different_value_count": 0,
+            "id": "convergence",
+            "kind": "numeric_csv",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "columns": 4,
+              "header": [
+                "iteration",
+                "log_likelihood",
+                "attachment",
+                "regularity"
+              ],
+              "rows": 23
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 92
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "values": 108
+            },
+            "different_value_count": 0,
+            "id": "control-points",
+            "kind": "numeric_text",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "values": 108
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 108
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "values": 543
+            },
+            "different_value_count": 0,
+            "id": "momenta",
+            "kind": "numeric_text",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "values": 543
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 543
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "values": 5
+            },
+            "different_value_count": 0,
+            "id": "residuals",
+            "kind": "numeric_text",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "values": 5
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 5
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "estimated-template",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-01",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-02",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-03",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-04",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-05",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          }
+        ],
+        "passed_count": 10,
+        "reference_id": "synthetic-v1",
+        "reference_version": "0.1",
+        "status": "passed"
+      },
+      "elapsed_seconds": 131.728219921,
+      "engine_sha256": {
+        "engine/data_set.xml": "6e742561eb0e176996b2b670a288210179b79573935206f7453e8230b6229914",
+        "engine/model.xml": "51939375eb5bf43080b066a0334f827a4dee5ed4766c75dc8467844dbd14afe6",
+        "engine/optimization_parameters.xml": "4a4599f1e6e00bae5fdc53ee26e893c5cf92c1bc2b6e237f3798686e6a4fa71e"
+      },
+      "label": "auto-r1",
+      "mode": "AUTO",
+      "repeat": 1
+    },
+    {
+      "argv": [
+        "docker",
+        "run",
+        "--name",
+        "df-cpu-pair-5c9ce4c514f74611b05cebb660002536",
+        "--env",
+        "MKL_CBWR=COMPATIBLE",
+        "--rm",
+        "--pull=never",
+        "--network=none",
+        "--read-only",
+        "--tmpfs=/tmp:rw,exec,nosuid,size=1g",
+        "--mount",
+        "type=bind,source=/home/runner/work/_temp/cpu-pair/runs/compatible-r1,target=/work",
+        "--workdir",
+        "/work",
+        "--user",
+        "1001:1001",
+        "--env",
+        "OMP_NUM_THREADS=4",
+        "--env",
+        "CUDA_VISIBLE_DEVICES=-1",
+        "--env",
+        "USE_CUDA=0",
+        "diffeoforge-deformetrica:4.3.0-cpu",
+        "estimate",
+        "engine/model.xml",
+        "engine/data_set.xml",
+        "-p",
+        "engine/optimization_parameters.xml",
+        "--output=output",
+        "-v",
+        "INFO"
+      ],
+      "artifact_sha256": {
+        "control-points": "680df34cfef0ab11657460e32396df225e11e0fb362baeafb223cb13a016fe44",
+        "convergence": "c4b1ef5440e5157724c8df3789786f3d6f88fae7bd85a55c51cf981fbfcec8b2",
+        "estimated-template": "899d362191033fad441192e9dc91231ab758f6c501bcfacedebf0942bb4a52c9",
+        "momenta": "947197486bc6574c6646e03647ced22b470aa23dfab28974f871b1d9c02f6d78",
+        "reconstruction-subject-01": "2f9c27c87307eef6f8b88d5ffe54ece05b3437bf4bf566b2a2dba158e1bebbe8",
+        "reconstruction-subject-02": "a53d499de63016174834deac8ae8c78e8327c9f82fdc5781fb128777c73718ad",
+        "reconstruction-subject-03": "91af56114285633d97ece31413958cdc99858eb72b67cf17a8ee0b52aabfc920",
+        "reconstruction-subject-04": "4bfb30cfbd12cef28c2294585a80da2b388d9a5d39253e02ce3678213db3c00e",
+        "reconstruction-subject-05": "1db00632016fe4ff63fe036e966c0db5050d9749b8527b5e6eca5d72f4eb9e32",
+        "residuals": "e8cd02f0211a24d5c0981d388bb8c091da961e57b28e6192f00f7391eb9f3789"
+      },
+      "comparison": {
+        "artifact_count": 10,
+        "artifacts": [
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "columns": 4,
+              "header": [
+                "iteration",
+                "log_likelihood",
+                "attachment",
+                "regularity"
+              ],
+              "rows": 23
+            },
+            "different_value_count": 0,
+            "id": "convergence",
+            "kind": "numeric_csv",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "columns": 4,
+              "header": [
+                "iteration",
+                "log_likelihood",
+                "attachment",
+                "regularity"
+              ],
+              "rows": 23
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 92
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "values": 108
+            },
+            "different_value_count": 0,
+            "id": "control-points",
+            "kind": "numeric_text",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "values": 108
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 108
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "values": 543
+            },
+            "different_value_count": 0,
+            "id": "momenta",
+            "kind": "numeric_text",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "values": 543
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 543
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "values": 5
+            },
+            "different_value_count": 0,
+            "id": "residuals",
+            "kind": "numeric_text",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "values": 5
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 5
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "estimated-template",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-01",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-02",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-03",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-04",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-05",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          }
+        ],
+        "passed_count": 10,
+        "reference_id": "synthetic-v1",
+        "reference_version": "0.1",
+        "status": "passed"
+      },
+      "elapsed_seconds": 134.47059852299998,
+      "engine_sha256": {
+        "engine/data_set.xml": "6e742561eb0e176996b2b670a288210179b79573935206f7453e8230b6229914",
+        "engine/model.xml": "51939375eb5bf43080b066a0334f827a4dee5ed4766c75dc8467844dbd14afe6",
+        "engine/optimization_parameters.xml": "4a4599f1e6e00bae5fdc53ee26e893c5cf92c1bc2b6e237f3798686e6a4fa71e"
+      },
+      "label": "compatible-r1",
+      "mode": "COMPATIBLE",
+      "repeat": 1
+    },
+    {
+      "argv": [
+        "docker",
+        "run",
+        "--name",
+        "df-cpu-pair-05b9a41899094e8887f3fe435d0c7035",
+        "--env",
+        "MKL_CBWR=COMPATIBLE",
+        "--rm",
+        "--pull=never",
+        "--network=none",
+        "--read-only",
+        "--tmpfs=/tmp:rw,exec,nosuid,size=1g",
+        "--mount",
+        "type=bind,source=/home/runner/work/_temp/cpu-pair/runs/compatible-r2,target=/work",
+        "--workdir",
+        "/work",
+        "--user",
+        "1001:1001",
+        "--env",
+        "OMP_NUM_THREADS=4",
+        "--env",
+        "CUDA_VISIBLE_DEVICES=-1",
+        "--env",
+        "USE_CUDA=0",
+        "diffeoforge-deformetrica:4.3.0-cpu",
+        "estimate",
+        "engine/model.xml",
+        "engine/data_set.xml",
+        "-p",
+        "engine/optimization_parameters.xml",
+        "--output=output",
+        "-v",
+        "INFO"
+      ],
+      "artifact_sha256": {
+        "control-points": "680df34cfef0ab11657460e32396df225e11e0fb362baeafb223cb13a016fe44",
+        "convergence": "c4b1ef5440e5157724c8df3789786f3d6f88fae7bd85a55c51cf981fbfcec8b2",
+        "estimated-template": "899d362191033fad441192e9dc91231ab758f6c501bcfacedebf0942bb4a52c9",
+        "momenta": "947197486bc6574c6646e03647ced22b470aa23dfab28974f871b1d9c02f6d78",
+        "reconstruction-subject-01": "2f9c27c87307eef6f8b88d5ffe54ece05b3437bf4bf566b2a2dba158e1bebbe8",
+        "reconstruction-subject-02": "a53d499de63016174834deac8ae8c78e8327c9f82fdc5781fb128777c73718ad",
+        "reconstruction-subject-03": "91af56114285633d97ece31413958cdc99858eb72b67cf17a8ee0b52aabfc920",
+        "reconstruction-subject-04": "4bfb30cfbd12cef28c2294585a80da2b388d9a5d39253e02ce3678213db3c00e",
+        "reconstruction-subject-05": "1db00632016fe4ff63fe036e966c0db5050d9749b8527b5e6eca5d72f4eb9e32",
+        "residuals": "e8cd02f0211a24d5c0981d388bb8c091da961e57b28e6192f00f7391eb9f3789"
+      },
+      "comparison": {
+        "artifact_count": 10,
+        "artifacts": [
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "columns": 4,
+              "header": [
+                "iteration",
+                "log_likelihood",
+                "attachment",
+                "regularity"
+              ],
+              "rows": 23
+            },
+            "different_value_count": 0,
+            "id": "convergence",
+            "kind": "numeric_csv",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "columns": 4,
+              "header": [
+                "iteration",
+                "log_likelihood",
+                "attachment",
+                "regularity"
+              ],
+              "rows": 23
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 92
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "values": 108
+            },
+            "different_value_count": 0,
+            "id": "control-points",
+            "kind": "numeric_text",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "values": 108
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 108
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "values": 543
+            },
+            "different_value_count": 0,
+            "id": "momenta",
+            "kind": "numeric_text",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "values": 543
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 543
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "values": 5
+            },
+            "different_value_count": 0,
+            "id": "residuals",
+            "kind": "numeric_text",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "values": 5
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 5
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "estimated-template",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-01",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-02",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-03",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-04",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-05",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          }
+        ],
+        "passed_count": 10,
+        "reference_id": "synthetic-v1",
+        "reference_version": "0.1",
+        "status": "passed"
+      },
+      "elapsed_seconds": 132.952216271,
+      "engine_sha256": {
+        "engine/data_set.xml": "6e742561eb0e176996b2b670a288210179b79573935206f7453e8230b6229914",
+        "engine/model.xml": "51939375eb5bf43080b066a0334f827a4dee5ed4766c75dc8467844dbd14afe6",
+        "engine/optimization_parameters.xml": "4a4599f1e6e00bae5fdc53ee26e893c5cf92c1bc2b6e237f3798686e6a4fa71e"
+      },
+      "label": "compatible-r2",
+      "mode": "COMPATIBLE",
+      "repeat": 2
+    },
+    {
+      "argv": [
+        "docker",
+        "run",
+        "--name",
+        "df-cpu-pair-7b1d13f3b9dd461ab9ae533da3144d16",
+        "--env",
+        "MKL_CBWR=AUTO",
+        "--rm",
+        "--pull=never",
+        "--network=none",
+        "--read-only",
+        "--tmpfs=/tmp:rw,exec,nosuid,size=1g",
+        "--mount",
+        "type=bind,source=/home/runner/work/_temp/cpu-pair/runs/auto-r2,target=/work",
+        "--workdir",
+        "/work",
+        "--user",
+        "1001:1001",
+        "--env",
+        "OMP_NUM_THREADS=4",
+        "--env",
+        "CUDA_VISIBLE_DEVICES=-1",
+        "--env",
+        "USE_CUDA=0",
+        "diffeoforge-deformetrica:4.3.0-cpu",
+        "estimate",
+        "engine/model.xml",
+        "engine/data_set.xml",
+        "-p",
+        "engine/optimization_parameters.xml",
+        "--output=output",
+        "-v",
+        "INFO"
+      ],
+      "artifact_sha256": {
+        "control-points": "680df34cfef0ab11657460e32396df225e11e0fb362baeafb223cb13a016fe44",
+        "convergence": "c4b1ef5440e5157724c8df3789786f3d6f88fae7bd85a55c51cf981fbfcec8b2",
+        "estimated-template": "899d362191033fad441192e9dc91231ab758f6c501bcfacedebf0942bb4a52c9",
+        "momenta": "947197486bc6574c6646e03647ced22b470aa23dfab28974f871b1d9c02f6d78",
+        "reconstruction-subject-01": "2f9c27c87307eef6f8b88d5ffe54ece05b3437bf4bf566b2a2dba158e1bebbe8",
+        "reconstruction-subject-02": "a53d499de63016174834deac8ae8c78e8327c9f82fdc5781fb128777c73718ad",
+        "reconstruction-subject-03": "91af56114285633d97ece31413958cdc99858eb72b67cf17a8ee0b52aabfc920",
+        "reconstruction-subject-04": "4bfb30cfbd12cef28c2294585a80da2b388d9a5d39253e02ce3678213db3c00e",
+        "reconstruction-subject-05": "1db00632016fe4ff63fe036e966c0db5050d9749b8527b5e6eca5d72f4eb9e32",
+        "residuals": "e8cd02f0211a24d5c0981d388bb8c091da961e57b28e6192f00f7391eb9f3789"
+      },
+      "comparison": {
+        "artifact_count": 10,
+        "artifacts": [
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "columns": 4,
+              "header": [
+                "iteration",
+                "log_likelihood",
+                "attachment",
+                "regularity"
+              ],
+              "rows": 23
+            },
+            "different_value_count": 0,
+            "id": "convergence",
+            "kind": "numeric_csv",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "columns": 4,
+              "header": [
+                "iteration",
+                "log_likelihood",
+                "attachment",
+                "regularity"
+              ],
+              "rows": 23
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 92
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "values": 108
+            },
+            "different_value_count": 0,
+            "id": "control-points",
+            "kind": "numeric_text",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "values": 108
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 108
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "values": 543
+            },
+            "different_value_count": 0,
+            "id": "momenta",
+            "kind": "numeric_text",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "values": 543
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 543
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "values": 5
+            },
+            "different_value_count": 0,
+            "id": "residuals",
+            "kind": "numeric_text",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "values": 5
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 5
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "estimated-template",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-01",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-02",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-03",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-04",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          },
+          {
+            "byte_identical": true,
+            "candidate_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "different_value_count": 0,
+            "id": "reconstruction-subject-05",
+            "kind": "vtk_points",
+            "largest_differences": [],
+            "max_absolute_difference": 0.0,
+            "passed": true,
+            "reference_shape": {
+              "cells": 320,
+              "points": 162
+            },
+            "rms_difference": 0.0,
+            "shape_matches": true,
+            "threshold_checks": {
+              "max_absolute_pass": true,
+              "rms_pass": true
+            },
+            "tolerances": {
+              "max_absolute": 1e-06,
+              "rms": 1e-07
+            },
+            "value_count": 486
+          }
+        ],
+        "passed_count": 10,
+        "reference_id": "synthetic-v1",
+        "reference_version": "0.1",
+        "status": "passed"
+      },
+      "elapsed_seconds": 134.324350492,
+      "engine_sha256": {
+        "engine/data_set.xml": "6e742561eb0e176996b2b670a288210179b79573935206f7453e8230b6229914",
+        "engine/model.xml": "51939375eb5bf43080b066a0334f827a4dee5ed4766c75dc8467844dbd14afe6",
+        "engine/optimization_parameters.xml": "4a4599f1e6e00bae5fdc53ee26e893c5cf92c1bc2b6e237f3798686e6a4fa71e"
+      },
+      "label": "auto-r2",
+      "mode": "AUTO",
+      "repeat": 2
+    }
+  ],
+  "runtime": {
+    "precision": "float32",
+    "processes": 1,
+    "threads": 4
+  },
+  "source_commit": "6113400c29f73a11b81a62ead80b2da1d5efbe2b",
+  "worker_sha256": "958a89035d147d6377b954d396691ff415d63ad81eccb34b14d9239b46656a74"
+}

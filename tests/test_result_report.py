@@ -128,6 +128,25 @@ def test_inventory_digest_mismatch_is_visible_not_hidden(tmp_path: Path) -> None
     assert any("Evidence check failed" in notice for notice in report.notices)
 
 
+def test_output_artifact_changes_and_unlisted_files_are_visible(tmp_path: Path) -> None:
+    run_directory = completed_example_run(tmp_path)
+    output = run_directory / "output"
+    (output / "estimated-template.vtk").write_text(
+        "tampered output\n", encoding="utf-8"
+    )
+    (output / "unlisted.txt").write_text("unlisted\n", encoding="utf-8")
+
+    report = collect_run_report(run_directory)
+
+    check = next(
+        item for item in report.checks if item.label == "Output artifact integrity"
+    )
+    assert check.status == "fail"
+    assert "mismatch" in check.detail
+    assert "unlisted output file" in check.detail
+    assert any("Output artifact integrity" in notice for notice in report.notices)
+
+
 def test_writer_only_replaces_recognized_reports(tmp_path: Path) -> None:
     report = collect_run_report(completed_example_run(tmp_path))
     destination = tmp_path / "custom.html"
@@ -199,3 +218,10 @@ def test_resume_report_discloses_reinitialized_optimizer_state(tmp_path: Path) -
 
     assert any("line-search step sizes" in notice for notice in report.notices)
     assert any("not guaranteed" in notice for notice in report.notices)
+    assert any("new objective baseline" in notice for notice in report.notices)
+
+    result["resume"]["convergence_reference"] = {"origin_iteration": 0}
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    report = collect_run_report(run_directory)
+    assert any("objective from iteration 0" in notice for notice in report.notices)
+    assert all("new objective baseline" not in notice for notice in report.notices)

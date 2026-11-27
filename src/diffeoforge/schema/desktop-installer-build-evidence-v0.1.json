@@ -90,7 +90,7 @@
         "command": {
           "type": "array",
           "minItems": 9,
-          "maxItems": 9,
+          "maxItems": 10,
           "items": { "type": "string", "minLength": 1 }
         },
         "exit_code": { "const": 0 },

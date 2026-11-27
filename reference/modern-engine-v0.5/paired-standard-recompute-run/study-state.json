@@ -1,0 +1,16 @@
+{
+  "active_condition_id": null,
+  "completed_condition_ids": [
+    "condition-001-subjects-00005-standard",
+    "condition-002-subjects-00005-recompute",
+    "condition-003-subjects-00003-standard",
+    "condition-004-subjects-00003-recompute",
+    "condition-005-subjects-00001-standard",
+    "condition-006-subjects-00001-recompute"
+  ],
+  "design_sha256": "625dfa7f1c8aea1927a82b7d72b317486ebe183a1310ef7f953bd79c30167282",
+  "source_config_sha256": "80484b95e4ed113752372df7e8597e9049c7e16133f3d8fd8b35ceb8e8b3472a",
+  "status": "complete",
+  "study_run_version": "0.1",
+  "updated_at": "2026-07-22T16:47:40.646+00:00"
+}

@@ -1,0 +1,1545 @@
+"""Compact guided actions, separate method cards and visible recovery after rejection."""
+
+import math
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFrame,
+    QLabel,
+    QLayout,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+
+from diffeoforge.desktop.info_disclosure import InfoDisclosure
+from diffeoforge.guided_strategy import remaining_forms
+from diffeoforge.reference_guided_pilot import ATLAS_FIRST, record
+
+
+def choose_method(window):
+    view = window._prepared_view
+    if not view or not view.guidance.get("method_choice_pending"):
+        return
+    snapshot = view.snapshot
+    comparison = view.guidance["provisional_comparison"]
+    dialog = QDialog(window)
+    dialog.setWindowTitle("Which method fit this specimen better?")
+    layout = QVBoxLayout(dialog)
+    prompt = QLabel("Choose a starting method for refinement. Both fits keep their "
+                    "Needs improvement rating.")
+    prompt.setWordWrap(True)
+    layout.addWidget(prompt)
+    selection = None
+
+    def option(label, action, identifier=None):
+        button = QPushButton(label)
+        button.setAutoDefault(False)
+
+        def select():
+            nonlocal selection
+            selection = action, identifier, None
+            dialog.accept()
+
+        button.clicked.connect(select)
+        layout.addWidget(button)
+
+    for candidate in snapshot.candidates:
+        option(f"{candidate.label} fit better", "adaptive_prefer", candidate.candidate_id)
+    if comparison["available"]:
+        option("No clear winner · prepare both methods on the next specimen",
+               "adaptive_compare_unresolved")
+        detail = "Next specimen: " + comparison["target"] + ". Choose Run to start the two fits."
+    else:
+        detail = comparison["explanation"]
+    note = QLabel(detail)
+    note.setTextFormat(Qt.TextFormat.PlainText)
+    note.setWordWrap(True)
+    layout.addWidget(note)
+    cancel = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+    cancel.rejected.connect(dialog.reject)
+    layout.addWidget(cancel)
+    cancel.button(QDialogButtonBox.StandardButton.Cancel).setFocus()
+    try:
+        if (dialog.exec() == QDialog.DialogCode.Accepted and selection
+                and window._prepared_view is view
+                and window.study_directory == snapshot.study_directory
+                and not (window._view_loading or window._view_closed or window._review_saving
+                         or window._worker or window._restoring_search)):
+            window._start_pilot(adaptive=False, guided_action=selection)
+    finally:
+        dialog.deleteLater()
+
+
+def _extension_reason(offer):
+    areas = ", ".join(
+        f"Area {area['label']} ({area['improvement_percent']:.1f}%)"
+        for area in offer["remaining_regions"]
+    )
+    return (
+        f"600 iterations used. Surface error fell in every open area in the last stage ({areas}). "
+        "Protection checks passed."
+    )
+
+
+def _regional_check_note(quality, *, capped, approved, starting_choice):
+    failures = [
+        label for key, label in (
+            ("no_new_intersection_flags", "new surface intersection flags"),
+            ("spatial_resolution_sufficient", "source geometry refinement limit"),
+            ("temporal_grid_stable", "time-grid stability"),
+            ("transition_preserved", "transition fit"),
+            ("outside_preserved", "preservation outside the area"),
+            ("shape_preserved", "preservation of marked part shape"),
+            ("explicit_fixed_preserved", "preservation of fixed marked areas"),
+        ) if quality.get(key) is False
+    ]
+    if not failures and quality.get("numerical_selection_suitable") is not False:
+        return (
+            "Local, transition and preservation checks passed. Inspect anatomy. "
+            "This regional objective still needs a shared cohort protocol."
+        )
+    causes = ", ".join(failures) or "an unresolved numerical check"
+    before, after = quality.get("baseline_surface_p95"), quality.get("active_surface_p95")
+    improvement = ""
+    if (quality.get("local_improved") is True
+            and all(type(value) in (float, int) and math.isfinite(value)
+                    for value in (before, after))
+            and 0 <= after < before):
+        improvement = f"Marked-area P95 distance fell by {(1 - after / before) * 100:.1f}%. "
+    if approved:
+        result = "Your suitable-fit decision is saved. Surface checks still report " + causes + "."
+    elif starting_choice:
+        result = f"This attempt reports {causes}. Choose the saved starting fit explicitly."
+    else:
+        result = f"This attempt fails: {causes}. Review the fit and its saved starting fit."
+    return (
+        improvement + result
+        + (" Review these checks before spending more iterations on the same settings."
+           if capped else "")
+    )
+
+
+def _marked_area_changes(feedback, subjects, target):
+    """Report directional P95 changes on the exact areas of this trial."""
+    from diffeoforge.pilot_region_scope import label
+
+    before = (feedback or {}).get("baseline", [])
+    after = subjects.get(target, {}).get("marked_regions", {}).get("measurements", [])
+    if len(before) != len(after):
+        return []
+    changes = []
+    for index, (left, right) in enumerate(zip(before, after, strict=True)):
+        area = left.get("region") or {}
+        diagonal = left.get("diagonal")
+        if (area != right.get("region") or area.get("purpose", "problem") != "problem"
+                or type(diagonal) not in (int, float) or not math.isfinite(diagonal)
+                or diagonal <= 0):
+            continue
+        directional = []
+        for key in ("original_to_fit_p95", "fit_to_original_p95"):
+            values = [[row.get(key) for row in area.get("repeats", [])]
+                      for area in (left, right)]
+            if all(len(v) == 2 and all(type(x) in (int, float) and math.isfinite(x)
+                                       for x in v) for v in values):
+                baseline, outcome = (max(v) for v in values)
+                directional.append(f"{100 * (outcome - baseline) / diagonal:+.2f} pp")
+            else:
+                directional.append("unavailable")
+        changes.append(f"{label(index)} · " + " / ".join(directional))
+    return changes
+
+
+def _locked_view(window, snapshot, guidance, running):
+    from diffeoforge.desktop.pilot_common_model import pin_action
+
+    for button in (window.start_button, window.advance_button, window.review_next_button,
+                   window.keep_previous_button, window.find_fit_button, window.selection_combo,
+                   window.next_step_button, window.pilot_assistant_button):
+        button.hide()
+    window._guided_footer_action = None
+    window._guided_review_target = None
+    window._mark_error_action = None
+    window.pilot_tools.setEnabled(False)
+    window.cancel_button.setVisible(running)
+    window.cancel_button.setEnabled(running)
+    if running:
+        window.status.setText("The pilot worker is active.")
+        return
+    recovery = guidance.get("saved_native_recovery")
+    checks = guidance.get("recovered_checks")
+    if checks:
+        message = ("The recovered native fit is ready for its surface checks. Run the checks "
+                   "on this saved result before reviewing its anatomy.")
+        pin_action(window, snapshot, "Resume surface checks on recovered fit",
+                   "resume_recovered_fit_checks", checks["candidate"], message, goal=checks)
+    elif recovery:
+        message = ("The native fit finished and its worker has released the pilot. Recover "
+                   "the saved fit, then resume its surface checks.")
+        pin_action(window, snapshot, "Recover saved fit for surface checks",
+                   "recover_saved_native_fit", recovery["candidate"], message, goal=recovery)
+    else:
+        message = ("This pilot is locked. Check the original Pilot window, then refresh here. "
+                   "If it has closed, use the path below for support. Recovery requires a released "
+                   "worker and a verified completed fit from a supported single-stage test.")
+    window.status.setText(message)
+    refresh = QPushButton("Refresh pilot status")
+    refresh.setObjectName("refreshPilotStatus")
+    refresh.clicked.connect(window._retry_view)
+    window.content_layout.addWidget(refresh)
+    paths = []
+    for candidate in snapshot.candidates:
+        if candidate.run_directory and (
+                candidate.status == "orphaned" or (checks or recovery or {}).get("candidate")
+                == candidate.candidate_id):
+            paths.append(f"{candidate.label} · Attempt {candidate.attempts}\n"
+                         f"{candidate.run_directory}")
+    path = QLabel("\n".join(paths) or str(snapshot.study_directory))
+    path.setObjectName("unresolvedAttemptPath")
+    path.setTextFormat(Qt.TextFormat.PlainText)
+    path.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    path.setWordWrap(True)
+    window.content_layout.addWidget(path)
+    for label, source in guidance.get("locked_saved_fits", ()):
+        button = QPushButton("Inspect saved " + label)
+        button.clicked.connect(lambda _=False, ref=source: window._open_guided_saved_fit(ref))
+        window.content_layout.addWidget(button)
+
+
+def show_adjustments(window, identifier):
+    panel = window.content.findChild(InfoDisclosure, "adjustments-" + identifier)
+    if panel is not None:
+        panel.toggle_button.setChecked(True)
+        choices = panel.findChild(InfoDisclosure, "adjustmentChoices")
+        if choices is not None:
+            choices.toggle_button.setChecked(True)
+            selector = choices.findChild(QComboBox)
+            window.scroll.ensureWidgetVisible(selector)
+            selector.setFocus()
+
+
+def render(window, prepared):
+    from diffeoforge.desktop.pilot_common_model import pin_action, pin_recovery, pin_revision
+    from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
+
+    snapshot = prepared.snapshot
+    window._guided_footer_action = None
+    window._guided_footer_goal = None
+    window.next_step_button.hide()
+    # Let the scroll area grow its content rather than compressing recovery cards.
+    window.content_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+    window.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+    info = record(snapshot)
+    guidance = prepared.guidance
+    method_choice = guidance.get("method_choice_pending")
+    running = window._worker is not None or window._restoring_search
+    if ((guidance.get("unresolved_writer") or guidance.get("recovered_checks"))
+            and (not running or "preferred" not in guidance)):
+        _locked_view(window, snapshot, guidance, running)
+        return
+    bounded_action = guidance.get("bounded_adaptive")
+    regional_trial = bool(snapshot.attachment_comparison.get("regional_objective"))
+    iterations = snapshot.attachment_comparison.get("iterations")
+    strategy = info.get("strategy") or {}
+    checkpoint = (strategy.get("regional_recipe") or {}).get("review_checkpoint")
+    checkpoint_continuation = bool(checkpoint and strategy.get("optimization"))
+    pending_choice = guidance.get("starting_fit_choice")
+    optional_choice = guidance.get("optional_starting_fit_choice")
+    starting_choice = (
+        None if optional_choice else
+        guidance["feedback"][pending_choice["identifier"]] if pending_choice else
+        next((row for row in guidance.get("feedback", {}).values()
+              if row and row.get("starting_fit_choice")), None)
+    )
+    density_pair = snapshot.attachment_comparison.get("early_density_comparison")
+    common_flow = (
+        info["phase"] == "joint"
+        or info.get("goal") in {
+            "shared_check", "form_model_check", "common_continue", "common_multiscale",
+        }
+        or bool(guidance.get("common_recovery") or guidance.get("common_revision")
+                or guidance.get("shared_model_checks"))
+        or any(row.get("common_reuse") or row.get("action") == "form_model_check"
+               for row in guidance.get("next_forms", {}).values())
+    )
+    window._guided_common_flow = common_flow
+    from diffeoforge.desktop.pilot_review_target import choose as review_target
+
+    review = review_target(snapshot, guidance, info)
+    if method_choice:
+        review = None  # Both reviewed fits have their own equally accessible inspection buttons.
+    window._guided_review_target = review
+    guard_failures = guidance.get("guard_failures", {})
+    checks_pending = guidance.get('qualification_pending', {})
+    common_failures = guidance.get("common_stage_failures", {})
+    window.status.setObjectName("statusWarning" if guard_failures or common_failures else "status")
+    window.status.style().unpolish(window.status)
+    window.status.style().polish(window.status)
+    common_failure = next(iter(common_failures.values()), None)
+    failure_inspection = bool(common_failure and common_failure["action"] in {
+        "inspect", "inspect_template",
+    })
+    regional_accepted = bool(
+        snapshot.attachment_comparison.get("regional_objective")
+        and any(snapshot.visual_reviews.get(c.candidate_id) is True
+                for c in snapshot.candidates if c.status == "completed")
+    )
+    controls = (
+        window.find_fit_button,
+        window.saved_searches_button,
+        window.adaptive_fit_search,
+        window.advanced_mode,
+        window.afk_mode,
+        window.outward_mode,
+        window.collect_evidence_button,
+        window.keep_previous_button,
+        window.selection_combo,
+        window.advance_button,
+        window.compare_options_button,
+        window.use_provisional_button,
+        window.denser_model_button,
+    )
+    window._guided_hidden_visibility = {c: not c.isHidden() for c in controls}
+    for control in controls:
+        control.hide()
+    window._visually_reviewed_candidates = set(snapshot.visual_reviews)
+    window._visually_approved_candidates = {k for k, v in snapshot.visual_reviews.items() if v}
+    approved_common_revision = bool(
+        not running and len(snapshot.candidates) == 1
+        and snapshot.visual_reviews.get(snapshot.candidates[0].candidate_id) is True
+        and guidance.get("common_revision", {}).get(snapshot.candidates[0].candidate_id)
+    )
+    next_forms = guidance.get("next_forms", {})
+    valid_next = next((row for row in next_forms.values() if row.get("available")), None)
+    accepted_to_common = bool(regional_accepted and valid_next
+                              and valid_next.get("action") == "form_model_check")
+    common_step = None
+    if accepted_to_common:
+        mode = (valid_next.get("common_reuse") or {}).get("mode")
+        common_step = ("Review the saved common fit." if mode in {"review", "feedback"}
+                       else "Open the anatomy transfer." if mode == "project_approved"
+                       else "Prepare the common fit.")
+    title = QLabel(
+        "Which method fit this specimen better?" if method_choice
+        else "Check the approved fit with the common model" if accepted_to_common
+        else "Suitable fit saved" if optional_choice
+        else "Choose a starting fit" if starting_choice and not running
+        else "Review the stopped test" if guard_failures
+        else "Finish checks on the saved fit" if checks_pending
+        else "Compare control-point density"
+        if density_pair
+        else "Use the approved common settings"
+        if approved_common_revision
+        else "Shared model · capture then detail"
+        if info.get("goal") == "common_multiscale"
+        else "Check the next pilot form"
+        if info.get("goal") == "next_form" and not guidance.get("fit_direction")
+        else "Check the common model"
+        if info.get("goal") in {"form_model_check", "common_continue"}
+        else "Check the suitable fit with the atlas model"
+        if info.get("goal") == "shared_check"
+        else "Joint pilot check"
+        if info["phase"] == "joint"
+        else "Suitable fit saved"
+        if regional_accepted
+        else "Improve the fit"
+        if info.get("goal") or (guidance["preferred"] and any(
+            value is False for value in snapshot.visual_reviews.values()))
+        else "Check another form"
+        if info["phase"] == "validate"
+        else "Choose a starting method: Current or Varifold"
+    )
+    title.setObjectName("sectionTitle")
+    window.content_layout.addWidget(title)
+    explanation = QLabel(
+        f"One joint fit of all {snapshot.plan.pilot_subject_count} selected specimens."
+        if info["phase"] == "joint"
+        else f"{info['target']} · 1 specimen from the {guidance['total']} selected"
+        if common_flow
+        else f"{info['target']}\nTest {info['screen_trials_spent']}"
+        if guidance.get("form_progress_summary")
+        else f"{info['target']}\n{guidance['total']} selected pilot forms · "
+        f"{guidance['checked']} checked with these settings · "
+        f"{info['screen_trials_spent']} tests prepared so far."
+    )
+    explanation.setObjectName("pilotScope")
+    explanation.setWordWrap(True)
+    window.content_layout.addWidget(explanation)
+    start_note = guidance.get("prepared_start_note")
+    if start_note:
+        note = QLabel(start_note)
+        note.setTextFormat(Qt.TextFormat.PlainText)
+        note.setWordWrap(True)
+        note.setObjectName("preparedSpecimenStart")
+        window.content_layout.addWidget(note)
+    if (strategy.get("correction_policy") == ATLAS_FIRST and info["phase"] == "screen"
+            and not method_choice):
+        from diffeoforge.regional_pilot import MINIMUM_NEW_NATIVE_TIMEPOINTS
+
+        basis_note = QLabel(
+            "Each specimen starts on the shared template and control grid. The pilot uses "
+            f"RK2 integration with at least {MINIMUM_NEW_NATIVE_TIMEPOINTS} timepoints "
+            "so a protected correction can "
+            "reuse this basis. A correction with different settings requires a transfer check."
+        )
+        basis_note.setWordWrap(True)
+        window.content_layout.addWidget(basis_note)
+    effort_layout = window.content_layout
+    if accepted_to_common and bounded_action:
+        previous_effort = QWidget()
+        effort_layout = QVBoxLayout(previous_effort)
+        window.content_layout.addWidget(InfoDisclosure(
+            f"Individual correction · Test {info['screen_trials_spent']}", previous_effort))
+    if bounded_action:
+        extension_from = bounded_action.get("extension_from")
+        effort_label = (
+            f"Continuation after {extension_from} iterations" if extension_from
+            else "Adaptive correction"
+        )
+        effort = QLabel(
+            f"{effort_label} · {bounded_action['spent']} / {bounded_action['total']} "
+            f"iterations used across all attempts · "
+            f"{bounded_action['stage_iterations']} maximum in this stage. "
+            f"{bounded_action['wall_seconds'] / 3600:g} h deadline includes preparation "
+            "and checks. Saved fits and approvals stay available.")
+        effort.setObjectName("adaptiveEffort")
+        effort.setWordWrap(True)
+        effort_layout.addWidget(effort)
+        if bounded_action.get("joint_status"):
+            detail = QLabel(bounded_action["joint_status"])
+            detail.setWordWrap(True)
+            effort_layout.addWidget(detail)
+        if bounded_action["closed"]:
+            note = QLabel(bounded_action["reason"] + (
+                "" if regional_accepted else " Anatomical review is still required."))
+            note.setObjectName("adaptiveResult")
+            note.setWordWrap(True)
+            effort_layout.addWidget(note)
+    elif regional_trial and not guard_failures and type(iterations) is int and iterations > 0:
+        if checkpoint:
+            total = checkpoint["total_iterations"]
+            text = (
+                f"Local continuation · up to {iterations:,} more iterations. "
+                f"The correction is capped at {total:,} across both tests."
+                if checkpoint_continuation else
+                f"First local check · up to {iterations:,} of {total:,} correction iterations. "
+                "Then inspect each marked area and the surface checks."
+            )
+        else:
+            text = (
+                f"Single protected local fit · up to {iterations:,} iterations, "
+                "then surface checks."
+            )
+        note = QLabel(text)
+        note.setObjectName("singleRegionalEffort")
+        note.setWordWrap(True)
+        window.content_layout.addWidget(note)
+    if (starting_choice or optional_choice) and not running:
+        from diffeoforge.desktop.guided_feedback import render_starting_choice
+
+        choice_card = QFrame(window.content)
+        choice_card.setObjectName("card")
+        choice_card.setProperty("startingFitChoice", True)
+        data = starting_choice or guidance["feedback"][optional_choice["identifier"]]
+        render_starting_choice(window, data["starting_fit_choice"]["identifier"],
+                               QVBoxLayout(choice_card), data)
+        if optional_choice:
+            notice = QLabel("Checks to review · " + " ".join(optional_choice["reasons"]))
+            notice.setObjectName("regionalCheckWarning")
+            notice.setWordWrap(True)
+            window.content_layout.addWidget(notice)
+            window.content_layout.addWidget(InfoDisclosure("Correct this specimen further",
+                                                          choice_card))
+        else:
+            window.content_layout.addWidget(choice_card)
+    if review and review["pending"] and review["kind"] != "guard_stop" and not starting_choice:
+        target_note = QLabel(review["label"] if common_flow else review["explanation"])
+        target_note.setObjectName("pilotReviewTarget")
+        target_note.setWordWrap(True)
+        window.content_layout.addWidget(target_note)
+    if guidance.get('regional_scope'):
+        scope = QLabel(guidance['regional_scope']['text'])
+        scope.setWordWrap(True)
+        scope.setObjectName('regionalTrialScope')
+        effort_layout.addWidget(scope)
+    progress_summary = valid_next or guidance.get("form_progress_summary")
+    if progress_summary:
+        multiscale = (info.get("strategy") or {}).get("common_multiscale")
+        progress_value = (info.get("strategy") or {}).get("form_progress") or {}
+        final_values = (multiscale or {}).get("specification", {}).get("stages", [{}])[-1].get(
+            "values")
+        adopted = (progress_value.get("protocol", {}).get("reference", {}).get("values")
+                   == final_values)
+        progress_note = QLabel(
+            f"Accepted individual fits: {progress_summary['shapes']} / "
+            f"{progress_summary['total']} · Review and adopt the new common-model candidate."
+            if multiscale and not adopted else
+            f"Shape review: {progress_summary['shapes']} / {progress_summary['total']} forms. "
+            f"Common-model checks: {progress_summary['checked']} / "
+            f"{progress_summary['total']}.")
+        progress_note.setWordWrap(True)
+        window.content_layout.addWidget(progress_note)
+        start_description = (progress_summary.get("common_reuse") or {}).get("start_description")
+        descriptions = (progress_summary.get("transfer_note"), start_description)
+        for description in dict.fromkeys(descriptions):
+            if not description or description == start_note:
+                continue
+            note = QLabel(description)
+            note.setWordWrap(True)
+            window.content_layout.addWidget(note)
+        if not start_description and progress_summary.get("common_start"):
+            start = progress_summary["common_start"]
+            note = QLabel(f"Common-model starting basis: {start['controls']} controls. "
+                          f"Accepted complete-field demand: {start['required_controls']}. "
+                          "If needed, the larger common basis is tested first on the form "
+                          "with the highest demand. "
+                          "Accepted individual "
+                          "fits and previous decisions remain saved.")
+            note.setWordWrap(True)
+            window.content_layout.addWidget(InfoDisclosure("Common control-point basis", note))
+    if info.get("goal") == "shared_check" and not start_note:
+        note = QLabel("This check uses the standard atlas surface objective. Review the "
+                      "result against your approved individual fit before checking other forms.")
+        note.setWordWrap(True)
+        window.content_layout.addWidget(InfoDisclosure("How this atlas-model check starts", note))
+    if info["phase"] == "joint":
+        flags = snapshot.attachment_comparison.get("confirmation_freeze_settings", {})
+        moving = [name for key, name in (("freeze_template", "template"),
+                  ("freeze_control_points", "control points")) if flags.get(key) is False]
+        conditions = QLabel(
+            ("This joint test estimates the shared " + " and ".join(moving) + ". "
+             if moving else "This joint test keeps the template and control points fixed. ")
+            + ("It starts from all accepted individual deformation fields on the same basis. "
+               if snapshot.attachment_comparison.get("joint_initialization")
+               else "It starts new deformation fields. ")
+            + "Review every form after the joint fit."
+        )
+        conditions.setWordWrap(True)
+        conditions.setObjectName("jointFitConditions")
+        window.content_layout.addWidget(conditions)
+    if density_pair:
+        from diffeoforge.guided_early_density import ITERATIONS, outcome
+
+        note = QLabel(f"Both fits start from the same saved deformation. Each gets up to "
+                      f"{ITERATIONS} iterations with the same integration and fitting settings. "
+                      "Compare the whole shape and the marked areas before choosing a fit.")
+        note.setWordWrap(True)
+        window.content_layout.addWidget(note)
+        comparison = outcome(snapshot)
+        if comparison:
+            conclusion = QLabel({
+                "regression": "The denser fit triggered a surface-distance or geometry warning.",
+                "improved": "With more points, marked-area distances improved without a "
+                            "measured regression elsewhere.",
+                "unclear": "The measurements show no clear advantage for more points.",
+                "unavailable": "Both fits are saved. A paired measurement is unavailable.",
+            }[comparison] + " Inspect the two fits before choosing one.")
+            conclusion.setWordWrap(True)
+            window.content_layout.addWidget(conclusion)
+    if (info.get("goal") and not density_pair and not regional_accepted
+            and not approved_common_revision and not guard_failures and not checks_pending):
+        from diffeoforge.pilot_recovery import DESCRIPTIONS
+
+        reason = DESCRIPTIONS.get(info["goal"])
+        if reason:
+            description = QLabel(reason[0] + ". " + reason[1])
+            description.setWordWrap(True)
+            window.content_layout.addWidget(
+                InfoDisclosure("Why this test was prepared", description)
+                if common_flow else description
+            )
+    if info["phase"] == "screen" and not guidance.get("fit_direction") and not method_choice:
+        why = QLabel(
+            "Current uses oriented surfaces; Varifold ignores normal direction. "
+            "Inspect each result when ready. You can choose a starting method even if "
+            "a feature still needs work."
+        )
+        why.setWordWrap(True)
+        window.content_layout.addWidget(why)
+    completed = [c for c in snapshot.candidates if c.status == "completed"]
+    window.review_next_button.setText(review["label"] if review else "Review result")
+    window.review_next_button.setVisible(bool(review) and not running)
+    window.review_next_button.setEnabled(bool(review) and not running)
+    window.review_next_button.setToolTip(
+        review["explanation"] if review else "No completed result is ready for review.")
+    _set_action_emphasis(window.review_next_button,
+                        bool(review and review["pending"]))
+    pending = [c for c in snapshot.candidates if c.status != "completed"]
+    unresolved = [
+        c for c in snapshot.candidates if c.status not in {"completed", "failed", "interrupted"}
+    ]
+    failed = [c for c in snapshot.candidates if c.status == "failed"]
+    interrupted = [c for c in snapshot.candidates if c.status == "interrupted"]
+    resume_checks = bool(pending) and all(c.candidate_id in checks_pending for c in pending)
+    retry_blocked = any(c.candidate_id in guard_failures for c in pending)
+    window.progress.setVisible(running or bool(completed))
+    window.progress.setRange(0, len(snapshot.candidates))
+    window.progress.setValue(len(completed))
+    window.progress.setFormat(f"{len(completed)} of {len(snapshot.candidates)} trials completed")
+    window.start_button.setText(
+        common_failure["label"]
+        if common_failure
+        else "Review numerical failure · this test cannot be rerun"
+        if retry_blocked
+        else "Resume checks on saved fit · no new fitting"
+        if resume_checks
+        else f"Run joint check · {snapshot.plan.pilot_subject_count} specimens"
+        if info["phase"] == "joint"
+        else "Run common-model test · capture → detail · 2 stages"
+        if (info.get("strategy") or {}).get("common_multiscale", {}).get("stage") == "capture"
+        else "Run final detail stage · retain the checked capture"
+        if (info.get("strategy") or {}).get("common_multiscale", {}).get("stage") == "detail"
+        else f"Run control-point comparison · {len(pending)} remaining"
+        if density_pair
+        else f"Retry {interrupted[0].label} on this specimen"
+        if len(pending) == len(interrupted) == 1
+        else f"Run remaining {pending[0].label} fit · 1 specimen"
+        if (info["phase"] == "screen" and len(snapshot.candidates) == 2
+            and len(pending) == 1 and pending[0].status == "pending")
+        else f"Compare Current / Varifold · {len(pending)} trials on 1 specimen"
+        if len(snapshot.candidates) == 2
+        else "Run prepared test · 1 trial on 1 specimen"
+    )
+    if common_flow and not common_failure and info["phase"] != "joint" and info.get("target"):
+        window.start_button.setText(f"{window.start_button.text()} · {info['target']}")
+    can_run = bool(pending) and not failure_inspection
+    if bounded_action:
+        can_run = can_run and not bounded_action["closed"]
+        window.start_button.setText(
+            "Run +300 continuation" if bounded_action.get("extension_from") else
+            f"Run adaptive correction · ≤{bounded_action['total']} total iterations")
+    elif regional_trial and can_run and not (resume_checks or common_flow or retry_blocked):
+        window.start_button.setText(
+            "Run local continuation" if checkpoint_continuation else
+            f"Run first local check · up to {iterations} iterations" if checkpoint else
+            "Run single protected local fit"
+        )
+    if (can_run and not running and not resume_checks and not retry_blocked and not common_failure
+            and not density_pair and info.get("goal") != "common_multiscale"
+            and not bounded_action and not regional_trial and type(iterations) is int
+            and iterations > 0):
+        effort = QLabel(f"Up to {iterations:,} optimizer iterations per trial. "
+                        "Inspect the result and its surface checks after fitting.")
+        effort.setObjectName("preparedTrialEffort")
+        effort.setWordWrap(True)
+        window.content_layout.addWidget(effort)
+    window.start_button.setVisible(can_run and not retry_blocked)
+    window.start_button.setEnabled(can_run and not running and not retry_blocked)
+    window.start_button.setToolTip(
+        common_failure["message"]
+        if common_failure
+        else "Inspect the retained fit and numerical failure. The same failed test cannot be rerun."
+        if retry_blocked else "Reverify the saved native result and finish its surface checks. "
+        "The optimizer will not be started again."
+        if resume_checks else ""
+    )
+    _set_action_emphasis(window.start_button, can_run and not running and not retry_blocked)
+    window.cancel_button.setVisible(running)
+    window.cancel_button.setEnabled(running)
+    inspected_feedback = any(
+        value and value.get("current_inspected")
+        for value in guidance.get("feedback", {}).values()
+    )
+    window.status.setText(
+        "Computing the confirmed batch…"
+        if running
+        else common_failure["message"]
+        if common_failure
+        else review["explanation"] if review and review["kind"] == "guard_stop" and retry_blocked
+        else next(iter(guard_failures.values()))["message"]
+        if retry_blocked
+        else "Fit saved; checks incomplete. Resume checks without fitting again."
+        if resume_checks
+        else f"Test {info['screen_trials_spent']} is saved as suitable. {common_step}"
+        if common_step
+        else valid_next.get("transfer_note") or "Suitable fit saved. Prepare the next check."
+        if valid_next
+        else "This trial stopped before completion. You can retry it from the saved pilot."
+        if interrupted and not failed
+        else "A trial failed. Inspect details, retry, or choose an approved alternative."
+        if failed
+        else "Suitable fit saved. Review the next-form input issue below."
+        if next_forms
+        else "Suitable fit saved. Next: prepare its atlas-model check below."
+        if regional_accepted and any(row.get("available") for row in
+            guidance.get("shared_model_checks", {}).values())
+        else "Fit saved as suitable. Inspect or close; further refinement is optional."
+        if regional_accepted
+        else "Feedback saved."
+        if completed and inspected_feedback
+        else "Result ready for review."
+        if completed
+        else "Continuation prepared. Select Run to continue from the saved fit."
+        if bounded_action and bounded_action.get("extension_from")
+        else "Test prepared. Select Run when ready."
+    )
+    if not running and common_failure:
+        if common_failure["action"] == "inspect_template":
+            pin_action(window, snapshot, common_failure["label"], "inspect_failed_template",
+                       common_failure["candidate_id"], common_failure["message"])
+        elif common_failure.get("reference"):
+            pin_action(window, snapshot, common_failure["label"], "common_retained",
+                       common_failure["reference"], common_failure["message"])
+    if (approved_common_revision and not unresolved and not common_failure and not starting_choice
+            and (guidance.get("common_recovery") or {}).get("mode") == "adopt"):
+        pin_revision(window, snapshot, guidance, info.get("target"))
+    if (not running and not unresolved and not common_failure and not starting_choice
+            and not window._guided_footer_action):
+        for identifier, following in next_forms.items():
+            if following.get("available"):
+                if ((following.get("common_reuse") or {}).get("mode") in {"review", "feedback"}
+                        and review and review["kind"] == "common"):
+                    continue  # The fixed review button already names this exact saved result.
+                window.next_step_button.setText(following["label"])
+                window.next_step_button.setVisible(True)
+                window.next_step_button.setEnabled(True)
+                window.next_step_button.setToolTip(
+                    following.get("transfer_note") or "Prepare the next pilot step.")
+                window._guided_footer_action = (snapshot.study_directory,
+                    "adaptive_" + following["action"], identifier)
+                reuse = following.get("common_reuse") or {}
+                if reuse.get("mode") in {"review", "feedback"}:
+                    window._guided_footer_action = (snapshot.study_directory,
+                        "common_review", reuse["reference"])
+                elif reuse.get("mode") == "project_approved":
+                    window._guided_footer_action = (snapshot.study_directory,
+                        "project_approved", reuse)
+                    window.next_step_button.setToolTip(reuse["reason"])
+                _set_action_emphasis(window.next_step_button, True)
+                break
+
+    direction_pinned = False
+    direction = None if starting_choice else guidance.get("fit_direction")
+    deferred = guidance.get("defer_common") or {}
+    defer_label = "Review next specimen · " + (deferred.get("target") or "")
+    defer_reason = ("This shared-settings check stays open. Prepare the individual fit for "
+                    f"{deferred.get('target')}, then return to the shared checks.")
+    if (deferred.get("available") and not running and not unresolved and not common_failure
+            and not starting_choice
+            and (guidance.get("common_recovery") or {}).get("mode") == "stalled"):
+        if pin_action(window, snapshot, defer_label, "adaptive_defer_common",
+                      snapshot.candidates[0].candidate_id, defer_reason):
+            window.status.setText(defer_reason)
+    marked_direction = bool(direction and direction["mode"] == "trial" and not common_flow
+                            and direction["request"]["goal"] == "regional")
+    offers = guidance.get("density_comparisons", {})
+    if method_choice and not running:
+        comparison = guidance["provisional_comparison"]
+        reason = ("Both fits need improvement. Which method better preserved the overall shape "
+                  "and the projections that matter to you? " + (
+                      "If neither looks better, compare both on the next specimen."
+                      if comparison["available"] else comparison["explanation"]))
+        pin_action(window, snapshot, "Choose starting method…", "choose_method", None, reason)
+        window.status.setText(reason)
+    elif not running and not unresolved and not common_failure and not starting_choice:
+        pin_recovery(
+            window, snapshot, guidance.get("common_recovery"), current_target=info.get("target"),
+        )
+        pin_revision(window, snapshot, guidance, info.get("target"))
+        if direction and not common_flow and not (review and review["pending"]):
+            mode = direction["mode"]
+            if mode == "compare":
+                direction_pinned = pin_action(
+                    window, snapshot, ("Compare affected areas" if direction.get("tradeoff")
+                                       else "Compare saved fits"),
+                    "fit_direction_compare", direction,
+                    "Open both saved fits at the same scale. Starts no fitting.",
+                )
+            elif mode == "inputs":
+                direction_pinned = pin_action(
+                    window, snapshot, "Inspect template and alignment",
+                    "fit_direction_inputs", direction["current"],
+                    "Open the saved input surfaces. Starts no fitting.",
+                )
+            elif mode == "return":
+                direction_pinned = pin_action(
+                    window, snapshot, f"Work from saved fit · {direction['start_label']}",
+                    "fit_direction_working", (direction["identifier"], direction["current"]),
+                    "Open the saved reconstruction to confirm areas to improve and retain.",
+                    goal=direction.get("partial", False),
+                )
+            elif mode == "blocked":
+                direction_pinned = pin_action(
+                    window, snapshot, "Review other adjustments and input checks",
+                    "show_adjustments", direction["identifier"],
+                    "See other options for this starting fit and its existing marks.",
+                )
+                window.status.setText(direction["reason"])
+            elif mode == "trial":
+                from diffeoforge import regional_joint_surface
+                from diffeoforge.pilot_adaptive_run import eligible as adaptive_eligible
+
+                bounded = (not common_flow
+                           and direction["request"].get("bounded_fit_available") is True
+                           and adaptive_eligible(direction["request"]))
+                title = direction["title"]
+                if bounded:
+                    title = ("Fit marked areas together · adaptive correction"
+                             if regional_joint_surface.supported(direction["request"]["regions"])
+                             else "Adaptive correction") + " · ≤600 total iterations"
+                direction_pinned = pin_action(
+                    window, snapshot,
+                    title + " · " + direction['start_label'],
+                    "adaptive_bounded_fit" if bounded else direction.get(
+                        "action", "adaptive_recover_start"), direction["identifier"],
+                    ("Run fits the marked areas. If an area stalls, compare additional control "
+                     "points and a narrower movement kernel within 600 iterations and two hours."
+                     if bounded
+                     else "Prepare this one test. Fitting starts only when you choose Run."),
+                    goal=(dict(bounded_action=direction.get(
+                        "action", "adaptive_recover_start"), goal=direction["request"])
+                        if bounded else direction["request"]),
+                )
+            elif mode == "density":
+                identifier = direction["identifier"]
+                direction_pinned = pin_action(
+                    window, snapshot, _density_label(offers[identifier]),
+                    "adaptive_density_comparison", identifier,
+                    "Prepare two short trials from the same saved fit. Run starts both.",
+                )
+            if direction_pinned:
+                window.status.setText(direction["reason"])
+        identifier = direction["identifier"] if direction else None
+        if identifier not in offers:
+            identifier = next((key for key, row in offers.items()
+                               if row["reference"]["method"] == guidance["preferred"]),
+                              next(iter(offers), None))
+        if (identifier is not None and not common_flow
+                and not (direction_pinned and direction["mode"] == "density")):
+            density = QPushButton(_density_label(offers[identifier]))
+            density.setToolTip("Prepare two short trials from the same saved fit. Run starts both.")
+            density.clicked.connect(lambda _checked=False, selected=identifier:
+                window._start_pilot(adaptive=False, guided_action=(
+                    "adaptive_density_comparison", selected, None)))
+            window.content_layout.addWidget(InfoDisclosure("Optional control-point test", density))
+
+    def recovery_tools(candidate, layout):
+        if starting_choice or method_choice:
+            return  # No parameter adjustment may silently select an older field.
+        if (direction and direction.get("explicit_start")
+                and direction["identifier"] != candidate.candidate_id):
+            # Choosing the other method is still explicit on its card. Do not
+            # duplicate the selected field's adjustments under another method.
+            return
+        if not (direction_pinned or marked_direction):
+            _recovery(window, snapshot, candidate, layout, guidance)
+            return
+        panel = QWidget()
+        pinned_request = (direction["request"]["request"] if direction_pinned
+                          and direction["mode"] in {"trial", "density"}
+                          and direction["identifier"] == candidate.candidate_id else None)
+        _recovery(window, snapshot, candidate, QVBoxLayout(panel), guidance,
+                  optional=True, pinned_request=pinned_request)
+        adjustments = InfoDisclosure("Other adjustments and input checks", panel)
+        adjustments.setObjectName("adjustments-" + candidate.candidate_id)
+        layout.addWidget(adjustments)
+
+    def action(layout, label, kind, identifier, *, goal=None, available=True, fixed=False):
+        enabled = not running and not unresolved and available and not starting_choice
+        dispatch = kind if kind == "finish_joint" else "adaptive_" + kind
+        if fixed and enabled and pin_action(
+            window, snapshot, label, dispatch, identifier, "Prepare the next pilot step.",
+            goal=goal,
+        ):
+            return window.next_step_button
+        button = QPushButton(label, window.content)
+        button.setVisible(enabled)
+        button.setEnabled(enabled)
+        _set_action_emphasis(button, enabled and not common_flow)
+        button.clicked.connect(
+            lambda: window._start_pilot(adaptive=False, guided_action=(dispatch, identifier, goal))
+        )
+        layout.addWidget(button)
+        return button
+
+    def emphasize_next_action():
+        if not (starting_choice or common_flow or window._guided_footer_action or marked_direction
+                or (review and review["pending"])):
+            return
+        primary = (
+            window.next_step_button if starting_choice else
+            window.review_next_button if review and review["pending"]
+            and not window.review_next_button.isHidden()
+            else window.next_step_button if window._guided_footer_action
+            else window.start_button
+        )
+        for button in window.content.findChildren(QPushButton, "primary"):
+            _set_action_emphasis(button, False)
+        for button in (window.review_next_button, window.next_step_button, window.start_button):
+            _set_action_emphasis(button, button is primary and not button.isHidden()
+                                 and button.isEnabled())
+
+    if starting_choice and not running and not unresolved:
+        pending_choice = starting_choice["starting_fit_choice"]
+        pin_action(window, snapshot, "Choose starting fit…", "fit_direction_choose_start",
+                   dict(starting_fit_choice=pending_choice, choices=starting_choice["choices"]),
+                   "Inspect the latest fit or the earlier comparison, then explicitly save "
+                   "the starting fit and its red/green areas. Starts no fitting.")
+        window.status.setText("Starting fit not selected. Review the reported checks, then "
+                              "choose the exact saved fit to continue from.")
+
+    # A closed action can recommend an earlier field. A verified human choice
+    # or approval already has its own next step, including after reopening.
+    extension = (bounded_action or {}).get("extension")
+    reviewed_next = valid_next or regional_accepted or (
+        direction_pinned and direction.get("explicit_start") and not extension)
+    pending_latest = review and review["pending"] and review["kind"] == "current"
+    if (bounded_action and bounded_action.get("recommendation") and not running
+            and not starting_choice and not reviewed_next
+            and not (pending_latest and not extension)
+            and not common_failure and not retry_blocked):
+        retained = bounded_action["recommendation"]
+        identifier = snapshot.candidates[0].candidate_id
+        # A numerical recommendation is viewable; it is not a saved human choice.
+        window._guided_footer_action = None
+        if extension:
+            pin_action(window, snapshot, "Prepare +300 iterations",
+                       "adaptive_extend_bounded", identifier,
+                       "Continue from this exact saved fit with the same areas and settings. "
+                       "Fitting starts when you select Run.",
+                       goal=extension)
+            if not pending_latest:
+                review = None
+                window._guided_review_target = dict(
+                    root=snapshot.study_directory, kind="bounded_retained",
+                    candidate_id=identifier, reference=retained,
+                )
+                window.review_next_button.setText("Review retained fit · mark / edit areas…")
+                window.review_next_button.setToolTip("Inspect the saved fit and its areas.")
+                window.review_next_button.setEnabled(True)
+                window.review_next_button.show()
+            window.status.setText(_extension_reason(extension))
+        else:
+            review = None
+            window._guided_review_target = None
+            window.review_next_button.hide()
+            pin_action(window, snapshot, "Review retained adaptive fit · mark / edit areas…",
+                       "bounded_retained", (identifier, retained),
+                       "Inspect the verified retained field. Save a starting fit and its marks "
+                       "explicitly before preparing another action.")
+            window.status.setText(bounded_action["reason"] + " Review the retained fit.")
+
+    # Candidate identity is captured by each card's callbacks, never a shared selector.
+    for candidate in snapshot.candidates:
+        feedback = guidance.get("feedback", {}).get(candidate.candidate_id)
+        working = guidance.get("working_proposals", {}).get(candidate.candidate_id)
+        separate_start = bool(working and candidate.status == "completed" and not running
+                              and snapshot.visual_reviews.get(candidate.candidate_id) is not True)
+        if separate_start:
+            from diffeoforge.desktop.guided_feedback import render_starting_fits
+
+            start_card = QFrame(window.content)
+            start_card.setObjectName("card")
+            start_card.setProperty("workingFit", True)
+            start_layout = QVBoxLayout(start_card)
+            render_starting_fits(
+                window, snapshot, candidate.candidate_id, start_layout, feedback,
+                edit_current=bool(direction and direction["mode"] == "blocked"
+                                  and direction["identifier"] == candidate.candidate_id),
+            )
+            if not unresolved:
+                recovery_tools(candidate, start_layout)
+            if review and review["pending"] and review["kind"] == "common":
+                for button in start_card.findChildren(QPushButton):
+                    _set_action_emphasis(button, False)
+                window.content_layout.addWidget(InfoDisclosure(
+                    "Earlier starting fit and optional repair tools", start_card))
+            else:
+                window.content_layout.addWidget(start_card)
+        card = QFrame(window.content)
+        card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        card.setObjectName("card")
+        card.setProperty(
+            "pilotMethod", snapshot.attachment_comparison["methods"][candidate.candidate_id]
+        )
+        card.setProperty("pilotCandidate", candidate.candidate_id)
+        layout = QVBoxLayout(card)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        method_title = QLabel(("Latest attempt · saved for comparison: " if separate_start else "")
+                              + candidate.label)
+        method_title.setObjectName("sectionTitle")
+        layout.addWidget(method_title)
+        from diffeoforge.pilot_multiscale_study import marker as multiscale_marker
+
+        multiscale = multiscale_marker(snapshot.attachment_comparison)
+        if multiscale:
+            number = 1 if multiscale["stage"] == "capture" else 2
+            description = ("Capture the overall shape; detail follows after its checks."
+                           if number == 1 else
+                           "Match detail from this form's checked capture; review this result.")
+            note = QLabel(f"Common model · stage {number} of 2: {description} "
+                          f"{multiscale['specification']['controls']:,} shared control points "
+                          "· up to 120 iterations in this stage.")
+            note.setObjectName("commonMultiscaleStage")
+            note.setWordWrap(True)
+            layout.addWidget(note)
+        decision = snapshot.visual_reviews.get(candidate.candidate_id)
+        already_inspected = bool(feedback and feedback.get("current_inspected"))
+        state = (
+            "Fit saved · checks incomplete"
+            if candidate.candidate_id in checks_pending
+            else candidate.status.title()
+            if candidate.status in {"failed", "interrupted"}
+            else "Suitable for this form"
+            if decision is True
+            else "Needs improvement"
+            if decision is False
+            else "Inspected · suitability not yet approved"
+            if already_inspected
+            else "Ready to inspect"
+            if candidate.status == "completed"
+            else "Computing / queued"
+            if running
+            else candidate.status.title()
+        )
+        runtime = (candidate.metrics or {}).get("runtime_seconds")
+        total = (candidate.metrics or {}).get("pipeline_wall_seconds")
+        effort = (candidate.metrics or {}).get("objective_stages") or {}
+        if multiscale and effort.get("stage") == "detail":
+            if total is not None and effort.get("capture_pipeline_wall_seconds") is not None:
+                total += effort["capture_pipeline_wall_seconds"]
+            if runtime is not None and effort.get("capture_runtime_seconds") is not None:
+                runtime += effort["capture_runtime_seconds"]
+        if total is not None:
+            state += f" · {total / 60:.1f} min total"
+            if runtime is not None:
+                state += (f" ({runtime / 60:.1f} min fitting across both stages)"
+                          if multiscale and effort.get("stage") == "detail" else
+                          f" · {runtime / 60:.1f} min fit run" if regional_trial else
+                          f" ({runtime / 60:.1f} min fitting)" if multiscale else
+                          f" ({runtime / 60:.1f} min including review waits)")
+        elif runtime is not None:
+            state += f" · {runtime / 60:.1f} min"
+        resumed = (candidate.metrics or {}).get('qualification_resume_wall_seconds')
+        if resumed is not None:
+            state += f" · {resumed / 60:.1f} min resumed checks, no new fitting"
+        from diffeoforge.guided_progress import iteration_limited
+
+        capped = iteration_limited(candidate)
+        if capped:
+            state += " · iteration limit, provisional"
+        elif (candidate.metrics or {}).get("optimizer_stop_signal") == "pilot_review_request":
+            state += " · ended at intermediate review, not converged"
+        label = QLabel(state)
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        subjects = (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
+        ordinary = next((r["ordinary_quality"] for r in subjects.values()
+                         if r.get("ordinary_quality")), None)
+        if ordinary:
+            checked = QLabel("Source, time-resolution and native-export checks passed. "
+                "Inspect the shape before choosing Suitable fit."
+                if ordinary.get("passed") else
+                "Numerical checks did not pass. Your earlier fit stays saved; inspect "
+                "the technical measurements before another test.")
+            checked.setWordWrap(True)
+            checked.setObjectName("commonOrdinaryQuality")
+            layout.addWidget(checked)
+        cohort = [r["cohort_quality"] for r in subjects.values() if r.get("cohort_quality")]
+        if cohort:
+            checked = QLabel(f"Shared-source, time-resolution and export checks passed for "
+                f"all {len(cohort)} forms. Review the checked reconstructions below."
+                if all(r.get("passed") for r in cohort) else
+                "Shared-field checks did not pass for every form. Earlier suitable fits "
+                "and decisions stay saved.")
+            checked.setObjectName("commonCohortQuality")
+            checked.setWordWrap(True)
+            layout.addWidget(checked)
+        quality = next((r["regional_quality"] for r in subjects.values()
+                        if r.get("regional_quality")), None)
+        if quality:
+            if quality.get('qualification_wall_seconds') is not None:
+                state += f" · {quality['qualification_wall_seconds']/60:.1f} min checks"
+                label.setText(state)
+            if quality.get('numerical_selection_suitable') is False:
+                label.setText('Numerical checks did not pass · '+state)
+                label.setObjectName('statusWarning')
+            note = QLabel(_regional_check_note(
+                quality, capped=capped, approved=decision is True, starting_choice=starting_choice,
+            ))
+            note.setObjectName("regionalCheckOutcome")
+            note.setWordWrap(True)
+            layout.addWidget(note)
+            changes = _marked_area_changes(info.get("feedback"), subjects, info["target"])
+            if changes:
+                areas = QLabel(
+                    "Marked-area P95 changes (negative means closer). "
+                    "Original to fit / fit to original.\n" + "   |   ".join(changes)
+                )
+                areas.setObjectName("markedAreaP95Changes")
+                areas.setWordWrap(True)
+                layout.addWidget(areas)
+        from diffeoforge.guided_density import refinement_for
+
+        initialization = refinement_for(snapshot.attachment_comparison, candidate.candidate_id)
+        if guidance.get("common_capacity_start"):
+            starting = QLabel(guidance["common_capacity_start"])
+            starting.setWordWrap(True)
+            layout.addWidget(starting)
+        elif initialization and not start_note and candidate.candidate_id not in guard_failures:
+            starting = QLabel(
+                "Starting from your saved fitted shape; optimizer history starts anew."
+                if initialization.get("initialization") == "learned"
+                else "Starting from the saved deformation with additional zero-momentum "
+                "control points; optimizer history starts anew."
+                if initialization.get("initialization") == "nested"
+                else "Retaining your saved deformation as a fixed prefix and fitting a "
+                "local residual. The complete field chain is evaluated from the original source."
+                if initialization.get("initialization") == "residual"
+                else "This adjustment requires a fresh fit. "
+                "Compare it with your saved starting fit."
+            )
+            starting.setWordWrap(True)
+            layout.addWidget(starting)
+        if density_pair and candidate.status == "completed":
+            metrics = candidate.metrics or {}
+            surface = metrics.get("original_surface_fit", {}).get(info["target"], {})
+            if surface.get("diagonal"):
+                diagonal = surface["diagonal"]
+                distances = QLabel(
+                    f"P95 {100 * surface['p95'] / diagonal:.3f}% · "
+                    f"P99 {100 * surface['p99'] / diagonal:.3f}% of target diagonal · "
+                    f"{metrics['final_iteration']} / {metrics['maximum_iterations']} iterations"
+                )
+                distances.setWordWrap(True)
+                layout.addWidget(distances)
+        report = common_failures.get(candidate.candidate_id)
+        if report:
+            detail = QLabel(report["detail"])
+            detail.setTextFormat(Qt.TextFormat.PlainText)
+            detail.setWordWrap(True)
+            layout.addWidget(InfoDisclosure(report["title"], detail))
+        elif candidate.status in {"failed", "interrupted", "orphaned"}:
+            failure = guard_failures.get(candidate.candidate_id)
+            if failure and not (review and review["kind"] == "guard_stop"
+                                and review["candidate_id"] == candidate.candidate_id):
+                note = QLabel(failure["message"])
+                note.setWordWrap(True)
+                note.setObjectName("statusWarning")
+                layout.addWidget(note)
+            if candidate.candidate_id in checks_pending:
+                note = QLabel('The native fit finished. Choose Resume checks on saved fit '
+                              'to complete its checks without fitting again.')
+                note.setWordWrap(True)
+                layout.addWidget(note)
+            else:
+                title = "Technical failure" if candidate.status == "failed" else "Attempt details"
+                details = InfoDisclosure(title, candidate.error or (failure or {}).get("reason")
+                                         or "No usable result")
+                details.setObjectName("attemptDetails-" + candidate.candidate_id)
+                layout.addWidget(details)
+            if (not running and candidate.status == "failed"
+                    and candidate.candidate_id not in checks_pending):
+                from diffeoforge.desktop.guided_failed_parent import render as failed_actions
+
+                failed_actions(window, snapshot, candidate, layout, guidance, action)
+        if candidate in completed and not running:
+            from diffeoforge.desktop.guided_accepted_fit import render as accepted_fit
+
+            following = next_forms.get(candidate.candidate_id)
+            revision = guidance.get("common_revision", {}).get(candidate.candidate_id)
+            if (deferred.get("available") and not starting_choice and not common_failure
+                    and not (window._guided_footer_action and
+                             window._guided_footer_action[1] == "adaptive_defer_common")):
+                button = action(layout, defer_label, "defer_common", candidate.candidate_id)
+                button.setToolTip(defer_reason)
+            if revision:
+                from diffeoforge.desktop.pilot_common_model import revision as render_revision
+
+                render_revision(window, layout, candidate.candidate_id, revision)
+            if (following and not following.get("available")
+                    and not (revision and (following.get("common_reuse") or {}).get("mode")
+                             == "adopt")):
+                reason = QLabel("Next form could not be prepared: " + following["reason"])
+                reason.setWordWrap(True)
+                reason.setObjectName("statusWarning")
+                layout.addWidget(reason)
+            accepted_fit(window, candidate.candidate_id, layout,
+                         guidance.get("accepted_fits", {}).get(candidate.candidate_id)
+                         if decision is not True and not starting_choice else None)
+            if decision is True and snapshot.attachment_comparison.get("regional_objective"):
+                check = guidance.get("shared_model_checks", {}).get(candidate.candidate_id)
+                if check and check["available"]:
+                    next_check = action(layout,
+                        f"Prepare atlas-model check · {info['target']} · Test "
+                        f"{info['screen_trials_spent']}", "shared_check", candidate.candidate_id,
+                        available=guidance.get("allowed", {}).get(candidate.candidate_id, False),
+                        fixed=True)
+                    next_check.setToolTip("Keeps the saved local fit and prepares one separate "
+                        "standard-objective test from its complete field. Local constraints "
+                        "and approval remain with the local fit. No new fit starts here.")
+                elif check:
+                    reason = QLabel(check["reason"])
+                    reason.setWordWrap(True)
+                    layout.addWidget(reason)
+            has_fixed_review = (
+                common_flow and review and review.get("candidate_id") == candidate.candidate_id
+            )
+            if not has_fixed_review:
+                inspect = QPushButton("Inspect " + candidate.label + " fit")
+                inspect.setAccessibleName(inspect.text())
+                inspect.setProperty("pilotCandidate", candidate.candidate_id)
+                inspect.clicked.connect(
+                    lambda _checked=False, c=candidate: window._open_candidate(c),
+                )
+                _set_action_emphasis(inspect, False)
+                layout.addWidget(inspect)
+            subjects = (
+                (candidate.metrics or {}).get("attachment_comparison", {}).get("subjects", {})
+            )
+            outcomes = [
+                r["marked_regions"]["outcome"] for r in subjects.values() if r.get("marked_regions")
+            ]
+            if outcomes:
+                message = (
+                    "Marked-area or whole-shape distances worsened. Inspect the trade-off."
+                    if "regression" in outcomes
+                    else "Marked-area distances improved without a measured whole-shape "
+                    "regression. Inspect to confirm."
+                    if all(v == "improved" for v in outcomes)
+                    else "Marked-area measurements are inconclusive. Visual review is still needed."
+                )
+                label = QLabel(message)
+                label.setWordWrap(True)
+                layout.addWidget(label)
+            guards = [r["refinement_guard"] for r in subjects.values() if r.get("refinement_guard")]
+            if any(g["outcome"] == "regression" for g in guards):
+                regressed = [name for name, row in subjects.items()
+                             if row.get("refinement_guard", {}).get("outcome") == "regression"]
+                warning = QLabel(
+                    "Joint fitting worsened agreement compared with your accepted individual "
+                    "fit(s): " + ", ".join(regressed) + ". Inspect these forms before approval."
+                    if snapshot.attachment_comparison.get("joint_initialization") else
+                    "This test worsened whole-shape agreement. Keep the earlier "
+                    "starting fit and inspect the difference before another change.")
+                warning.setObjectName("statusWarning")
+                warning.setWordWrap(True)
+                layout.addWidget(warning)
+            method = snapshot.attachment_comparison["methods"][candidate.candidate_id]
+            valid = guidance.get("allowed", {}).get(candidate.candidate_id, False)
+            if info["phase"] != "screen":
+                from diffeoforge.desktop.guided_feedback import (
+                    render_feedback,
+                    render_starting_fits,
+                )
+
+                history_body = QWidget()
+                history_layout = QVBoxLayout(history_body)
+                feedback_layout = history_layout if decision is True else layout
+                render_feedback(window, snapshot, candidate.candidate_id, feedback_layout, feedback)
+                if not separate_start:
+                    render_starting_fits(window, snapshot, candidate.candidate_id,
+                                         feedback_layout, feedback)
+                if decision is True:
+                    layout.addWidget(InfoDisclosure(
+                        "Earlier fits and optional feedback", history_body))
+                else:
+                    history_body.deleteLater()
+            if decision is False and not valid:
+                explanation = QLabel(
+                    "This result is technically invalid. Check the failure, input meshes and "
+                    "alignment before retrying; it cannot be a starting fit.")
+                explanation.setWordWrap(True)
+                layout.addWidget(explanation)
+            if (decision is False and valid and not unresolved and not method_choice
+                    and guidance["preferred"] != method and info["phase"] != "joint"):
+                action(layout, "Use " + candidate.label + " as starting method → improve",
+                       "prefer", candidate.candidate_id)
+            has_start = bool(feedback and feedback["selected"])
+            if (not separate_start and decision is not True and (decision is False or has_start)
+                    and (valid or has_start) and not unresolved
+                    and (guidance["preferred"] == method or has_start or info["phase"] == "joint")):
+                recovery_tools(candidate, layout)
+            regional = bool(snapshot.attachment_comparison.get("regional_objective"))
+            if decision is True and regional and not separate_start:
+                next_area = guidance.get("next_area")
+                if next_area and next_area["identifier"] == candidate.candidate_id:
+                    button = action(layout, next_area["title"],
+                                    next_area["action"].removeprefix("adaptive_"),
+                                    candidate.candidate_id, goal=next_area["request"])
+                    button.setToolTip(next_area["reason"])
+                    _set_action_emphasis(button, False)
+                note = QLabel("This fit is saved as suitable for this specimen. Further "
+                              "refinement is optional. The shared atlas setup still needs "
+                              "its own check.")
+                note.setWordWrap(True)
+                layout.addWidget(note)
+                optional = QWidget()
+                optional_layout = QVBoxLayout(optional)
+                _recovery(window, snapshot, candidate, optional_layout, guidance, optional=True)
+                disclosure = InfoDisclosure("Optional further refinement", optional)
+                _set_action_emphasis(disclosure.toggle_button, False)
+                disclosure.toggle_button.setToolTip(
+                    "Show optional adjustments. Opening these controls starts no fit.")
+                layout.addWidget(disclosure)
+            if (decision is True and info["phase"] != "joint" and not regional
+                    and candidate.candidate_id not in next_forms):
+                remaining = remaining_forms(snapshot, candidate.candidate_id, context=guidance)
+                action(
+                    layout,
+                    ("Check remaining forms" if remaining else "Prepare joint check")
+                    + f" · {info['target']} · Test {info['screen_trials_spent']}"
+                    if common_flow else "Use " + candidate.label + (
+                        " → check remaining forms" if remaining else " → prepare joint check"
+                    ),
+                    "confirm",
+                    candidate.candidate_id,
+                    available=not unresolved and valid,
+                    fixed=common_flow,
+                )
+        if accepted_to_common:
+            if quality and quality.get("numerical_selection_suitable") is False:
+                warning = QLabel("The individual fit has numerical warnings. "
+                                 "Open its results below to see the checks.")
+                warning.setObjectName("statusWarning")
+                warning.setWordWrap(True)
+                window.content_layout.addWidget(warning)
+            window.content_layout.addWidget(InfoDisclosure(
+                f"Individual fit results · Test {info['screen_trials_spent']}", card))
+        else:
+            window.content_layout.addWidget(card)
+    if running or not completed:
+        emphasize_next_action()
+        return
+    approved = [c for c in completed if snapshot.visual_reviews.get(c.candidate_id) is True]
+    if info["phase"] == "joint":
+        action(
+            window.content_layout,
+            f"Check time resolution · joint fit Test {info['screen_trials_spent']} "
+            f"· {snapshot.plan.pilot_subject_count} forms",
+            "finish_joint",
+            approved[0].candidate_id if approved else None,
+            available=len(approved) == 1,
+            fixed=True,
+        )
+        emphasize_next_action()
+        return
+    if len(snapshot.candidates) == 2 and not density_pair and not method_choice:
+        covered = {r["filename"] for r in info["approved"]} | {info["target"]}
+        remaining = set(info["pilot_order"]) - covered
+        action(
+            window.content_layout,
+            "No clear preference → compare another form (2 tests)",
+            "tie",
+            None,
+            available=len(approved) == 2 and bool(remaining),
+        )
+        comparison = guidance.get("provisional_comparison") or {}
+        if len(approved) != 2 and comparison.get("eligible"):
+            note = QLabel(comparison["explanation"])
+            note.setObjectName("status")
+            note.setWordWrap(True)
+            window.content_layout.addWidget(note)
+            if comparison["available"]:
+                button = action(
+                    window.content_layout,
+                    "No clear winner yet → compare another form provisionally (2 tests)",
+                    "compare_unresolved",
+                    None,
+                )
+                button.setToolTip("Next selected form: " + comparison["target"])
+                _set_action_emphasis(button, False)
+        if len(approved) == 2 and not remaining:
+            tie = QLabel(
+                "Both methods passed the tested forms. Choose a starting method; "
+                "recorded runtime can guide an efficiency choice."
+            )
+            tie.setWordWrap(True)
+            window.content_layout.addWidget(tie)
+    unsure = QLabel(
+        "Mark a fit suitable when the shape features relevant to your study are represented. "
+        "Choose Needs improvement if a missing projection or detail matters to your study. "
+        "Small surface differences can be acceptable. "
+        "Close without recording if unsure."
+    )
+    unsure.setWordWrap(True)
+    window.content_layout.addWidget(InfoDisclosure("Help with visual assessment", unsure))
+    emphasize_next_action()
+
+
+def _density_label(option):
+    return (f"Compare {option['initial_control_count']} and {option['denser_control_count']} "
+            "control points")
+
+
+def _recovery(window, snapshot, candidate, layout, guidance, *, optional=False,
+              pinned_request=None):
+    from diffeoforge.desktop.reference_calibration_dialog import _set_action_emphasis
+    from diffeoforge.guided_strategy import default_recovery_symptom
+    from diffeoforge.pilot_recovery import DESCRIPTIONS
+    from diffeoforge.pilot_regions import SYMPTOMS
+
+    identifier = candidate.candidate_id
+    common = guidance.get("common_recovery")
+    if common and not optional:
+        from diffeoforge.desktop.pilot_common_model import recovery
+
+        recovery(window, layout, identifier, common)
+        panel = QWidget()
+        inner = QVBoxLayout(panel)
+        _recovery(window, snapshot, candidate, inner, guidance, optional=True)
+        layout.addWidget(InfoDisclosure(
+            "Optional: change settings or repair this individual fit", panel))
+        return
+    working = guidance.get("working_proposals", {}).get(identifier)
+    heading = QLabel(
+        "Shared settings stay unchanged until you explicitly adopt a suitable ordinary fit. "
+        "An individual protected repair remains separate from the common-model checks."
+        if common else
+        "Improve the selected starting fit — the latest attempt stays saved"
+        if working else
+        "Optional: what would you like to improve further?"
+        if optional else "This configuration has not passed this form. What needs improvement?")
+    heading.setWordWrap(True)
+    heading.setObjectName("status")
+    layout.addWidget(heading)
+    symptoms = QComboBox()
+    symptoms.setAccessibleName("What is wrong with " + candidate.label + "?")
+    for key, label in SYMPTOMS.items():
+        symptoms.addItem(label, key)
+    saved_feedback = guidance.get("feedback", {}).get(identifier) or {}
+    regions = saved_feedback.get("problem_regions", {})
+    symptoms.setCurrentIndex(symptoms.findData(default_recovery_symptom(saved_feedback)))
+    layout.addWidget(symptoms)
+    explanation = QLabel()
+    explanation.setWordWrap(True)
+    explanation.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+    layout.addWidget(explanation)
+    prepare = QPushButton()
+    layout.addWidget(prepare)
+    state = {}
+    alternatives = QComboBox()
+    alternatives.setAccessibleName("Alternative adjustment for " + candidate.label)
+    alternatives.addItem("Use the suggested next step", None)
+    proposals = working or guidance["proposals"][identifier]
+    for key, (title, _reason) in DESCRIPTIONS.items():
+        alternatives.addItem(title, key)
+        option = proposals.get("goal:" + key)
+        if option and not option["available"]:
+            item = alternatives.model().item(alternatives.count() - 1)
+            item.setEnabled(False)
+            item.setToolTip(option.get("blocked_reason") or "Unavailable for this saved fit.")
+    options = QFrame()
+    options_layout = QVBoxLayout(options)
+    options_layout.addWidget(alternatives)
+    adjustment_choices = InfoDisclosure("Other adjustments", options)
+    adjustment_choices.setObjectName("adjustmentChoices")
+    layout.addWidget(adjustment_choices)
+    from diffeoforge.desktop.guided_diagnosis import render as render_diagnosis
+
+    diagnostics = render_diagnosis(window, snapshot, identifier, layout, guidance)
+
+    def update(*_):
+        selected = alternatives.currentData()
+        local = not common and any(regions.values()) and symptoms.currentData() not in {
+            "alignment", "topology", "view"}
+        request = ("goal:" + selected if selected else
+                   "regional:" + symptoms.currentData() if local else symptoms.currentData())
+        proposed = proposals[request]
+        state.clear()
+        state.update(proposed)
+        state["request"] = request
+        from diffeoforge.pilot_adaptive_run import eligible as adaptive_eligible
+
+        state["bounded"] = (not common and selected is None
+                            and proposed.get("bounded_fit_available") is True
+                            and adaptive_eligible(proposed))
+        explanation.setText(
+            f"{proposed['reason']} "
+            + ("Reuse a compatible saved single-form deformation on the same basis. "
+               if proposed['initialization'] == 'learned'
+               else "Keep saved control points and momenta; add zero-momentum controls. "
+               if proposed['initialization'] == 'nested'
+               else "Retain the saved deformation and add a local residual field. "
+               if proposed['initialization'] == 'residual'
+               else "This changes the deformation basis or method and needs a fresh start. ")
+            + (f"Keep all fitting settings; allow up to {proposed['optimization_iterations']} "
+               "new iterations from that saved field, with new optimizer history. "
+               if proposed['numerical_extension'] else "")
+            + ("Prepare one protected regional test, then inspect it. Regional constraints "
+               "remain explicit; a shared cohort objective needs separate validation. "
+               if proposed['goal'] == 'regional' else
+               f"Prepare one test here, then inspect it. If suitable: "
+               f"{proposed['remaining_checks']} other form(s), then a joint check. ")
+            + "Earlier results stay saved."
+            if proposed["available"] else
+            proposed.get("blocked_reason", "This unchanged combination has already been tested. "
+                         "Inspect saved alternatives or select another adjustment below; "
+                         "no repeat is prepared.")
+        )
+        prepare.setText("Prepare adaptive correction · ≤600 total iterations"
+                        if state["bounded"] else
+                        proposed["title"] + " · prepare 1 trial on 1 specimen")
+        if state["bounded"]:
+            explanation.setText(
+                "Adaptive correction: ≤600 total iterations, including comparison tests; "
+                "2 h deadline from preparation. Check every red area and protect green "
+                "areas. Earlier fits stay saved. Anatomical review is required.")
+        duplicates_footer = request == pinned_request
+        explanation.setVisible(not duplicates_footer)
+        prepare.setEnabled(proposed["available"] and not duplicates_footer)
+        prepare.setVisible(proposed["available"] and not duplicates_footer)
+        _set_action_emphasis(prepare, proposed["available"] and not duplicates_footer
+                             and not optional and not getattr(window, "_guided_common_flow", False))
+        data = guidance.get("feedback", {}).get(identifier)
+        if data and data["needs_direction"]:
+            prepare.setEnabled(False)
+            _set_action_emphasis(prepare, False)
+            explanation.setText(
+                "Tell us whether the last change helped, or choose an earlier starting fit above. "
+                "This prevents another change from building blindly on a worse attempt.")
+        if diagnostics and not proposed["available"]:
+            diagnostics.toggle_button.setChecked(True)
+
+    symptoms.currentIndexChanged.connect(update)
+    alternatives.currentIndexChanged.connect(update)
+    def prepare_selected():
+        action = "adaptive_recover_start" if working else "adaptive_recover"
+        payload = state["request"]
+        if state.get("bounded"):
+            payload = dict(bounded_action=action, goal=payload)
+            action = "adaptive_bounded_fit"
+        window._start_pilot(adaptive=False, guided_action=(action, identifier, payload))
+
+    prepare.clicked.connect(prepare_selected)
+    update()
+    if common:
+        local = QPushButton("Prepare optional protected individual repair · "
+                            "not a common-model check")
+        local.setEnabled(bool(any(regions.values())))
+        local.clicked.connect(lambda: window._start_pilot(adaptive=False,
+            guided_action=("adaptive_recover_start" if working else "adaptive_recover",
+                           identifier, "regional:" + symptoms.currentData())))
+        layout.addWidget(local)
+    if len(snapshot.candidates) == 1:
+        other = QPushButton("Alternatively: check the other method here · prepare 1 trial")
+        other_proposal = (working or guidance["proposals"][identifier])["other_method"]
+        data = guidance.get("feedback", {}).get(identifier)
+        other.setEnabled(other_proposal["available"] and not (data and data["needs_direction"]))
+        if not other_proposal["available"]:
+            other.setText("Inspect saved fit with the other method")
+            reference = next((r.get("fit") for r in reversed(guidance["cases"])
+                if r["method"] != other_proposal["anchor"]["method"]
+                and r["target"] == other_proposal["target"] and r.get("fit")), None) \
+                if other_proposal.get("anchor") else None
+            other.setEnabled(bool(reference))
+            other.setVisible(bool(reference))
+            other.clicked.connect(
+                lambda _checked=False, ref=reference: window._open_guided_saved_fit(ref))
+        else:
+            other.clicked.connect(lambda: window._start_pilot(
+                adaptive=False, guided_action=("adaptive_recover_start" if working else
+                                              "adaptive_recover", identifier, "other_method")
+            ))
+        other.setStyleSheet("QPushButton { border: 1px solid #789994; "
+                           "border-radius: 4px; padding: 8px; }")
+        layout.addWidget(other)
+    from diffeoforge.desktop.guided_input_checks import input_checks
+
+    saved = guidance.get("feedback", {}).get(identifier) or {}
+    reference = saved.get("selected") or saved.get("comparison") or guidance.get("preference")
+    input_checks(window, layout, guidance, reference)

@@ -1,0 +1,378 @@
+{
+  "backend": {
+    "contract_version": "0.3",
+    "engine_constants": {
+      "line_search_expand": 1.5,
+      "line_search_shrink": 0.5,
+      "state_file": "output/deformetrica-state.p"
+    },
+    "id": "deformetrica_reference"
+  },
+  "command_preview": {
+    "argv": [
+      "docker",
+      "run",
+      "--rm",
+      "--pull=never",
+      "--network=none",
+      "--read-only",
+      "--tmpfs=/tmp:rw,exec,nosuid,size=1g",
+      "--mount",
+      "type=bind,source=/home/runner/work/DiffeoForge/DiffeoForge/examples/runs/container-ci,target=/work",
+      "--workdir",
+      "/work",
+      "--user",
+      "1001:1001",
+      "--env",
+      "OMP_NUM_THREADS=4",
+      "--env",
+      "CUDA_VISIBLE_DEVICES=-1",
+      "--env",
+      "USE_CUDA=0",
+      "--env",
+      "MKL_CBWR=COMPATIBLE",
+      "diffeoforge-deformetrica:4.3.0-cpu",
+      "estimate",
+      "engine/model.xml",
+      "engine/data_set.xml",
+      "-p",
+      "engine/optimization_parameters.xml",
+      "--output=output",
+      "-v",
+      "INFO"
+    ],
+    "environment": {
+      "CUDA_VISIBLE_DEVICES": "-1",
+      "MKL_CBWR": "COMPATIBLE",
+      "OMP_NUM_THREADS": "4",
+      "USE_CUDA": "0"
+    },
+    "working_directory": "/home/runner/work/DiffeoForge/DiffeoForge/examples/runs/container-ci"
+  },
+  "created_at": "2026-09-14T11:18:29Z",
+  "effective_config": {
+    "input": {
+      "directory": "/home/runner/work/DiffeoForge/DiffeoForge/examples/synthetic/meshes",
+      "subject_pattern": "subject-*.vtk",
+      "template": "/home/runner/work/DiffeoForge/DiffeoForge/examples/synthetic/meshes/template.vtk",
+      "units": "unitless"
+    },
+    "model": {
+      "attachment": {
+        "kernel_width": 0.45,
+        "type": "current"
+      },
+      "deformation": {
+        "initial_control_point_spacing": 0.6,
+        "kernel_width": 0.6,
+        "timepoints": 10,
+        "use_rk2": false
+      },
+      "dimension": 3,
+      "noise_std": 0.1,
+      "object_id": "surface",
+      "type": "deterministic_atlas"
+    },
+    "optimization": {
+      "convergence_tolerance": 0.0001,
+      "downsampling_factor": 1,
+      "freeze_control_points": false,
+      "freeze_template": false,
+      "initial_step_size": 0.01,
+      "max_iterations": 100,
+      "max_line_search_iterations": 10,
+      "method": "gradient_ascent",
+      "print_every_n_iterations": 1,
+      "save_every_n_iterations": 100,
+      "scale_initial_step_size": true,
+      "sobolev_kernel_width_ratio": 1.0,
+      "use_sobolev_gradient": true
+    },
+    "output": {
+      "directory": "/home/runner/work/DiffeoForge/DiffeoForge/examples/runs",
+      "retain_flow_meshes": true
+    },
+    "project": {
+      "name": "minimal-container-example"
+    },
+    "runtime": {
+      "backend": "deformetrica_reference",
+      "device": "cpu",
+      "kernel_backend": "keops",
+      "launcher": {
+        "engine": "docker",
+        "image": "diffeoforge-deformetrica:4.3.0-cpu",
+        "type": "container"
+      },
+      "precision": "float32",
+      "processes": 1,
+      "random_seed": 20260715,
+      "threads": 4,
+      "verbosity": "INFO"
+    },
+    "schema_version": "0.1"
+  },
+  "immutability_contract": {
+    "events": "append-only JSON Lines",
+    "manifest": "write-once with SHA-256 sidecar",
+    "output": "must be empty before first execution",
+    "protected_artifacts": "verified before execution",
+    "run_directory": "never overwritten or reused"
+  },
+  "input_count": {
+    "subjects": 5,
+    "templates": 1
+  },
+  "inputs": [
+    {
+      "geometry": {
+        "bounding_box_diagonal": 2.823331365603407,
+        "bounding_box_extents": [
+          2.0,
+          1.56,
+          1.24
+        ],
+        "bounds": [
+          -1.013333333,
+          0.986666667,
+          -0.78,
+          0.78,
+          -0.62,
+          0.62
+        ],
+        "bytes": 10021,
+        "cells": 320,
+        "dataset_type": "POLYDATA",
+        "encoding": "ASCII",
+        "points": 162,
+        "sha256": "e3f5fa71028d419e28e07403af2eff932d6e950acce9a989e1f1a2cc441b8325",
+        "triangular": true,
+        "vtk_version": "3.0"
+      },
+      "role": "template",
+      "source_path": "/home/runner/work/DiffeoForge/DiffeoForge/examples/synthetic/meshes/template.vtk",
+      "staged_path": "input/template/template.vtk"
+    },
+    {
+      "geometry": {
+        "bounding_box_diagonal": 2.7957110008010484,
+        "bounding_box_extents": [
+          1.92,
+          1.6400000000000001,
+          1.2
+        ],
+        "bounds": [
+          -0.9964,
+          0.9236,
+          -0.8,
+          0.84,
+          -0.6,
+          0.6
+        ],
+        "bytes": 10026,
+        "cells": 320,
+        "dataset_type": "POLYDATA",
+        "encoding": "ASCII",
+        "points": 162,
+        "sha256": "25c07a447699028e63b535c00ca094803664fcda15595c1645d9cb3a5b73233b",
+        "triangular": true,
+        "vtk_version": "3.0"
+      },
+      "role": "subject",
+      "source_path": "/home/runner/work/DiffeoForge/DiffeoForge/examples/synthetic/meshes/subject-01.vtk",
+      "staged_path": "input/subjects/subject-01.vtk"
+    },
+    {
+      "geometry": {
+        "bounding_box_diagonal": 2.879305471810867,
+        "bounding_box_extents": [
+          2.0999999999999996,
+          1.48,
+          1.3
+        ],
+        "bounds": [
+          -1.051,
+          1.049,
+          -0.76,
+          0.72,
+          -0.64,
+          0.66
+        ],
+        "bytes": 10024,
+        "cells": 320,
+        "dataset_type": "POLYDATA",
+        "encoding": "ASCII",
+        "points": 162,
+        "sha256": "932d282639be32a04f127f86ba67bb9b2d7559a849a0169f7e87e668dbec9cc2",
+        "triangular": true,
+        "vtk_version": "3.0"
+      },
+      "role": "subject",
+      "source_path": "/home/runner/work/DiffeoForge/DiffeoForge/examples/synthetic/meshes/subject-02.vtk",
+      "staged_path": "input/subjects/subject-02.vtk"
+    },
+    {
+      "geometry": {
+        "bounding_box_diagonal": 2.811689883326396,
+        "bounding_box_extents": [
+          2.0,
+          1.6,
+          1.1600000000000001
+        ],
+        "bounds": [
+          -0.98,
+          1.02,
+          -0.77,
+          0.83,
+          -0.6,
+          0.56
+        ],
+        "bytes": 10038,
+        "cells": 320,
+        "dataset_type": "POLYDATA",
+        "encoding": "ASCII",
+        "points": 162,
+        "sha256": "87503b00d72e5700619a3c46a9dca185f42e5be8b362de7087b3d9b97a9a8486",
+        "triangular": true,
+        "vtk_version": "3.0"
+      },
+      "role": "subject",
+      "source_path": "/home/runner/work/DiffeoForge/DiffeoForge/examples/synthetic/meshes/subject-03.vtk",
+      "staged_path": "input/subjects/subject-03.vtk"
+    },
+    {
+      "geometry": {
+        "bounding_box_diagonal": 2.7669477768834017,
+        "bounding_box_extents": [
+          1.8399999999999999,
+          1.52,
+          1.4
+        ],
+        "bounds": [
+          -0.964533333,
+          0.875466667,
+          -0.77,
+          0.75,
+          -0.67,
+          0.73
+        ],
+        "bytes": 10026,
+        "cells": 320,
+        "dataset_type": "POLYDATA",
+        "encoding": "ASCII",
+        "points": 162,
+        "sha256": "b69329d0832bd5a0ec90827cd3d0f90dc6e8b30adb3239eb6b2131b09163e848",
+        "triangular": true,
+        "vtk_version": "3.0"
+      },
+      "role": "subject",
+      "source_path": "/home/runner/work/DiffeoForge/DiffeoForge/examples/synthetic/meshes/subject-04.vtk",
+      "staged_path": "input/subjects/subject-04.vtk"
+    },
+    {
+      "geometry": {
+        "bounding_box_diagonal": 2.9454371492191105,
+        "bounding_box_extents": [
+          2.16,
+          1.66,
+          1.12
+        ],
+        "bounds": [
+          -1.0464,
+          1.1136,
+          -0.83,
+          0.83,
+          -0.57,
+          0.55
+        ],
+        "bytes": 10030,
+        "cells": 320,
+        "dataset_type": "POLYDATA",
+        "encoding": "ASCII",
+        "points": 162,
+        "sha256": "0703116ec14196cb1d2737ccbc1467a170404101ae6749e8a1867bf44030c325",
+        "triangular": true,
+        "vtk_version": "3.0"
+      },
+      "role": "subject",
+      "source_path": "/home/runner/work/DiffeoForge/DiffeoForge/examples/synthetic/meshes/subject-05.vtk",
+      "staged_path": "input/subjects/subject-05.vtk"
+    }
+  ],
+  "manifest_version": "0.1",
+  "preparation_environment": {
+    "diffeoforge": "0.0.0.dev0",
+    "packages": {
+      "PyYAML": "6.0.3",
+      "jsonschema": "4.26.0"
+    },
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "python": "3.11.16 (main, Aug 13 2026, 02:46:14) [GCC 13.3.0]",
+    "python_executable": "/opt/hostedtoolcache/Python/3.11.16/x64/bin/python"
+  },
+  "project": {
+    "name": "minimal-container-example"
+  },
+  "protected_artifacts": [
+    {
+      "bytes": 1256,
+      "path": "config/source-config.yaml",
+      "sha256": "56eca7c12b9ecb67c147cc3ce60528ae78fec6456e6c5aa3d97beb7348c179f6"
+    },
+    {
+      "bytes": 1317,
+      "path": "config/effective-config.yaml",
+      "sha256": "5363bdf2359dc4f2a3db2e7c14fb0ac8d039ae9fa70267caf5975ec87ea057d2"
+    },
+    {
+      "bytes": 10021,
+      "path": "input/template/template.vtk",
+      "sha256": "e3f5fa71028d419e28e07403af2eff932d6e950acce9a989e1f1a2cc441b8325"
+    },
+    {
+      "bytes": 10026,
+      "path": "input/subjects/subject-01.vtk",
+      "sha256": "25c07a447699028e63b535c00ca094803664fcda15595c1645d9cb3a5b73233b"
+    },
+    {
+      "bytes": 10024,
+      "path": "input/subjects/subject-02.vtk",
+      "sha256": "932d282639be32a04f127f86ba67bb9b2d7559a849a0169f7e87e668dbec9cc2"
+    },
+    {
+      "bytes": 10038,
+      "path": "input/subjects/subject-03.vtk",
+      "sha256": "87503b00d72e5700619a3c46a9dca185f42e5be8b362de7087b3d9b97a9a8486"
+    },
+    {
+      "bytes": 10026,
+      "path": "input/subjects/subject-04.vtk",
+      "sha256": "b69329d0832bd5a0ec90827cd3d0f90dc6e8b30adb3239eb6b2131b09163e848"
+    },
+    {
+      "bytes": 10030,
+      "path": "input/subjects/subject-05.vtk",
+      "sha256": "0703116ec14196cb1d2737ccbc1467a170404101ae6749e8a1867bf44030c325"
+    },
+    {
+      "bytes": 936,
+      "path": "engine/model.xml",
+      "sha256": "51939375eb5bf43080b066a0334f827a4dee5ed4766c75dc8467844dbd14afe6"
+    },
+    {
+      "bytes": 981,
+      "path": "engine/data_set.xml",
+      "sha256": "6e742561eb0e176996b2b670a288210179b79573935206f7453e8230b6229914"
+    },
+    {
+      "bytes": 966,
+      "path": "engine/optimization_parameters.xml",
+      "sha256": "4a4599f1e6e00bae5fdc53ee26e893c5cf92c1bc2b6e237f3798686e6a4fa71e"
+    }
+  ],
+  "run_id": "container-ci",
+  "source_config": {
+    "path": "/home/runner/work/DiffeoForge/DiffeoForge/examples/minimal-atlas-container.yaml",
+    "sha256": "56eca7c12b9ecb67c147cc3ce60528ae78fec6456e6c5aa3d97beb7348c179f6"
+  }
+}

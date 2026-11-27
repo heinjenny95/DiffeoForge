@@ -138,7 +138,8 @@ def _fake_command(
     exit_code: int,
     stderr_characters: int = 0,
 ) -> tuple[str, ...]:
-    statements = ["import sys"]
+    # These cases test event parsing after delivery, not a race with request writing.
+    statements = ["import sys", "sys.stdin.readline()"]
     statements.extend(f"print({line!r}, flush=True)" for line in lines)
     if stderr_characters:
         statements.append(f"sys.stderr.write('x' * {stderr_characters})")
@@ -321,6 +322,29 @@ def test_controller_fails_closed_on_adversarial_event_streams(
 
     assert controller.state == "failed"
     assert not request.destination.exists()
+
+
+def test_early_worker_exit_is_a_typed_process_failure(tmp_path, monkeypatch):
+    request = _protocol_request(tmp_path)
+    original_popen = subprocess.Popen
+
+    def already_exited(*args, **kwargs):
+        process = original_popen(*args, **kwargs)
+        process.wait(timeout=5)
+        return process
+
+    # The child is already dead; isolate request-pipe classification from Job assignment.
+    monkeypatch.setattr(worker_controller, "_create_windows_worker_job", lambda: None)
+    monkeypatch.setattr(worker_controller.subprocess, "Popen", already_exited)
+    controller = DesktopWorkerController(
+        request, worker_command=(sys.executable, "-c", "import sys; sys.exit(3)"),
+    )
+    with pytest.raises(DesktopWorkerProcessError, match="request pipe") as failure:
+        controller.run()
+    assert failure.value.exit_code == 3
+    assert controller.state == "failed"
+    assert not request.destination.exists()
+    assert controller.request_cancel() is False
 
 
 def test_controller_drains_and_bounds_worker_stderr(tmp_path: Path) -> None:

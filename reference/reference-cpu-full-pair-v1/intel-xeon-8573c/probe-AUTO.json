@@ -1,0 +1,157 @@
+{
+  "cpu_model": "INTEL(R) XEON(R) PLATINUM 8573C",
+  "environment": {
+    "MKL_CBWR": "AUTO",
+    "MKL_DEBUG_CPU_TYPE": null,
+    "MKL_ENABLE_INSTRUCTIONS": null,
+    "MKL_NUM_THREADS": null,
+    "OMP_NUM_THREADS": "4"
+  },
+  "protocol": "public-reference-cpu-reduction-v1",
+  "python": "3.8.20",
+  "subjects": [
+    {
+      "gradient_sha256": "447a9e5c486510628ccf2fe04849c74814af2fda5a1800d8b944520d02d83a56",
+      "residual": 0.04449748992919922,
+      "subject": "subject-01.vtk",
+      "terms": [
+        {
+          "dot_float32": 4.158777236938477,
+          "dot_float64": 4.158777552401423,
+          "left_sha256": "0f63f68d8de3bbe862d61d1a3e704069d3fe2f7038307216c80b2a83d40f9c79",
+          "right_sha256": "43efa2a453681ea4a3febcfb768eab79e54a77dd19a2076dc48f20e31d7e2698",
+          "term": "source_self"
+        },
+        {
+          "dot_float32": 4.05076789855957,
+          "dot_float64": 4.050767550344423,
+          "left_sha256": "2a6def1d79b5edfafc1d4075843ac7598e968b90bfaa0708480a1c62bcddcca2",
+          "right_sha256": "efd78a990935637950062770b8be3d03d435c6528ce405d104df9ba6bd7be03c",
+          "term": "target_self"
+        },
+        {
+          "dot_float32": 4.082523822784424,
+          "dot_float64": 4.0825236109605125,
+          "left_sha256": "0f63f68d8de3bbe862d61d1a3e704069d3fe2f7038307216c80b2a83d40f9c79",
+          "right_sha256": "50368a32bca1c09f13637829d498fa9796cf1c1c3515b1c2473cf2c51b9fe500",
+          "term": "cross"
+        }
+      ]
+    },
+    {
+      "gradient_sha256": "37fbf5f39754cbdc839544c292610a1e995533bdc2c75286891b0db8064766bf",
+      "residual": 0.06034564971923828,
+      "subject": "subject-02.vtk",
+      "terms": [
+        {
+          "dot_float32": 4.158777236938477,
+          "dot_float64": 4.158777552401423,
+          "left_sha256": "0f63f68d8de3bbe862d61d1a3e704069d3fe2f7038307216c80b2a83d40f9c79",
+          "right_sha256": "43efa2a453681ea4a3febcfb768eab79e54a77dd19a2076dc48f20e31d7e2698",
+          "term": "source_self"
+        },
+        {
+          "dot_float32": 4.3540143966674805,
+          "dot_float64": 4.35401461163899,
+          "left_sha256": "4264942c7b42988b32586e28cc52dfe4f04b7c0e2d6a0cc86982f9055f5747f7",
+          "right_sha256": "a5f83bd13250d107dcd4bb1ec7bf9fa3b444730287b5e2615a99b91765e292bc",
+          "term": "target_self"
+        },
+        {
+          "dot_float32": 4.226222991943359,
+          "dot_float64": 4.22622263161176,
+          "left_sha256": "0f63f68d8de3bbe862d61d1a3e704069d3fe2f7038307216c80b2a83d40f9c79",
+          "right_sha256": "0e045dc01b4b116f136ff7bcd5b5e31e1f4753ff4758c8c4c3e31058ad372c08",
+          "term": "cross"
+        }
+      ]
+    },
+    {
+      "gradient_sha256": "c06236caf7ad4818db7a33349d8b8245cc460f419b950661569486699f15fb73",
+      "residual": 0.06128120422363281,
+      "subject": "subject-03.vtk",
+      "terms": [
+        {
+          "dot_float32": 4.158777236938477,
+          "dot_float64": 4.158777552401423,
+          "left_sha256": "0f63f68d8de3bbe862d61d1a3e704069d3fe2f7038307216c80b2a83d40f9c79",
+          "right_sha256": "43efa2a453681ea4a3febcfb768eab79e54a77dd19a2076dc48f20e31d7e2698",
+          "term": "source_self"
+        },
+        {
+          "dot_float32": 3.9860122203826904,
+          "dot_float64": 3.986012160387265,
+          "left_sha256": "093a8ab59d996d557b1b8049604ee112067b77174147d1503ad527a19c798a62",
+          "right_sha256": "099623228b0708db9340aee333651bab3050562f5d22244b38b4136c2fdcb62d",
+          "term": "target_self"
+        },
+        {
+          "dot_float32": 4.041754245758057,
+          "dot_float64": 4.041754121785017,
+          "left_sha256": "0f63f68d8de3bbe862d61d1a3e704069d3fe2f7038307216c80b2a83d40f9c79",
+          "right_sha256": "82fb2cb212f88704939a0fbc699688303c9c50d3ae3f148032e4dcad68b4539a",
+          "term": "cross"
+        }
+      ]
+    },
+    {
+      "gradient_sha256": "347202e7966a758ee5f3e63a2dba404eb1dace6385f14de61d45815c9e985c47",
+      "residual": 0.15306854248046875,
+      "subject": "subject-04.vtk",
+      "terms": [
+        {
+          "dot_float32": 4.158777236938477,
+          "dot_float64": 4.158777552401423,
+          "left_sha256": "0f63f68d8de3bbe862d61d1a3e704069d3fe2f7038307216c80b2a83d40f9c79",
+          "right_sha256": "43efa2a453681ea4a3febcfb768eab79e54a77dd19a2076dc48f20e31d7e2698",
+          "term": "source_self"
+        },
+        {
+          "dot_float32": 4.2423200607299805,
+          "dot_float64": 4.242319958236116,
+          "left_sha256": "752004882fb8318433b613494ed35bc23e8266065f1819a12a1e0cf77da66594",
+          "right_sha256": "9d550239232dc79109fb25c6bba22386a2fb25f10ead23a2af35cb2da9280580",
+          "term": "target_self"
+        },
+        {
+          "dot_float32": 4.124014377593994,
+          "dot_float64": 4.124014347039838,
+          "left_sha256": "0f63f68d8de3bbe862d61d1a3e704069d3fe2f7038307216c80b2a83d40f9c79",
+          "right_sha256": "adc1bdcfc5e6111c483ae06cf79afb3d0e51b60b6f25ad30644c54ea206778bc",
+          "term": "cross"
+        }
+      ]
+    },
+    {
+      "gradient_sha256": "ff1371d1c0865e998961caa406851a34d5f444b97a06a8c70e8d0dd2a5d303f2",
+      "residual": 0.1215200424194336,
+      "subject": "subject-05.vtk",
+      "terms": [
+        {
+          "dot_float32": 4.158777236938477,
+          "dot_float64": 4.158777552401423,
+          "left_sha256": "0f63f68d8de3bbe862d61d1a3e704069d3fe2f7038307216c80b2a83d40f9c79",
+          "right_sha256": "43efa2a453681ea4a3febcfb768eab79e54a77dd19a2076dc48f20e31d7e2698",
+          "term": "source_self"
+        },
+        {
+          "dot_float32": 4.2112860679626465,
+          "dot_float64": 4.2112858743933135,
+          "left_sha256": "88a5623968f6371b1e80443639f5b6ceac3fdb10b84573a8b155b06d8af5753c",
+          "right_sha256": "ecab3039c9f8454546039304b1548859871a7c04ec528e5c48849dd3252b22af",
+          "term": "target_self"
+        },
+        {
+          "dot_float32": 4.124271869659424,
+          "dot_float64": 4.124271961208908,
+          "left_sha256": "0f63f68d8de3bbe862d61d1a3e704069d3fe2f7038307216c80b2a83d40f9c79",
+          "right_sha256": "16b76812d3c268eb8e3cf04ee2003d9a7c29d08ac434e30c49ddf88655ec45e7",
+          "term": "cross"
+        }
+      ]
+    }
+  ],
+  "threads": 4,
+  "torch": "1.6.0+cpu",
+  "torch_build": "PyTorch built with:\n  - GCC 7.3\n  - C++ Version: 201402\n  - Intel(R) Math Kernel Library Version 2019.0.5 Product Build 20190808 for Intel(R) 64 architecture applications\n  - Intel(R) MKL-DNN v1.5.0 (Git Hash e2ac1fac44c5078ca927cb9b90e1b3066a0b2ed0)\n  - OpenMP 201511 (a.k.a. OpenMP 4.5)\n  - NNPACK is enabled\n  - CPU capability usage: AVX2\n  - Build settings: BLAS=MKL, BUILD_TYPE=Release, CXX_FLAGS= -Wno-deprecated -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -fopenmp -DNDEBUG -DUSE_FBGEMM -DUSE_QNNPACK -DUSE_PYTORCH_QNNPACK -DUSE_XNNPACK -DUSE_VULKAN_WRAPPER -O2 -fPIC -Wno-narrowing -Wall -Wextra -Werror=return-type -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-unused-result -Wno-unused-local-typedefs -Wno-strict-overflow -Wno-strict-aliasing -Wno-error=deprecated-declarations -Wno-stringop-overflow -Wno-error=pedantic -Wno-error=redundant-decls -Wno-error=old-style-cast -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-stringop-overflow, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, PERF_WITH_AVX512=1, USE_CUDA=0, USE_EXCEPTION_PTR=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_MKL=ON, USE_MKLDNN=ON, USE_MPI=OFF, USE_NCCL=OFF, USE_NNPACK=ON, USE_OPENMP=ON, USE_STATIC_DISPATCH=OFF, \n"
+}

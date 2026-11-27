@@ -1,0 +1,777 @@
+"""Interactive native-Qt 3D surface canvas for anatomical landmark placement."""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from itertools import product
+from threading import Event
+
+import numpy as np
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QColor,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPaintEvent,
+    QPen,
+    QWheelEvent,
+)
+from PySide6.QtWidgets import QCheckBox, QWidget
+
+from diffeoforge.desktop.display_proxy import DEFAULT_DISPLAY_FACES
+from diffeoforge.desktop.mesh_preview import MeshPreviewModel
+from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
+from diffeoforge.desktop.surface_rendering import SurfaceFrameCache, SurfaceLayer, SurfaceScene
+from diffeoforge.desktop.surface_snap import closest_surface_point
+
+INTERACTIVE_TRIANGLE_BUDGET = 5_000
+SURFACE_OPACITY = 255
+_BOX_EDGES = (
+    (0, 4), (1, 5), (2, 6), (3, 7),
+    (0, 2), (1, 3), (4, 6), (5, 7),
+    (0, 1), (2, 3), (4, 5), (6, 7),
+)
+
+
+@dataclass(frozen=True)
+class ProjectedSurface:
+    """Camera-space and screen-space geometry for one canvas state."""
+
+    original_vertices: np.ndarray
+    camera_vertices: np.ndarray
+    screen_vertices: np.ndarray
+    triangles: np.ndarray
+
+
+def camera_rotation(yaw: float, pitch: float) -> np.ndarray:
+    """Return a deterministic yaw-then-pitch rotation matrix."""
+
+    cos_yaw, sin_yaw = math.cos(yaw), math.sin(yaw)
+    cos_pitch, sin_pitch = math.cos(pitch), math.sin(pitch)
+    yaw_matrix = np.array(
+        ((cos_yaw, 0.0, sin_yaw), (0.0, 1.0, 0.0), (-sin_yaw, 0.0, cos_yaw)),
+        dtype=np.float64,
+    )
+    pitch_matrix = np.array(
+        ((1.0, 0.0, 0.0), (0.0, cos_pitch, -sin_pitch), (0.0, sin_pitch, cos_pitch)),
+        dtype=np.float64,
+    )
+    return pitch_matrix @ yaw_matrix
+
+
+def screen_drag_rotation(dx: float, dy: float) -> np.ndarray:
+    """Rotate the visible surface with a drag in screen pixels, independent of pose.
+
+    Camera +z faces the viewer and screen +y points down. Thus a positive
+    horizontal drag turns about camera +y; a downward drag about camera +x.
+    A single axis-angle rotation also makes diagonal drags reversible.
+    """
+    distance = math.hypot(dx, dy)
+    if not math.isfinite(distance):
+        raise ValueError("drag displacement must be finite")
+    if distance == 0.0:
+        return np.eye(3, dtype=np.float64)
+    x, y = dy / distance, dx / distance
+    cross = np.array(((0.0, 0.0, y), (0.0, 0.0, -x), (-y, x, 0.0)))
+    angle = distance * 0.009
+    return np.eye(3) + math.sin(angle) * cross + (1 - math.cos(angle)) * (cross @ cross)
+
+
+def _projection_pixels(width: int, height: int, zoom: float) -> float:
+    return 0.9 * max(1.0, min(float(width), float(height)) - 64.0) * zoom
+
+
+def project_surface(
+    vertices: np.ndarray,
+    triangles: np.ndarray,
+    *,
+    center: np.ndarray,
+    scale: float,
+    yaw: float,
+    pitch: float,
+    zoom: float,
+    pan: tuple[float, float],
+    width: int,
+    height: int,
+    rotation: np.ndarray | None = None,
+) -> ProjectedSurface:
+    """Project exact 3D geometry into one aspect-preserving orthographic viewport."""
+
+    if vertices.ndim != 2 or vertices.shape[1] != 3:
+        raise ValueError("vertices must have shape (n, 3)")
+    if triangles.ndim != 2 or triangles.shape[1] != 3:
+        raise ValueError("triangles must have shape (m, 3)")
+    if not math.isfinite(scale) or scale <= 0:
+        raise ValueError("scale must be finite and positive")
+    rotation = camera_rotation(yaw, pitch) if rotation is None else rotation
+    camera = ((vertices - center) / scale) @ rotation.T
+    factor = _projection_pixels(width, height, zoom)
+    screen = np.empty((vertices.shape[0], 2), dtype=np.float64)
+    screen[:, 0] = float(width) / 2.0 + pan[0] + camera[:, 0] * factor
+    screen[:, 1] = float(height) / 2.0 + pan[1] - camera[:, 1] * factor
+    return ProjectedSurface(vertices, camera, screen, triangles)
+
+
+def pick_surface_point(
+    surface: ProjectedSurface,
+    screen_position: tuple[float, float],
+) -> tuple[float, float, float] | None:
+    """Return the exact frontmost 3D triangle point below a screen coordinate."""
+
+    if surface.triangles.size == 0:
+        return None
+    points = surface.screen_vertices[surface.triangles]
+    px, py = screen_position
+    x0, y0 = points[:, 0, 0], points[:, 0, 1]
+    x1, y1 = points[:, 1, 0], points[:, 1, 1]
+    x2, y2 = points[:, 2, 0], points[:, 2, 1]
+    denominator = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+    usable = np.abs(denominator) > 1e-12
+    safe_denominator = np.where(usable, denominator, 1.0)
+    first = ((y1 - y2) * (px - x2) + (x2 - x1) * (py - y2)) / safe_denominator
+    second = ((y2 - y0) * (px - x2) + (x0 - x2) * (py - y2)) / safe_denominator
+    third = 1.0 - first - second
+    tolerance = 1e-8
+    inside = usable & (first >= -tolerance) & (second >= -tolerance) & (third >= -tolerance)
+    candidate_indices = np.flatnonzero(inside)
+    if candidate_indices.size == 0:
+        return None
+    depths = surface.camera_vertices[surface.triangles, 2]
+    interpolated_depth = first * depths[:, 0] + second * depths[:, 1] + third * depths[:, 2]
+    selected = int(candidate_indices[np.argmax(interpolated_depth[candidate_indices])])
+    source_triangle = surface.original_vertices[surface.triangles[selected]]
+    point = (
+        first[selected] * source_triangle[0]
+        + second[selected] * source_triangle[1]
+        + third[selected] * source_triangle[2]
+    )
+    return tuple(float(value) for value in point)
+
+
+class InteractiveMeshCanvas3D(QWidget):
+    """Rotate, zoom, pan, and pick arbitrary points on a mesh surface."""
+
+    surfacePointPicked = Signal(object)
+
+    def __init__(self, parent: QWidget | None = None, *, progressive_navigation=False) -> None:
+        super().__init__(parent)
+        self._model: MeshPreviewModel | None = None
+        self._surface_picker = None
+        self._pick_display_model = None
+        self._overlay = None
+        self._vertices = np.empty((0, 3), dtype=np.float64)
+        self._triangles = np.empty((0, 3), dtype=np.int64)
+        self._frames = SurfaceFrameCache(self, progressive_navigation=progressive_navigation)
+        self._frames.changed.connect(self.update)
+        self._presented_key: tuple | None = None
+        self._pick_view_key: tuple | None = None
+        self._pick_loader = PreviewMeshLoader(self)
+        self._pick_loader.loaded.connect(self._transfer_finished)
+        self._pick_loader.failed.connect(self._transfer_failed)
+        self._pick_cancel = Event()
+        self._pick_pending = False
+        self._pick_error = ""
+        self._wheel_timer = QTimer(self)
+        self._wheel_timer.setSingleShot(True)
+        self._wheel_timer.setInterval(160)
+        self._wheel_timer.timeout.connect(self.update)
+        self._center = np.zeros(3, dtype=np.float64)
+        self._scale = 1.0
+        self._ray_depth = 1.0
+        self._rotation = camera_rotation(-0.55, 0.30)
+        self._zoom = 1.0
+        self._pan = (0.0, 0.0)
+        self._markers: dict[str, tuple[float, float, float]] = {}
+        self._marker_colors: dict[str, str] = {}
+        self._surface_region = None
+        self._region_colors = None
+        self._press_position: QPointF | None = None
+        self._last_position: QPointF | None = None
+        self._drag_button: Qt.MouseButton | None = None
+        self._drag_distance = 0.0
+        self._interacting = False
+        self._picking_enabled = True
+        self.pick_instruction = "Click: place/replace landmark"
+        self.original_detail = QCheckBox("Original detail (slower)", self)
+        self.original_detail.move(12, 38)
+        self.original_detail.setToolTip(
+            "Click either view to place landmarks on the original surface. "
+            "Reduced-view clicks snap to the nearest original face; "
+            "original detail is optional for inspecting small features."
+        )
+        self.original_detail.toggled.connect(self._resolution_changed)
+        self.setMinimumHeight(500)
+        self.setMouseTracking(True)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setObjectName("interactiveLandmarkCanvas3D")
+
+    @property
+    def picking_enabled(self) -> bool:
+        return self._picking_enabled
+
+    @property
+    def rotation(self) -> np.ndarray:
+        """A copy of the current world-to-camera orientation."""
+        return self._rotation.copy()
+
+    @property
+    def zoom(self) -> float:
+        return self._zoom
+
+    def set_model(self, model: MeshPreviewModel | None, *, surface_picker=None,
+                  view_bounds=None, pick_bounds=None, pick_display_model=None) -> None:
+        self.cancel_pending_pick()
+        self._model = model
+        self._surface_picker = surface_picker
+        self._pick_display_model = model if pick_display_model is None else pick_display_model
+        self._overlay = None
+        self._surface_region = None
+        self._region_colors = None
+        self._frames.clear()
+        self._presented_key = None
+        self.original_detail.setChecked(False)
+        self.original_detail.setEnabled(model is not None and not model.geometry_is_proxy)
+        if model is None:
+            self._vertices = np.empty((0, 3), dtype=np.float64)
+            self._triangles = np.empty((0, 3), dtype=np.int64)
+            self.update()
+            return
+        self._vertices = np.asarray(model.vertices, dtype=np.float64)
+        self._triangles = np.asarray(model.triangles, dtype=np.int64)
+        bounds = np.asarray(model.bounds if view_bounds is None else view_bounds).reshape(3, 2)
+        minimum, maximum = bounds.T
+        self._center = (minimum + maximum) / 2.0
+        self._scale = float(np.max(maximum - minimum))
+        if not math.isfinite(self._scale) or self._scale <= 0:
+            self._scale = 1.0
+        if surface_picker is not None:
+            extent = np.max(np.abs(np.asarray(model.bounds if pick_bounds is None else pick_bounds)
+                                   .reshape(3, 2) - self._center[:, None]),
+                            axis=1)
+            self._ray_depth = max(1.0, 1.01 * float(np.linalg.norm(extent)) / self._scale)
+        self.update()
+
+    def set_fit_overlay(self, model: MeshPreviewModel | None) -> None:
+        """Display a bounded fit wireframe in the current original-space view."""
+        self.cancel_pending_pick()
+        self._overlay = model
+        self._frames.clear()
+        self._presented_key = None
+        self.update()
+
+    def set_markers(self, markers: dict[str, tuple[float, float, float]], *, colors=None) -> None:
+        # Also called on label changes, undo and clear: a delayed transfer must
+        # never place a point under a different landmark label.
+        self.cancel_pending_pick()
+        self._markers = dict(markers)
+        self._marker_colors = dict(colors or {})
+        self.update()
+
+    def set_surface_region(self, center, radius) -> None:
+        """Highlight the same 3D face-centre brush used by feedback measurements."""
+        self._surface_region = (tuple(center), float(radius)) if center is not None else None
+        self._region_colors = None
+        self.update()
+
+    def set_surface_box(self, bounds):
+        self._surface_region = ("box", tuple(float(x) for x in bounds))
+        self._region_colors = None
+        self.update()
+
+    def set_surface_regions(self, regions, selected=None):
+        """Show all feedback patches and highlight the edited one separately."""
+        self._surface_region = ("regions", tuple(
+            (r.get("shape", "sphere"), tuple(r.get("bounds", [])),
+             tuple(r["center"]), float(r["radius"]), r.get("purpose", "problem"))
+            for r in regions), selected)
+        self._region_colors = None
+        self.update()
+
+    def _surface_layer(self, vertices, triangles):
+        if self._surface_region is None:
+            return SurfaceLayer(vertices, triangles)
+        from diffeoforge.pilot_regions import face_mask
+
+        key = (id(vertices), id(triangles), self._surface_region)
+        if self._region_colors is None or self._region_colors[0] != key:
+            if self._surface_region[0] == "regions":
+                from diffeoforge.regional_fit import mask as region_mask
+
+                colors = np.tile((170, 194, 199, 255), (len(triangles), 1))
+                rows, selected = self._surface_region[1:]
+                centres = np.asarray(vertices)[triangles].mean(1)
+                order = [i for i in range(len(rows)) if i != selected]
+                if selected is not None and 0 <= selected < len(rows):
+                    order.append(selected)
+                for i in order:
+                    shape, bounds, center, radius, purpose = rows[i]
+                    chosen = region_mask(centres, [dict(
+                        shape=shape, bounds=bounds, center=center, radius=radius)])
+                    if purpose == "problem":
+                        active, inactive = (223, 94, 103, 255), (196, 137, 145, 255)
+                    else:
+                        active, inactive = (81, 170, 124, 255), (129, 170, 149, 255)
+                    colors[chosen] = active if i == selected else inactive
+                self._region_colors = key, colors
+                return SurfaceLayer(vertices, triangles, face_colors=colors)
+            if self._surface_region[0] == "box":
+                from diffeoforge.regional_fit import mask as region_mask
+
+                mask = region_mask(np.asarray(vertices)[triangles].mean(1),
+                                   [dict(shape="box", bounds=self._surface_region[1])])
+            else:
+                mask = face_mask(vertices, triangles, *self._surface_region)
+            colors = np.tile((160, 208, 192, 255), (len(triangles), 1))
+            colors[mask] = (242, 115, 45, 255)
+            self._region_colors = key, colors
+        return SurfaceLayer(vertices, triangles, face_colors=self._region_colors[1])
+
+    def cancel_pending_pick(self) -> None:
+        self._pick_cancel.set()
+        self._pick_loader.cancel()
+        self._pick_pending = False
+        self._pick_error = ""
+        self._pick_view_key = None
+
+    def hideEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        self.cancel_pending_pick()
+        super().hideEvent(event)
+
+    def _frame_key(self) -> tuple:
+        return (
+            id(self._model),
+            self.width(),
+            self.height(),
+            tuple(self._rotation.ravel()),
+            self._zoom,
+            self._pan,
+            self.original_detail.isChecked(),
+            self._surface_region,
+            id(self._overlay),
+            id(self._pick_display_model),
+            self._interacting or self._wheel_timer.isActive(),
+        )
+
+    def _resolution_changed(self, _checked: bool) -> None:
+        self.cancel_pending_pick()
+        self._frames.clear()
+        self._presented_key = self._pick_view_key = None
+        self.update()
+
+    @property
+    def full_resolution_ready(self) -> bool:
+        key = self._frame_key()
+        return bool(
+            self._model is not None
+            and not key[-1]
+            and not self._model.geometry_is_proxy
+            and (
+                self.original_detail.isChecked()
+                or self._model.triangle_count <= DEFAULT_DISPLAY_FACES
+            )
+            and self._presented_key == key
+            and self._frames.ready(key)
+        )
+
+    @property
+    def picking_ready(self) -> bool:
+        """Only pick a settled, presented frame backed by original geometry."""
+
+        key = self._frame_key()
+        return bool(
+            self._picking_enabled
+            and not self._pick_pending
+            and self._model is not None
+            and not self._model.geometry_is_proxy
+            and not key[-1]
+            and len(self._display_geometry()[1])
+            and self._presented_key == key
+            and self._frames.ready(key)
+        )
+
+    def set_picking_enabled(self, enabled: bool) -> None:
+        """Switch between landmark placement and neutral mesh viewing."""
+
+        self._picking_enabled = bool(enabled)
+        if not enabled:
+            self.cancel_pending_pick()
+        self.setCursor(
+            Qt.CursorShape.CrossCursor if self._picking_enabled else Qt.CursorShape.OpenHandCursor
+        )
+        self.update()
+
+    def reset_view(self) -> None:
+        self._rotation = camera_rotation(-0.55, 0.30)
+        self._zoom = 1.0
+        self._pan = (0.0, 0.0)
+        self.update()
+
+    def set_view_preset(self, preset: str) -> None:
+        presets = {
+            "three-quarter": (-0.55, 0.30),
+            "front": (0.0, 0.0),
+            "back": (math.pi, 0.0),
+            "left": (-math.pi / 2.0, 0.0),
+            "right": (math.pi / 2.0, 0.0),
+            "top": (0.0, -math.pi / 2.0),
+            "bottom": (0.0, math.pi / 2.0),
+        }
+        if preset not in presets:
+            raise ValueError(f"Unsupported 3D view preset: {preset!r}")
+        self._rotation = camera_rotation(*presets[preset])
+        self._pan = (0.0, 0.0)
+        self.update()
+
+    def set_view_rotation(self, rotation: np.ndarray) -> None:
+        """Open a mesh at the orientation already used for its visual review."""
+        self._rotation = rotation.copy()
+        self.update()
+
+    def rotate_view(self, dx: float, dy: float) -> None:
+        """Apply a screen-axis drag without transforming any stored geometry."""
+        self._rotation = screen_drag_rotation(dx, dy) @ self._rotation
+        self.update()
+
+    def _display_geometry(self) -> tuple[np.ndarray, np.ndarray]:
+        if self._model is not None and not self.original_detail.isChecked():
+            proxy = self._model.display_proxy
+            if proxy is not None:
+                return proxy.vertices, proxy.triangles
+            if len(self._triangles) > DEFAULT_DISPLAY_FACES:
+                return np.empty((0, 3)), np.empty((0, 3), dtype=np.int64)
+        return self._vertices, self._triangles
+
+    def _surface(self, *, displayed: bool = False) -> ProjectedSurface | None:
+        if self._model is None or self._vertices.size == 0:
+            return None
+        vertices, triangles = (
+            self._display_geometry() if displayed else (self._vertices, self._triangles)
+        )
+        return self._project_geometry(vertices, triangles)
+
+    def _project_geometry(self, vertices, triangles):
+        return project_surface(
+            vertices,
+            triangles,
+            center=self._center,
+            scale=self._scale,
+            yaw=0.0,
+            pitch=0.0,
+            zoom=self._zoom,
+            pan=self._pan,
+            width=self.width(),
+            height=self.height(),
+            rotation=self._rotation,
+        )
+
+    def pick_at(self, position: QPointF) -> tuple[float, float, float] | None:
+        """Pick the foremost original triangle along this viewport ray."""
+        if self._surface_picker is not None:
+            width, height = self.width(), self.height()
+            factor = _projection_pixels(width, height, self._zoom)
+            x = (position.x() - width / 2 - self._pan[0]) / factor
+            y = (height / 2 + self._pan[1] - position.y()) / factor
+            ray = np.array(((x, y, self._ray_depth), (x, y, -self._ray_depth))) @ self._rotation
+            start, end = ray * self._scale + self._center
+            return self._surface_picker(start, end)
+        surface = self._surface()
+        if surface is None:
+            return None
+        return pick_surface_point(surface, (position.x(), position.y()))
+
+    def _pick_displayed_surface(self, position: QPointF) -> None:
+        model = self._model
+        if model is None or model.geometry_is_proxy:
+            return
+        if self._surface_picker is not None:
+            active = self._pick_display_model
+            proxy = active.display_proxy
+            if active is not model:
+                # An overlay can pick its fitted layer while the base model is
+                # still the original. Gate against what that active layer draws,
+                # then intersect its exact surface; never require original faces.
+                if proxy is not None:
+                    vertices, triangles = proxy.vertices, proxy.triangles
+                elif (active.triangle_count <= DEFAULT_DISPLAY_FACES
+                      and hasattr(active, "edges") and len(active.edges)):
+                    vertices = np.asarray(active.vertices, dtype=np.float64)
+                    triangles = np.asarray(active.triangles, dtype=np.int64)
+                else:
+                    self._pick_error = "The active surface preview is not ready."
+                    self.update()
+                    return
+                surface = self._project_geometry(vertices, triangles)
+                if (surface is None
+                        or pick_surface_point(surface, (position.x(), position.y())) is None):
+                    self._pick_error = "No active surface at this point. Try another view."
+                    self.update()
+                    return
+            elif not self.original_detail.isChecked() and proxy is not None and proxy.reduced:
+                # Require the click to be over the displayed mesh as well as a hit
+                # on the original. An opening in either surface stays unpickable.
+                surface = self._surface(displayed=True)
+                screen_point = position.x(), position.y()
+                if surface is None or pick_surface_point(surface, screen_point) is None:
+                    return
+            point = self.pick_at(position)
+            if point is not None:
+                self._pick_error = ""
+                self.surfacePointPicked.emit(point)
+            else:
+                self._pick_error = "No surface at this point. Try full detail or another view."
+                self.update()
+            return
+        surface = self._surface(displayed=True)
+        if surface is None:
+            return
+        point = pick_surface_point(surface, (position.x(), position.y()))
+        if point is None:
+            return
+        self._pick_error = ""
+        proxy = model.display_proxy
+        if self.original_detail.isChecked() or proxy is None or not proxy.reduced:
+            self.surfacePointPicked.emit(point)
+            return
+        self._pick_cancel = Event()
+        cancel = self._pick_cancel
+        vertices, triangles = self._vertices, self._triangles
+        self._pick_pending = True
+        self._pick_loader.request_operation(
+            id(model), lambda: closest_surface_point(point, vertices, triangles, cancel=cancel)
+        )
+
+    def _transfer_finished(self, model_id: object, point: object) -> None:
+        self._pick_pending = False
+        if model_id == id(self._model) and point is not None and self._picking_enabled:
+            self.surfacePointPicked.emit(point)
+        self.update()
+
+    def _transfer_failed(self, _model_id: object, error: str) -> None:
+        self._pick_pending = False
+        self._pick_error = f"Landmark not placed: {error}"
+        self.update()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt API name
+        if event.button() not in {
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.MiddleButton,
+            Qt.MouseButton.RightButton,
+        }:
+            super().mousePressEvent(event)
+            return
+        self._pick_view_key = self._frame_key() if self.picking_ready else None
+        self._press_position = event.position()
+        self._last_position = event.position()
+        self._drag_button = event.button()
+        self._drag_distance = 0.0
+        self._interacting = True
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt API name
+        if self._last_position is None or self._drag_button is None:
+            super().mouseMoveEvent(event)
+            return
+        delta = event.position() - self._last_position
+        self._last_position = event.position()
+        self._drag_distance += abs(delta.x()) + abs(delta.y())
+        if self._drag_button == Qt.MouseButton.LeftButton:
+            self.rotate_view(delta.x(), delta.y())
+        else:
+            self._pan = (self._pan[0] + delta.x(), self._pan[1] + delta.y())
+            self.update()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt API name
+        if event.button() != self._drag_button:
+            super().mouseReleaseEvent(event)
+            return
+        should_pick = (
+            self._picking_enabled
+            and event.button() == Qt.MouseButton.LeftButton
+            and self._drag_distance <= 5.0
+            and self._press_position is not None
+        )
+        self._press_position = None
+        self._last_position = None
+        self._drag_button = None
+        self._interacting = False
+        self.setCursor(
+            Qt.CursorShape.CrossCursor if self._picking_enabled else Qt.CursorShape.OpenHandCursor
+        )
+        # Mouse-move paints may use the bounded interactive triangle preview.
+        # Always schedule a new paint after release so that preview can never
+        # remain as the apparent final surface.
+        self.update()
+        if should_pick and self._pick_view_key == self._frame_key():
+            self._pick_displayed_surface(event.position())
+
+    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802 - Qt API name
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+        self._zoom = min(8.0, max(0.25, self._zoom * math.exp(delta / 900.0)))
+        self._wheel_timer.start()
+        self.update()
+        event.accept()
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt API name
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.reset_view()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802 - Qt API name
+        del event
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#f7f9f9"))
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        if self._model is None:
+            painter.setPen(QColor("#64777c"))
+            painter.drawText(
+                self.rect().adjusted(20, 20, -20, -20),
+                Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
+                "No mesh has been loaded.",
+            )
+            painter.end()
+            return
+
+        navigation = self._interacting or self._wheel_timer.isActive()
+        key = self._frame_key()
+        vertices, triangles = self._display_geometry()
+        layers = [self._surface_layer(vertices, triangles)]
+        if self._overlay is not None:
+            overlay = self._overlay
+            proxy = overlay.display_proxy
+            if proxy is not None:
+                layers.append(SurfaceLayer(
+                    proxy.vertices, proxy.edges, wireframe=True, color=(102, 57, 142, 170),
+                ))
+            elif overlay.triangle_count <= DEFAULT_DISPLAY_FACES and hasattr(overlay, "edges"):
+                layers.append(SurfaceLayer(
+                    np.asarray(overlay.vertices), np.asarray(overlay.edges),
+                    wireframe=True, color=(102, 57, 142, 170),
+                ))
+        scene = SurfaceScene(
+            self.width(),
+            self.height(),
+            self._center,
+            self._scale,
+            self._rotation.copy(),
+            self._zoom,
+            self._pan,
+            tuple(layers),
+            navigation=navigation,
+            margin=64.0,
+        )
+        image = self._frames.request(key, scene)
+        if image is not None:
+            painter.drawImage(0, 0, image)
+            outline = self._displayed_box_outline()
+            if not outline.isEmpty():
+                # A light halo keeps the box legible across both mesh colors.
+                painter.setPen(QPen(QColor("#ffffff"), 4.0))
+                painter.drawPath(outline)
+                painter.setPen(QPen(QColor("#17424b"), 2.0))
+                painter.drawPath(outline)
+        self._presented_key = key if self._frames.ready(key) and not navigation else None
+        if (
+            navigation or not self._frames.ready(key) or not self.full_resolution_ready
+            or self._pick_pending or self._pick_error
+        ):
+            painter.fillRect(0, 0, self.width(), 34, QColor("#fff3d6"))
+            painter.setPen(QColor("#705419"))
+            painter.drawText(
+                12,
+                23,
+                self._pick_error
+                or ("Transferring landmark to original surface…" if self._pick_pending else None)
+                or self._frames.error
+                or (
+                    "Landmark picking needs the original mesh, not a display-only model."
+                    if self._model.geometry_is_proxy else None
+                )
+                or (
+                    self._model.display_proxy_error
+                    if not self.original_detail.isChecked()
+                    else None
+                )
+                or (
+                    "Navigation preview — release to place landmarks."
+                    if navigation
+                    else (
+                        "Rendering selected display resolution in background…"
+                        if not self._frames.ready(key)
+                        else f"Preview: {len(triangles):,} faces. "
+                        + ("Points use the exact surface." if self._surface_picker is not None
+                           else "Clicks snap to the original surface.")
+                    )
+                ),
+            )
+
+        # The cache may still display the preceding camera while rendering a new
+        # one. Project overlays with that image's camera too, including its old
+        # viewport after a resize. Never draw floating markers before an image.
+        for marker_number, (label, rendered) in enumerate(
+            self._displayed_marker_positions().items(), start=1
+        ):
+            painter.setPen(QPen(QColor("#ffffff"), 2.0))
+            marker_color = self._marker_colors.get(label)
+            painter.setBrush(QColor(marker_color or "#d9481c"))
+            painter.drawEllipse(rendered, 6.5, 6.5)
+            painter.setPen(QPen(QColor(marker_color or "#702109"), 1.0))
+            text = label if marker_color else f"{marker_number}: {label}"
+            painter.drawText(rendered + QPointF(9.0, -9.0), text)
+
+        painter.setPen(QColor("#52666b"))
+        painter.drawText(
+            self.rect().adjusted(14, 10, -14, -10),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
+            (self.pick_instruction + "  ·  " if self._picking_enabled else "")
+            + "Drag: rotate  ·  Right-drag: pan  "
+            "·  Wheel: zoom  ·  Double-click: reset view",
+        )
+        painter.end()
+
+    def _project_on_displayed_frame(self, points) -> list[QPointF]:
+        # During navigation or resize the cache can still show its older camera.
+        scene = self._frames.image_scene
+        if scene is None or not len(points):
+            return []
+        factor = 0.9 * max(1.0, min(scene.width, scene.height) - scene.margin) * scene.zoom
+        normalized = (np.asarray(points, dtype=np.float64) - scene.center) / scene.scale
+        camera = normalized @ scene.rotation.T
+        return [
+            QPointF(
+                scene.width / 2.0 + scene.pan[0] + float(x) * factor,
+                scene.height / 2.0 + scene.pan[1] - float(y) * factor,
+            )
+            for x, y, _ in camera
+        ]
+
+    def _displayed_box_outline(self) -> QPainterPath:
+        outline = QPainterPath()
+        if self._surface_region is None:
+            return outline
+        if self._surface_region[0] == "box":
+            bounds = self._surface_region[1]
+        elif self._surface_region[0] == "regions":
+            rows, selected = self._surface_region[1:]
+            if selected is None or not 0 <= selected < len(rows) or rows[selected][0] != "box":
+                return outline
+            bounds = rows[selected][1]
+        else:
+            return outline
+        box_vertices = list(product(bounds[:2], bounds[2:4], bounds[4:]))
+        corners = self._project_on_displayed_frame(box_vertices)
+        if corners:
+            for start, end in _BOX_EDGES:
+                outline.moveTo(corners[start])
+                outline.lineTo(corners[end])
+        return outline
+
+    def _displayed_marker_positions(self) -> dict[str, QPointF]:
+        projected = self._project_on_displayed_frame(list(self._markers.values()))
+        return dict(zip(self._markers, projected, strict=True)) if projected else {}
