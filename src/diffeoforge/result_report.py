@@ -388,11 +388,18 @@ def collect_run_report(run_directory: Path | str) -> RunReport:
             else "No checkpoint is available, so this run cannot be resumed."
         )
         notices.append(f"The numerical run was interrupted: {error_detail}. {checkpoint_detail}")
-    if result.get("resume"):
+    resume = result.get("resume")
+    if isinstance(resume, dict) and resume:
+        reference = resume.get("convergence_reference")
+        objective = (
+            f"The tolerance test used the objective from iteration {reference['origin_iteration']}."
+            if isinstance(reference, dict) and type(reference.get("origin_iteration")) is int
+            else "The optimizer initialized a new objective baseline."
+        )
         notices.append(
-            "This is a Deformetrica 4.3 successor: model parameters and iteration were "
-            "restored, while the objective baseline, gradient, and line-search step sizes "
-            "were reinitialized. Exact optimization-trajectory continuity is not guaranteed."
+            f"Deformetrica restored the model parameters and iteration. {objective} "
+            "It recalculated the gradient and line-search step sizes. "
+            "Exact optimization-trajectory continuity is not guaranteed."
         )
     if not convergence:
         notices.append(

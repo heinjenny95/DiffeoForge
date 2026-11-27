@@ -218,3 +218,10 @@ def test_resume_report_discloses_reinitialized_optimizer_state(tmp_path: Path) -
 
     assert any("line-search step sizes" in notice for notice in report.notices)
     assert any("not guaranteed" in notice for notice in report.notices)
+    assert any("new objective baseline" in notice for notice in report.notices)
+
+    result["resume"]["convergence_reference"] = {"origin_iteration": 0}
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    report = collect_run_report(run_directory)
+    assert any("objective from iteration 0" in notice for notice in report.notices)
+    assert all("new objective baseline" not in notice for notice in report.notices)
