@@ -297,7 +297,14 @@ def choose_direct_joint_start(config_path, *, enabled):
 
 def _initialization_contract(config):
     normalized = new_run_config(config)
-    normalized["project"].pop("atlas_stop", None)
+    policy = normalized["project"].pop("atlas_stop", {})
+    if "project_convergence_tolerance" in policy:
+        from diffeoforge.reference_atlas_stop import NATIVE_PRESETS
+
+        if normalized["optimization"]["convergence_tolerance"] not in NATIVE_PRESETS.values():
+            raise ConfigurationError("The chosen joint optimizer tolerance is not an atlas preset.")
+        normalized["optimization"]["convergence_tolerance"] = policy[
+            "project_convergence_tolerance"]
     return normalized
 
 
@@ -422,11 +429,16 @@ def verify_prepared_direct_joint_start(run, manifest):
         raise ConfigurationError("Prepared direct joint start lost its source configuration.")
     expected = _direct_joint_configuration(load_config(run / source), run / source)
     prepared = load_config(run / "config/source-config.yaml")
+    expected_stop = prepared["project"].get("atlas_stop")
+    from diffeoforge.reference_quality_continuation import read_continuation_origin
+
+    origin = read_continuation_origin(run, manifest)
+    if origin is not None:
+        expected_stop = origin["policy"]
     if (
         _initialization_contract(expected) != _initialization_contract(prepared)
         or initialization(expected) != plan
-        or prepared["project"].get("atlas_stop")
-        != manifest["effective_config"]["project"].get("atlas_stop")
+        or expected_stop != manifest["effective_config"]["project"].get("atlas_stop")
     ):
         raise ConfigurationError("Prepared direct joint start differs from its saved handoff.")
     inputs = {
@@ -828,7 +840,13 @@ def adapter_source(config):
         )
     if cold_individual_start_enabled(plan):
         plan = dict(plan, early_review_enabled=False, early_review_approved=False, pilot_indices=[])
-    return "\n_DF_ATLAS_PLAN = " + repr(plan) + "\n" + screen + ADAPTER
+    policy = config["project"].get("atlas_stop", {})
+    individual_tolerance = policy.get("project_convergence_tolerance")
+    adapter = ADAPTER
+    if individual_tolerance is not None:
+        adapter = adapter.replace("convergence_tolerance=self.convergence_tolerance,",
+                                  f"convergence_tolerance={individual_tolerance!r},")
+    return "\n_DF_ATLAS_PLAN = " + repr(plan) + "\n" + screen + adapter
 
 
 SCREEN_ADAPTER = """

@@ -54,7 +54,21 @@ from diffeoforge.config import (
     validate_input_paths,
 )
 from diffeoforge.mesh import MeshMetadata, inspect_inputs, sha256_file
-from diffeoforge.reference_atlas_stop import atlas_iteration_limit
+from diffeoforge.reference_atlas_stop import (
+    ITERATION_TARGET,
+    OPTIMIZER_CONVERGENCE,
+    atlas_iteration_limit,
+    stop_policy,
+)
+from diffeoforge.reference_quality_continuation import (
+    COMPLETED_STAGE_REASONS,
+    ORIGIN_PATH,
+    QualityContinuation,
+    completed_atlas_checkpoint,
+    continuation_origin_reference,
+    quality_continuation_plan,
+    read_continuation_origin,
+)
 from diffeoforge.reference_runtime import probe_reference_gpu
 from diffeoforge.resource_monitor import ProcessResourceMonitor
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
@@ -95,6 +109,8 @@ class ResumeSourceEvidence:
     checkpoint_sha256: str
     tolerance_continuation: ToleranceContinuation | None = None
     atlas_convergence_reference: dict | None = None
+    quality_continuation: QualityContinuation | None = None
+    continuation_origin_reference: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -102,32 +118,60 @@ class ToleranceContinuation:
     """Bounded manual successor settings tied to the accepted terminal state."""
 
     checkpoint_iteration: int
-    source_maximum_iterations: int
+    source_maximum_iterations: int | None
     additional_iterations: int
     maximum_iterations: int
     source_tolerance: float
     tolerance: float
     checkpoint_sha256: str
     source_log_sha256: str
+    source_reason: str | None = None
+    stage_mode: str | None = None
 
     def __post_init__(self) -> None:
         if (
             any(type(value) is not int for value in (
-                self.checkpoint_iteration, self.source_maximum_iterations,
-                self.additional_iterations, self.maximum_iterations,
+                self.checkpoint_iteration, self.additional_iterations, self.maximum_iterations,
             ))
-            or not 0 < self.checkpoint_iteration <= self.source_maximum_iterations
-            or self.additional_iterations != 300
+            or self.checkpoint_iteration < 1
+            or (self.source_maximum_iterations is not None and (
+                type(self.source_maximum_iterations) is not int
+                or self.checkpoint_iteration > self.source_maximum_iterations))
+            or self.additional_iterations < 1
             or self.maximum_iterations != self.checkpoint_iteration + self.additional_iterations
             or type(self.source_tolerance) not in {int, float}
             or type(self.tolerance) not in {int, float}
             or not math.isfinite(self.source_tolerance)
-            or not 0 < self.tolerance < self.source_tolerance
-            or self.tolerance != self.source_tolerance * 0.1
+            or self.source_tolerance <= 0 or not math.isfinite(self.tolerance)
+            or self.tolerance <= 0
+            or (self.source_reason is not None
+                and self.source_reason not in COMPLETED_STAGE_REASONS)
+            or self.stage_mode not in (None, ITERATION_TARGET, OPTIMIZER_CONVERGENCE)
+            or (self.source_reason is None) != (self.stage_mode is None)
+            or (self.stage_mode == ITERATION_TARGET and self.tolerance != self.source_tolerance)
             or any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value)
                    for value in (self.checkpoint_sha256, self.source_log_sha256))
         ):
             raise ConfigurationError("Invalid bounded tolerance continuation settings.")
+        if self.source_reason is None and (
+            self.additional_iterations != 300 or self.source_maximum_iterations is None
+            or self.tolerance != self.source_tolerance * 0.1
+        ):
+            raise ConfigurationError("Invalid bounded tolerance continuation settings.")
+
+    def record(self):
+        data = asdict(self)
+        if self.source_reason is None:
+            del data["source_reason"]
+            del data["stage_mode"]
+        return data
+
+    def resume_options(self):
+        if self.source_reason is None:
+            return {"after_tolerance": True, "additional_iterations": self.additional_iterations}
+        if self.stage_mode == ITERATION_TARGET:
+            return {"iteration_limit": self.maximum_iterations}
+        return {"optimizer_tolerance": self.tolerance, "iteration_limit": self.maximum_iterations}
 
 
 @dataclass(frozen=True)
@@ -852,6 +896,28 @@ def _verify_prepared_run_contents(
 
     verify_prepared_direct_joint_start(run_path, manifest)
     verify_prepared_cold_individual_start(run_path, manifest)
+    origin = read_continuation_origin(run_path, manifest)
+    if origin is not None:
+        provenance = _load_resume_provenance(run_path)
+        if not provenance:
+            raise ConfigurationError("The changed atlas stopping rule has no resume provenance.")
+        if "quality_continuation" in provenance or "tolerance_continuation" in provenance:
+            if (provenance["source_manifest"]["sha256"] != origin["source_manifest_sha256"]
+                    or provenance["checkpoint"]["sha256"] != origin["source_checkpoint_sha256"]):
+                raise ConfigurationError("The stopping rule is bound to a different source atlas.")
+        if "quality_continuation" in provenance:
+            quality = QualityContinuation(**provenance["quality_continuation"])
+            limit = atlas_iteration_limit(manifest["effective_config"])
+            if origin["policy"] != quality.policy or limit != quality.maximum_iterations:
+                raise ConfigurationError("The atlas differs from the requested quality stop.")
+        elif "tolerance_continuation" in provenance:
+            stage = ToleranceContinuation(**provenance["tolerance_continuation"])
+            if (stage.stage_mode is not None and (
+                origin["policy"] != stop_policy(stage.stage_mode)
+                or origin["convergence_tolerance"] != stage.tolerance
+                or atlas_iteration_limit(manifest["effective_config"]) != stage.maximum_iterations
+            )):
+                raise ConfigurationError("The atlas differs from the requested optimizer stage.")
     events = _read_events(run_path / "events.jsonl")
     if events[-1]["event"] != "prepared":
         raise ConfigurationError(
@@ -1397,6 +1463,13 @@ def _load_resume_provenance(run_directory: Path) -> Mapping[str, Any] | None:
         if (continuation.checkpoint_sha256 != checkpoint["sha256"]
                 or continuation.checkpoint_iteration != checkpoint_iteration(staged_path)):
             raise ConfigurationError("Tolerance continuation is bound to a different checkpoint.")
+    if "quality_continuation" in provenance:
+        from diffeoforge.reference_final_export_recovery import checkpoint_iteration
+
+        quality = QualityContinuation(**provenance["quality_continuation"])
+        if (quality.checkpoint_sha256 != checkpoint["sha256"]
+                or quality.checkpoint_iteration != checkpoint_iteration(staged_path)):
+            raise ConfigurationError("Morphospace continuation is bound to a different checkpoint.")
     return provenance
 
 
@@ -2098,6 +2171,22 @@ def tolerance_extension_preview(source_run_directory: Path | str) -> ToleranceCo
     return _tolerance_continuation_plan(source, manifest["effective_config"], checkpoint, digest)
 
 
+def quality_continuation_preview(
+    source_run_directory, *, quality_stop="morphospace_stability",
+    quality_iterations=300, verified_stability=None,
+) -> QualityContinuation:
+    """Read the accepted joint stop for review without preparing its successor."""
+    source = Path(source_run_directory).expanduser().resolve()
+    manifest = _read_manifest(source)
+    result = _read_json_object(source / "result.json", "Source result")
+    _, inventory = _read_output_inventory(source, result)
+    checkpoint, digest = _verified_resume_checkpoint(source, inventory)
+    return quality_continuation_plan(
+        source, manifest, checkpoint, digest, quality_stop, quality_iterations=quality_iterations,
+        verified_stability=verified_stability,
+    )
+
+
 def _verified_resume_checkpoint(
     source_run: Path, inventory: Mapping[str, Any],
 ) -> tuple[Path, str]:
@@ -2132,14 +2221,25 @@ def _verified_resume_checkpoint(
 
 def inspect_resume_source(
     source_run_directory: Path | str, *, additional_iterations: int = 0,
-    after_tolerance: bool = False,
+    after_tolerance: bool = False, quality_stop: str | None = None, quality_iterations: int = 300,
+    optimizer_tolerance: float | None = None, iteration_limit: int | None = None,
 ) -> ResumeSourceEvidence:
     """Verify resume eligibility and checkpoint integrity without changing any files."""
 
+    staged = optimizer_tolerance is not None or iteration_limit is not None
+    if staged and (
+        type(iteration_limit) is not int or (optimizer_tolerance is not None and (
+            type(optimizer_tolerance) not in (int, float)
+            or not math.isfinite(optimizer_tolerance) or optimizer_tolerance <= 0))
+        or quality_stop is not None or after_tolerance or additional_iterations
+    ):
+        raise ConfigurationError("Choose a positive optimizer tolerance and a new iteration limit.")
     if type(additional_iterations) is not int or additional_iterations not in {0, 300}:
         raise ConfigurationError("Additional iteration budget must be 0 or 300.")
     if type(after_tolerance) is not bool or (after_tolerance and additional_iterations != 300):
         raise ConfigurationError("Continuation after tolerance requires an explicit +300 budget.")
+    if quality_stop is not None and (additional_iterations or after_tolerance):
+        raise ConfigurationError("A morphospace continuation has its own stopping rule and budget.")
     source_run = Path(source_run_directory).expanduser().resolve()
     source_manifest = _read_manifest(source_run)
     if source_manifest.get("run_id") != source_run.name:
@@ -2153,7 +2253,10 @@ def inspect_resume_source(
     reject_guarded_resume(source_manifest["effective_config"])
     events = _read_events(source_run / "events.jsonl")
     terminal_status = events[-1]["event"]
-    if additional_iterations:
+    if staged or quality_stop is not None:
+        if terminal_status != "completed":
+            raise ConfigurationError("This continuation requires a completed atlas.")
+    elif additional_iterations:
         if terminal_status != "completed":
             if after_tolerance:
                 raise ConfigurationError("Tolerance continuation requires a completed run.")
@@ -2199,8 +2302,9 @@ def inspect_resume_source(
     inventory_path, inventory = _read_output_inventory(source_run, source_result)
     checkpoint_path, checkpoint_hash = _verified_resume_checkpoint(source_run, inventory)
     config = source_manifest["effective_config"]
+    origin_reference = None
     atlas_reference = None
-    if (not after_tolerance
+    if (not staged and quality_stop is None and not after_tolerance
             and config["project"].get("atlas_stop", {}).get("mode") == "optimizer_convergence"):
         provenance = _load_resume_provenance(source_run) or {}
         atlas_reference = provenance.get("convergence_reference")
@@ -2216,6 +2320,43 @@ def inspect_resume_source(
         )
         if after_tolerance else None
     )
+    if staged:
+        from diffeoforge.reference_morphospace_stopping import read_morphospace_stability
+
+        mode = config["project"].get("atlas_stop", {}).get("mode")
+        report = read_morphospace_stability(source_run) if mode else None
+        iteration, reason, log_digest = completed_atlas_checkpoint(
+            source_run, source_manifest, checkpoint_path, checkpoint_hash,
+            verified_stability=report,
+        )
+        if iteration_limit <= iteration:
+            raise ConfigurationError("The next iteration limit must exceed the saved iteration.")
+        continuation = ToleranceContinuation(
+            iteration, atlas_iteration_limit(config), iteration_limit - iteration, iteration_limit,
+            config["optimization"]["convergence_tolerance"],
+            config["optimization"]["convergence_tolerance"] if optimizer_tolerance is None
+            else optimizer_tolerance, checkpoint_hash, log_digest, reason,
+            ITERATION_TARGET if optimizer_tolerance is None else OPTIMIZER_CONVERGENCE,
+        )
+        origin_reference = continuation_origin_reference(
+            source_run, source_manifest, provenance=_load_resume_provenance(source_run) or {},
+            verified_stability=report,
+        )
+        if optimizer_tolerance is not None:
+            atlas_reference = origin_reference
+    quality = None
+    if quality_stop is not None:
+        from diffeoforge.reference_morphospace_stopping import read_morphospace_stability
+
+        report = read_morphospace_stability(source_run)
+        quality = quality_continuation_plan(
+            source_run, source_manifest, checkpoint_path, checkpoint_hash, quality_stop,
+            quality_iterations=quality_iterations, verified_stability=report,
+        )
+        origin_reference = continuation_origin_reference(
+            source_run, source_manifest, provenance=_load_resume_provenance(source_run),
+            verified_stability=report,
+        )
     return ResumeSourceEvidence(
         source_run=source_run,
         manifest=source_manifest,
@@ -2228,6 +2369,8 @@ def inspect_resume_source(
         checkpoint_sha256=checkpoint_hash,
         tolerance_continuation=continuation,
         atlas_convergence_reference=atlas_reference,
+        quality_continuation=quality,
+        continuation_origin_reference=origin_reference,
     )
 
 
@@ -2241,6 +2384,10 @@ def prepare_resume_run(
     precision: str | None = None,
     after_tolerance: bool = False,
     expected_tolerance_continuation: ToleranceContinuation | None = None,
+    optimizer_tolerance: float | None = None, iteration_limit: int | None = None,
+    quality_stop: str | None = None,
+    quality_iterations: int = 300,
+    expected_quality_continuation: QualityContinuation | None = None,
 ) -> Path:
     """Prepare an immutable checkpoint successor, optionally extending a capped budget."""
 
@@ -2252,19 +2399,35 @@ def prepare_resume_run(
         raise ConfigurationError("Tolerance continuation uses a fresh native objective reference.")
     if after_tolerance and checkpoint_mode not in {None, "compact_final_export"}:
         raise ConfigurationError("Tolerance continuation requires a reviewable final export.")
+    if (quality_stop is not None or iteration_limit is not None) and any(
+        option is not None for option in (checkpoint_mode, precision, convergence_reference)
+    ):
+        raise ConfigurationError("Choose the stop rule separately from model or export changes.")
     evidence = inspect_resume_source(
         source_run_directory, additional_iterations=additional_iterations,
-        after_tolerance=after_tolerance,
+        optimizer_tolerance=optimizer_tolerance, iteration_limit=iteration_limit,
+        after_tolerance=after_tolerance, quality_stop=quality_stop,
+        quality_iterations=quality_iterations,
     )
+    quality = evidence.quality_continuation
+    if expected_quality_continuation is not None and expected_quality_continuation != quality:
+        raise ConfigurationError("The reviewed morphospace continuation changed.")
     continuation = evidence.tolerance_continuation
     if (expected_tolerance_continuation is not None
             and continuation != expected_tolerance_continuation):
         raise ConfigurationError("The tolerance checkpoint or reviewed continuation plan changed.")
     source_run = evidence.source_run
     source_manifest = evidence.manifest
-    if continuation and source_manifest["effective_config"]["output"].get(
-        "checkpoint_mode"
-    ) == "compact_convergence_export":
+    refresh_origin = quality is not None or (continuation is not None and (
+        continuation.source_reason is not None or (source_run / ORIGIN_PATH).is_file()
+    ))
+    source_schedule = source_manifest["effective_config"]["output"].get(
+        "checkpoint_mode", "native_full_outputs"
+    )
+    if ((quality is not None or (continuation and continuation.stage_mode))
+            and source_schedule != "compact_final_export") or (
+        continuation and source_schedule == "compact_convergence_export"
+    ):
         checkpoint_mode = "compact_final_export"
     source_result_path = source_run / "result.json"
     terminal_status = evidence.terminal_status
@@ -2272,7 +2435,9 @@ def prepare_resume_run(
     checkpoint_path = evidence.checkpoint_path
     checkpoint_hash = evidence.checkpoint_sha256
     inherited_reference = None
-    if not after_tolerance and (source_run / RESUME_PROVENANCE_PATH).is_file():
+    if (quality is None and not after_tolerance
+            and not (continuation and continuation.stage_mode == ITERATION_TARGET)
+            and (source_run / RESUME_PROVENANCE_PATH).is_file()):
         source_provenance = json.loads((source_run / RESUME_PROVENANCE_PATH).read_text("utf-8"))
         inherited_reference = source_provenance.get("convergence_reference")
     atlas_reference = evidence.atlas_convergence_reference
@@ -2313,12 +2478,17 @@ def prepare_resume_run(
             atlas_reference is not None and mode == "compact_final_export"
         ):
             raise ConfigurationError("Preserved reference requires convergence-only export.")
+        last_iteration = (continuation.checkpoint_iteration if continuation else
+                          source_manifest["effective_config"]["optimization"]["max_iterations"])
         if (source_manifest["effective_config"]["optimization"]["method"] != "gradient_ascent"
-                or convergence_reference["origin_iteration"] > int(
-                    source_manifest["effective_config"]["optimization"]["max_iterations"]
-                )):
+                or convergence_reference["origin_iteration"] > last_iteration):
             raise ConfigurationError("Invalid optimizer or future convergence reference origin.")
 
+    # Rebind only the tolerance. The verified objective, iteration, precision and
+    # origin checkpoint remain those of the source.
+    if optimizer_tolerance is not None and atlas_reference is not None:
+        atlas_reference = dict(atlas_reference, convergence_tolerance=optimizer_tolerance)
+        convergence_reference = atlas_reference
     output_root = source_run.parent
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     resolved_run_id = normalize_run_id(
@@ -2344,9 +2514,26 @@ def prepare_resume_run(
 
         configure_resume(config, source_run)
         old_maximum = int(config["optimization"]["max_iterations"])
-        if continuation:
+        if quality or (continuation and continuation.stage_mode):
+            from diffeoforge.reference_atlas_handoff import (
+                direct_joint_start_enabled,
+                initialization,
+            )
+
+            plan = initialization(config)
+            if plan and not direct_joint_start_enabled(plan):
+                expected_indices = set(range(len(plan["subject_labels"])))
+                if set(plan["completed_initialization_indices"]) != expected_indices:
+                    raise ConfigurationError("Individual initialization has not been verified.")
+        if quality:
+            config["project"]["atlas_stop"] = quality.policy
+            if quality.maximum_iterations is not None:
+                config["optimization"]["max_iterations"] = quality.maximum_iterations
+        elif continuation:
             config["optimization"]["max_iterations"] = continuation.maximum_iterations
             config["optimization"]["convergence_tolerance"] = continuation.tolerance
+            if continuation.stage_mode is not None:
+                config["project"]["atlas_stop"] = stop_policy(continuation.stage_mode)
         elif additional_iterations:
             config["optimization"]["max_iterations"] = old_maximum + additional_iterations
         validate_reference_config(config)
@@ -2375,6 +2562,8 @@ def prepare_resume_run(
                 "engine/optimization_parameters.xml", "engine/sitecustomize.py",
                 "config/effective-config.yaml",
             }:
+                continue
+            if refresh_origin and relative == PurePosixPath(ORIGIN_PATH.as_posix()):
                 continue
             if precision is not None and relative.as_posix() == "engine/model.xml":
                 continue
@@ -2420,6 +2609,8 @@ def prepare_resume_run(
                 morphospace_source=morphospace_adapter_source(
                     config, manifest_subject_labels(source_manifest),
                     reference=atlas_reference, require_saved=inherited_reference is not None,
+                    previous_reference=(inherited_reference if optimizer_tolerance is not None
+                                        else None),
                 ),
             )
             if compact(config) else singleton_source
@@ -2481,10 +2672,14 @@ def prepare_resume_run(
                 "trajectory_continuity": "not_guaranteed",
             },
         }
-        if continuation:
+        if quality:
+            if sha256_file(source_run / "logs/deformetrica.log") != quality.source_log_sha256:
+                raise ConfigurationError("The optimizer stop log changed during setup.")
+            provenance["quality_continuation"] = asdict(quality)
+        elif continuation:
             if sha256_file(source_run / "logs/deformetrica.log") != continuation.source_log_sha256:
                 raise ConfigurationError("The native stop log changed during continuation setup.")
-            provenance["tolerance_continuation"] = asdict(continuation)
+            provenance["tolerance_continuation"] = continuation.record()
         elif additional_iterations:
             provenance["iteration_extension"] = {
                 "source_maximum_iterations": old_maximum,
@@ -2511,6 +2706,24 @@ def prepare_resume_run(
                 ),
                 "successor_mode": checkpoint_mode,
             }
+        if refresh_origin:
+            reference = evidence.continuation_origin_reference or atlas_reference
+            if reference is None and (source_run / ORIGIN_PATH).is_file():
+                reference = continuation_origin_reference(
+                    source_run, source_manifest, provenance=None
+                )
+            tolerance = config["optimization"]["convergence_tolerance"]
+            origin = temp_directory / ORIGIN_PATH
+            _write_json_exclusive(origin, {
+                "version": 1, "policy": config["project"].get("atlas_stop"),
+                "convergence_tolerance": tolerance,
+                "source_checkpoint_sha256": checkpoint_hash,
+                "source_manifest_sha256": provenance["source_manifest"]["sha256"],
+                "objective_reference": (
+                    dict(reference, convergence_tolerance=tolerance) if reference else None
+                ),
+            })
+            copied_artifacts.append(origin)
         _validate_resume_schema(provenance)
         provenance_path = temp_directory / RESUME_PROVENANCE_PATH
         _write_json_exclusive(provenance_path, provenance)

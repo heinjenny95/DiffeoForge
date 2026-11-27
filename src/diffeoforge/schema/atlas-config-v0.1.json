@@ -72,13 +72,17 @@
           "required": ["mode", "window_iterations", "long_window_iterations", "check_interval",
                        "cohort_threshold_percent", "specimen_threshold_percent"],
           "properties": {
-            "mode": {"enum": ["optimizer_convergence", "morphospace_stability"]},
+            "mode": {"enum": ["optimizer_convergence", "morphospace_stability", "iteration_target"]},
             "window_iterations": {"const": 200},
             "long_window_iterations": {"const": 400},
             "check_interval": {"const": 25},
             "cohort_threshold_percent": {"const": 1.0},
             "specimen_threshold_percent": {"const": 2.0},
+            "project_convergence_tolerance": {"type": "number", "exclusiveMinimum": 0},
             "unlimited_iterations": {"const": true}
+          },
+          "dependentSchemas": {
+            "project_convergence_tolerance": {"properties": {"mode": {"const": "optimizer_convergence"}}}
           },
           "if": {"required": ["unlimited_iterations"]},
           "then": {"properties": {"mode": {"const": "morphospace_stability"}}}

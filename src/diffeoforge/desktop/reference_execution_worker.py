@@ -234,12 +234,18 @@ def run_reference_execution_worker(
             from diffeoforge.reference_final_export_recovery import prepare_final_export
 
             run_directory = prepare_final_export(request.resume_source, run_id=request.run_id)
+        elif request.quality_continuation is not None:
+            run_directory = prepare_resume_run(
+                request.resume_source, run_id=request.run_id,
+                quality_stop=request.quality_continuation.mode,
+                quality_iterations=request.quality_continuation.additional_iterations,
+                expected_quality_continuation=request.quality_continuation,
+            )
         elif request.tolerance_continuation is not None:
             run_directory = prepare_resume_run(
                 request.resume_source,
                 run_id=request.run_id,
-                additional_iterations=request.additional_iterations,
-                after_tolerance=True,
+                **request.tolerance_continuation.resume_options(),
                 expected_tolerance_continuation=request.tolerance_continuation,
             )
         else:
@@ -287,7 +293,7 @@ def run_reference_execution_worker(
         tracker = ReferenceProgressTracker(
             maximum_iterations,
             convergence_tolerance=tolerance,
-            estimate_native_stop=stop_mode != MORPHOSPACE_STABILITY,
+            estimate_native_stop=stop_mode in (None, OPTIMIZER_CONVERGENCE),
         )
         started = time.monotonic()
         last_iteration: int | None = None

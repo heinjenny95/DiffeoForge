@@ -62,6 +62,11 @@ def capped_optimizer_reference(run, config, checkpoint_sha256, inherited=None):
         raise ConfigurationError("The capped atlas has no verified final convergence evidence.")
     if inherited is not None:
         return inherited
+    return optimizer_reference_from_history(report, config)
+
+
+def optimizer_reference_from_history(report, config):
+    """Read the original objective from verified joint atlas observations."""
     first = report["observations"][0]
     if first["checkpoint"] is None:
         raise ConfigurationError("The atlas objective reference has no verified origin checkpoint.")

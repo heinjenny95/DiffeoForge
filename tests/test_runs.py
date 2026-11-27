@@ -1072,8 +1072,9 @@ def _finish_at_cap(tmp_path, monkeypatch, *, stop="", limit=300):
 
 
 def _execute_cap_fixture(run, monkeypatch, *, stop="", output_files=None,
-                         checkpoint=b"opaque-native-state"):
+                         checkpoint=b"opaque-native-state", last_logged_iteration=None):
     maximum = verify_prepared_run(run)["effective_config"]["optimization"]["max_iterations"]
+    logged = maximum if last_logged_iteration is None else last_logged_iteration
     program = (
         "from pathlib import Path; "
         + "".join(
@@ -1084,7 +1085,7 @@ def _execute_cap_fixture(run, monkeypatch, *, stop="", output_files=None,
         +
         f"Path({str(run / 'output/deformetrica-state.p')!r})"
         f".write_bytes({checkpoint!r}); "
-        f"print('------ Iteration: {maximum} ------'); "
+        f"print('------ Iteration: {logged} ------'); "
         "print('Log-likelihood = -10 ; attachment = -8 ; regularity = -2'); "
         f"print({stop!r})"
     )

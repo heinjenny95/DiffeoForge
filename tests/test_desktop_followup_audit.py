@@ -161,7 +161,7 @@ def test_convergence_advice_cannot_squeeze_qc_footer(qapp, monkeypatch, width, h
     row.addWidget(QPushButton("Open Results"))
     vertical.addWidget(footer)
     future = Future()
-    future.set_result((maximum, "Recent objective improvement is still measurable. " * 10))
+    future.set_result((maximum, "Recent objective improvement is still measurable. " * 10, None))
     monkeypatch.setattr(module._POOL, "submit", lambda *args: future)
     controller = module.ConvergenceAdviceController(page, (button,))
     controller.load(Path("synthetic-capped-run"))
@@ -200,11 +200,11 @@ def test_convergence_advice_ignores_a_previous_run_and_reuses_selected_result(qa
     controller.load(previous)
     controller.load(selected)
     controller.load(selected)
-    previous_future.set_result((500, "Old advice"))
+    previous_future.set_result((500, "Old advice", None))
     controller._poll()
     assert button.isHidden() and controller.labels[0].isHidden()
 
-    selected_future.set_result((None, "Selected advice"))
+    selected_future.set_result((None, "Selected advice", None))
     controller._poll()
     controller.load(selected)
     assert requests == [previous, selected]

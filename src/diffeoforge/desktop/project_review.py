@@ -65,6 +65,7 @@ class ProjectReviewResult:
     cold_individual_atlas: bool = False
     atlas_stop_available: bool = False
     atlas_stop_mode: str | None = None
+    atlas_project_tolerance: float = 1e-6
 
 
 def _number(value: int | float) -> str:
@@ -303,10 +304,12 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         initialization,
     )
     from diffeoforge.reference_atlas_stop import (
+        ITERATION_TARGET,
         MORPHOSPACE_STABILITY,
         MORPHOSPACE_STABILITY_UNLIMITED,
         atlas_stop_available,
         atlas_stop_choice,
+        project_tolerance,
     )
 
     shared, sources = desktop_locations()
@@ -561,13 +564,17 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         *((ReviewItem(
             "Atlas stopping rule",
             {
+                ITERATION_TARGET: "Run to iteration limit",
                 MORPHOSPACE_STABILITY: "Run until morphospace stabilizes",
                 MORPHOSPACE_STABILITY_UNLIMITED: "Run until morphospace stabilizes · no limit",
-            }.get(stop_mode, "Stop at optimizer convergence and review"),
+            }.get(stop_mode, f"Optimizer convergence at {optimization['convergence_tolerance']:g}"),
             (
                 "Joint fitting has no iteration limit. Cancel and technical stops stay available. "
                 if unlimited else "The configured iteration budget applies. "
-            ) + "The stability windows count joint atlas iterations. Visual QC is separate.",
+            ) + ("Compare the cohort and each specimen over the joint atlas iterations."
+                 if stop_mode in (MORPHOSPACE_STABILITY, MORPHOSPACE_STABILITY_UNLIMITED)
+                 else "The native optimizer tests the latest change in its objective."
+                 if stop_mode != ITERATION_TARGET else "The accepted iteration sets the endpoint."),
         ),) if stop_mode else ()),
         ReviewItem(
             "Coordinate unit",
@@ -775,6 +782,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         cold_individual_atlas=cold_individual,
         atlas_stop_available=len(preflight.subjects) >= 2 and atlas_stop_available(config),
         atlas_stop_mode=stop_mode,
+        atlas_project_tolerance=project_tolerance(config),
     )
 
 

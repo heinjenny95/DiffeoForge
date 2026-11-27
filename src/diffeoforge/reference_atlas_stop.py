@@ -5,9 +5,13 @@ from pathlib import Path
 from diffeoforge.config import ConfigurationError, load_config, validate_schema
 
 OPTIMIZER_CONVERGENCE = "optimizer_convergence"
+DIFFEOFORGE_TOLERANCE = "diffeoforge_tolerance"
+DEFORMETRICA_TOLERANCE = "deformetrica_tolerance"
+NATIVE_PRESETS = {DIFFEOFORGE_TOLERANCE: 1e-6, DEFORMETRICA_TOLERANCE: 1e-4}
 MORPHOSPACE_STABILITY = "morphospace_stability"
 MORPHOSPACE_STABILITY_UNLIMITED = "morphospace_stability_unlimited"
-_MODES = (OPTIMIZER_CONVERGENCE, MORPHOSPACE_STABILITY)
+ITERATION_TARGET = "iteration_target"
+_MODES = (OPTIMIZER_CONVERGENCE, MORPHOSPACE_STABILITY, ITERATION_TARGET)
 
 
 def stop_policy(mode, *, unlimited_iterations=False):
@@ -30,17 +34,28 @@ def stop_policy(mode, *, unlimited_iterations=False):
     return policy
 
 
+def project_tolerance(config):
+    """Return the tolerance used before choosing a joint optimizer preset."""
+    policy = config["project"].get("atlas_stop", {})
+    return policy.get("project_convergence_tolerance",
+                      config["optimization"]["convergence_tolerance"])
+
+
 def atlas_stop_choice(config):
     """Return the setup choice represented by a saved policy."""
     policy = config.get("project", {}).get("atlas_stop", {})
     if policy.get("unlimited_iterations") is True:
         return MORPHOSPACE_STABILITY_UNLIMITED
+    if policy.get("mode") == OPTIMIZER_CONVERGENCE:
+        for preset, value in NATIVE_PRESETS.items():
+            if config["optimization"]["convergence_tolerance"] == value:
+                return preset
     return policy.get("mode")
 
 
 def atlas_iteration_limit(config):
     """Return the effective joint limit. Individual initialization keeps its budget."""
-    if atlas_stop_choice(config) == MORPHOSPACE_STABILITY_UNLIMITED:
+    if config["project"].get("atlas_stop", {}).get("unlimited_iterations") is True:
         return None
     return int(config["optimization"]["max_iterations"])
 
@@ -81,14 +96,21 @@ def choose_atlas_stop(config_path, mode, *, unlimited_iterations=False):
 
     path = Path(config_path).resolve()
     config = load_config(path)
-    policy = stop_policy(mode, unlimited_iterations=unlimited_iterations)
-    if config["project"].get("atlas_stop") == policy:
+    original = project_tolerance(config)
+    tolerance = NATIVE_PRESETS.get(mode, original)
+    rule = OPTIMIZER_CONVERGENCE if mode in NATIVE_PRESETS else mode
+    policy = stop_policy(rule, unlimited_iterations=unlimited_iterations)
+    if tolerance != original:
+        policy["project_convergence_tolerance"] = original
+    if (config["project"].get("atlas_stop") == policy
+            and config["optimization"]["convergence_tolerance"] == tolerance):
         return path
+    config["optimization"]["convergence_tolerance"] = tolerance
     config["project"]["atlas_stop"] = policy
     validate_schema(config)
     validate_atlas_stop(config)
     stem = path.stem
-    for other in (*_MODES, MORPHOSPACE_STABILITY_UNLIMITED):
+    for other in (*_MODES, *NATIVE_PRESETS, MORPHOSPACE_STABILITY_UNLIMITED):
         stem = stem.removesuffix(f"-stop-{other}")
     choice = atlas_stop_choice(config)
     return _write_linked_atlas_config(config, path.with_name(f"{stem}-stop-{choice}.yaml"))

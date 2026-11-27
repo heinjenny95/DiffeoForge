@@ -341,6 +341,8 @@ def test_reference_resume_prelaunch_binds_verified_source_and_successor(
     effective_config = yaml.safe_load(source_config.read_text(encoding="utf-8"))
     evidence = SimpleNamespace(
         source_run=source_run,
+        tolerance_continuation=None,
+        quality_continuation=None,
         manifest={
             "source_config": {"sha256": digest},
             "effective_config": effective_config,

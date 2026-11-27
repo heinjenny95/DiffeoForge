@@ -6,11 +6,31 @@ from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLabel
 
 from diffeoforge.convergence_advice import run_advice
-from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY
+from diffeoforge.reference_atlas_stop import (
+    ITERATION_TARGET,
+    MORPHOSPACE_STABILITY,
+    OPTIMIZER_CONVERGENCE,
+)
 from diffeoforge.reference_morphospace_stopping import read_morphospace_stability
-from diffeoforge.runs import ToleranceContinuation, run_status, tolerance_extension_preview
+from diffeoforge.runs import (
+    ToleranceContinuation,
+    quality_continuation_preview,
+    run_status,
+    tolerance_extension_preview,
+)
 
 _POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="convergence-advice")
+
+TERMINAL_REASONS = {
+    "morphospace_stable": "Morphospace stability criterion met",
+    "native_tolerance": "Native objective-change tolerance reached",
+    "iteration_limit": "Iteration limit reached",
+    "line_search_exhausted": "Line search exhausted",
+    "optimizer_callback": "Optimizer stopped by its callback",
+    "numerical_failure": "Numerical failure",
+    "backend_failure": "Backend failure",
+    "cancelled": "Cancelled",
+}
 
 
 def _comparison_text(row, iteration, required):
@@ -62,7 +82,7 @@ def _review_advice(source):
     try:
         evidence = read_morphospace_stability(source)
     except (OSError, RuntimeError, TypeError, ValueError, KeyError):
-        return None, "The saved atlas stopping evidence could not be verified."
+        return None, "The saved atlas stopping evidence could not be verified.", None
     if evidence is not None:
         terminal = evidence["terminal"]
         if terminal is None or terminal["reason"] != "iteration_limit":
@@ -74,22 +94,14 @@ def _review_advice(source):
                 "failed": "Backend failed before a terminal optimizer assessment",
             }.get(lifecycle, "No terminal optimizer assessment was saved")
         else:
-            reason = {
-                "morphospace_stable": "Morphospace stability criterion met",
-                "native_tolerance": "Native objective-change tolerance reached",
-                "iteration_limit": "Iteration limit reached",
-                "line_search_exhausted": "Line search exhausted",
-                "optimizer_callback": "Optimizer stopped by its callback",
-                "numerical_failure": "Numerical failure",
-                "backend_failure": "Backend failure",
-                "cancelled": "Cancelled",
-            }[terminal["reason"]]
+            reason = TERMINAL_REASONS[terminal["reason"]]
         rows = evidence["observations"]
         stability_stop = evidence["policy"]["mode"] == MORPHOSPACE_STABILITY
-        mode = (
-            "Run until morphospace stabilizes" if stability_stop else
-            "Stop at optimizer convergence and review"
-        )
+        mode = {
+            MORPHOSPACE_STABILITY: "Run until morphospace stabilizes",
+            OPTIMIZER_CONVERGENCE: "Stop at optimizer convergence and review",
+            ITERATION_TARGET: "Run to iteration number",
+        }[evidence["policy"]["mode"]]
         if evidence["policy"].get("unlimited_iterations"):
             mode += " (no iteration limit)"
         lines = [f"{mode} · {reason}"]
@@ -125,13 +137,18 @@ def _review_advice(source):
         continuation = tolerance_extension_preview(source)
     except (OSError, RuntimeError, TypeError, ValueError, KeyError):
         continuation = None
-    return (continuation if continuation is not None else maximum), advice
+    try:
+        quality = quality_continuation_preview(source, verified_stability=evidence)
+    except (OSError, RuntimeError, TypeError, ValueError, KeyError):
+        quality = None
+    return (continuation if continuation is not None else maximum), advice, quality
 
 
 class ConvergenceAdviceController(QObject):
-    def __init__(self, window, buttons):
+    def __init__(self, window, buttons, checkpoint_buttons=()):
         super().__init__(window)
         self.window, self.buttons = window, buttons
+        self.checkpoint_buttons = checkpoint_buttons
         self.source = None
         self.future = None
         self.labels = []
@@ -161,7 +178,8 @@ class ConvergenceAdviceController(QObject):
         self.source = source
         self.window._iteration_extension_source = None
         self.window._iteration_extension_after_tolerance = False
-        for widget in (*self.buttons, *self.labels):
+        self.window._checkpoint_continuation = None
+        for widget in (*self.buttons, *self.labels, *self.checkpoint_buttons):
             widget.hide()
         if self.future is not None:
             self.future.cancel()
@@ -174,10 +192,18 @@ class ConvergenceAdviceController(QObject):
             return
         self.timer.stop()
         try:
-            maximum, advice = self.future.result()
+            maximum, advice, checkpoint = self.future.result()
         except (OSError, RuntimeError, TypeError, ValueError, KeyError):
             self.future = None
             return
+        if checkpoint is not None:
+            self.window._checkpoint_continuation = (self.source, checkpoint)
+            for button in self.checkpoint_buttons:
+                button.setToolTip(
+                    f"Continue from accepted iteration {checkpoint.checkpoint_iteration} in a "
+                    "separate atlas run. Choose a budget and review before starting."
+                )
+                button.show()
         if not advice:
             return
         tolerance = isinstance(maximum, ToleranceContinuation)

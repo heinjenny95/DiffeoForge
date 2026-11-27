@@ -24,11 +24,14 @@ from diffeoforge.desktop.reference_readiness import (
     parse_reference_config_bytes,
 )
 from diffeoforge.desktop.worker_protocol import sha256_file
+from diffeoforge.reference_quality_continuation import QualityContinuation
 from diffeoforge.reference_runtime import launcher_identity
-from diffeoforge.runs import ToleranceContinuation, inspect_resume_source
+from diffeoforge.runs import ResumeSourceEvidence, ToleranceContinuation, inspect_resume_source
 
 REFERENCE_LAUNCH_REQUEST_VERSION = "0.4"
 TOLERANCE_LAUNCH_REQUEST_VERSION = "0.5"
+QUALITY_LAUNCH_REQUEST_VERSION = "0.6"
+STAGED_OPTIMIZER_VERSION = "0.7"
 
 
 class DesktopReferencePrelaunchError(RuntimeError):
@@ -49,11 +52,14 @@ def validate_reference_launch_request(value: Mapping[str, Any]) -> None:
         version = value.get("reference_launch_request_version")
         if version not in {
             "0.2", "0.3", REFERENCE_LAUNCH_REQUEST_VERSION, TOLERANCE_LAUNCH_REQUEST_VERSION,
+            QUALITY_LAUNCH_REQUEST_VERSION, STAGED_OPTIMIZER_VERSION,
         }:
             raise DesktopReferencePrelaunchError("Unsupported reference launch request version")
         jsonschema.Draft202012Validator(_schema(str(version))).validate(dict(value))
-        if version == TOLERANCE_LAUNCH_REQUEST_VERSION:
+        if version in (TOLERANCE_LAUNCH_REQUEST_VERSION, STAGED_OPTIMIZER_VERSION):
             ToleranceContinuation(**value["tolerance_continuation"])
+        if version == QUALITY_LAUNCH_REQUEST_VERSION:
+            QualityContinuation(**value["quality_continuation"])
     except jsonschema.ValidationError as error:
         location = ".".join(str(part) for part in error.absolute_path) or "document"
         raise DesktopReferencePrelaunchError(
@@ -61,7 +67,8 @@ def validate_reference_launch_request(value: Mapping[str, Any]) -> None:
             f"{error.message}"
         ) from error
     except ConfigurationError as error:
-        raise DesktopReferencePrelaunchError(f"Invalid tolerance continuation: {error}") from error
+        label = "morphospace" if version == QUALITY_LAUNCH_REQUEST_VERSION else "tolerance"
+        raise DesktopReferencePrelaunchError(f"Invalid {label} continuation: {error}") from error
 
 
 def _bound_config(
@@ -129,6 +136,7 @@ class DesktopReferenceLaunchRequest:
     additional_iterations: int = 0
     final_export_only: bool = False
     tolerance_continuation: ToleranceContinuation | None = None
+    quality_continuation: QualityContinuation | None = None
 
     @property
     def engine(self) -> str:
@@ -152,8 +160,14 @@ class DesktopReferenceLaunchRequest:
             "launcher": launcher,
         }
         if self.tolerance_continuation is not None:
-            payload["reference_launch_request_version"] = TOLERANCE_LAUNCH_REQUEST_VERSION
-            payload["tolerance_continuation"] = asdict(self.tolerance_continuation)
+            payload["reference_launch_request_version"] = (
+                STAGED_OPTIMIZER_VERSION if self.tolerance_continuation.source_reason is not None
+                else TOLERANCE_LAUNCH_REQUEST_VERSION
+            )
+            payload["tolerance_continuation"] = self.tolerance_continuation.record()
+        if self.quality_continuation is not None:
+            payload["reference_launch_request_version"] = QUALITY_LAUNCH_REQUEST_VERSION
+            payload["quality_continuation"] = asdict(self.quality_continuation)
         return payload
 
     @property
@@ -199,6 +213,12 @@ class DesktopReferenceLaunchRequest:
             or self.resume_source is None
         ):
             raise DesktopReferencePrelaunchError("The tolerance continuation is not bound.")
+        if self.quality_continuation is not None and (
+            not isinstance(self.quality_continuation, QualityContinuation)
+            or self.resume_source is None or self.final_export_only or self.additional_iterations
+            or self.tolerance_continuation is not None
+        ):
+            raise DesktopReferencePrelaunchError("The morphospace continuation is not bound.")
         if self.additional_iterations and self.resume_source is None:
             raise DesktopReferencePrelaunchError(
                 "Additional iterations require a source checkpoint"
@@ -260,21 +280,32 @@ class DesktopReferenceLaunchRequest:
                 ToleranceContinuation(**value["tolerance_continuation"])
                 if "tolerance_continuation" in value else None
             ),
+            quality_continuation=(
+                QualityContinuation(**value["quality_continuation"])
+                if "quality_continuation" in value else None
+            ),
         )
 
     def verify_launch_inputs(self) -> None:
         """Recheck exact bytes, launcher, destination resolution, and nonexistence."""
 
+        self._verify_launch_inputs()
+
+    def _verify_launch_inputs(self, evidence: ResumeSourceEvidence | None = None) -> None:
         config = _bound_config(self.config_path, self.expected_config_sha256)
         if _configured_launcher(config) != self.launcher:
             raise DesktopReferencePrelaunchError(
                 "Configured reference launcher changed after the prelaunch request was bound"
             )
         if self.resume_source is not None:
+            quality = self.quality_continuation
             try:
-                evidence = inspect_resume_source(
-                    self.resume_source, additional_iterations=self.additional_iterations,
-                    after_tolerance=(self.tolerance_continuation is not None),
+                evidence = evidence or inspect_resume_source(
+                    self.resume_source,
+                    **(self.tolerance_continuation.resume_options() if self.tolerance_continuation
+                       else {"additional_iterations": self.additional_iterations}),
+                    quality_stop=quality.mode if quality else None,
+                    quality_iterations=quality.additional_iterations if quality else 300,
                 )
             except (OSError, ConfigurationError, TypeError, ValueError) as error:
                 raise DesktopReferencePrelaunchError(
@@ -284,6 +315,10 @@ class DesktopReferenceLaunchRequest:
                     and self.tolerance_continuation != evidence.tolerance_continuation):
                 raise DesktopReferencePrelaunchError(
                     "The accepted checkpoint or tolerance continuation plan changed after review."
+                )
+            if self.quality_continuation != evidence.quality_continuation:
+                raise DesktopReferencePrelaunchError(
+                    "The morphospace continuation changed after review."
                 )
             source_config = evidence.source_run / "config" / "source-config.yaml"
             if self.final_export_only:
@@ -415,13 +450,35 @@ def build_reference_resume_launch_request(
     additional_iterations: int = 0,
     final_export_only: bool = False,
     after_tolerance: bool = False,
+    optimizer_tolerance: float | None = None, iteration_limit: int | None = None,
+    quality_stop: str | None = None,
+    quality_iterations: int = 300,
 ) -> DesktopReferenceLaunchRequest:
     """Bind a verified checkpoint to a new immutable desktop successor."""
+    request, _ = bind_reference_resume_launch_request(
+        source_run_directory, request_id=request_id, run_id=run_id,
+        additional_iterations=additional_iterations, final_export_only=final_export_only,
+        optimizer_tolerance=optimizer_tolerance, iteration_limit=iteration_limit,
+        after_tolerance=after_tolerance, quality_stop=quality_stop,
+        quality_iterations=quality_iterations,
+    )
+    return request
+
+
+def bind_reference_resume_launch_request(
+    source_run_directory: Path | str, *, request_id: str, run_id: str,
+    additional_iterations: int = 0, final_export_only: bool = False,
+    optimizer_tolerance: float | None = None, iteration_limit: int | None = None,
+    after_tolerance: bool = False, quality_stop: str | None = None, quality_iterations: int = 300,
+) -> tuple[DesktopReferenceLaunchRequest, ResumeSourceEvidence]:
+    """Bind the request and return its verified source for the desktop review."""
 
     try:
         evidence = inspect_resume_source(
             source_run_directory, additional_iterations=additional_iterations,
-            after_tolerance=after_tolerance,
+            optimizer_tolerance=optimizer_tolerance, iteration_limit=iteration_limit,
+            after_tolerance=after_tolerance, quality_stop=quality_stop,
+            quality_iterations=quality_iterations,
         )
         source_config = evidence.source_run / "config" / "source-config.yaml"
         source_config_record = next(
@@ -446,9 +503,11 @@ def build_reference_resume_launch_request(
         launcher_distribution=configured_launcher.get("distribution"),
         launcher_executable=configured_launcher.get("executable"),
         resume_source=evidence.source_run,
-        additional_iterations=additional_iterations,
+        additional_iterations=(evidence.tolerance_continuation.additional_iterations
+                               if evidence.tolerance_continuation else additional_iterations),
         final_export_only=final_export_only,
-        tolerance_continuation=evidence.tolerance_continuation if after_tolerance else None,
+        tolerance_continuation=evidence.tolerance_continuation,
+        quality_continuation=evidence.quality_continuation,
     )
-    request.verify_launch_inputs()
-    return request
+    request._verify_launch_inputs(evidence)
+    return request, evidence

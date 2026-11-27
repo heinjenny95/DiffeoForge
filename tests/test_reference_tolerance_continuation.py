@@ -31,20 +31,30 @@ NATIVE_TOLERANCE_STOP = "Tolerance threshold met. Stopping the optimization proc
 
 def _finish_source(
     tmp_path, monkeypatch, *, stop=NATIVE_TOLERANCE_STOP, iteration=211, atlas_stop=None,
+    checkpoint_mode=None,
 ):
     config_path = write_run_config(tmp_path)
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     config["optimization"]["max_iterations"] = 1600
+    if checkpoint_mode:
+        config["output"]["checkpoint_mode"] = checkpoint_mode
     if atlas_stop:
         config["project"]["atlas_stop"] = stop_policy(atlas_stop)
     config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
     source = runs.prepare_run(config_path, run_id="source")
+    return _execute_tolerance_fixture(source, monkeypatch, stop, iteration)
+
+
+def _execute_tolerance_fixture(source, monkeypatch, stop, iteration, *, logged=210, context=None):
     checkpoint = source / "output/deformetrica-state.p"
-    state = pickle.dumps({"current_iteration": iteration, "current_parameters": {"template": [0]}})
+    state_dict = {"current_iteration": iteration, "current_parameters": {"template": [0]}}
+    if context:
+        state_dict["diffeoforge_convergence_reference"] = context
+    state = pickle.dumps(state_dict)
     program = (
         "from pathlib import Path; "
         f"Path({str(checkpoint)!r}).write_bytes({state!r}); "
-        "print('------ Iteration: 210 ------'); "
+        f"print('------ Iteration: {logged} ------'); "
         "print('Log-likelihood = -10 ; attachment = -8 ; regularity = -2'); "
         f"print({stop!r})"
     )
@@ -107,6 +117,34 @@ def test_tolerance_continuation_restores_exact_checkpoint(tmp_path, monkeypatch,
     assert sha256_file(successor / "resume/source-checkpoint.p") == preview.checkpoint_sha256
     assert not list((successor / "output").iterdir())
     assert runs.run_status(successor)["status"] == "prepared"
+    assert _run_hashes(source) == before
+
+
+def test_staged_optimizer_uses_chosen_tolerance_and_limit(tmp_path, monkeypatch):
+    source = _finish_source(tmp_path, monkeypatch)
+    before = _run_hashes(source)
+    settings = {"optimizer_tolerance": 1e-6, "iteration_limit": 480}
+    bound = runs.inspect_resume_source(source, **settings).tolerance_continuation
+    assert bound.source_reason == "native_tolerance"
+    assert bound.checkpoint_iteration == 211
+    assert bound.additional_iterations == 269
+    successor = runs.prepare_resume_run(source, run_id="stricter", **settings,
+                                        expected_tolerance_continuation=bound)
+    config = runs.verify_prepared_run(successor)["effective_config"]
+    assert config["optimization"]["convergence_tolerance"] == bound.tolerance
+    assert config["optimization"]["max_iterations"] == bound.maximum_iterations
+    native = ElementTree.parse(successor / "engine/optimization_parameters.xml")
+    assert float(native.findtext("convergence-tolerance")) == 1e-6
+    assert native.findtext("max-iterations") == "480"
+    assert runs._load_resume_provenance(successor)["tolerance_continuation"] == bound.record()
+    assert sha256_file(successor / "resume/source-checkpoint.p") == bound.checkpoint_sha256
+    for invalid in (211, 0, True):
+        with pytest.raises(ConfigurationError):
+            runs.prepare_resume_run(source, run_id="invalid", optimizer_tolerance=1e-6,
+                                    iteration_limit=invalid)
+    with pytest.raises(ConfigurationError, match="changed"):
+        runs.prepare_resume_run(source, run_id="changed", optimizer_tolerance=1e-4,
+                                iteration_limit=480, expected_tolerance_continuation=bound)
     assert _run_hashes(source) == before
 
 

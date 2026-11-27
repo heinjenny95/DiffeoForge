@@ -614,6 +614,11 @@ def render_result_html(report: RunReport) -> str:
     started_at = escape(str(result.get("started_at")))
     ended_at = escape(str(result.get("ended_at")))
     tolerance = escape(str(config["optimization"]["convergence_tolerance"]))
+    mode = config["project"].get("atlas_stop", {}).get("mode")
+    stopping_rule = {
+        "iteration_target": "Run to the chosen joint iteration",
+        "morphospace_stability": "Morphospace stability (cohort &lt;1%, every specimen &lt;2%)",
+    }.get(mode, f"Optimizer convergence (tolerance {tolerance})")
     maximum = report.max_iterations
     iteration_limit = "No joint iteration limit" if maximum is None else f"{maximum} iterations"
 
@@ -690,7 +695,7 @@ def render_result_html(report: RunReport) -> str:
       <tr><th>Return code</th><td>{escape(str(result.get("return_code")))}</td></tr>
       <tr><th>Started / ended</th><td>{started_at} / {ended_at}</td></tr>
       <tr><th>Requested maximum</th><td>{iteration_limit}</td></tr>
-      <tr><th>Convergence tolerance</th><td>{tolerance}</td></tr>
+      <tr><th>Stopping rule</th><td>{stopping_rule}</td></tr>
       <tr><th>Observed objective change</th>
         <td>{escape(objective_change)}; final {escape(final_objective)}</td></tr>
       <tr><th>Stopping interpretation</th><td>{escape(report.stop_interpretation)}</td></tr>

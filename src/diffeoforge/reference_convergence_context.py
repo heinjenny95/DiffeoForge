@@ -89,6 +89,13 @@ def _df_bind_reference(function, bootstrap, require_saved):
         if not isinstance(saved, dict) or saved.get("current_iteration") != self.current_iteration:
             raise RuntimeError("Convergence reference checkpoint iteration differs")
         context = saved.get(_df_reference_key)
+        if isinstance(require_saved, dict):
+            # A reviewed tolerance change retains the exact source objective and origin.
+            previous = _df_validate_reference(
+                context, require_saved["convergence_tolerance"], self.current_iteration)
+            if previous != require_saved:
+                raise RuntimeError("Incoming objective reference differs")
+            context = dict(previous, convergence_tolerance=self.convergence_tolerance)
         if context is None:
             if require_saved:
                 raise RuntimeError("Checkpoint lost its convergence reference")

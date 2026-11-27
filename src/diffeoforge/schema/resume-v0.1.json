@@ -113,6 +113,24 @@
         }
       }
     },
+    "quality_continuation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "checkpoint_iteration", "additional_iterations", "source_reason",
+                   "source_mode", "source_maximum_iterations", "source_tolerance",
+                   "checkpoint_sha256", "source_log_sha256"],
+      "properties": {
+        "mode": {"enum": ["morphospace_stability", "morphospace_stability_unlimited"]},
+        "checkpoint_iteration": {"type": "integer", "minimum": 1},
+        "additional_iterations": {"type": ["integer", "null"], "minimum": 1},
+        "source_mode": {"enum": ["optimizer_convergence", "morphospace_stability", "iteration_target"]},
+        "source_maximum_iterations": {"type": ["integer", "null"], "minimum": 1},
+        "source_reason": {"enum": ["native_tolerance", "iteration_limit", "morphospace_stable",
+                                   "line_search_exhausted", "optimizer_callback"]},
+        "source_tolerance": {"type": "number", "exclusiveMinimum": 0},
+        "checkpoint_sha256": {"$ref": "#/$defs/sha256"},
+        "source_log_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
     "tolerance_continuation": {
       "type": "object",
       "additionalProperties": false,
@@ -123,14 +141,22 @@
       ],
       "properties": {
         "checkpoint_iteration": {"type": "integer", "minimum": 1},
-        "source_maximum_iterations": {"type": "integer", "minimum": 1},
-        "additional_iterations": {"const": 300},
-        "maximum_iterations": {"type": "integer", "minimum": 301},
+        "source_maximum_iterations": {"type": ["integer", "null"], "minimum": 1},
+        "additional_iterations": {"type": "integer", "minimum": 1},
+        "maximum_iterations": {"type": "integer", "minimum": 2},
+        "source_reason": {"enum": ["native_tolerance", "iteration_limit", "morphospace_stable",
+                                   "line_search_exhausted", "optimizer_callback"]},
+        "stage_mode": {"enum": ["optimizer_convergence", "iteration_target"]},
         "source_tolerance": {"type": "number", "exclusiveMinimum": 0},
         "tolerance": {"type": "number", "exclusiveMinimum": 0},
         "checkpoint_sha256": {"$ref": "#/$defs/sha256"},
         "source_log_sha256": {"$ref": "#/$defs/sha256"}
-      }
+      },
+      "if": {"not": {"required": ["source_reason"]}},
+      "then": {"properties": {"additional_iterations": {"const": 300},
+                             "source_maximum_iterations": {"type": "integer"}},
+               "not": {"required": ["stage_mode"]}},
+      "else": {"required": ["stage_mode"]}
     },
     "output_schedule_change": {
       "type": "object",
@@ -292,7 +318,8 @@
       "then": {
         "oneOf": [
           {"required": ["iteration_extension"]},
-          {"required": ["tolerance_continuation"]}
+          {"required": ["tolerance_continuation"]},
+          {"required": ["quality_continuation"]}
         ]
       }
     },
@@ -300,7 +327,8 @@
       "if": {
         "anyOf": [
           {"required": ["iteration_extension"]},
-          {"required": ["tolerance_continuation"]}
+          {"required": ["tolerance_continuation"]},
+          {"required": ["quality_continuation"]}
         ]
       },
       "then": {
@@ -316,7 +344,11 @@
       }
     },
     {
-      "if": {"required": ["tolerance_continuation"]},
+      "if": {"anyOf": [
+        {"required": ["tolerance_continuation"],
+         "properties": {"tolerance_continuation": {"not": {"required": ["source_reason"]}}}},
+        {"required": ["quality_continuation"]}
+      ]},
       "then": {"not": {"required": ["convergence_reference"]}}
     },
     {

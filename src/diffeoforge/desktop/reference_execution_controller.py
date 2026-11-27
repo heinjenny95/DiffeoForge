@@ -234,7 +234,7 @@ class ReferenceExecutionController:
             self._state = "running"
         try:
             self.request.verify_launch_inputs()
-            continuation = self.request.tolerance_continuation
+            continuation = self.request.tolerance_continuation or self.request.quality_continuation
             if continuation is not None:
                 maximum_iterations = continuation.maximum_iterations
             elif self.request.resume_source is not None:

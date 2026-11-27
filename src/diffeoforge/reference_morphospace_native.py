@@ -21,7 +21,8 @@ def manifest_subject_labels(manifest):
     )
 
 
-def adapter_source(config, subject_labels, *, reference=None, require_saved=False):
+def adapter_source(config, subject_labels, *, reference=None, require_saved=False,
+                   previous_reference=None):
     """Stage the same metric used by host atlas analysis in the native runtime."""
     policy = config.get("project", {}).get("atlas_stop")
     if policy is None:
@@ -43,6 +44,12 @@ def adapter_source(config, subject_labels, *, reference=None, require_saved=Fals
         if policy["mode"] != "optimizer_convergence":
             raise ValueError("Atlas objective reference requires optimizer convergence stopping")
         reference = validate_context(reference, config["optimization"]["convergence_tolerance"])
+        if previous_reference is not None and previous_reference != reference:
+            old = validate_context(previous_reference, previous_reference["convergence_tolerance"])
+            new_tolerance = reference["convergence_tolerance"]
+            if not require_saved or dict(old, convergence_tolerance=new_tolerance) != reference:
+                raise ValueError("Only the tolerance can change on a retained objective reference.")
+            require_saved = old
         hooks = ADAPTER_SOURCE + "\n_df_install_reference_dump()\n"
     return (
         hooks + "\n" + metric_source() + NATIVE_SOURCE

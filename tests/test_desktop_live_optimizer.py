@@ -157,6 +157,7 @@ def test_tolerance_stop_shows_diagnosis_without_continuation_on_every_page(
     assert [label.text() for label in controller.labels] == [advice] * 3
     assert all(not label.isHidden() for label in controller.labels)
     assert all(button.isHidden() for button in controller.buttons)
+    assert all(button.isHidden() for button in controller.checkpoint_buttons)
     assert window._iteration_extension_source is None
     window._clear_engine_project_state()
     assert all(label.isHidden() for label in controller.labels)
@@ -173,7 +174,7 @@ def test_reopened_advice_shows_thresholds_only_for_stability(tmp_path, stability
         tmp_path, full_window=True if stability else None, unlimited=unlimited,
         reason="morphospace_stable" if stability else "native_tolerance",
     )
-    _, advice = _review_advice(run)
+    _, advice, _ = _review_advice(run)
     assert "Weighted fit error, first to last checkpoint" in advice
     assert ("requires <1%" in advice) == stability
     assert ("requires <2%" in advice) == stability
@@ -209,6 +210,20 @@ def test_atlas_live_checkpoint_shows_outlier_and_available_window(app):
     window.close()
 
 
+def test_fixed_iteration_result_reports_budget_stop_without_convergence(tmp_path, monkeypatch):
+    from diffeoforge.desktop import convergence_advice
+
+    evidence = {
+        "terminal": {"reason": "iteration_limit", "export": "complete"},
+        "policy": {"mode": "iteration_target"},
+        "observations": [],
+    }
+    monkeypatch.setattr(convergence_advice, "read_morphospace_stability", lambda path: evidence)
+    _, text, _ = convergence_advice._review_advice(tmp_path)
+    assert text.startswith("Run to iteration number · Iteration limit reached")
+    assert "optimizer convergence" not in text and "stability criterion met" not in text
+
+
 def test_atlas_progress_stays_indeterminate_without_limit(app):
     from diffeoforge.desktop import widgets
     from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
@@ -228,6 +243,40 @@ def test_atlas_progress_stays_indeterminate_without_limit(app):
     assert "no iteration limit" in window.run_optimizer_label.text()
     assert "0.40 s/iteration" in window.run_optimizer_label.text()
     window.close()
+
+
+def test_checkpoint_dialog_validates_limit_and_tolerance(app):
+    from diffeoforge.desktop.atlas_continuation_dialog import AtlasContinuationDialog
+
+    source = SimpleNamespace(
+        checkpoint_iteration=1700, source_reason="iteration_limit", source_tolerance=1e-6,
+        source_mode="optimizer_convergence", source_maximum_iterations=1700,
+    )
+    dialog = AtlasContinuationDialog(source)
+    assert dialog.options() == {"optimizer_tolerance": 1e-6, "iteration_limit": 2000}
+    dialog.limit.setText("1700")
+    assert not dialog.review.isEnabled()
+    dialog.limit.setText("1701")
+    dialog.tolerance.setEditText("nan")
+    assert not dialog.review.isEnabled()
+    dialog.tolerance.setEditText("3.5e-7")
+    assert dialog.review.isEnabled()
+    assert dialog.options() == {"optimizer_tolerance": 3.5e-7, "iteration_limit": 1701}
+    dialog.rule.setCurrentIndex(dialog.rule.findData("morphospace_stability"))
+    assert "before the first full comparison" in dialog.detail.text()
+    dialog.close()
+
+    source.source_mode = "morphospace_stability"
+    source.source_reason = "morphospace_stable"
+    source.source_maximum_iterations = None
+    dialog = AtlasContinuationDialog(source)
+    assert dialog.options() == {"quality_stop": "morphospace_stability_unlimited"}
+    dialog.rule.setCurrentIndex(dialog.rule.findData("iteration_target"))
+    assert dialog.options() == {"iteration_limit": 2000}
+    assert dialog.limit.isEnabled()
+    dialog.rule.setCurrentIndex(dialog.rule.findData("optimizer_convergence"))
+    assert dialog.options() == {"optimizer_tolerance": 1e-6, "iteration_limit": 2000}
+    dialog.reject()
 
 
 def test_verified_tolerance_stop_shows_explicit_continuation(app, monkeypatch, tmp_path):

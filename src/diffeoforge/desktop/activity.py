@@ -40,7 +40,7 @@ _LABELS = {
     "_ReferencePCADeformationWorker": "Computing PC deformation meshes",
     "_ReferenceShapeSpaceComparisonWorker": "Comparing shape-space methods",
     "_AbandonedReferenceRecoveryWorker": "Checking interrupted-run recovery",
-    "_IterationExtensionWorker": "Verifying checkpoint for +300 iterations",
+    "_IterationExtensionWorker": "Verifying the atlas checkpoint for continuation",
     "_ArtifactWorker": "Verifying result file",
     "_AtlasWorker": "Running atlas",
     "_RemoteAtlasWorker": "Monitoring remote atlas",

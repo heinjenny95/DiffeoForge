@@ -9,6 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from xml.etree import ElementTree
 
 import numpy as np
 import pytest
@@ -356,6 +357,7 @@ def test_direct_joint_rejects_edited_link_or_missing_recorded_review(completed_j
 
 @pytest.mark.parametrize("direct", [False, True])
 @pytest.mark.parametrize(("mode", "unlimited"), [
+    ("diffeoforge_tolerance", False), ("deformetrica_tolerance", False),
     ("optimizer_convergence", False), ("morphospace_stability", False),
     ("morphospace_stability", True),
 ])
@@ -363,6 +365,7 @@ def test_atlas_stop_is_independent_of_approved_pilot_initialization(
     completed_joint_pilot, direct, mode, unlimited,
 ):
     from diffeoforge.reference_atlas_stop import (
+        NATIVE_PRESETS,
         atlas_iteration_limit,
         choose_atlas_stop,
         stop_policy,
@@ -376,7 +379,16 @@ def test_atlas_stop_is_independent_of_approved_pilot_initialization(
     assert choose_atlas_stop(selected, mode, unlimited_iterations=unlimited) == selected
     run = prepare_run(selected, run_id=f"stop-{mode}")
     reopened = verify_prepared_run(run)["effective_config"]
-    assert reopened["project"]["atlas_stop"] == stop_policy(mode, unlimited_iterations=unlimited)
+    original = load_config(initializer)["optimization"]["convergence_tolerance"]
+    chosen = NATIVE_PRESETS.get(mode, original)
+    rule = "optimizer_convergence" if mode in NATIVE_PRESETS else mode
+    expected = stop_policy(rule, unlimited_iterations=unlimited)
+    if chosen != original:
+        expected["project_convergence_tolerance"] = original
+    assert reopened["project"]["atlas_stop"] == expected
+    assert reopened["optimization"]["convergence_tolerance"] == chosen
+    xml = ElementTree.parse(run / "engine/optimization_parameters.xml")
+    assert float(xml.findtext("convergence-tolerance")) == chosen
     stored_budget = load_config(initializer)["optimization"]["max_iterations"]
     assert reopened["optimization"]["max_iterations"] == stored_budget
     assert atlas_iteration_limit(reopened) == (None if unlimited else stored_budget)
@@ -385,7 +397,41 @@ def test_atlas_stop_is_independent_of_approved_pilot_initialization(
     native = (run / "engine/sitecustomize.py").read_text(encoding="utf-8")
     assert "_df_ms_install_update(" in native
     assert ("def _df_atlas_update(" in native) is not direct
+    if not direct and chosen != original:
+        assert f"convergence_tolerance={original!r}," in native
     compile(native, "sitecustomize.py", "exec")
+
+
+def test_joint_tolerance_presets_round_trip_to_custom_project_value(tmp_path):
+    from diffeoforge.reference_atlas_stop import (
+        DEFORMETRICA_TOLERANCE,
+        DIFFEOFORGE_TOLERANCE,
+        MORPHOSPACE_STABILITY,
+        OPTIMIZER_CONVERGENCE,
+        atlas_stop_choice,
+        choose_atlas_stop,
+    )
+
+    source = write_run_config(tmp_path)
+    config = load_config(source)
+    config["optimization"]["convergence_tolerance"] = 3e-5
+    source.write_text(yaml.safe_dump(config), encoding="utf-8")
+    before = source.read_bytes()
+    custom = choose_atlas_stop(source, OPTIMIZER_CONVERGENCE)
+    strict = choose_atlas_stop(custom, DIFFEOFORGE_TOLERANCE)
+    standard = choose_atlas_stop(strict, DEFORMETRICA_TOLERANCE)
+    quality = choose_atlas_stop(standard, MORPHOSPACE_STABILITY)
+    for path, choice, tolerance in (
+        (custom, OPTIMIZER_CONVERGENCE, 3e-5), (strict, DIFFEOFORGE_TOLERANCE, 1e-6),
+        (standard, DEFORMETRICA_TOLERANCE, 1e-4), (quality, MORPHOSPACE_STABILITY, 3e-5),
+    ):
+        saved = load_config(path)
+        assert atlas_stop_choice(saved) == choice
+        assert saved["optimization"]["convergence_tolerance"] == tolerance
+        assert choose_atlas_stop(path, choice) == path
+    assert choose_atlas_stop(quality, OPTIMIZER_CONVERGENCE) == custom
+    assert choose_atlas_stop(standard, DIFFEOFORGE_TOLERANCE) == strict
+    assert source.read_bytes() == before
 
 
 def test_unlimited_stop_setup_is_explicit_and_uses_separate_linked_config(tmp_path):

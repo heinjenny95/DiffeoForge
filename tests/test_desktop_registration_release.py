@@ -178,6 +178,93 @@ def review_window(monkeypatch, visual_review):
     app.processEvents()
 
 
+@pytest.mark.parametrize(("rule", "ceiling"), [
+    ("optimizer_convergence", 479),
+    ("iteration_target", 377),
+    ("morphospace_stability", 651),
+    ("morphospace_stability_unlimited", None),
+])
+def test_reopened_atlas_continues_from_visual_qc(
+    review_window, tmp_path, monkeypatch, rule, ceiling,
+):
+    from types import SimpleNamespace
+
+    from test_reference_tolerance_continuation import _finish_source, _run_hashes
+
+    from diffeoforge.desktop import widgets
+    from diffeoforge.desktop.atlas_continuation_dialog import AtlasContinuationDialog
+    from diffeoforge.desktop.completed_results import CompletedResultRun
+
+    window = review_window
+    source = _finish_source(tmp_path, monkeypatch)
+    source_hashes = _run_hashes(source)
+    # Supply the synthetic surface review, exercising the same signal used by the result library.
+    review = replace(window._result_review, run_directory=source)
+    queued = []
+    failures = []
+    monkeypatch.setattr(widgets.QMessageBox, "warning", lambda *args: failures.append(args[-1]))
+    monkeypatch.setattr(window, "_thread_pool", SimpleNamespace(start=queued.append))
+    window._open_completed_result(CompletedResultRun(source, reference=True))
+    queued.pop().signals.succeeded.emit(review)
+    window._convergence_advice.future.result(timeout=10)
+    window._convergence_advice._poll()
+    assert window._checkpoint_continuation[0] == source
+    assert all(not button.isHidden() for button in window._convergence_advice.checkpoint_buttons)
+    assert not window._registration_results_released()
+
+    def choose(dialog):
+        assert dialog.source.checkpoint_iteration == 211
+        assert dialog.limit.text() == "1600"
+        selected = "morphospace_stability" if rule == "morphospace_stability_unlimited" else rule
+        dialog.rule.setCurrentIndex(dialog.rule.findData(selected))
+        dialog.tolerance.setCurrentText("1e-6")
+        if ceiling is None:
+            dialog.unlimited.setChecked(True)
+        else:
+            dialog.limit.setText(str(ceiling))
+        assert dialog.review.isEnabled()
+        return widgets.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(AtlasContinuationDialog, "exec", choose)
+    window.qc_checkpoint_button.click()
+    assert len(queued) == 1
+    worker = queued.pop()
+    assert isinstance(worker, widgets._IterationExtensionWorker)
+    assert "after_tolerance" not in worker.options
+    assert not window.qc_checkpoint_button.isEnabled()
+    worker.run()
+
+    assert not failures
+    request = window._reference_run_request
+    assert request.resume_source == source
+    plan = request.quality_continuation or request.tolerance_continuation
+    assert plan.checkpoint_iteration == 211 and plan.maximum_iterations == ceiling
+    assert window.page_stack.currentIndex() == 3
+    budget = "No joint iteration limit" if ceiling is None else f"limit {ceiling}"
+    assert budget in window.run_summary_label.text()
+    if rule == "optimizer_convergence":
+        assert plan.tolerance == 1e-6
+        assert "objective at iteration 211" in window.run_boundary_label.text()
+        assert "before the new limit" in window.run_boundary_label.text()
+    elif rule == "iteration_target":
+        assert plan.stage_mode == rule
+        assert "continues to the requested iteration" in window.run_boundary_label.text()
+        assert "tolerance" not in window.run_summary_label.text().split("New iteration limit")[1]
+    else:
+        assert "First full comparison at iteration 411" in window.run_boundary_label.text()
+    assert window.start_atlas_button.text() == "Start atlas continuation"
+    assert window.start_atlas_button.isEnabled()
+    assert not queued and not request.destination.exists()
+    assert window._checkpoint_continuation is None
+    window.start_atlas_button.click()
+    assert len(queued) == 1
+    assert isinstance(queued[0], widgets._ReferenceAtlasWorker)
+    assert queued[0].controller.request == request
+    # The pool captured the dispatch. No synthetic solver process was started.
+    window._worker = None
+    assert _run_hashes(source) == source_hashes
+
+
 def _wait_for_qt(predicate):
     """Run Qt's native loop so Python workers can acquire the GIL under load."""
     from PySide6.QtCore import QEventLoop, QTimer
@@ -826,7 +913,8 @@ def test_direct_pilot_option_requires_review_before_launch(review_window, monkey
 
 @pytest.mark.parametrize("direct", [False, True])
 @pytest.mark.parametrize("mode", [
-    "optimizer_convergence", "morphospace_stability", "morphospace_stability_unlimited",
+    "diffeoforge_tolerance", "deformetrica_tolerance", "optimizer_convergence",
+    "morphospace_stability", "morphospace_stability_unlimited", "iteration_target",
 ])
 def test_atlas_review_dispatches_two_independent_choices(review_window, monkeypatch, direct, mode):
     from types import SimpleNamespace
@@ -840,8 +928,11 @@ def test_atlas_review_dispatches_two_independent_choices(review_window, monkeypa
         DesktopEngine.DEFORMETRICA_REFERENCE, "Synthetic atlas", path, "a" * 64,
         path.with_suffix(".html"), "Report", 7, (), (), (), "",
         preserved_pilot_atlas=True, atlas_stop_available=True,
+        atlas_project_tolerance=3e-5 if mode == "optimizer_convergence" else 1e-4,
     )
     window._review_succeeded(review)
+    initial = mode if mode == "optimizer_convergence" else "diffeoforge_tolerance"
+    assert window.atlas_stop_combo.currentData() == initial
     window._reference_readiness = SimpleNamespace(ready=True)
     window._run_result = None
     window._result_review = None
@@ -865,7 +956,8 @@ def test_atlas_review_dispatches_two_independent_choices(review_window, monkeypa
 
 
 @pytest.mark.parametrize("preserved_pilot", [False, True])
-@pytest.mark.parametrize("mode", ["morphospace_stability", "morphospace_stability_unlimited"])
+@pytest.mark.parametrize("mode", ["deformetrica_tolerance", "diffeoforge_tolerance",
+                                  "morphospace_stability", "morphospace_stability_unlimited"])
 def test_atlas_choices_recheck_stays_on_review_page(
     review_window, monkeypatch, preserved_pilot, mode
 ):
@@ -907,6 +999,7 @@ def test_atlas_choices_recheck_stays_on_review_page(
     window._review_succeeded(review)
     assert window.page_stack.currentIndex() == 1
     window._reference_readiness = SimpleNamespace(ready=True)
+    window._sync_ready_state()
     window._navigate_to_step(2)
     window.atlas_stop_combo.setCurrentIndex(window.atlas_stop_combo.findData(mode))
 

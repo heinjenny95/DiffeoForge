@@ -22,7 +22,11 @@ from diffeoforge.desktop.result_review import (
     ResultReviewItem,
 )
 from diffeoforge.mesh import sha256_file
-from diffeoforge.reference_atlas_stop import MORPHOSPACE_STABILITY, OPTIMIZER_CONVERGENCE
+from diffeoforge.reference_atlas_stop import (
+    ITERATION_TARGET,
+    MORPHOSPACE_STABILITY,
+    OPTIMIZER_CONVERGENCE,
+)
 from diffeoforge.reference_calibration_metrics import (
     ReferenceCalibrationRunMetrics,
     _collect_reference_calibration_metrics_from_report,
@@ -119,6 +123,9 @@ def _atlas_stop_review(run: Path, report: RunReport) -> AtlasStopReview | None:
     iteration = terminal["iteration"]
     label = _ATLAS_STOP_LABELS[reason]
     interpretation = f"{label} at accepted joint-atlas iteration {iteration}."
+    if policy["mode"] == ITERATION_TARGET:
+        target = config["optimization"]["max_iterations"]
+        interpretation += f" The requested iteration target was {target}."
     if policy.get("unlimited_iterations"):
         interpretation += " The joint atlas had no iteration limit."
     items = [ResultReviewItem(

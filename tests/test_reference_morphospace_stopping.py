@@ -216,6 +216,13 @@ def test_cap_prepares_reviewable_successor_with_exact_joint_origin(tmp_path, mon
         "convergence_tolerance": config["optimization"]["convergence_tolerance"],
     }
     assert "objective_baseline" in provenance["semantics"]["restored"]
+    staged = prepare_resume_run(source, run_id="new-tolerance", optimizer_tolerance=1e-6,
+                                iteration_limit=117)
+    staged_receipt = json.loads((staged / "resume/resume.json").read_text())
+    assert staged_receipt["convergence_reference"] == dict(
+        provenance["convergence_reference"], convergence_tolerance=1e-6)
+    assert staged_receipt["tolerance_continuation"]["source_reason"] == "iteration_limit"
+    assert verify_prepared_run(staged)["effective_config"]["optimization"]["max_iterations"] == 117
     report["observations"][0]["objective"] += 1
     (output / REPORT_NAME).write_text(json.dumps(report), encoding="utf-8")
     with pytest.raises(ConfigurationError, match="terminal output inventory"):

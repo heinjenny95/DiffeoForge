@@ -1,5 +1,17 @@
 # Development continuity
 
+## dev253 — choose and compare atlas stopping rules
+
+Atlas review offers the native Deformetrica 4.3 tolerance (1e-4) and a stricter
+DiffeoForge preset (1e-6). For morphospace studies we recommend the distance
+stability rule with cohort change below 1% and every specimen below 2%.
+From a completed reference atlas, researchers can select a saved joint
+checkpoint and continue to a chosen numerical tolerance, total iteration, or
+morphospace threshold. Each stage has a separate destination. Researchers can
+branch directly from any eligible earlier result and compare the exports.
+See [atlas stopping and continuation](ATLAS_MORPHOSPACE_STOP.md) for the
+formula, choice of tolerance and interpretation of the thresholds.
+
 ## dev252 — desktop notifications for finished jobs and decisions
 
 The desktop posts a system notification when the atlas finishes verification,

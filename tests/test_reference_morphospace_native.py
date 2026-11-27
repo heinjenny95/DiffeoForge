@@ -140,7 +140,7 @@ def _adapt(monkeypatch, mode, *, long_window=400, unlimited_iterations=False):
     source = textwrap.dedent(inspect.getsource(Gradient.update))
     monkeypatch.setattr(native, "UPDATE_SHA256", hashlib.sha256(source.encode()).hexdigest())
 
-    def install(subjects=3, *, reference=None, require_saved=False):
+    def install(subjects=3, *, reference=None, require_saved=False, previous_reference=None):
         from diffeoforge.reference_checkpoint_schedule import render_adapter
 
         config = {
@@ -160,6 +160,7 @@ def _adapt(monkeypatch, mode, *, long_window=400, unlimited_iterations=False):
         # Make a failed hook raise during tests instead of exiting the Python process.
         source = render_adapter(morphospace_source=native.adapter_source(
             config, labels, reference=reference, require_saved=require_saved,
+            previous_reference=previous_reference,
         ))
         exec(source.replace("os._exit(1)", "raise"), scope)
         return scope
@@ -194,6 +195,44 @@ def test_cap_resume_uses_original_denominator_and_current_step(monkeypatch, tmp_
     assert report["observations"][0]["objective"] == -2.0
     assert pickle.loads(Path(estimator.state_file).read_bytes())[
         "diffeoforge_convergence_reference"] == reference
+
+
+@pytest.mark.parametrize("alter_origin", [False, True])
+def test_staged_tolerance_rebinds_only_the_verified_threshold(monkeypatch, tmp_path, alter_origin):
+    gradient, install = _adapt(monkeypatch, "optimizer_convergence")
+    previous = dict(version=1, origin_iteration=0, initial_log_likelihood=-20000.125,
+                    origin_checkpoint_sha256="a" * 64, convergence_tolerance=1e-4)
+    chosen = dict(previous, convergence_tolerance=1e-6)
+    install(reference=chosen, previous_reference=previous, require_saved=True)
+    estimator = gradient(tmp_path, origin=1600, maximum=1773)
+    estimator.convergence_tolerance = 1e-6
+    state = dict(current_parameters=estimator.current_parameters, current_iteration=1600,
+                 diffeoforge_convergence_reference=dict(previous))
+    if alter_origin:
+        state["diffeoforge_convergence_reference"]["origin_iteration"] += 1
+    Path(estimator.state_file).write_bytes(pickle.dumps(state))
+    if alter_origin:
+        with pytest.raises(RuntimeError, match="Incoming objective reference differs"):
+            estimator.update()
+        return
+    estimator.update()
+    estimator.write()
+    assert _report(tmp_path)["terminal"]["iteration"] == 1601
+    assert pickle.loads(Path(estimator.state_file).read_bytes())[
+        "diffeoforge_convergence_reference"] == chosen
+
+
+def test_fixed_iteration_target_continues_past_tolerance_and_stability(monkeypatch, tmp_path):
+    gradient, install = _adapt(monkeypatch, "iteration_target")
+    install()
+    estimator = gradient(tmp_path, maximum=275)
+    estimator.update()
+    estimator.write()
+    report = _report(tmp_path)
+    assert any(row["stable"] and row["iteration"] == 200 for row in report["observations"])
+    assert report["terminal"]["reason"] == "iteration_limit"
+    assert report["terminal"]["iteration"] == 275
+    assert report["terminal"]["export"] == "complete"
 
 
 def test_tolerance_terminal_includes_last_accepted_step_not_printed(monkeypatch, tmp_path):
