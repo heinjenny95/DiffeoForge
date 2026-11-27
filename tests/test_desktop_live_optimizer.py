@@ -103,6 +103,7 @@ def test_run_window_observes_progress_and_clears_engine_bound_history(app, monke
         run_directory=source, project_name="synthetic", subject_count=2,
         terminal_status="completed", checkpoint_bytes=123,
         source_config_path=request.config_path, source_config_sha256=request.expected_config_sha256,
+        convergence_origin_iteration=0,
     )
     from test_desktop_reference_prelaunch import _review
 
@@ -121,6 +122,7 @@ def test_run_window_observes_progress_and_clears_engine_bound_history(app, monke
     assert window._worker is queued[0]
     assert not request.destination.exists()
     window._iteration_extension_ready((request, result, 300))
+    assert "keeps the objective from iteration 0" in window.run_boundary_label.text()
     assert "300 → 600" in window.run_summary_label.text()
     assert "Start +300" in window.start_atlas_button.text()
     window._sync_ready_state()

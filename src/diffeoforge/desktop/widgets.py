@@ -1662,6 +1662,9 @@ class _IterationExtensionWorker(QRunnable):
                 checkpoint_bytes=evidence.checkpoint_bytes,
                 source_config_path=request.config_path,
                 source_config_sha256=request.expected_config_sha256,
+                convergence_origin_iteration=(evidence.atlas_convergence_reference or {}).get(
+                    "origin_iteration"
+                ),
             )
             plan = getattr(request, "tolerance_continuation", None)
             maximum = (plan.checkpoint_iteration if plan is not None else
@@ -8973,6 +8976,13 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_live_optimizer_plot.clear()
         self.run_live_optimizer_plot.show()
         self.run_morphospace_label.hide()
+        origin = result.convergence_origin_iteration
+        resume_detail = (
+            f"The convergence test keeps the objective from iteration {origin}. "
+            "Deformetrica recalculates the gradient and line-search step sizes."
+            if origin is not None else
+            "Deformetrica resets its objective baseline, gradient and line-search step sizes."
+        )
         self._review = ProjectReviewResult(
             engine=DesktopEngine.DEFORMETRICA_REFERENCE,
             project_name=result.project_name,
@@ -8983,10 +8993,7 @@ class DiffeoForgeWindow(QMainWindow):
             subject_count=result.subject_count,
             parameters=(),
             workload=(),
-            warnings=(
-                "Resume restores parameters and iteration, but Deformetrica reinitializes "
-                "the objective baseline, gradient, and line-search step sizes.",
-            ),
+            warnings=("Resume restores parameters and iteration. " + resume_detail,),
             scientific_boundary=(
                 "Checkpoint recovery preserves the model state but does not guarantee an "
                 "identical optimizer trajectory."
@@ -8998,9 +9005,7 @@ class DiffeoForgeWindow(QMainWindow):
             "the protected Deformetrica calculation."
         )
         self.run_boundary_label.setText(
-            "The interrupted source remains unchanged. Parameters and iteration are "
-            "restored; objective, gradient, and line-search state are reinitialized by "
-            "Deformetrica 4.3."
+            "Parameters and iteration are restored. " + resume_detail
         )
         self.run_summary_label.setText(
             f"Project: {result.project_name}\n"
@@ -9045,8 +9050,7 @@ class DiffeoForgeWindow(QMainWindow):
                 f"Iteration limit {extension_maximum} → {extension_maximum + 300}\n"
             )
             self.run_boundary_label.setText(
-                "Previous results remain unchanged. Parameters and iteration are restored; "
-                "Deformetrica reinitializes its objective baseline, gradient and line-search state."
+                "Parameters and iteration are restored. " + resume_detail
             )
             self.run_summary_label.setText(
                 f"Project: {result.project_name}\n"

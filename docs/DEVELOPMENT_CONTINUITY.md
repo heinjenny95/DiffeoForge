@@ -1,5 +1,15 @@
 # Development continuity
 
+## dev250 — keep the objective reference when extending a capped atlas
+
+The desktop +300 action for a joint atlas with optimizer convergence and final
+export now carries the original objective into the successor's tolerance test.
+It reads the exact value from the inventoried first joint observation of a
+completed run, including a run prepared with dev249. The successor stores the
+reference in its protected provenance and native checkpoints. The line search
+starts from the resumed fit. The confirmation shows the reference iteration.
+See [atlas stopping and continuation](ATLAS_MORPHOSPACE_STOP.md).
+
 ## dev249 — reopen a pilot after a nested adaptive fit
 
 A saved guided fit can lead from an adaptive action back to the common-model

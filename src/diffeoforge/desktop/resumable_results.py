@@ -30,6 +30,7 @@ class ResumableReferenceRun:
     checkpoint_bytes: int
     source_config_path: Path
     source_config_sha256: str
+    convergence_origin_iteration: int | None = None
 
 
 @dataclass(frozen=True)
@@ -163,6 +164,9 @@ def _resumable_from_evidence(evidence: ResumeSourceEvidence) -> ResumableReferen
         checkpoint_bytes=evidence.checkpoint_bytes,
         source_config_path=evidence.source_run / "config" / "source-config.yaml",
         source_config_sha256=str(source_config["sha256"]),
+        convergence_origin_iteration=(evidence.atlas_convergence_reference or {}).get(
+            "origin_iteration"
+        ),
     )
 
 

@@ -67,12 +67,7 @@ def _df_validate_reference(context, tolerance, iteration):
         raise RuntimeError("Invalid convergence reference checkpoint hash")
     return dict(context)
 
-def _df_rebind_reference_update(original, expected_sha256, bootstrap, require_saved):
-    source = _df_textwrap.dedent(_df_inspect.getsource(original))
-    if _df_hashlib.sha256(source.encode("utf-8")).hexdigest() != expected_sha256:
-        raise RuntimeError("Unsupported native GradientAscent.update source")
-    tree = _df_ast.parse(source)
-    function = tree.body[0]
+def _df_bind_reference(function, bootstrap, require_saved):
     initial = [node for node in function.body if isinstance(node, _df_ast.Assign)
                and len(node.targets) == 1 and isinstance(node.targets[0], _df_ast.Name)
                and node.targets[0].id == "initial_log_likelihood"]
@@ -113,6 +108,14 @@ def _df_rebind_reference_update(original, expected_sha256, bootstrap, require_sa
     # The first line search must compare with the resumed current objective,
     # never with the older convergence reference.
     last[0].value = _df_ast.parse("self.current_log_likelihood", mode="eval").body
+    return reference
+
+def _df_rebind_reference_update(original, expected_sha256, bootstrap, require_saved):
+    source = _df_textwrap.dedent(_df_inspect.getsource(original))
+    if _df_hashlib.sha256(source.encode("utf-8")).hexdigest() != expected_sha256:
+        raise RuntimeError("Unsupported native GradientAscent.update source")
+    function = _df_ast.parse(source).body[0]
+    reference = _df_bind_reference(function, bootstrap, require_saved)
     carrier = _df_ast.ClassDef(name="_df_UpdateCarrier", bases=[], keywords=[],
                               body=[function], decorator_list=[])
     module = _df_ast.fix_missing_locations(_df_ast.Module(body=[carrier], type_ignores=[]))
@@ -127,10 +130,8 @@ def _df_rebind_reference_update(original, expected_sha256, bootstrap, require_sa
     replacement.__kwdefaults__ = original.__kwdefaults__
     return replacement
 
-def _df_install_reference(context, expected_sha256, require_saved):
+def _df_install_reference_dump():
     original_dump = _df_reference_ga._dump_state_file
-    replacement = _df_rebind_reference_update(
-        _df_reference_ga.update, expected_sha256, context, require_saved)
 
     def dump(self, *args, **kwargs):
         original_dump(self, *args, **kwargs)
@@ -145,8 +146,12 @@ def _df_install_reference(context, expected_sha256, require_saved):
             with open(self.state_file, "wb") as stream:
                 _df_pickle.dump(state, stream, protocol=_df_pickle.HIGHEST_PROTOCOL)
 
-    _df_reference_ga.update = replacement
     _df_reference_ga._dump_state_file = dump
+
+def _df_install_reference(context, expected_sha256, require_saved):
+    _df_reference_ga.update = _df_rebind_reference_update(
+        _df_reference_ga.update, expected_sha256, context, require_saved)
+    _df_install_reference_dump()
 '''
 
 

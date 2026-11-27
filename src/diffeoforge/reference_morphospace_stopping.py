@@ -48,6 +48,31 @@ def metric_source() -> str:
     return files("diffeoforge").joinpath("_atlas_distance_metric.py").read_text(encoding="utf-8")
 
 
+def capped_optimizer_reference(run, config, checkpoint_sha256, inherited=None):
+    """Read the native objective at the start of the completed joint optimization."""
+    from diffeoforge.reference_final_export_recovery import checkpoint_iteration
+    from diffeoforge.runs import EXECUTION_CHECKPOINT_PATH
+
+    report = read_morphospace_stability(run)
+    terminal = report and report["terminal"]
+    if (not terminal or terminal["reason"] != "iteration_limit" or terminal["export"] != "complete"
+            or terminal["iteration"] != atlas_iteration_limit(config)
+            or terminal["checkpoint_sha256"] != checkpoint_sha256 or not report["observations"]
+            or checkpoint_iteration(run / EXECUTION_CHECKPOINT_PATH) != terminal["iteration"]):
+        raise ConfigurationError("The capped atlas has no verified final convergence evidence.")
+    if inherited is not None:
+        return inherited
+    first = report["observations"][0]
+    if first["checkpoint"] is None:
+        raise ConfigurationError("The atlas objective reference has no verified origin checkpoint.")
+    return {
+        "version": 1, "origin_iteration": first["iteration"],
+        "origin_checkpoint_sha256": first["checkpoint"]["sha256"],
+        "initial_log_likelihood": first["objective"],
+        "convergence_tolerance": config["optimization"]["convergence_tolerance"],
+    }
+
+
 def _require(condition, detail):
     if not condition:
         raise ConfigurationError(f"Saved morphospace stability evidence {detail}.")

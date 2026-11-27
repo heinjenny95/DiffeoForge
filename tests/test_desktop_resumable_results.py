@@ -44,6 +44,7 @@ def test_resumable_discovery_returns_only_fully_verified_reference_source(
             manifest=manifest,
             terminal_status="interrupted",
             checkpoint_bytes=123_456,
+            atlas_convergence_reference={"origin_iteration": 0},
         ),
     )
 
@@ -54,6 +55,7 @@ def test_resumable_discovery_returns_only_fully_verified_reference_source(
     assert discovered[0].project_name == "Production atlas"
     assert discovered[0].subject_count == 300
     assert discovered[0].checkpoint_bytes == 123_456
+    assert discovered[0].convergence_origin_iteration == 0
     assert discovered[0].source_config_path == source_config.resolve()
 
 
@@ -212,6 +214,7 @@ def test_recover_abandoned_run_returns_verified_resume_source(
             manifest=manifest,
             terminal_status="interrupted",
             checkpoint_bytes=123_456,
+            atlas_convergence_reference=None,
         ),
     )
 

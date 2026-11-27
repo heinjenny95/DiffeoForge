@@ -94,6 +94,7 @@ class ResumeSourceEvidence:
     checkpoint_bytes: int
     checkpoint_sha256: str
     tolerance_continuation: ToleranceContinuation | None = None
+    atlas_convergence_reference: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -2047,7 +2048,8 @@ def _tolerance_continuation_plan(
     if config["project"].get("atlas_stop", {}).get("mode") == "morphospace_stability":
         raise ConfigurationError("Tolerance continuation requires the native optimizer stop mode.")
     provenance = _load_resume_provenance(source)
-    if provenance is not None and "convergence_reference" in provenance:
+    if (provenance is not None and "convergence_reference" in provenance
+            and config["project"].get("atlas_stop", {}).get("mode") != "optimizer_convergence"):
         raise ConfigurationError(
             "This saved run has a protected convergence reference that cannot be reset."
         )
@@ -2196,6 +2198,18 @@ def inspect_resume_source(
         )
     inventory_path, inventory = _read_output_inventory(source_run, source_result)
     checkpoint_path, checkpoint_hash = _verified_resume_checkpoint(source_run, inventory)
+    config = source_manifest["effective_config"]
+    atlas_reference = None
+    if (not after_tolerance
+            and config["project"].get("atlas_stop", {}).get("mode") == "optimizer_convergence"):
+        provenance = _load_resume_provenance(source_run) or {}
+        atlas_reference = provenance.get("convergence_reference")
+        if additional_iterations:
+            from diffeoforge.reference_morphospace_stopping import capped_optimizer_reference
+
+            atlas_reference = capped_optimizer_reference(
+                source_run, config, checkpoint_hash, inherited=atlas_reference
+            )
     continuation = (
         _tolerance_continuation_plan(
             source_run, source_manifest["effective_config"], checkpoint_path, checkpoint_hash,
@@ -2213,6 +2227,7 @@ def inspect_resume_source(
         checkpoint_bytes=checkpoint_path.stat().st_size,
         checkpoint_sha256=checkpoint_hash,
         tolerance_continuation=continuation,
+        atlas_convergence_reference=atlas_reference,
     )
 
 
@@ -2257,9 +2272,18 @@ def prepare_resume_run(
     checkpoint_path = evidence.checkpoint_path
     checkpoint_hash = evidence.checkpoint_sha256
     inherited_reference = None
-    if (source_run / RESUME_PROVENANCE_PATH).is_file():
+    if not after_tolerance and (source_run / RESUME_PROVENANCE_PATH).is_file():
         source_provenance = json.loads((source_run / RESUME_PROVENANCE_PATH).read_text("utf-8"))
         inherited_reference = source_provenance.get("convergence_reference")
+    atlas_reference = evidence.atlas_convergence_reference
+    if atlas_reference is not None:
+        if precision is not None or checkpoint_mode not in {None, "compact_final_export"}:
+            raise ConfigurationError(
+                "The atlas reference requires its original precision and final export."
+            )
+        if convergence_reference is not None and convergence_reference != atlas_reference:
+            raise ConfigurationError("Cannot replace the recorded atlas convergence reference.")
+        convergence_reference = atlas_reference
     if precision is not None:
         if source_manifest["effective_config"]["runtime"]["precision"] != "float32":
             raise ConfigurationError("Precision promotion requires a float32 source.")
@@ -2285,7 +2309,9 @@ def prepare_resume_run(
         mode = checkpoint_mode or source_manifest["effective_config"]["output"].get(
             "checkpoint_mode"
         )
-        if mode != "compact_convergence_export":
+        if mode != "compact_convergence_export" and not (
+            atlas_reference is not None and mode == "compact_final_export"
+        ):
             raise ConfigurationError("Preserved reference requires convergence-only export.")
         if (source_manifest["effective_config"]["optimization"]["method"] != "gradient_ascent"
                 or convergence_reference["origin_iteration"] > int(
@@ -2387,10 +2413,13 @@ def prepare_resume_run(
                 convergence_only=(
                     config["output"].get("checkpoint_mode") == "compact_convergence_export"
                 ),
-                convergence_reference=convergence_reference,
+                convergence_reference=(
+                    None if atlas_reference is not None else convergence_reference
+                ),
                 require_saved_reference=(inherited_reference is not None),
                 morphospace_source=morphospace_adapter_source(
                     config, manifest_subject_labels(source_manifest),
+                    reference=atlas_reference, require_saved=inherited_reference is not None,
                 ),
             )
             if compact(config) else singleton_source

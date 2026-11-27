@@ -140,7 +140,7 @@ def _adapt(monkeypatch, mode, *, long_window=400, unlimited_iterations=False):
     source = textwrap.dedent(inspect.getsource(Gradient.update))
     monkeypatch.setattr(native, "UPDATE_SHA256", hashlib.sha256(source.encode()).hexdigest())
 
-    def install(subjects=3):
+    def install(subjects=3, *, reference=None, require_saved=False):
         from diffeoforge.reference_checkpoint_schedule import render_adapter
 
         config = {
@@ -148,7 +148,7 @@ def _adapt(monkeypatch, mode, *, long_window=400, unlimited_iterations=False):
                                        "window_iterations": 200, "cohort_threshold_percent": 1.0,
                                        "specimen_threshold_percent": 2.0}},
             "output": {"checkpoint_mode": "compact_final_export"},
-            "optimization": {"method": "gradient_ascent"},
+            "optimization": {"method": "gradient_ascent", "convergence_tolerance": 1e-6},
             "model": {"deformation": {"kernel_width": 1.0}},
         }
         if long_window is not None:
@@ -158,7 +158,9 @@ def _adapt(monkeypatch, mode, *, long_window=400, unlimited_iterations=False):
         labels = tuple(f"specimen-{i}" for i in range(subjects))
         scope = {}
         # Make a failed hook raise during tests instead of exiting the Python process.
-        source = render_adapter(morphospace_source=native.adapter_source(config, labels))
+        source = render_adapter(morphospace_source=native.adapter_source(
+            config, labels, reference=reference, require_saved=require_saved,
+        ))
         exec(source.replace("os._exit(1)", "raise"), scope)
         return scope
 
@@ -167,6 +169,31 @@ def _adapt(monkeypatch, mode, *, long_window=400, unlimited_iterations=False):
 
 def _report(folder):
     return json.loads((folder / native.REPORT_NAME).read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("saved", [False, True])
+def test_cap_resume_uses_original_denominator_and_current_step(monkeypatch, tmp_path, saved):
+    gradient, install = _adapt(monkeypatch, "optimizer_convergence")
+    reference = dict(version=1, origin_iteration=0, initial_log_likelihood=-20000.125,
+                     origin_checkpoint_sha256="a" * 64, convergence_tolerance=1e-6)
+    install(reference=reference, require_saved=saved)
+    estimator = gradient(tmp_path, origin=1600, maximum=1900)
+    estimator.convergence_tolerance = 1e-6
+    state = dict(current_parameters=estimator.current_parameters, current_iteration=1600)
+    if saved:
+        state["diffeoforge_convergence_reference"] = reference
+    Path(estimator.state_file).write_bytes(pickle.dumps(state))
+    estimator.update()
+    estimator.write()
+    report = _report(tmp_path)
+    # The step gains 0.005. Only the original denominator permits an immediate stop.
+    assert estimator.current_iteration == 1601
+    assert report["terminal"]["reason"] == "native_tolerance"
+    assert report["terminal"]["export"] == "complete"
+    assert report["joint_origin_iteration"] == 1600
+    assert report["observations"][0]["objective"] == -2.0
+    assert pickle.loads(Path(estimator.state_file).read_bytes())[
+        "diffeoforge_convergence_reference"] == reference
 
 
 def test_tolerance_terminal_includes_last_accepted_step_not_printed(monkeypatch, tmp_path):

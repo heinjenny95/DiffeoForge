@@ -1,11 +1,13 @@
 import ast
+import hashlib
 import json
+import pickle
 from pathlib import Path
 
 import numpy as np
 import pytest
 import yaml
-from test_runs import write_run_config
+from test_runs import _execute_cap_fixture, write_run_config
 
 from diffeoforge import _atlas_distance_metric
 from diffeoforge import reference_morphospace_stopping as stopping
@@ -184,6 +186,41 @@ def test_reopen_exact_saved_accepted_window_without_unpickling(tmp_path):
     before = {path: sha256_file(path) for path in run.rglob("*") if path.is_file()}
     assert read_morphospace_stability(run) == report
     assert {path: sha256_file(path) for path in run.rglob("*") if path.is_file()} == before
+
+
+def test_cap_prepares_reviewable_successor_with_exact_joint_origin(tmp_path, monkeypatch):
+    from diffeoforge.runs import prepare_resume_run, verify_prepared_run
+
+    example, report = _retained_report(tmp_path, reason="iteration_limit")
+    source = prepare_run(tmp_path / "atlas.yaml", run_id="completed")
+    output = source / "output"
+    files = {
+        "output/" + path: (example / "output" / path).read_bytes()
+        for path in (row["checkpoint"]["path"] for row in report["observations"])
+    }
+    exact = -123.76562309265137
+    report["observations"][0]["objective"] = exact
+    checkpoint = pickle.dumps({"current_iteration": 2})
+    report["terminal"]["checkpoint_sha256"] = hashlib.sha256(checkpoint).hexdigest()
+    files["output/" + REPORT_NAME] = json.dumps(report).encode()
+    _execute_cap_fixture(source, monkeypatch, output_files=files, checkpoint=checkpoint)
+    successor = prepare_resume_run(source, additional_iterations=300)
+    manifest = verify_prepared_run(successor)
+    config = manifest["effective_config"]
+    assert config["optimization"]["max_iterations"] == 302
+    assert config["output"]["checkpoint_mode"] == "compact_final_export"
+    provenance = json.loads((successor / "resume/resume.json").read_text())
+    assert provenance["convergence_reference"] == {
+        "version": 1, "origin_iteration": 0, "initial_log_likelihood": exact,
+        "origin_checkpoint_sha256": report["observations"][0]["checkpoint"]["sha256"],
+        "convergence_tolerance": config["optimization"]["convergence_tolerance"],
+    }
+    assert "objective_baseline" in provenance["semantics"]["restored"]
+    report["observations"][0]["objective"] += 1
+    (output / REPORT_NAME).write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="terminal output inventory"):
+        prepare_resume_run(source, run_id="changed-origin", additional_iterations=300)
+    assert not (source.parent / "changed-origin").exists()
 
 
 def test_reopen_reuses_run_review_that_already_verified_every_output(tmp_path, monkeypatch):

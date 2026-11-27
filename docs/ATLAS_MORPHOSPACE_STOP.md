@@ -9,7 +9,19 @@ policy retain their native behavior.
 
 **Stop at optimizer convergence and review** keeps the Deformetrica stop and
 shows the final accepted joint state. A short available comparison window is
-shown with its actual length. After a verified native tolerance stop, the
+shown with its actual length. When the joint atlas reaches its iteration cap,
+**Continue +300 iterations** restores the accepted parameters and iteration.
+The relative tolerance test uses the exact objective at the start of the
+original joint optimization, normally iteration 0. The source report, origin
+field checkpoint and final native checkpoint are verified before preparation.
+Subsequent capped extensions and interrupted successors carry the same
+reference in their protected provenance and checkpoints. For a legacy run
+that already restarted its optimizer before this feature, the first extension
+preserves the reference of the recorded segment. The desktop shows its origin
+iteration before launch. Deformetrica reevaluates the gradient and initializes
+its line search from the resumed fit. Final surface export remains enabled.
+
+After a verified native tolerance stop, the
 explicit +300 action prepares a new run using the exact saved state and
 one-tenth of the source tolerance. The new ceiling is the saved accepted
 iteration plus 300. Deformetrica restarts the optimizer and resets its

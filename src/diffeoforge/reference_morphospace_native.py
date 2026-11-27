@@ -2,7 +2,11 @@
 
 from pathlib import PurePosixPath
 
-from diffeoforge.reference_convergence_context import UPDATE_SHA256
+from diffeoforge.reference_convergence_context import (
+    ADAPTER_SOURCE,
+    UPDATE_SHA256,
+    validate_context,
+)
 
 REPORT_NAME = "morphospace-stability.json"
 LIVE_PREFIX = "DiffeoForge morphospace stability: "
@@ -17,7 +21,7 @@ def manifest_subject_labels(manifest):
     )
 
 
-def adapter_source(config, subject_labels):
+def adapter_source(config, subject_labels, *, reference=None, require_saved=False):
     """Stage the same metric used by host atlas analysis in the native runtime."""
     policy = config.get("project", {}).get("atlas_stop")
     if policy is None:
@@ -34,9 +38,16 @@ def adapter_source(config, subject_labels):
     from diffeoforge.reference_morphospace_stopping import metric_source
 
     width = config["model"]["deformation"]["kernel_width"]
+    hooks = ""
+    if reference is not None:
+        if policy["mode"] != "optimizer_convergence":
+            raise ValueError("Atlas objective reference requires optimizer convergence stopping")
+        reference = validate_context(reference, config["optimization"]["convergence_tolerance"])
+        hooks = ADAPTER_SOURCE + "\n_df_install_reference_dump()\n"
     return (
-        "\n" + metric_source() + NATIVE_SOURCE
-        + f"\n_df_ms_install_update({policy!r}, {labels!r}, {width!r}, {UPDATE_SHA256!r})\n"
+        hooks + "\n" + metric_source() + NATIVE_SOURCE
+        + f"\n_df_ms_install_update({policy!r}, {labels!r}, {width!r}, {UPDATE_SHA256!r}, "
+        f"{reference!r}, {require_saved!r})\n"
     )
 
 
@@ -256,7 +267,8 @@ def _df_ms_after_callback(estimator):
     return session.reason is not None
 
 
-def _df_ms_rebind(original, expected_sha256, unlimited_iterations):
+def _df_ms_rebind(original, expected_sha256, unlimited_iterations,
+                  reference=None, require_saved=False):
     source = _df_ms_textwrap.dedent(_df_ms_inspect.getsource(original))
     if _df_ms_hashlib.sha256(source.encode("utf-8")).hexdigest() != expected_sha256:
         raise RuntimeError("Unsupported native GradientAscent.update source")
@@ -322,8 +334,11 @@ def _df_ms_rebind(original, expected_sha256, unlimited_iterations):
 
     carrier = _df_ms_ast.ClassDef(name="_df_UpdateCarrier", bases=[], keywords=[], body=[function],
                                  decorator_list=[])
-    module = _df_ms_ast.fix_missing_locations(_df_ms_ast.Module(body=[carrier], type_ignores=[]))
     namespace = dict(original.__globals__)
+    if reference is not None:
+        namespace["_df_preserved_reference"] = _df_bind_reference(
+            function, reference, require_saved)
+    module = _df_ms_ast.fix_missing_locations(_df_ms_ast.Module(body=[carrier], type_ignores=[]))
     namespace.update({name: globals()[name] for name in (
         "_df_ms_initial", "_df_ms_check_objective", "_df_ms_accept", "_df_ms_tolerance",
         "_df_ms_after_callback", "_df_ms_check_gradient", "_df_ms_trial", "_df_ms_exhausted")})
@@ -337,10 +352,12 @@ def _df_ms_rebind(original, expected_sha256, unlimited_iterations):
     return replacement
 
 
-def _df_ms_install_update(policy, labels, width, expected_sha256):
+def _df_ms_install_update(policy, labels, width, expected_sha256,
+                          reference=None, require_saved=False):
     original = _df_ms_ga.update
     unlimited_iterations = policy.get("unlimited_iterations", False)
-    replacement = _df_ms_rebind(original, expected_sha256, unlimited_iterations)
+    replacement = _df_ms_rebind(original, expected_sha256, unlimited_iterations,
+                                reference, require_saved)
 
     def update(estimator, *args, **kwargs):
         if getattr(estimator, "_df_individual_initialization", False):
