@@ -267,7 +267,7 @@ class _ReviewSignals(QObject):
     failed = Signal(str)
 
 
-class _ReviewWorker(QRunnable):
+class _HoldoutOverlayWorker(QRunnable):
     def __init__(self, snapshot, finalist, subject) -> None:
         super().__init__()
         self.signals = _ReviewSignals()
@@ -351,7 +351,7 @@ class ReferenceHoldoutReviewDialog(QDialog):
             return
         self.canvas.clear()
         self.status.setText("Verifying saved holdout evidence and measuring local surface misses…")
-        worker = _ReviewWorker(
+        worker = _HoldoutOverlayWorker(
             self._snapshot, self.finalist.currentText(), self.subject.currentText(),
         )
         self._worker = worker

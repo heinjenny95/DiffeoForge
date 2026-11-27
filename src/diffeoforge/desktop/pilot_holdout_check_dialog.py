@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from diffeoforge.desktop.notifications import notify
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.reference_pilot_holdout import prepare_pilot_holdout
 
@@ -68,6 +69,7 @@ class PilotHoldoutCheckDialog(QDialog):
 
     @Slot(object, object)
     def _prepared(self, _source, prepared):
+        notify(self, "Held-out check prepared", "Open the check to see the next step.")
         path = str(prepared.run_directory)
         quoted = (
             "'" + path.replace("'", "''") + "'" if sys.platform == "win32" else shlex.quote(path)
@@ -85,6 +87,7 @@ class PilotHoldoutCheckDialog(QDialog):
 
     @Slot(object, str)
     def _failed(self, _source, error):
+        notify(self, "Held-out check needs attention", "Open the check for details.", warning=True)
         self.status.setText(f"Held-out check unavailable. {error}")
         self.close_button.setText("Close")
 

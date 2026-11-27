@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
 from diffeoforge.desktop.calibration_comparison_widget import CalibrationComparisonCanvas3D
+from diffeoforge.desktop.notifications import notify
 from diffeoforge.desktop.reference_holdout_review import (
     SurfaceFlag,
     load_bound_surface,
@@ -148,6 +149,8 @@ class RegistrationSurfaceReview(QWidget):
         if worker.cancelled.is_set():
             return
         if result is None:
+            notify(self, "Local surface check needs attention", "Open Visual quality review.",
+                   warning=True)
             self.status.setText(f"Local surface check unavailable. {error}")
             return
         original = self.canvas.original_model
@@ -161,6 +164,7 @@ class RegistrationSurfaceReview(QWidget):
             return
         markers = {str(index): flag.center for index, flag in enumerate(result.flags, start=1)}
         self.canvas.set_inspection_markers(markers)
+        notify(self, "Local surface check finished", "Review the measured surface differences.")
         details = (
             "\n".join(f"{index}. {flag.direction} ({flag.peak_distance:.4g})"
                       for index, flag in enumerate(result.flags, start=1))

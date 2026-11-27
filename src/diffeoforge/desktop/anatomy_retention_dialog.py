@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from diffeoforge.desktop.calibration_comparison_widget import CalibrationComparisonCanvas3D
+from diffeoforge.desktop.notifications import notify
 from diffeoforge.desktop.pilot_preview import load_pilot_preview
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.desktop.reference_calibration_dialog import _FullscreenPilotDialog
@@ -157,6 +158,7 @@ class AnatomyRetentionDialog(_FullscreenPilotDialog):
     def _loaded(self, key, result):
         if key == "report":
             self.report = result
+            notify(self, "Anatomy measurements ready", "Inspect the saved areas across stages.")
             self.summary.setText(result.summary)
             self.area.blockSignals(True)
             self.area.addItem("Whole shape", None)
@@ -245,6 +247,8 @@ class AnatomyRetentionDialog(_FullscreenPilotDialog):
 
     def _failed(self, key, message):
         if key == "report":
+            notify(self, "Anatomy check needs attention", "Open the comparison for details.",
+                   warning=True)
             self.summary.setText("The saved stages could not be verified. " + message)
         elif key == self.stage.currentData():
             self.stage_note.setText("The overlay could not be opened. " + message)

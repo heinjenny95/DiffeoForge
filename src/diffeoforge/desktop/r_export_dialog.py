@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from diffeoforge.desktop.notifications import notify
 from diffeoforge.r_export import export_landmarks_to_r, export_pca_to_r
 
 _EXPORTS = ThreadPoolExecutor(max_workers=1, thread_name_prefix="r-handoff")
@@ -141,10 +142,12 @@ class RExportDialog(QDialog):
         self._mode_changed()
         try:
             path = future.result()
+            notify(self, "R export finished", "The verified ZIP is ready.")
             self.status.setText(
                 f"Saved and byte-verified: {path}\nExtract the ZIP and follow README."
             )
         except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
+            notify(self, "R export needs attention", "Open the export for details.", warning=True)
             self.status.setText(f"Export unavailable: {error}")
 
     def reject(self):

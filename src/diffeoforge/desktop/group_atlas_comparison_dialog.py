@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from diffeoforge.desktop.notifications import notify
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.desktop.result_library_dialog import ResultLibraryDialog
 from diffeoforge.mesh import sha256_file
@@ -285,6 +286,7 @@ class GroupAtlasComparisonDialog(QDialog):
         elif kind == "report":
             self._writing = False
             self._report = value
+            notify(self, "Atlas comparison finished", "The group comparison report is ready.")
             self.status.setText(f"Comparison report ready. Saved in {value.parent}")
         self._update_actions()
 
@@ -292,6 +294,8 @@ class GroupAtlasComparisonDialog(QDialog):
     def _failed(self, key, message):
         if key[0] == "report":
             self._writing = False
+            notify(self, "Atlas comparison needs attention", "Open the comparison for details.",
+                   warning=True)
         self.status.setText(f"Comparison could not be prepared. {message}")
         self._update_actions()
 

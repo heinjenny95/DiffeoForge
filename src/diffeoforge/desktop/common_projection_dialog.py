@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from diffeoforge.desktop.notifications import notify
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 
 
@@ -32,6 +33,7 @@ class CommonProjectionDialog(QDialog):
         self.next_action = None
         self.successor = None
         self.stage_finished = False
+        self._finished_operation = None
         self.recovery_run = None
         self.setProperty("processRecordingPilotReview", True)
         self.setWindowTitle("Transfer approved anatomy to the common model")
@@ -132,9 +134,12 @@ class CommonProjectionDialog(QDialog):
             self.accept()
             return
         if key == "review":
+            notify(self, "Fit review needed",
+                   "Compare the transferred anatomy and record your decision.")
             self._review(value)
             return
         if key != "status":
+            self._finished_operation = key
             if key in {"projection", "original", "save"}:
                 self.stage_finished = True
             self._refresh()
@@ -232,6 +237,10 @@ class CommonProjectionDialog(QDialog):
             )
         if value.get("message"):
             self.status.setText(self.status.text() + "\n" + value["message"])
+        if self._finished_operation is not None:
+            self._finished_operation = None
+            next_step = self.primary.text() if self.next_action else self.close_button.text()
+            notify(self, "Common-fit step finished", f"Next step: {next_step}.")
 
     def _dispatch(self):
         from diffeoforge import pilot_common_projection as transfer
@@ -377,7 +386,9 @@ class CommonProjectionDialog(QDialog):
             self.status.setText("Cancellation requested. Waiting for the native step to finish.")
 
     def _failed(self, key, message):
-        self.runner = self.operation = None
+        self.runner = self.operation = self._finished_operation = None
+        notify(self, "Common fit needs attention", "Open the transfer to inspect its status.",
+               warning=True)
         self.progress_bar.hide()
         self.cancel_run.hide()
         self.setProperty("processRecordingWaiting", False)

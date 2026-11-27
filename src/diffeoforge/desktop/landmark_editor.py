@@ -29,6 +29,7 @@ from diffeoforge.desktop.activity import ActivityIndicator
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
 from diffeoforge.desktop.mesh_preview import MeshPreviewModel
+from diffeoforge.desktop.notifications import notify
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.desktop.workflow_guidance import LANDMARK_GUIDE, LANDMARK_SUMMARY
 from diffeoforge.mesh import sha256_file
@@ -655,6 +656,7 @@ class LandmarkEditorDialog(QDialog):
 
     @Slot(object)
     def _correction_saved(self, output):
+        notify(self, "Landmark corrections saved", "The corrected output is ready.")
         self._correction_worker = None
         self.setEnabled(True)
         self.output_path = output
@@ -664,6 +666,8 @@ class LandmarkEditorDialog(QDialog):
 
     @Slot(str)
     def _correction_failed(self, message):
+        notify(self, "Landmark corrections need attention", "Open the editor for details.",
+               warning=True)
         self._correction_worker = None
         self.setEnabled(True)
         self.status_label.setText(message)

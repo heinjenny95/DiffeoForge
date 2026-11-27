@@ -74,6 +74,7 @@ from diffeoforge.desktop.mesh_preview import (
     load_mesh_preview,
 )
 from diffeoforge.desktop.mesh_preview_widget import MeshPreviewCanvas
+from diffeoforge.desktop.notifications import notify
 from diffeoforge.desktop.parameter_guidance import (
     DEFORMETRICA_PARAMETER_GUIDANCE,
     ParameterGuidance,
@@ -9398,6 +9399,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot(str)
     def _reference_pca_deformation_reload_failed(self, message: str) -> None:
+        notify(self, "Result review needs attention", "Open the results for details.", warning=True)
         self._reference_pca_deformation_failed(
             f"Shooting completed, but the refreshed result did not verify: {message}"
         )
@@ -12398,6 +12400,7 @@ class DiffeoForgeWindow(QMainWindow):
             return
         terminal = result.terminal_event
         if result.completed:
+            notify(self, "Atlas finished", "The atlas and PCA are saved and verified.")
             self._run_result = result
             self.run_state_label.setObjectName("statusSuccess")
             self.run_state_label.setStyleSheet("")
@@ -12417,6 +12420,7 @@ class DiffeoForgeWindow(QMainWindow):
         else:
             self.run_state_label.setObjectName("status")
             self.run_state_label.setStyleSheet("")
+            notify(self, "Atlas cancelled", "The atlas worker has stopped.")
             self.run_state_label.setText(
                 "Cancelled safely: no destination was published. This Modern run has no "
                 "checkpoint and must be restarted if needed."
@@ -12508,6 +12512,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     def _remote_atlas_succeeded(self, result: DesktopRemoteAtlasResult) -> None:
         if result.detached:
+            notify(self, "Remote monitoring stopped", "Reconnect to check the remote atlas.")
             self._run_result = None
             self.run_state_label.setObjectName("status")
             self.run_state_label.setStyleSheet("")
@@ -12518,6 +12523,7 @@ class DiffeoForgeWindow(QMainWindow):
         elif result.completed:
             state = verify_desktop_remote_atlas_session(result.session_directory)
             deleted_at = state["remote"].get("server_deleted_at")
+            notify(self, "Remote atlas finished", "The atlas and PCA are downloaded and verified.")
             self._run_result = result
             self.run_state_label.setObjectName("statusSuccess")
             self.run_state_label.setStyleSheet("")
@@ -12548,6 +12554,8 @@ class DiffeoForgeWindow(QMainWindow):
             self._run_result = None
             self.run_state_label.setObjectName("status" if result.cancelled else "statusError")
             self.run_state_label.setStyleSheet("")
+            notify(self, f"Remote atlas {result.status}", "Open the run for details.",
+                   warning=not result.cancelled)
             error = None if result.remote_state is None else result.remote_state.get("error")
             detail = ""
             if isinstance(error, dict):
@@ -12589,6 +12597,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_result_card.hide()
 
         if result.completed:
+            notify(self, "Atlas finished", "The atlas is saved and verified. Preparing results.")
             self.run_stage_label.setText("Atlas saved")
             self.run_state_label.setObjectName("statusSuccess")
             self.run_state_label.setText(
@@ -12606,6 +12615,12 @@ class DiffeoForgeWindow(QMainWindow):
             destination = Path(terminal.payload["destination"])
             early = (destination / "output" / EARLY_CHECK).is_file()
             initial = early and is_initial_fit_review(destination)
+            if early:
+                notify(self, "Atlas review needed",
+                       "Review the flagged starting fits." if initial else
+                       "Open the early atlas check to decide how to continue.")
+            else:
+                notify(self, "Atlas interrupted", "Open the run to inspect its saved state.")
             self.review_early_atlas_button.setText(
                 "Review flagged starting fits…" if initial else "Review early atlas check…"
             )
@@ -12626,6 +12641,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "The saved checkpoint is ready for explicit continuation."
             )
         elif outcome == "prepared_not_executed":
+            notify(self, "Atlas start cancelled", "Preparation was saved.")
             self.run_state_label.setObjectName("status")
             self.run_state_label.setText(
                 "Cancelled after immutable preparation. Deformetrica was not started; the "
@@ -12633,6 +12649,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
         else:
             self.run_state_label.setObjectName("status")
+            notify(self, "Atlas start cancelled", "The launch was cancelled before preparation.")
             self.run_state_label.setText(
                 "Cancelled before preparation. No run directory was created or modified."
             )
@@ -12655,6 +12672,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot(str)
     def _atlas_failed(self, message: str) -> None:
+        notify(self, "Atlas needs attention", "Open the run to inspect the failure.", warning=True)
         remote = isinstance(self._worker, _RemoteAtlasWorker)
         reference = (
             self._reference_run_request if isinstance(self._worker, _ReferenceAtlasWorker) else None
@@ -12991,6 +13009,9 @@ class DiffeoForgeWindow(QMainWindow):
         self._sync_ready_state()
         released = self._registration_results_released()
         step = 5 if released else 4
+        notify(self, "Results ready" if released else "Visual review needed",
+               "Open the verified results." if released else
+               "The specimen fits are ready. Open Visual quality review to record your decisions.")
         self.run_stage_label.setText("Atlas ready" if released else "Awaiting visual review")
         self.run_state_label.setText(
             "Atlas results are available."
@@ -13007,6 +13028,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot(str)
     def _completed_result_review_failed(self, message: str) -> None:
+        notify(self, "Result review needs attention", "Open the results for details.", warning=True)
         self._worker = None
         self._result_review = None
         self.open_validation_lab_button.setEnabled(False)
@@ -13833,6 +13855,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot(str)
     def _qc_pca_preparation_failed(self, message: str) -> None:
+        notify(self, "Result review needs attention", "Open the results for details.", warning=True)
         self._worker = None
         self._set_result_controls_enabled(True)
         self.registration_release_status_label.setText(
@@ -14213,6 +14236,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot(str)
     def _result_review_failed(self, message: str) -> None:
+        notify(self, "Result review needs attention", "Open the results for details.", warning=True)
         self._worker = None
         self._result_review = None
         self.open_validation_lab_button.setEnabled(False)

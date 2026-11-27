@@ -32,6 +32,7 @@ from diffeoforge.desktop.media_comparison import VideoComparison
 from diffeoforge.desktop.media_export import export_media
 from diffeoforge.desktop.mesh_view import MeshViewController, mesh_view_button
 from diffeoforge.desktop.morphospace_3d import Morphospace3D
+from diffeoforge.desktop.notifications import notify
 
 _EXPORTS = ThreadPoolExecutor(max_workers=1, thread_name_prefix="media-export")
 
@@ -974,9 +975,12 @@ class VisualizationPanel(QWidget):
         future, self._export_future = self._export_future, None
         try:
             target = future.result()
+            notify(self, "Media export finished", "The exported file is ready.")
             if self.directory == self._export_source:
                 self.status.setText(f"Exported: {target.name}")
         except (OSError, ValueError) as error:
+            notify(self, "Media export needs attention", "Open the export for details.",
+                   warning=True)
             QMessageBox.warning(self, "Export failed", str(error))
             if self.directory == self._export_source:
                 self.status.setText(

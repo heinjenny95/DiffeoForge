@@ -45,6 +45,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         from PySide6.QtGui import QIcon
         from PySide6.QtWidgets import QApplication
 
+        from diffeoforge.desktop.notifications import install_decision_notifications
         from diffeoforge.desktop.widgets import DiffeoForgeWindow as Window
     except ModuleNotFoundError as error:
         if error.name == "PySide6" or (error.name or "").startswith("PySide6."):
@@ -69,6 +70,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     application.setWindowIcon(icon)
 
+    install_decision_notifications(application)
     window = Window(recording_allowed=not args.smoke)
     window.setWindowIcon(icon)
     if args.smoke:

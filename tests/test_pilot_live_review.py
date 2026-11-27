@@ -221,6 +221,9 @@ def test_live_panel_loads_optional_detail_and_sends_one_generation_bound_decisio
     (run / "output/pilot-review/live.json").write_text(json.dumps(bound["live"]), encoding="utf-8")
     import time
 
+    notices = []
+    monkeypatch.setattr("diffeoforge.desktop.pilot_live_review.notify",
+                        lambda _w, title, _msg: notices.append(title))
     panel = PilotLiveReviewPanel()
     panel.resize(1000, 680)
     panel.set_run(run)
@@ -237,6 +240,7 @@ def test_live_panel_loads_optional_detail_and_sends_one_generation_bound_decisio
         time.sleep(0.01)
     assert not panel.canvas.reconstruction_model.geometry_is_proxy
     assert not panel.canvas.original_model.geometry_is_proxy
+    assert notices == ["Pilot waiting for your decision"]
     panel.finish_button.click()
     command = json.loads((bound["folder"] / "command.json").read_text())
     assert command["action"] == "finish" and command["nonce"] == bound["live"]["nonce"]

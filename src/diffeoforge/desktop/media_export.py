@@ -14,6 +14,7 @@ from PySide6.QtGui import QImage
 from shiboken6 import isValid
 
 from diffeoforge.desktop.activity import ActivityIndicator
+from diffeoforge.desktop.notifications import notify
 from diffeoforge.mesh import sha256_file
 
 _EXPORTS = ThreadPoolExecutor(max_workers=1, thread_name_prefix="method-media-export")
@@ -69,8 +70,12 @@ class MediaExportController(QObject):
             self._activity.set_task(self._activity_key, None)
         self.active_changed.emit(False)
         try:
-            self.finished.emit(future.result())
+            result = future.result()
+            notify(self.parent(), "Media export finished", "The exported file is ready.")
+            self.finished.emit(result)
         except (OSError, RuntimeError, ValueError, TypeError) as error:
+            notify(self.parent(), "Media export needs attention", "Open the export for details.",
+                   warning=True)
             self.failed.emit(str(error))
 
 

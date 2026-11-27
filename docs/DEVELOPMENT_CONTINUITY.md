@@ -1,5 +1,13 @@
 # Development continuity
 
+## dev252 — desktop notifications for finished jobs and decisions
+
+The desktop posts a system notification when the atlas finishes verification,
+when a fit or atlas pauses for review, and when the results are ready for
+visual QC. Pilot work, validation, measurements, exports and decision prompts
+also notify the researcher. A notification click returns to the relevant
+window. The operating system controls banner visibility and sound.
+
 ## dev251 — display the selected atlas stop criterion
 
 The live monitor and reopened result use the stopping rule saved for the

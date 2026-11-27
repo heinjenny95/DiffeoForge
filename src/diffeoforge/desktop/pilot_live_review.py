@@ -6,6 +6,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 from diffeoforge.desktop.calibration_comparison_widget import CalibrationComparisonCanvas3D
+from diffeoforge.desktop.notifications import notify
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.pilot_live_review import preview_models, read_review, request_review_action
 
@@ -17,6 +18,7 @@ class PilotLiveReviewPanel(QFrame):
         self.run = self.bound = None
         self.active = active
         self._generation = None
+        self._notified_error = None
         self._sent = False
         layout = QVBoxLayout(self)
         self.title = QLabel("Intermediate fit review")
@@ -68,7 +70,7 @@ class PilotLiveReviewPanel(QFrame):
 
     def clear(self):
         self.loader.cancel()
-        self.run = self.bound = self._generation = None
+        self.run = self.bound = self._generation = self._notified_error = None
         self._sent = False
         self.canvas.clear()
         self.hide()
@@ -156,6 +158,9 @@ class PilotLiveReviewPanel(QFrame):
         self.note.style().polish(self.note)
         self.continue_button.setEnabled(True)
         self.finish_button.setEnabled(True)
+        if not full_detail:
+            notify(self, "Pilot waiting for your decision",
+                   "Inspect the paused fit and choose whether to continue or finish.")
 
     def _load_detail(self):
         if self.bound is None or self._sent:
@@ -169,6 +174,11 @@ class PilotLiveReviewPanel(QFrame):
         )
 
     def _failed(self, _key, message):
+        error = self._generation, str(message)
+        if self._notified_error != error:
+            self._notified_error = error
+            notify(self, "Paused pilot needs attention", "Open the pilot to check the preview.",
+                   warning=True)
         self.bound = None
         self.canvas.clear()
         self.note.setText(

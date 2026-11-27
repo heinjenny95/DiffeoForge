@@ -9,9 +9,21 @@ from PySide6.QtCore import QObject, Qt, QThreadPool, Signal, Slot
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QWidget
 from shiboken6 import isValid
 
+from diffeoforge.desktop.notifications import notify
+
 _LABELS = {
     "_ProjectWorker": "Preparing project",
+    "_QcRecalibrationWorker": "Preparing a revised calibration",
+    "_PilotAtlasHandoffWorker": "Preparing the atlas starting parameters",
+    "_EarlyAtlasCheckWorker": "Loading the early atlas check",
+    "_EarlyAtlasDecisionWorker": "Recording the early atlas review",
+    "_EarlyAtlasResumeWorker": "Preparing the reviewed atlas continuation",
+    "_SavedExportWorker": "Preparing the saved atlas export",
+    "_RunLookupWorker": "Finding saved runs",
+    "_SetupRestoreWorker": "Restoring project setup",
+    "_ExistingAlignmentVisualWorker": "Loading the existing alignment",
     "_ReviewWorker": "Checking configuration and workload",
+    "_HoldoutOverlayWorker": "Measuring holdout surface differences",
     "_InputPreflightWorker": "Checking mesh inputs",
     "_TemplatePreviewWorker": "Loading template",
     "_ReferenceCalibrationOpenWorker": "Verifying saved pilot before opening",
@@ -37,6 +49,16 @@ _LABELS = {
     "_CalibrationStageWorker": "Pilot task",
     "_PreparationWorker": "Preparing Validation Lab",
     "_ValidationWorker": "Running Validation Lab",
+}
+
+
+# These workflows report the actual result (including pauses and cancellations)
+# in their own completion slots. Readiness refreshes are automatic UI housekeeping.
+_SEPARATE_NOTICES = {
+    "_AtlasWorker", "_ReferenceAtlasWorker", "_RemoteAtlasWorker", "_ResultReviewWorker",
+    "_CalibrationStageWorker", "_CompletedPilotRefinementWorker", "_PreparationWorker",
+    "_ValidationWorker", "_ReferenceReadinessWorker", "_ReferencePreparationStatusWorker",
+    "_SavedReferencePreparationStatusVerificationWorker",
 }
 
 
@@ -113,11 +135,26 @@ class _Ticket(QObject):
                 pool.indicator.set_task(self.key, count + str(message))
 
     @Slot()
+    def succeeded(self) -> None:
+        self._finish("Task finished")
+
+    @Slot()
+    def failed(self) -> None:
+        self._finish("Task needs attention")
+
+    @Slot()
     def finish(self) -> None:
+        self._finish(None)
+
+    def _finish(self, title: str | None) -> None:
         pool = self._pool()
         if pool is not None and pool._tickets.get(self.key) is self:
             pool._tickets.pop(self.key)
             pool.indicator.set_task(self.key, None)
+            name = type(self.worker).__name__
+            if title and name not in _SEPARATE_NOTICES and name in _LABELS:
+                notify(pool.indicator, title, _LABELS[name],
+                       warning=title == "Task needs attention")
             pool.indicator.task_finished.emit(self.worker)
         self.worker = None
         self.deleteLater()
@@ -152,8 +189,8 @@ class ActivityPool:
         # A monotonically assigned ticket cannot suppress or clear another task.
         key = next(self._keys)
         ticket = _Ticket(self, key, worker)
-        worker.signals.succeeded.connect(ticket.finish)
-        worker.signals.failed.connect(ticket.finish)
+        worker.signals.succeeded.connect(ticket.succeeded)
+        worker.signals.failed.connect(ticket.failed)
         if hasattr(worker.signals, "finished"):
             worker.signals.finished.connect(ticket.finish)
         if hasattr(worker.signals, "progress"):

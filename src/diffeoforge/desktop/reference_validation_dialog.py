@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from diffeoforge.config import load_config, validate_input_paths
 from diffeoforge.desktop.activity import ActivityPool
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
+from diffeoforge.desktop.notifications import notify
 from diffeoforge.desktop.reference_holdout_review import ReferenceHoldoutReviewDialog
 from diffeoforge.desktop.reference_runtime_estimate import estimate_reference_runtime
 from diffeoforge.desktop.validation_preparation import check_cancelled
@@ -499,6 +500,7 @@ class ReferenceValidationDialog(QDialog):
         self._live_status = None
         self._render()
         if execution is None:
+            notify(self, "Validation setup ready", "Open Validation Lab to choose the next step.")
             return
         runner, mode, text = execution
         # This is the only launch boundary: GUI confirmation after background verification.
@@ -532,6 +534,8 @@ class ReferenceValidationDialog(QDialog):
 
     @Slot(str)
     def _preparation_failed(self, message: str) -> None:
+        notify(self, "Validation preparation stopped", "Open Validation Lab for details.",
+               warning=not self._cancel_requested)
         self._worker = None
         self._preparing = False
         self._live_status = message
@@ -628,6 +632,8 @@ class ReferenceValidationDialog(QDialog):
         self._live_progress_fraction = 0.0
         self._indeterminate_progress = False
         self._render()
+        notify(self, "Validation finished" if snapshot.status == "completed" else
+               "Validation needs attention", "Open Validation Lab to review the outcome.")
 
     @Slot(str)
     def _failed(self, message: str) -> None:
@@ -639,6 +645,7 @@ class ReferenceValidationDialog(QDialog):
         self._live_progress_fraction = 0.0
         self._indeterminate_progress = False
         self._render()
+        notify(self, "Validation needs attention", "Open Validation Lab for details.", warning=True)
         QMessageBox.critical(self, "Validation Lab paused", message)
 
     @Slot()

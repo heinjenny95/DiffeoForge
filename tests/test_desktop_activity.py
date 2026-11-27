@@ -221,13 +221,15 @@ def test_owner_destroyed_before_completion_disconnects_activity_slots(applicatio
 
 
 def test_project_summary_collapses_paths_but_retains_warnings(application, tmp_path):
+    from test_runs import write_run_config
+
     from diffeoforge.desktop.project_setup import DesktopEngine, ProjectSetupResult
     from diffeoforge.desktop.widgets import DiffeoForgeWindow
 
     window = DiffeoForgeWindow()
     result = ProjectSetupResult(
         engine=DesktopEngine.DEFORMETRICA_REFERENCE,
-        config_path=tmp_path / "atlas.yaml", template_path=tmp_path / "template.vtk",
+        config_path=write_run_config(tmp_path), template_path=tmp_path / "template.vtk",
         subject_count=4, report_path=None, notices=("Routine preparation detail",),
         warnings=("Open surface needs review",),
     )

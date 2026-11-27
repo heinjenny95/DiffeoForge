@@ -141,13 +141,22 @@ def test_transfer_requires_explicit_steps_and_reliable_evidence(
     monkeypatch.setattr(
         PreviewMeshLoader, "request_operation", lambda self, key, fn: operations.append(key)
     )
+    notices = []
+    monkeypatch.setattr("diffeoforge.desktop.common_projection_dialog.notify",
+                        lambda _w, title, note: notices.append((title, note)))
     dialog = CommonProjectionDialog(None, object(), {"target": "subject.vtk"})
     try:
         dialog._loaded("status", status)
-        assert operations == ["status"] and dialog.next_action == expected
+        assert notices == []  # Reopening saved status is not a new completion.
+        dialog._loaded("projection", None)
+        dialog._loaded("status", status)
+        dialog._loaded("status", status)
+        assert len(notices) == 1 and notices[0][0] == "Common-fit step finished"
+        assert operations == ["status", "status"] and dialog.next_action == expected
         assert dialog.primary.isEnabled() is bool(expected)
         if expected is None:
-            assert "another model" in dialog.status.text() and dialog.inspect.isEnabled()
+            assert dialog.close_button.text() == "Return to pilot" and dialog.inspect.isEnabled()
+            assert "next common fit" in dialog.status.text()
             if status.get("projection_retention", {}).get("status") == "regression":
                 assert "Area C" in dialog.status.text()
     finally:

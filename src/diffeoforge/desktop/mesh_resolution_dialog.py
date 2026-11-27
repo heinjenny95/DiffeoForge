@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from diffeoforge.desktop.notifications import notify
 from diffeoforge.mesh_resolution_study import assess_study, freeze_study, load_study
 
 _WORK = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mesh-resolution-study")
@@ -188,13 +189,17 @@ class MeshResolutionDialog(QDialog):
                     "then assign each result here."
                 )
                 self._render()
+                notify(self, "Mesh resolution design ready", "Assign the results for comparison.")
             else:
                 self.report = result / "report.html"
                 self.show_report.setEnabled(True)
+                notify(self, "Mesh resolution assessment finished", "Open the saved report.")
                 self.status.setText(
                     "Assessment saved. Open the report for the result and next actions."
                 )
         except (OSError, RuntimeError, ValueError, TypeError, KeyError) as error:
+            notify(self, "Mesh resolution study stopped", "Open the study for details.",
+                   warning=not self.cancelled.is_set())
             self.status.setText(str(error))
         if self.plan is not None:
             self.compare.setEnabled(len(self.assignments) == len(self.plan["levels"]))

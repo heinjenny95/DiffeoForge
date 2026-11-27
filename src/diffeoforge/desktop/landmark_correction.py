@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from diffeoforge import landmark_correction as correction
+from diffeoforge.desktop.notifications import notify
 
 
 class _Signals(QObject):
@@ -119,6 +120,7 @@ class LandmarkCorrectionPicker(QDialog):
     def _prepared(self, session):
         self._worker = None
         self.session = session
+        notify(self, "Landmark review ready", "Open the editor to inspect the selected landmarks.")
         self.accept()
 
     @Slot(str)
@@ -126,6 +128,8 @@ class LandmarkCorrectionPicker(QDialog):
         self._worker = None
         self.list.setEnabled(True)
         self.edit.setEnabled(bool(self.selected))
+        notify(self, "Landmark review needs attention", "Open the editor for details.",
+               warning=True)
         self.status.setText(message)
 
     def reject(self):

@@ -16,7 +16,6 @@ from PySide6.QtGui import (
     QShortcut,
 )
 from PySide6.QtWidgets import (
-    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -32,8 +31,6 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSpinBox,
-    QStyle,
-    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
@@ -44,6 +41,7 @@ from diffeoforge.desktop.calibration_comparison_widget import (
 )
 from diffeoforge.desktop.full_review_policy import FullGeometryReviewMixin
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
+from diffeoforge.desktop.notifications import notify
 from diffeoforge.desktop.pilot_view_preparation import prepare_pilot_view
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.desktop.reference_calibration_presentation import (
@@ -1730,11 +1728,6 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         self._notification_keys = set()
         self._progress_context = {}
         self._assessment = None
-        self._tray = QSystemTrayIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation), self
-        )
-        self._tray.setToolTip("DiffeoForge pilot")
-        self._tray.messageClicked.connect(self._show_pilot_notification)
         self._thread_pool = ActivityPool(self)
         for loader, label in (
             (self._view_loader, "Verifying saved pilot"),
@@ -4437,6 +4430,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             if guided_action and guided_action[0] == "adaptive_compare_unresolved"
             else "Preparing the next attempt…"
         )
+        self._notification_keys.clear()
         self._thread_pool.start(worker)
         if finish_candidate_id:
             self._thread_pool.indicator.label.setText(self.status.text())
@@ -4772,6 +4766,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         self._live_fit_preview.clear()
         self.study_directory = snapshot.study_directory
         if finishing and snapshot.status == "completed":
+            notify(self, "Pilot finished", "The selected settings are ready for atlas setup.")
             self._snapshot = snapshot
             # Parent's existing finished handler applies parameters, never runs an atlas.
             self.accept()
@@ -4788,7 +4783,8 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
                 None,
             )
         self._render(snapshot)
-        self._notify_review_ready()
+        if not self._notify_review_ready():
+            notify(self, "Pilot step finished", "Open the pilot to see the outcome and next step.")
         if self._fit_search_stop_text:
             self.status.setText(self._fit_search_stop_text)
         pending = getattr(self, "_pending_specimen_review", None)
@@ -4864,7 +4860,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
         early = self._snapshot.early_screening
         early_ready = early.get("current_status") == "completed" and not early.get("complete")
         if not failure and self._snapshot.status != "awaiting_review" and not early_ready:
-            return
+            return False
         key = (
             str(self.study_directory),
             self._snapshot.current_stage.stage_id if self._snapshot.current_stage else "complete",
@@ -4877,7 +4873,7 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             ),
         )
         if key in self._notification_keys:
-            return
+            return True
         self._notification_keys.add(key)
         message = (
             "Pilot needs attention. Saved fits remain available."
@@ -4886,19 +4882,9 @@ class ReferenceCalibrationDialog(_FullscreenPilotDialog):
             + ("early specimen review ready. " if early_ready else "result ready. ")
             + "Open the pilot to review and continue."
         )
-        QApplication.alert(self, 0)
-        if QSystemTrayIcon.isSystemTrayAvailable():
-            self._tray.show()
-            self._tray.showMessage(
-                "DiffeoForge", message, QSystemTrayIcon.MessageIcon.Information, 10000
-            )
-
-    @Slot()
-    def _show_pilot_notification(self):
-        self._tray.hide()
-        self.showNormal()
-        self.raise_()
-        self.activateWindow()
+        notify(self, "Pilot needs attention" if failure else "Pilot review needed",
+               message, warning=bool(failure))
+        return True
 
     def _export_audit(self):
         from uuid import uuid4
